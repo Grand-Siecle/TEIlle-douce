@@ -1,0 +1,9 @@
+*.egg-info/
+venv/
+__pycache__/
+.idea/
+*.pyc
+*.IDENTIFIER
+OCR/
+tei_output/
+*.csv
