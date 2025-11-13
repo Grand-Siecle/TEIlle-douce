@@ -1,0 +1,1 @@
+NS_ALTO = {'a':"http://www.loc.gov/standards/alto/ns-v4#"}
