@@ -29,11 +29,11 @@ class SurfaceTree:
         # stockage des UUID pour pouvoir cibler les éléments TEI
         self.ids = {}
 
-    def _uuid(self):
-        return "id" + uuid.uuid4().hex
+    def _uuid(self, type: str):
+        return type + uuid.uuid4().hex
 
     def surface(self, surface_group, page_attributes):
-        surface_uuid = self._uuid()
+        surface_uuid = self._uuid("surface_")
         self.ids[("surface", self.folio)] = surface_uuid
 
         surface = etree.SubElement(
@@ -54,7 +54,7 @@ class SurfaceTree:
     # ---------------------------------------------------------------
     def zone1(self, surface, attributes, block_id, blocks_on_page):
 
-        zone_uuid = self._uuid()
+        zone_uuid = self._uuid("zone_")
         self.ids[("block", self.folio, block_id)] = zone_uuid
 
         zone = etree.SubElement(
@@ -73,7 +73,7 @@ class SurfaceTree:
     # ---------------------------------------------------------------
     def zone2(self, textblock, block_parent, attributes, line_id, lines_on_page):
 
-        zone_uuid = self._uuid()
+        zone_uuid = self._uuid("zoneLine_")
         self.ids[("linezone", self.folio, block_parent, line_id)] = zone_uuid
 
         zone = etree.SubElement(
@@ -86,7 +86,7 @@ class SurfaceTree:
             zone.attrib[k] = v
 
         # baseline <path>
-        path_uuid = self._uuid()
+        path_uuid = self._uuid("path_")
         baseline = etree.SubElement(
             zone,
             "path",
@@ -103,7 +103,7 @@ class SurfaceTree:
     # ---------------------------------------------------------------
     def line(self, textline, block_parent, line_parent, lines_on_page, extracted_words):
 
-        line_uuid = self._uuid()
+        line_uuid = self._uuid("line_")
         self.ids[("line", self.folio, block_parent, line_parent)] = line_uuid
 
         line_el = etree.SubElement(
@@ -128,7 +128,7 @@ class SurfaceTree:
     # ---------------------------------------------------------------
     def zone3(self, textline, block_parent, line_parent, attributes, seg_id, strings_on_page):
 
-        string_uuid = self._uuid()
+        string_uuid = self._uuid("string_")
         self.ids[("string", self.folio, block_parent, line_parent, seg_id)] = string_uuid
 
         zone = etree.SubElement(
@@ -146,7 +146,7 @@ class SurfaceTree:
         if alto_string is not None:
             wc = alto_string.get("WC")
             if wc:
-                cert_uuid = self._uuid()
+                cert_uuid = self._uuid("cert_")
                 cert = etree.SubElement(zone, "certainty", {
                     "{http://www.w3.org/XML/1998/namespace}id": cert_uuid,
                     "locus": "value",
@@ -161,7 +161,7 @@ class SurfaceTree:
     # ---------------------------------------------------------------
     def zone4(self, string, block_parent, line_parent, seg_parent, attributes, glyph_id, glyphs_on_page):
 
-        glyph_uuid = self._uuid()
+        glyph_uuid = self._uuid("glyph_")
         self.ids[("glyphzone", self.folio, block_parent, line_parent, seg_parent, glyph_id)] = glyph_uuid
 
         zone = etree.SubElement(
@@ -180,7 +180,7 @@ class SurfaceTree:
         if alto_glyph is not None:
             gc = alto_glyph.get("GC")
             if gc:
-                cert_uuid = self._uuid()
+                cert_uuid = self._uuid("cert_")
                 etree.SubElement(zone, "certainty", {
                     "{http://www.w3.org/XML/1998/namespace}id": cert_uuid,
                     "locus": "value",
@@ -195,7 +195,7 @@ class SurfaceTree:
     # ---------------------------------------------------------------
     def car(self, zone, glyph, block_parent, line_parent, seg_parent, glyph_id, glyphs_on_page):
 
-        car_uuid = self._uuid()
+        car_uuid = self._uuid("car_")
         self.ids[("car", self.folio, block_parent, line_parent, seg_parent, glyph_id)] = car_uuid
 
         car_el = etree.SubElement(zone, "c", {
@@ -209,7 +209,7 @@ class SurfaceTree:
         if alto_glyph is not None:
             wc = alto_glyph.get("WC")
             if wc:
-                cert_uuid = self._uuid()
+                cert_uuid = self._uuid("cert_")
                 etree.SubElement(car_el, "certainty", {
                     "{http://www.w3.org/XML/1998/namespace}id": cert_uuid,
                     "locus": "value",

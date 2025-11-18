@@ -20,10 +20,6 @@ def build_surface_fragment(args):
     # surface isolée
     surface = etree.Element("surface", attributes.surface())
 
-    # 👇 Lire les options de performance
-    skip_glyphs = bool(config.get("perf", {}).get("skip_glyphs"))
-    skip_strings = bool(config.get("perf", {}).get("skip_strings"))
-
     # index des éléments par ID
     by_id = {el.get("ID"): el for el in input_alto_root.xpath('//*[@ID]')}
 
@@ -57,8 +53,7 @@ def build_surface_fragment(args):
                 elif local == "SP":
                     words_parts.append(" ")
 
-            # Créer seulement l'élément <line>, pas de zones String/Glyph
-            surface_tree.line(textline, tb.id, tl.id, 0, " ".join(words_parts).strip())
+            surface_tree.line(textline, tb.id, tl.id, 0, "".join(words_parts).strip())
 
     return num, etree.tostring(surface, encoding="utf-8")
 
