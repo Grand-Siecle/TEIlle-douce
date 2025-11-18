@@ -94,43 +94,8 @@ def write_pretty_xml(root: etree._Element, out_path: Path):
         str(out_path),
         encoding="utf-8",
         xml_declaration=True,
-        pretty_print=False,
+        pretty_print=True,
     )
-
-
-def ensure_segmonto_ns(root: etree._Element) -> etree._Element:
-    """
-    Ajoute xmlns:segmonto au <TEI> racine si absent, en conservant le namespace TEI.
-    """
-    seg_uri = "https://segmonto.github.io/ontology#"
-
-    # déjà présent ?
-    if any(v == seg_uri for v in root.nsmap.values()):
-        return root
-
-    # récupérer namespace + nom local du root
-    tag = root.tag
-    if tag.startswith("{"):
-        ns, local = tag[1:].split("}")
-        tei_ns = ns
-    else:
-        tei_ns = None
-        local = tag
-
-    # nsmap étendu
-    new_nsmap = {k: v for k, v in root.nsmap.items()}
-    new_nsmap["segmonto"] = seg_uri
-
-    if tei_ns:
-        new_root = etree.Element(f"{{{tei_ns}}}{local}", nsmap=new_nsmap)
-    else:
-        new_root = etree.Element(local, nsmap=new_nsmap)
-
-    # copier contenu
-    new_root[:] = list(root)
-    new_root.attrib.update(root.attrib)
-
-    return new_root
 
 
 def bdd_prefix(doc_folder_name: str) -> str:
@@ -383,7 +348,10 @@ def main():
             )
 
     config = build_config(OCR_DIR)
-    config["perf"] = {"skip_glyphs": True}  # pour aller plus vite
+    config["perf"] = {
+        "skip_glyphs": True,
+        "skip_strings": True
+    }
 
     with Progress(
         SpinnerColumn(),
@@ -477,15 +445,11 @@ def main():
             tree.build_sourcedoc(
                 config,
                 progress=progress,
-                parent_task_docs=task_docs,
                 parent_task_pages=task_pages,
             )
 
             # body
             tree.build_body()
-
-            # Namespace segmonto
-            tree.root = ensure_segmonto_ns(tree.root)
 
             # Mapping IIIF local éventuel
             mapping_csv = pick_mapping_csv(doc_dir, filepaths)

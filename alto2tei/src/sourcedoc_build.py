@@ -19,7 +19,10 @@ def build_surface_fragment(args):
 
     # surface isolée
     surface = etree.Element("surface", attributes.surface())
+
+    # 👇 Lire les options de performance
     skip_glyphs = bool(config.get("perf", {}).get("skip_glyphs"))
+    skip_strings = bool(config.get("perf", {}).get("skip_strings"))
 
     # index des éléments par ID
     by_id = {el.get("ID"): el for el in input_alto_root.xpath('//*[@ID]')}
@@ -39,90 +42,23 @@ def build_surface_fragment(args):
                 continue
 
             textline = surface_tree.zone2(textblock, tb.id, tl.attributes, tl.id, num)
-            words_parts = []
 
             line_node = by_id.get(tl.id)
             if line_node is None:
                 continue
 
-            if skip_glyphs:
-                for ch in line_node:
-                    local = etree.QName(ch).localname
-                    if local == "String":
-                        c = ch.get("CONTENT")
-                        if c:
-                            words_parts.append(c)
-                    elif local == "SP":
-                        words_parts.append(" ")
-                surface_tree.line(textline, tb.id, tl.id, 0, " ".join(words_parts).strip())
-                continue
-
-            first_string = None
-            for ch in line_node:
-                if etree.QName(ch).localname == "String":
-                    first_string = ch
-                    break
-
-            if first_string is None:
-                continue
-            if first_string.get("CONTENT") and len(first_string.getchildren()) == 0:
-                surface_tree.line(textline, tb.id, tl.id, 0, None)
-                continue
-
+            words_parts = []
             for ch in line_node:
                 local = etree.QName(ch).localname
-                if local == "SP":
-                    textline_child_id = ch.get("ID")
-                    if not textline_child_id:
-                        continue
-                    space_data = attributes.zones(
-                        f'TextLine[@ID=\"{tl.id}\"]',
-                        f'SP[@ID=\"{textline_child_id}\"]',
-                        None)[0]
-                    surface_tree.zone3(
-                        textline, tb.id, tl.id,
-                        space_data.attributes, space_data.id, num)
+                if local == "String":
+                    c = ch.get("CONTENT")
+                    if c:
+                        words_parts.append(c)
+                elif local == "SP":
+                    words_parts.append(" ")
 
-
-                elif local == "String":
-                    textline_child_id = ch.get("ID")
-                    if not textline_child_id:
-                        continue
-                    string_data = attributes.zones(
-                        f'TextLine[@ID=\"{tl.id}\"]',
-                        f'String[@ID=\"{textline_child_id}\"]',
-                        None)[0]
-
-                    string = surface_tree.zone3(
-                        textline, tb.id, tl.id,
-                        string_data.attributes, string_data.id, num)
-
-                    string_el = by_id.get(textline_child_id)
-                    if string_el is None:
-                        continue
-
-                    glyphs = string_el.findall("a:Glyph", namespaces=NS_ALTO)
-                    if glyphs:
-                        word = "".join([g.get("CONTENT") or "" for g in glyphs])
-                        if word:
-                            words_parts.append(word)
-
-                        for g in glyphs:
-                            gid = g.get("ID")
-                            if not gid:
-                                continue
-                            glyph_data = attributes.zones(
-                                f'String[@ID=\"{textline_child_id}\"]',
-                                f'Glyph[@ID=\"{gid}\"]', None)[0]
-                            glyph = surface_tree.zone4(
-                                string, tb.id, tl.id,
-                                textline_child_id,
-                                glyph_data.attributes, gid, num)
-                            surface_tree.car(
-                                glyph, g, tb.id, tl.id,
-                                textline_child_id, gid, num)
-
-            surface_tree.line(textline, tb.id, tl.id, num, " ".join(words_parts).strip())
+            # Créer seulement l'élément <line>, pas de zones String/Glyph
+            surface_tree.line(textline, tb.id, tl.id, 0, " ".join(words_parts).strip())
 
     return num, etree.tostring(surface, encoding="utf-8")
 
@@ -137,7 +73,6 @@ def sourcedoc(
     segmonto_lines,
     config,
     progress=None,
-    parent_task_docs=None,
     parent_task_pages=None
 ):
 

@@ -20,14 +20,21 @@ class TEI:
         self.segmonto_zones
         self.segmonto_lines
 
-
     def build_tree(self):
-        """Parse and map data from ALTO files to an XML-TEI tree's <teiHeader> and <sourceDoc>.
-        """   
+        """Parse and map data from ALTO files to an XML-TEI tree."""
 
-        # instantiate the XML-TEI root for this document and assign the root basic attributes
-        tei_root_att = {"xmlns":"http://www.tei-c.org/ns/1.0", "{http://www.w3.org/XML/1998/namespace}id":f"ark_12148_{self.d}"}
-        self.root = etree.Element("TEI", tei_root_att)
+        # 👇 Inclure segmonto dès le début
+        tei_root_att = {
+            "xmlns": "http://www.tei-c.org/ns/1.0",
+            "{http://www.w3.org/XML/1998/namespace}id": f"ark_12148_{self.d}"
+        }
+
+        nsmap = {
+            None: "http://www.tei-c.org/ns/1.0",  # Namespace par défaut
+            "segmonto": "https://segmonto.github.io/ontology#"
+        }
+
+        self.root = etree.Element("TEI", tei_root_att, nsmap=nsmap)
 
     def build_header(self, config, version):
         """
@@ -81,8 +88,7 @@ class TEI:
             self.segmonto_lines,
         )
 
-    def build_sourcedoc(self, config, progress=None, parent_task_docs=None,
-    parent_task_pages=None):
+    def build_sourcedoc(self, config, progress=None, parent_task_pages=None):
         sourcedoc(
             self.d,
             self.root,
@@ -92,7 +98,6 @@ class TEI:
             self.segmonto_lines,
             config["iiifURI"],
             progress=progress,
-            parent_task_docs=parent_task_docs,
             parent_task_pages=parent_task_pages
         )
 
