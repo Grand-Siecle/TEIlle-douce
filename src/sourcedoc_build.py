@@ -1,9 +1,9 @@
 from lxml import etree
 from multiprocessing import Pool, cpu_count
-from .order_files import Files
-from .sourcedoc_attributes import Attributes
-from .sourcedoc_elements import SurfaceTree, labels
-from .constants import NS_ALTO
+from src.order_files import Files
+from src.sourcedoc_attributes import Attributes
+from src.sourcedoc_elements import SurfaceTree, labels
+from src.constants import NS_ALTO
 
 
 XML_PARSER = etree.XMLParser(huge_tree=True, recover=True)
@@ -29,9 +29,10 @@ def build_surface_fragment(args):
     for tb in textblocks:
         if not tb.id:
             continue
-
+            
         textblock = surface_tree.zone1(surface, tb.attributes, tb.id, num)
         textlines = attributes.zones(f'TextBlock[@ID=\"{tb.id}\"]', "TextLine", segmonto_lines)
+        line_count = 0
 
         for tl in textlines:
             if not tl.id:
@@ -52,8 +53,8 @@ def build_surface_fragment(args):
                         words_parts.append(c)
                 elif local == "SP":
                     words_parts.append(" ")
-
-            surface_tree.line(textline, tb.id, tl.id, 0, "".join(words_parts).strip())
+            line_count += 1
+            surface_tree.line(textline, tb.id, tl.id, line_count, "".join(words_parts).strip())
 
     return num, etree.tostring(surface, encoding="utf-8")
 

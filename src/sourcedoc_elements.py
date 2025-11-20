@@ -83,6 +83,8 @@ class SurfaceTree:
         )
 
         for k, v in attributes.items():
+            if k == "type" and v == "default":
+                v = "DefaultLine"
             zone.attrib[k] = v
 
         # baseline <path>

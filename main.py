@@ -10,8 +10,8 @@ from lxml import etree
 from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TimeElapsedColumn
 from rich.console import Console
 
-from alto2tei.src.build import TEI
-from alto2tei.src.teiheader_build import teiheader
+from src.build import TEI
+from src.teiheader_build import teiheader
 
 console = Console()
 
