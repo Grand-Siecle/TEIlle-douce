@@ -29,13 +29,17 @@ class Attributes:
                                                 @lry (lower right y-axis pixel position = length of page)
         Returns:
             attributes (dict): dictionary of attribute names and their values
-        """    
+        """
 
         # create a dictionary of attributes names and their values for the ALTO file's <Page> element
         att_list = self.root.find('.//a:Page', namespaces=NS).attrib
+
+        match = re.match(r"f(\d+)", str(self.folio))
+        page_n = match.group(1) if match else "0"
+
         # assign the ALTO file's extracted <Page> attribute values to TEI attribute names
-        attributes = {"{http://www.w3.org/XML/1998/namespace}id":f"f{self.folio}",
-                    "n":att_list["PHYSICAL_IMG_NR"],
+        attributes = {"{http://www.w3.org/XML/1998/namespace}id":f"{self.folio}",
+                    "n":page_n,
                     "ulx":"0",
                     "uly":"0",
                     "lrx":att_list["WIDTH"],
@@ -53,7 +57,7 @@ class Attributes:
         Returns:
             attributes (list): list of dictionaries {attribute name (str): value (str)}
             processed_blocks (list): IDs of the elements whose data were extracted
-        """        
+        """
 
         # Empty variables in which the zone's data will be stored
         ZoneData = namedtuple("ZoneData", ["attributes", "id"])
@@ -72,7 +76,7 @@ class Attributes:
                 data = ZoneData(attributes, id)
                 if "TAGREFS" in element.attrib and element.attrib["TAGREFS"] in self.tags:
                     tag = str(self.tags[element.attrib["TAGREFS"]])
-                    
+
                     # parse the three (possible) components of the targeted ALTO element's @TAGREFS, according to SegmOnto guidelines;
                     # the 3 groups of this regex parse the following expected tag syntax: MainZone:column#1 --> (MainZone)(column)(1)
                     tag_parts = re.match(r"(\w+):?(\w+)?#?(\d?)?", tag)
@@ -112,7 +116,7 @@ class Attributes:
                 # Extract the attributes for the child <Polygon> of each targeted ALTO element and put that dictionary into a list
                 if element.find('.//a:Polygon', namespaces=NS) is not None and element.find('.//a:Polygon', namespaces=NS).attrib["POINTS"] is not None:
                     points = element.find('.//a:Polygon', namespaces=NS).attrib["POINTS"]
-                    # Reformat the string of numbers from Polygon[@POINTS] so that every 2nd value is joined to the previous value by a comma; 
+                    # Reformat the string of numbers from Polygon[@POINTS] so that every 2nd value is joined to the previous value by a comma;
                     # eg. "2204 4621 2190 4528" --> "2204,4621 2190,4528"
                     data.attributes["points"]=" ".join([re.sub(r"\s", ",", x) for x in re.findall(r"(\d+ \d+)", points)])
 

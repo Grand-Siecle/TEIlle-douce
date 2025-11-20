@@ -12,6 +12,7 @@ from rich.console import Console
 
 from src.build import TEI
 from src.teiheader_build import teiheader
+from src.teiheader_metadata.iiif_data import IIIFMapping
 
 console = Console()
 
@@ -325,7 +326,7 @@ def add_surface_facs_from_mapping(root: etree._Element, mapping_page_to_url: dic
             surf.set("facs", url)
 
 
-# --------------- main ---------------
+# ... [reste de la configuration] ...
 
 def main():
     if not OCR_DIR.exists():
@@ -335,8 +336,8 @@ def main():
     # Extraction auto des zips
     ready_dirs = expand_archives(OCR_DIR)
 
-    # Collecte des volumes : chaque dossier avec des .xml
-    docs: list[tuple[str, list[Path], Path]] = []  # (nom, fichiers xml, dossier)
+    # Collecte des volumes
+    docs: list[tuple[str, list[Path], Path]] = []
     for d in ready_dirs:
         xmls = sorted(d.rglob("*.xml"))
         if xmls:
@@ -346,15 +347,13 @@ def main():
         console.print("[red]Aucun volume ALTO trouvé sous OCR/.[/red]")
         sys.exit(1)
 
-    # Métadonnées globales (optionnel)
+    # Métadonnées globales
     df_meta = None
     if METADATA_CSV.exists():
         try:
             df_meta = pd.read_csv(METADATA_CSV, sep=";")
         except Exception as e:
-            console.print(
-                f"[yellow]Avertissement : échec de lecture {METADATA_CSV}: {e}[/yellow]"
-            )
+            console.print(f"[yellow]Avertissement : échec de lecture {METADATA_CSV}: {e}[/yellow]")
 
     config = build_config(OCR_DIR)
     config["perf"] = {
@@ -363,12 +362,12 @@ def main():
     }
 
     with Progress(
-        SpinnerColumn(),
-        TextColumn("[bold blue]{task.description}"),
-        BarColumn(),
-        TextColumn("[green]{task.percentage:>3.0f}%"),
-        TimeElapsedColumn(),
-        console=console,
+            SpinnerColumn(),
+            TextColumn("[bold blue]{task.description}"),
+            BarColumn(),
+            TextColumn("[green]{task.percentage:>3.0f}%"),
+            TimeElapsedColumn(),
+            console=console,
     ) as progress:
 
         task_docs = progress.add_task("Traitement des documents", total=len(docs))
@@ -378,7 +377,7 @@ def main():
             console.print(f"\n[bold cyan]→ {doc_name}[/bold cyan]")
 
             # TEI tree de base
-            tree = TEI(doc_name, filepaths)
+            tree = TEI(doc_name, filepaths, doc_dir)
             tree.build_tree()
 
             # Progress bar par page
@@ -437,7 +436,7 @@ def main():
 
             tree.metadata = metadata
 
-            # Construction du teiHeader (sans requêtes SRU/IIIF réseau)
+            # Construction du teiHeader
             tree.root, tree.segmonto_zones, tree.segmonto_lines = teiheader(
                 tree.metadata,
                 tree.d,
@@ -448,7 +447,8 @@ def main():
                 tree.fp
             )
 
-            # sourceDoc (ALTO → SegmOnto) — parallélisé dans sourcedoc_build
+            # sourceDoc (ALTO → SegmOnto) — parallélisé
+            # ========== Le mapping IIIF sera automatiquement utilisé ==========
             tree.build_sourcedoc(
                 config,
                 progress=progress,
@@ -457,15 +457,6 @@ def main():
 
             # body
             tree.build_body()
-
-            # Mapping IIIF local éventuel
-            mapping_csv = pick_mapping_csv(doc_dir, filepaths)
-            if mapping_csv:
-                mapping = read_local_iiif_mapping(mapping_csv)
-                add_surface_facs_from_mapping(tree.root, mapping)
-                console.print(
-                    f"[dim]Mapping IIIF appliqué depuis {mapping_csv.name} ({len(mapping)} entrées)[/dim]"
-                )
 
             # Surcharge du teiHeader avec le CSV local
             row = find_metadata_row(df_meta, bdd_prefix(doc_name)) if df_meta is not None else None

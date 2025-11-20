@@ -21,10 +21,11 @@ def labels(filepath):
 class SurfaceTree:
     """Creates a <surface> element and its children for one ALTO page."""
 
-    def __init__(self, doc, folio, alto_root):
+    def __init__(self, doc, folio, alto_root, iiif_mapping=None):
         self.doc = doc
         self.folio = folio
         self.root = alto_root
+        self.iiif_mapping = iiif_mapping
 
         # stockage des UUID pour pouvoir cibler les éléments TEI
         self.ids = {}
@@ -32,21 +33,19 @@ class SurfaceTree:
     def _uuid(self, type: str):
         return type + uuid.uuid4().hex
 
-    def surface(self, surface_group, page_attributes):
-        surface_uuid = self._uuid("surface_")
-        self.ids[("surface", self.folio)] = surface_uuid
+    def surface(self, page_attributes):
 
-        surface = etree.SubElement(
-            surface_group,
+        surface = etree.Element(
             "surface",
-            {"{http://www.w3.org/XML/1998/namespace}id": surface_uuid, **page_attributes},
+            {"{http://www.w3.org/XML/1998/namespace}id": self.folio, **page_attributes},
         )
+        xml_id = surface.get("{http://www.w3.org/XML/1998/namespace}id", self.folio)
 
-        etree.SubElement(
-            surface,
-            "graphic",
-            url=f"https://gallica.bnf.fr/iiif/ark:/12148/{self.doc}/f{self.folio}/full/full/0/native.jpg"
-        )
+        if self.iiif_mapping and self.iiif_mapping.has_mapping():
+            graphic_url = self.iiif_mapping.get_url(xml_id)
+            if graphic_url:
+                etree.SubElement(surface, "graphic", url=graphic_url)
+
         return surface
 
     # ---------------------------------------------------------------
