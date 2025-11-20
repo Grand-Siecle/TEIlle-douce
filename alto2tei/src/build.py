@@ -23,18 +23,15 @@ class TEI:
     def build_tree(self):
         """Parse and map data from ALTO files to an XML-TEI tree."""
 
-        # 👇 Inclure segmonto dès le début
-        tei_root_att = {
-            "xmlns": "http://www.tei-c.org/ns/1.0",
+        xml_id_att = {
             "{http://www.w3.org/XML/1998/namespace}id": f"ark_12148_{self.d}"
         }
 
         nsmap = {
-            None: "http://www.tei-c.org/ns/1.0",  # Namespace par défaut
-            "segmonto": "https://segmonto.github.io/ontology#"
+            None: "http://www.tei-c.org/ns/1.0"
         }
 
-        self.root = etree.Element("TEI", tei_root_att, nsmap=nsmap)
+        self.root = etree.Element("TEI", xml_id_att, nsmap=nsmap)
 
     def build_header(self, config, version):
         """
