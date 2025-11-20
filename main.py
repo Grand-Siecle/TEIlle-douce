@@ -21,9 +21,15 @@ OUTPUT_DIR = Path("tei_output")
 OUTPUT_DIR.mkdir(exist_ok=True)
 
 # Métadonnées générales
-KRAKEN_VERSION = "4.3.x"
-YOLO_VERSION = "8.0.x"
-YALTAI_VERSION = "1.0.x"
+APP_VERSIONS = {"KRAKEN_VERSION": "4.3.x",
+                   "YOLO_VERSION": "8.0.x",
+                   "YALTAI_VERSION": "1.0.x"}
+
+MODELS_VERSIONS = {"KRAKEN_MODEL": {"name": "",
+                                    "source": ""},
+                   "YOLO_MODEL": {"name": "CapricciosaX.pt",
+                                  "source": "https://doi.org/10.5281/zenodo.10602196"}
+                   }
 
 METADATA_CSV = Path("metadata_livre.csv")
 
