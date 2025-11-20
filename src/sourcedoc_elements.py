@@ -7,7 +7,7 @@ from collections import defaultdict
 from lxml import etree
 import re
 import uuid
-from .constants import NS_ALTO  # namespace for the Alto xml
+from .constants import NS_ALTO
 
 def labels(filepath):
     root = etree.parse(filepath).getroot()
