@@ -444,10 +444,8 @@ def main():
                 tree.root,
                 len(tree.fp),
                 config,
-                KRAKEN_VERSION,
-                tree.fp,
-                tree.segmonto_zones,
-                tree.segmonto_lines,
+                APP_VERSIONS,
+                tree.fp
             )
 
             # sourceDoc (ALTO → SegmOnto) — parallélisé dans sourcedoc_build

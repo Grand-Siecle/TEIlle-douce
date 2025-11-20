@@ -9,18 +9,19 @@ from src.teiheader_full import FullTree
 NS = {"s":"http://www.loc.gov/zing/srw/", "m":"info:lc/xmlns/marcxchange-v2"}
 
 
-def teiheader(metadata, document, root, count_pages, config, version, filepaths, segmonto_zones, segmonto_lines):
+def teiheader(metadata, document, root, count_pages, config, app_versions, filepaths):
     """Create all elements of the <teiHeader>.
     Args:
         document (str): name of directory containing ALTO-encoded transcriptions of the document's pages
         root (etree): XML-TEI tree
         count_pages (string): number of files in directory
+        app_versions (dict): apps used description
     Returns:
         root (etree): XML-TEI tree
     """    
     
     # step 1 -- generate default <teiHeader>
-    elements = DefaultTree(config, document, root, metadata, count_pages, version)  # deafult_teiheader.py
+    elements = DefaultTree(config, document, root, metadata, count_pages, app_versions)
     elements.build()
     
     # step 2 -- enter available metadata into relevant element in <teiHeader>

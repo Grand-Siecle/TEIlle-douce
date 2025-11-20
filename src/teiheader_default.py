@@ -3,21 +3,21 @@
 # Python class to build the architecture of a default <teiHeader>.
 # -----------------------------------------------------------
 
-from email.mime import application
+from typing import Dict
 from lxml import etree
 from datetime import datetime
 from collections import defaultdict
 
 class DefaultTree:
     children = defaultdict(list)
-    def __init__(self, config, document, root, metadata, count_pages, version):
+    def __init__(self, config, document, root, metadata, count_pages, versions: Dict[str, str]):
         self.config = config
         self.document = document
         self.root = root
         self.sru = metadata["sru"]
         self.iiif = metadata["iiif"]
         self.count = str(count_pages)
-        self.version = version
+        self.versions = versions
 
     def build(self):
         if self.sru["found"]:
@@ -105,13 +105,33 @@ class DefaultTree:
 
         # <encodingDesc>
         appInfo = etree.SubElement(encodingDesc, "appInfo")
-        application = etree.SubElement(appInfo, "application")
-        application.attrib["ident"] = 'Kraken'
-        application.attrib["version"] = self.version
-        app_label = etree.SubElement(application, "label")
+        ## Kraken
+        application1 = etree.SubElement(appInfo, "application")
+        application1.attrib["ident"] = 'Kraken'
+        application1.attrib["version"] = self.versions["KRAKEN_VERSION"]
+        app_label = etree.SubElement(application1, "label")
         app_label.text = "Kraken"
-        app_ptr = etree.SubElement(application, "ptr")
+        app_ptr = etree.SubElement(application1, "ptr")
         app_ptr.attrib["target"] = "https://github.com/mittagessen/kraken"
+        ## YOLO
+        application2 = etree.SubElement(appInfo, "application")
+        application2.attrib["ident"] = 'YOLO'
+        application2.attrib["version"] = self.versions["YOLO_VERSION"]
+        app_label = etree.SubElement(application2, "label")
+        app_label.text = "YOLO - Ultralytics"
+        app_ptr = etree.SubElement(application2, "ptr")
+        app_ptr.attrib["target"] = "https://github.com/ultralytics/ultralytics"
+        ## RTK
+        application3 = etree.SubElement(appInfo, "application")
+        application3.attrib["ident"] = 'YALTAi'
+        application3.attrib["version"] = self.versions["YALTAI_VERSION"]
+        app_label = etree.SubElement(application3, "label")
+        app_label.text = "YALTAi - You Actually Look Twice At it"
+        app_ptr = etree.SubElement(application3, "ptr")
+        app_ptr.attrib["target"] = "https://github.com/PonteIneptique/YALTAi"
+
+
+        # <classDecl>
         classDecl = etree.SubElement(encodingDesc, "classDecl")
         taxonomy_id = {"{http://www.w3.org/XML/1998/namespace}id":"SegmOnto"}
         self.children["taxonomy"] = etree.SubElement(classDecl, "taxonomy", taxonomy_id)
