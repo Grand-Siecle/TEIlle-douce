@@ -175,8 +175,11 @@ class FullTree:
         cat_id = {"{http://www.w3.org/XML/1998/namespace}id":"SegmOntoLines"}
         category = etree.SubElement(self.children["taxonomy"], "category", cat_id)
         # Enter into the <category> every line in the document that is also named in the SemOnto guidelines.
-        for l in set(SegmOntoLines).intersection(set(document_lines)):
+        common_lines = set(SegmOntoLines).intersection(set(document_lines))
+        for l in common_lines:
             self.enter_taxonomy_category(category, l, SegmOntoLines[l])
+        if "DefaultLine" not in common_lines: # Force DefaultLine
+            self.enter_taxonomy_category(category, "DefaultLine", SegmOntoLines["DefaultLine"])
         return document_zones, document_lines
             
     def enter_taxonomy_category(self, category, tag, url):
