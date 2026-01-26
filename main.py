@@ -205,7 +205,13 @@ def main():
             )
 
             # Build body (with language detection)
-            tree.build_body(detect_lang=True)
+            with console.status("[cyan]Detecting languages...[/cyan]", spinner="dots"):
+                tree.build_body(detect_lang=True)
+
+            # Show detected languages summary
+            if tree.lang_stats:
+                langs = [f"{k}:{v}" for k, v in sorted(tree.lang_stats.items(), key=lambda x: -x[1])[:4]]
+                console.print(f"  [dim]Languages: {', '.join(langs)}[/dim]")
 
             # Override TEI header with CSV metadata
             override_teiheader_from_csv(tree.root, row)
