@@ -18,7 +18,7 @@ from .teiheader import build_header
 from .sourcedoc import build_sourcedoc
 from .body import build_body, Text
 from .metadata import IIIFMapping
-from .lang import update_langusage
+from .lang import build_langusage
 
 
 class TEI:
@@ -29,14 +29,20 @@ class TEI:
     for building each section of the TEI document.
 
     Attributes:
-        d (str): Document name.
+        d (str): Document name/identifier.
         fp (list): List of ALTO file paths.
         doc_dir (Path): Directory containing the document files.
         metadata (dict): Metadata dictionary with 'sru' and 'iiif' keys.
-        tags (dict): Tag mappings (unused, kept for compatibility).
         root (etree.Element): TEI XML root element.
         segmonto_zones (list): SegmOnto zone labels found in the document.
         segmonto_lines (list): SegmOnto line labels found in the document.
+        lang_stats (dict): Language detection statistics after build_body().
+
+    Example:
+        >>> tree = TEI("document_name", filepaths, doc_dir)
+        >>> tree.build_tree()
+        >>> tree.build_body(detect_lang=True)
+        >>> tree.finalize_langusage()
     """
 
     def __init__(self, document, filepaths, doc_dir=None):
@@ -57,6 +63,7 @@ class TEI:
         self.root = None
         self.segmonto_zones = None
         self.segmonto_lines = None
+        self.lang_stats = None
         self._iiif_mapping = None
 
     def build_tree(self):
@@ -112,36 +119,70 @@ class TEI:
 
     def build_body(self, detect_lang=True):
         """
-        Build the <body> element from sourceDoc text.
+        Build the `<body>` element from sourceDoc text.
 
         Extracts text lines from the sourceDoc and assembles them into
-        the TEI body structure. Optionally detects language for each
-        element and adds xml:lang attributes.
+        the TEI body structure with appropriate elements (`<ab>`, `<note>`,
+        `<fw>`, `<lb/>`, etc.).
 
-        Note: Call update_lang_header() after this to update the TEI
-        header's <langUsage> element with the detected languages.
+        When `detect_lang=True`, uses FastText to detect the language of
+        each text container and adds `xml:lang` attributes. Language
+        statistics are stored in `self.lang_stats` for later use.
+
+        Note:
+            Call `finalize_langusage()` after any CSV metadata overrides
+            to update the `<langUsage>` element in the TEI header.
 
         Args:
-            detect_lang (bool): If True, detect language with FastText
-                               and add xml:lang attributes to elements.
+            detect_lang (bool): If True, detect languages with FastText
+                               and add `xml:lang` attributes to containers.
+                               Defaults to True.
 
         Returns:
             dict or None: Language statistics if detect_lang=True.
+                         Format: {"fra": 1716, "lat": 38, "grc": 7}
+
+        Example:
+            >>> tree.build_body(detect_lang=True)
+            >>> print(tree.lang_stats)
+            {'fra': 1716, 'lat': 38, 'grc': 7}
         """
         text = Text(self.root)
         self.lang_stats = build_body(self.root, text.data, detect_lang=detect_lang)
         return self.lang_stats
 
-    def update_lang_header(self):
+    def finalize_langusage(self):
         """
-        Update the <langUsage> element in the TEI header.
+        Update the `<langUsage>` element in the TEI header.
 
-        Should be called after build_body() and after any CSV overrides
-        to ensure the detected languages are properly recorded.
+        Builds or updates the `<langUsage>` element with language statistics
+        collected during `build_body()`. Each detected language is recorded
+        with its usage count.
+
+        This method should be called:
+            1. After `build_body(detect_lang=True)`
+            2. After any CSV metadata overrides (which may modify the header)
+
+        The resulting `<langUsage>` will contain `<language>` elements
+        sorted by usage count in descending order.
 
         Returns:
-            dict or None: Language statistics that were used.
+            dict or None: The language statistics that were applied,
+                         or None if no statistics were available.
+
+        Example:
+            >>> tree.build_body(detect_lang=True)
+            >>> override_teiheader_from_csv(tree.root, row)  # May modify header
+            >>> tree.finalize_langusage()  # Ensures langUsage is correct
+            {'fra': 1716, 'lat': 38, 'grc': 7}
+
+        TEI Output:
+            <langUsage>
+                <language ident="fra" usage="1716">French</language>
+                <language ident="lat" usage="38">Latin</language>
+                <language ident="grc" usage="7">Ancient Greek</language>
+            </langUsage>
         """
-        if hasattr(self, "lang_stats") and self.lang_stats:
-            update_langusage(self.root, self.lang_stats)
-        return getattr(self, "lang_stats", None)
+        if self.lang_stats:
+            build_langusage(self.root, self.lang_stats)
+        return self.lang_stats
