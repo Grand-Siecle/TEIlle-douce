@@ -32,7 +32,10 @@ from config import (
 # Import modules
 from src import TEI
 from src.teiheader import build_header
-from src.metadata import load_metadata, find_metadata_row, build_metadata_dict, override_teiheader_from_csv
+from src.metadata import (load_metadata, 
+                          find_metadata_row, 
+                          build_metadata_dict, 
+                          override_teiheader_from_csv)
 from src.utils import write_xml
 
 
