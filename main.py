@@ -1,237 +1,89 @@
-from pathlib import Path
-import re
+# -----------------------------------------------------------
+# ALTO2TEI - Main workflow script
+# Converts ALTO XML files to TEI format with SegmOnto taxonomy
+# -----------------------------------------------------------
+"""
+ALTO2TEI main workflow.
+
+This script orchestrates the conversion of ALTO XML files to TEI format.
+Configuration is imported from config.py.
+
+Usage:
+    python3 main.py
+"""
+
 import sys
 from time import perf_counter
 from zipfile import ZipFile
-from collections import defaultdict
 
-import pandas as pd
-from lxml import etree
 from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TimeElapsedColumn
 from rich.console import Console
 
-from src.build import TEI
-from src.teiheader_build import teiheader
-from src.teiheader_metadata.iiif_data import IIIFMapping
+# Import configuration
+from config import (
+    OCR_DIR,
+    OUTPUT_DIR,
+    METADATA_CSV,
+    APP_VERSIONS,
+    IIIF_URI,
+    RESPONSIBILITY,
+)
+
+# Import modules
+from src import TEI
+from src.teiheader import build_header
+from src.metadata import load_metadata, find_metadata_row, build_metadata_dict, override_teiheader_from_csv
+from src.utils import write_xml
+
 
 console = Console()
 
-# Dossiers
-OCR_DIR = Path("OCR")
-OUTPUT_DIR = Path("tei_output")
-OUTPUT_DIR.mkdir(exist_ok=True)
 
-# Métadonnées générales
-APP_VERSIONS = {"KRAKEN_VERSION": "4.3.x",
-                   "YOLO_VERSION": "8.0.x",
-                   "YALTAI_VERSION": "1.0.x"}
+# =============================================================================
+# UTILITY FUNCTIONS
+# =============================================================================
 
-MODELS_VERSIONS = {"KRAKEN_MODEL": {"name": "",
-                                    "source": ""},
-                   "YOLO_MODEL": {"name": "CapricciosaX.pt",
-                                  "source": "https://doi.org/10.5281/zenodo.10602196"}
-                   }
+def build_config():
+    """
+    Build the pipeline configuration dictionary.
 
-METADATA_CSV = Path("metadata_livre.csv")
-
-IIIF_URI = {
-    "scheme": "https",
-    "server": "gallica.bnf.fr",
-    "manifest_prefix": "/iiif/ark:/12148/",
-    "manifest_suffix": "/manifest.json",
-    "image_prefix": "/iiif/ark:/12148",
-}
-
-RESPONSIBILITY = {
-    "text": "Encodage TEI SegmOnto à partir d’ALTO (pipeline custom).",
-    "resp": [
-        {
-            "forename": "Prénom",
-            "surname": "Nom",
-            "ptr": {
-                "type": "orcid",
-                "target": "https://orcid.org/0000-0000-0000-0000",
-            },
-        }
-    ],
-    "publisher": "Ton labo / projet",
-    "authority": "Ton institution",
-    "availability": {"status": "restricted"},
-    "licence": {"target": "https://creativecommons.org/licenses/by/4.0/"},
-}
-
-
-# -------- utilitaires --------
-
-def _dd(d: dict | None = None, base: dict | None = None):
-    """defaultdict(None) + pré-remplissage -> évite tout KeyError sur ['...']."""
-    dd = defaultdict(lambda: None)
-    if base:
-        dd.update(base)
-    if d:
-        dd.update(
-            {k: (None if str(v).strip().lower() == "nan" else v) for k, v in d.items()}
-        )
-    return dd
-
-
-def _val(row, key):
-    if row is None:
-        return None
-    v = row.get(key)
-    if v is None:
-        return None
-    s = str(v).strip()
-    return None if s == "" or s.lower() == "nan" else s
-
-
-def build_config(data_path: Path):
+    Returns:
+        dict: Configuration dictionary for the pipeline.
+    """
     return {
-        "data": {"path": str(data_path)},
+        "data": {"path": str(OCR_DIR)},
         "iiifURI": IIIF_URI,
         "responsibility": RESPONSIBILITY,
         "offline": True,
     }
 
 
-def write_pretty_xml(root: etree._Element, out_path: Path):
+def expand_archives(ocr_dir):
     """
-    Écrit le TEI sur disque.
-    pretty_print=False -> beaucoup plus rapide pour les gros fichiers.
-    """
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    etree.ElementTree(root).write(
-        str(out_path),
-        encoding="utf-8",
-        xml_declaration=True,
-        pretty_print=True,
-    )
+    Extract ZIP archives in the OCR directory.
 
+    Automatically extracts any ZIP files found in the OCR directory
+    into subdirectories with the same name as the archive.
 
-def bdd_prefix(doc_folder_name: str) -> str:
-    m = re.match(r"([A-Za-z]+?\d+)", doc_folder_name)
-    return m.group(1) if m else doc_folder_name
+    Args:
+        ocr_dir (Path): Path to the OCR directory.
 
-
-def find_metadata_row(df: pd.DataFrame, key: str):
-    if df is None or "BDD" not in df.columns:
-        return None
-    m = df[df["BDD"].astype(str).str.startswith(key)]
-    return None if m.empty else m.iloc[0]
-
-
-def override_teiheader_from_csv(root: etree._Element, row):
-    """
-    Injecte les métadonnées issues du CSV dans le <teiHeader>.
-    (Version simple, sans prise en compte explicite des namespaces TEI.)
-    """
-    if row is None:
-        return
-
-    def set_text(xpath, value):
-        if pd.isna(value) or value in (None, "", "nan"):
-            return
-        el = root.find(xpath)
-        if el is not None:
-            el.text = str(value)
-
-    # Champs bibliographiques principaux
-    titre = row.get("Titre_long") or row.get("Titre_abrege")
-    set_text(".//teiHeader/fileDesc/titleStmt/title", titre)
-    set_text(".//teiHeader/fileDesc/sourceDesc/bibl/title", titre)
-
-    # Auteur / imprimeur / libraire / éditeur
-    auteur = row.get("ID_auteur")
-    imprimeur = row.get("ID_imprimeurs")
-    editeur = row.get("ID_Editeur")
-    traducteur = row.get("ID_Traducteurs")
-
-    contrib = ", ".join(
-        str(x) for x in [auteur, traducteur, imprimeur, editeur] if x and not pd.isna(x)
-    )
-    if contrib:
-        el = root.find(".//teiHeader/fileDesc/titleStmt/author")
-        if el is None:
-            parent = root.find(".//teiHeader/fileDesc/titleStmt")
-            if parent is not None:
-                el = etree.SubElement(parent, "author")
-        if el is not None:
-            el.text = contrib
-
-    # Publication
-    set_text(
-        ".//teiHeader/fileDesc/sourceDesc/bibl/pubPlace",
-        row.get("Lieu_publication"),
-    )
-    set_text(
-        ".//teiHeader/fileDesc/sourceDesc/bibl/publisher",
-        editeur or imprimeur,
-    )
-    set_text(
-        ".//teiHeader/fileDesc/sourceDesc/bibl/date",
-        row.get("Date_01") or row.get("Date_02"),
-    )
-
-    # Cote, localisation
-    set_text(
-        ".//teiHeader/fileDesc/sourceDesc/msDesc/msIdentifier/repository",
-        row.get("Localisation"),
-    )
-    set_text(
-        ".//teiHeader/fileDesc/sourceDesc/msDesc/msIdentifier/idno",
-        row.get("Cote"),
-    )
-
-    # Langue
-    set_text(".//teiHeader/profileDesc/langUsage/language", row.get("langues"))
-
-    # Sujet / matière
-    sujets = [row.get("Sujet"), row.get("Matiere")]
-    sujets = [s for s in sujets if s and not pd.isna(s)]
-    if sujets:
-        prof = root.find(".//teiHeader/profileDesc")
-        if prof is not None:
-            text = "; ".join(sujets)
-            keywords = etree.SubElement(prof, "keywords")
-            term = etree.SubElement(keywords, "term")
-            term.text = text
-
-    # ARK et manifest IIIF dans <idno>
-    ark = row.get("ARK")
-    manifest = row.get("manifest_iiif")
-    if ark or manifest:
-        idno_parent = root.find(
-            ".//teiHeader/fileDesc/sourceDesc/msDesc/msIdentifier"
-        )
-        if idno_parent is not None:
-            if ark:
-                id_ark = etree.SubElement(idno_parent, "idno", type="ark")
-                id_ark.text = ark
-            if manifest:
-                id_manifest = etree.SubElement(idno_parent, "idno", type="iiif")
-                id_manifest.text = manifest
-
-
-# ------- ZIP support -------
-
-def expand_archives(ocr_dir: Path) -> list[Path]:
-    """
-    Dézippe chaque *.zip sous OCR/ dans un sous-dossier <stem> si nécessaire.
-    Retourne la liste des dossiers prêts à être traités (y compris ceux déjà extraits).
+    Returns:
+        list: List of directories ready for processing.
     """
     ready_dirs = set()
 
-    # 1) Dézipper ce qui ne l'est pas
-    for z in ocr_dir.glob("*.zip"):
-        target = ocr_dir / z.stem
+    # Extract ZIP files that haven't been extracted yet
+    for zip_path in ocr_dir.glob("*.zip"):
+        target = ocr_dir / zip_path.stem
         if not target.exists():
-            console.print(f"[dim]Extraction : {z.name} → {target.name}/[/dim]")
+            console.print(f"[dim]Extracting: {zip_path.name} -> {target.name}/[/dim]")
             target.mkdir(parents=True, exist_ok=True)
-            with ZipFile(z) as zf:
+            with ZipFile(zip_path) as zf:
                 zf.extractall(target)
         ready_dirs.add(target)
 
-    # 2) Inclure aussi les dossiers non-zippés déjà présents
+    # Include existing directories with XML files
     for d in ocr_dir.iterdir():
         if d.is_dir():
             if any(d.rglob("*.xml")):
@@ -240,241 +92,131 @@ def expand_archives(ocr_dir: Path) -> list[Path]:
     return sorted(ready_dirs)
 
 
-# ------- IIIF mapping (dans le dossier extrait) -------
-
-def pick_mapping_csv(doc_dir: Path, alto_files: list[Path]) -> Path | None:
+def _extract_bdd_prefix(doc_folder_name):
     """
-    Choisit un CSV de mapping IIIF plausible :
-      - nom contenant 'iiif' ou 'mapping'
-      - taille raisonnable
-      - au moins 3 colonnes
-      - la 3e colonne correspond à des noms de fichiers ALTO
+    Extract BDD prefix from document folder name.
+
+    Args:
+        doc_folder_name (str): Document folder name.
+
+    Returns:
+        str: Extracted prefix or original name.
     """
-    csvs = []
-    for p in doc_dir.glob("*.csv"):
-        name = p.name.lower()
-        if not ("iiif" in name or "mapping" in name):
-            continue
-        # éviter d'avaler un monstre de 200 Mo juste pour rien
-        if p.stat().st_size > 5_000_000:
-            continue
-        csvs.append(p)
-
-    if not csvs:
-        return None
-
-    csvs.sort(key=lambda p: (0 if "iiif" in p.name.lower() else 1, p.name.lower()))
-    alto_names = {p.name for p in alto_files}
-
-    for csv_path in csvs:
-        try:
-            df = pd.read_csv(csv_path, header=None, nrows=5000)
-            if df.shape[1] < 3 or df.empty:
-                continue
-            if any(str(x).strip() in alto_names for x in df.iloc[:, 2].astype(str)):
-                return csv_path
-        except Exception:
-            continue
-    return None
+    import re
+    match = re.match(r"([A-Za-z]+?\d+)", doc_folder_name)
+    return match.group(1) if match else doc_folder_name
 
 
-def read_local_iiif_mapping(csv_path: Path) -> dict[int, str]:
-    """
-    Lit un CSV (3 colonnes : URL IIIF, source, nom ALTO) -> {fN:int : url}.
-    """
-    if not csv_path or not csv_path.exists():
-        return {}
-    try:
-        df = pd.read_csv(csv_path, header=None)
-    except Exception:
-        return {}
-
-    mapping = {}
-    for _, row in df.iterrows():
-        try:
-            url = str(row[0]).strip()
-            alto_name = str(row[2]).strip()
-            m = re.search(r"f(\d+)", alto_name)
-            if m:
-                mapping[int(m.group(1))] = url
-        except Exception:
-            continue
-    return mapping
-
-
-def add_surface_facs_from_mapping(root: etree._Element, mapping_page_to_url: dict[int, str]):
-    """
-    Ajoute @facs sur <surface> à partir d'un mapping {folio:int -> url}.
-    NOTE : avec les xml:id en UUID, cette fonction ne trouvera un match
-    que si les surfaces portent encore un identifiant de type 'fN'.
-    À adapter si besoin.
-    """
-    if not mapping_page_to_url:
-        return
-
-    ns_xml = "{http://www.w3.org/XML/1998/namespace}id"
-    for surf in root.findall(".//sourceDoc/surface"):
-        sid = surf.get(ns_xml)
-        if not sid:
-            continue
-        m = re.match(r"f(\d+)$", sid)
-        if not m:
-            continue
-        folio = int(m.group(1))
-        url = mapping_page_to_url.get(folio)
-        if url:
-            surf.set("facs", url)
-
-
-# ... [reste de la configuration] ...
+# =============================================================================
+# MAIN WORKFLOW
+# =============================================================================
 
 def main():
+    """
+    Main workflow for ALTO to TEI conversion.
+
+    Processes all documents in the OCR directory:
+    1. Extracts ZIP archives if present
+    2. Loads metadata from CSV
+    3. For each document:
+       - Builds TEI tree
+       - Builds TEI header with metadata
+       - Builds sourceDoc from ALTO files (parallel processing)
+       - Builds body from extracted text
+       - Writes output TEI XML file
+    """
+    # Verify OCR directory exists
     if not OCR_DIR.exists():
-        console.print(f"[red]Dossier introuvable : {OCR_DIR}[/red]")
+        console.print(f"[red]Directory not found: {OCR_DIR}[/red]")
         sys.exit(1)
 
-    # Extraction auto des zips
+    # Create output directory
+    OUTPUT_DIR.mkdir(exist_ok=True)
+
+    # Extract ZIP archives
     ready_dirs = expand_archives(OCR_DIR)
 
-    # Collecte des volumes
-    docs: list[tuple[str, list[Path], Path]] = []
+    # Collect documents to process
+    docs = []
     for d in ready_dirs:
         xmls = sorted(d.rglob("*.xml"))
         if xmls:
             docs.append((d.name, xmls, d))
 
     if not docs:
-        console.print("[red]Aucun volume ALTO trouvé sous OCR/.[/red]")
+        console.print("[red]No ALTO documents found in OCR/.[/red]")
         sys.exit(1)
 
-    # Métadonnées globales
-    df_meta = None
-    if METADATA_CSV.exists():
-        try:
-            df_meta = pd.read_csv(METADATA_CSV, sep=";")
-        except Exception as e:
-            console.print(f"[yellow]Avertissement : échec de lecture {METADATA_CSV}: {e}[/yellow]")
+    # Load global metadata CSV
+    df_meta = load_metadata(METADATA_CSV)
 
-    config = build_config(OCR_DIR)
-    config["perf"] = {
-        "skip_glyphs": True,
-        "skip_strings": True
-    }
+    # Build pipeline configuration
+    config = build_config()
 
+    # Process documents with progress bar
     with Progress(
-            SpinnerColumn(),
-            TextColumn("[bold blue]{task.description}"),
-            BarColumn(),
-            TextColumn("[green]{task.percentage:>3.0f}%"),
-            TimeElapsedColumn(),
-            console=console,
+        SpinnerColumn(),
+        TextColumn("[bold blue]{task.description}"),
+        BarColumn(),
+        TextColumn("[green]{task.percentage:>3.0f}%"),
+        TimeElapsedColumn(),
+        console=console,
     ) as progress:
 
-        task_docs = progress.add_task("Traitement des documents", total=len(docs))
+        task_docs = progress.add_task("Processing documents", total=len(docs))
 
         for doc_name, filepaths, doc_dir in docs:
             t0 = perf_counter()
-            console.print(f"\n[bold cyan]→ {doc_name}[/bold cyan]")
+            console.print(f"\n[bold cyan]-> {doc_name}[/bold cyan]")
 
-            # TEI tree de base
+            # Initialize TEI tree
             tree = TEI(doc_name, filepaths, doc_dir)
             tree.build_tree()
 
-            # Progress bar par page
+            # Progress bar for pages
             task_pages = progress.add_task(
-                f"{doc_name} : pages", total=len(filepaths), visible=True
+                f"{doc_name}: pages", total=len(filepaths), visible=True
             )
 
-            # Métadonnées CSV pour ce doc
-            row = find_metadata_row(df_meta, bdd_prefix(doc_name)) if df_meta is not None else None
-            authors_field = _val(row, "ID_auteur")
+            # Load metadata for this document
+            row = find_metadata_row(df_meta, _extract_bdd_prefix(doc_name))
+            tree.metadata = build_metadata_dict(row)
 
-            sru_local = {
-                "found": row is not None,
-                "ark": _val(row, "ARK"),
-                "title": _val(row, "Titre_long") or _val(row, "Titre_abrege"),
-                "date": _val(row, "Date_01") or _val(row, "Date_02"),
-                "publisher": _val(row, "ID_Editeur") or _val(row, "ID_imprimeurs"),
-                "place": _val(row, "Lieu_publication"),
-                "language": _val(row, "langues"),
-                "idno": _val(row, "Cote"),
-                "repository": _val(row, "Localisation"),
-                "subject": _val(row, "Sujet") or _val(row, "Matiere"),
-                "authors": [],
-            }
-
-            if authors_field:
-                authors_list = [
-                    {
-                        "xmlid": aid.strip(),
-                        "name": aid.strip(),
-                        "secondary_name": None,
-                        "namelink": None,
-                        "primary_name": None,
-                        "isni": None,
-                    }
-                    for aid in str(authors_field).split("|")
-                    if aid.strip()
-                ]
-                sru_local["authors"] = authors_list
-
-            iiif_local = {
-                "manifest": _val(row, "manifest_iiif"),
-                "ark": _val(row, "ARK"),
-                "Creator": _val(row, "ID_auteur"),
-                "Title": _val(row, "Titre_long") or _val(row, "Titre_abrege"),
-                "Date": _val(row, "Date_01") or _val(row, "Date_02"),
-                "Publisher": _val(row, "ID_Editeur") or _val(row, "ID_imprimeurs"),
-                "Place": _val(row, "Lieu_publication"),
-                "Extent": _val(row, "Format"),
-            }
-
-            metadata = {
-                "sru": _dd(sru_local, base={"found": False}),
-                "iiif": _dd(iiif_local),
-            }
-
-            tree.metadata = metadata
-
-            # Construction du teiHeader
-            tree.root, tree.segmonto_zones, tree.segmonto_lines = teiheader(
+            # Build TEI header
+            tree.root, tree.segmonto_zones, tree.segmonto_lines = build_header(
                 tree.metadata,
                 tree.d,
                 tree.root,
                 len(tree.fp),
                 config,
                 APP_VERSIONS,
-                tree.fp
+                tree.fp,
             )
 
-            # sourceDoc (ALTO → SegmOnto) — parallélisé
-            # ========== Le mapping IIIF sera automatiquement utilisé ==========
+            # Build sourceDoc (parallel processing)
             tree.build_sourcedoc(
                 config,
                 progress=progress,
                 parent_task_pages=task_pages,
             )
 
-            # body
+            # Build body
             tree.build_body()
 
-            # Surcharge du teiHeader avec le CSV local
-            row = find_metadata_row(df_meta, bdd_prefix(doc_name)) if df_meta is not None else None
+            # Override TEI header with CSV metadata
             override_teiheader_from_csv(tree.root, row)
 
-            # Écriture finale
+            # Write output file
             out_path = OUTPUT_DIR / f"{doc_name}.tei.xml"
-            write_pretty_xml(tree.root, out_path)
+            write_xml(tree.root, out_path)
 
             dt = perf_counter() - t0
-            console.print(
-                f"[green]✔[/green] Écrit : {out_path} [dim](en {dt:.2f}s)[/dim]"
-            )
+            console.print(f"[green]OK[/green] Written: {out_path} [dim]({dt:.2f}s)[/dim]")
 
             progress.update(task_pages, visible=False)
             progress.advance(task_docs)
 
-    console.print("\n[bold green]Terminé.[/bold green]")
+    console.print("\n[bold green]Done.[/bold green]")
 
 
 if __name__ == "__main__":
