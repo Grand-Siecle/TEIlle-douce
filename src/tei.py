@@ -18,6 +18,7 @@ from .teiheader import build_header
 from .sourcedoc import build_sourcedoc
 from .body import build_body, Text
 from .metadata import IIIFMapping
+from .lang import update_langusage
 
 
 class TEI:
@@ -109,12 +110,38 @@ class TEI:
             iiif_mapping=self.iiif_mapping,
         )
 
-    def build_body(self):
+    def build_body(self, detect_lang=True):
         """
         Build the <body> element from sourceDoc text.
 
         Extracts text lines from the sourceDoc and assembles them into
-        the TEI body structure.
+        the TEI body structure. Optionally detects language for each
+        element and adds xml:lang attributes.
+
+        Note: Call update_lang_header() after this to update the TEI
+        header's <langUsage> element with the detected languages.
+
+        Args:
+            detect_lang (bool): If True, detect language with FastText
+                               and add xml:lang attributes to elements.
+
+        Returns:
+            dict or None: Language statistics if detect_lang=True.
         """
         text = Text(self.root)
-        build_body(self.root, text.data)
+        self.lang_stats = build_body(self.root, text.data, detect_lang=detect_lang)
+        return self.lang_stats
+
+    def update_lang_header(self):
+        """
+        Update the <langUsage> element in the TEI header.
+
+        Should be called after build_body() and after any CSV overrides
+        to ensure the detected languages are properly recorded.
+
+        Returns:
+            dict or None: Language statistics that were used.
+        """
+        if hasattr(self, "lang_stats") and self.lang_stats:
+            update_langusage(self.root, self.lang_stats)
+        return getattr(self, "lang_stats", None)
