@@ -29,6 +29,17 @@ try:
 except ImportError:
     LANG_FALLBACK = None
 
+# Import heuristics (lazy to avoid circular import)
+_heuristics = None
+
+def _get_heuristics():
+    """Lazy load heuristics module."""
+    global _heuristics
+    if _heuristics is None:
+        from .heuristics import get_heuristics
+        _heuristics = get_heuristics()
+    return _heuristics
+
 # Suppress FastText warnings
 warnings.filterwarnings("ignore", category=UserWarning)
 
@@ -243,6 +254,9 @@ class LanguageDetector:
         """
         Detect language for a single text segment.
 
+        Uses FastText as primary detector, with heuristic rules as fallback
+        for unsupported languages or low confidence detections.
+
         Args:
             text (str): Text to analyze (should be pre-cleaned).
 
@@ -251,6 +265,9 @@ class LanguageDetector:
         """
         if len(text) < self.min_text_length:
             return (self.default_lang, 0.0)
+
+        # Get supported language idents for checking
+        supported_idents = {info["ident"] for info in self.supported_langs.values()}
 
         self._ensure_model()
 
@@ -261,19 +278,37 @@ class LanguageDetector:
 
             lang_code = label.replace("__label__", "")
 
+            # Map FastText code to TEI ident
             if lang_code in self._lang_map:
                 detected = self._lang_map[lang_code]
-            elif lang_code in [info["ident"] for info in self.supported_langs.values()]:
+            elif lang_code in supported_idents:
                 detected = lang_code
             else:
-                # Language not supported - use fallback if defined
-                fallback = LANG_FALLBACK if LANG_FALLBACK else self.default_lang
-                return (fallback, confidence)
+                detected = None  # Unsupported language
 
-            if confidence >= self.confidence_threshold:
+            # Case 1: Supported language with good confidence - return it
+            if detected and confidence >= self.confidence_threshold:
                 return (detected, confidence)
-            else:
+
+            # Case 2: Try heuristics for better detection
+            heuristics = _get_heuristics()
+            heur_lang, heur_score = heuristics.detect(text)
+
+            # If heuristics found a supported language with good score
+            if heur_lang and heur_lang in supported_idents and heur_score >= 2:
+                return (heur_lang, confidence)
+
+            # Case 3: FastText detected supported but low confidence
+            if detected and confidence < self.confidence_threshold:
+                # If heuristics agree or have a signal, use FastText result
+                if heur_lang == detected or heur_score >= 1:
+                    return (detected, confidence)
+                # Otherwise return default
                 return (self.default_lang, confidence)
+
+            # Case 4: Unsupported language - use fallback
+            fallback = LANG_FALLBACK if LANG_FALLBACK else self.default_lang
+            return (fallback, confidence)
 
         except Exception:
             return (self.default_lang, 0.0)

@@ -35,6 +35,7 @@ Configuration (in config.py):
 
 from .detector import LanguageDetector, LangSegment, detect_language, get_detector
 from .header import LangUsageBuilder, build_langusage
+from .heuristics import LanguageHeuristics, get_heuristics
 
 __all__ = [
     # Detection
@@ -42,6 +43,9 @@ __all__ = [
     "LangSegment",
     "detect_language",
     "get_detector",
+    # Heuristics
+    "LanguageHeuristics",
+    "get_heuristics",
     # Header building
     "LangUsageBuilder",
     "build_langusage",
