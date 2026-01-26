@@ -106,7 +106,8 @@ def _extract_bdd_prefix(doc_folder_name):
         str: Extracted prefix or original name.
     """
     import re
-    match = re.match(r"([A-Za-z]+?\d+)", doc_folder_name)
+    from config import BDD_PREFIX_PATTERN
+    match = re.match(BDD_PREFIX_PATTERN, doc_folder_name)
     return match.group(1) if match else doc_folder_name
 
 

@@ -13,6 +13,7 @@ import re
 from collections import namedtuple
 from lxml import etree
 
+from config import SEGMONTO
 from ..constants import NS_ALTO, XML_ID, SEGMONTO_ZONES, SEGMONTO_LINES
 
 
@@ -207,13 +208,13 @@ class FullTree:
         document_lines = [label for label in unique_labels if "Line" in label]
 
         # Add zone categories to taxonomy
-        cat_id = {XML_ID: "SegmOntoZones"}
+        cat_id = {XML_ID: SEGMONTO["zones_category_id"]}
         category = etree.SubElement(self.children["taxonomy"], "category", cat_id)
         for zone in set(SEGMONTO_ZONES).intersection(set(document_zones)):
             self._add_taxonomy_category(category, zone, SEGMONTO_ZONES[zone])
 
         # Add line categories to taxonomy
-        cat_id = {XML_ID: "SegmOntoLines"}
+        cat_id = {XML_ID: SEGMONTO["lines_category_id"]}
         category = etree.SubElement(self.children["taxonomy"], "category", cat_id)
         common_lines = set(SEGMONTO_LINES).intersection(set(document_lines))
         for line in common_lines:

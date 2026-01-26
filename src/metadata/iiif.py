@@ -14,6 +14,13 @@ from typing import Dict, Optional
 
 import pandas as pd
 
+from config import (
+    IIIF_CSV_PATTERNS,
+    IIIF_CSV_MAX_SIZE,
+    IIIF_CSV_SAMPLE_ROWS,
+    IIIF_CSV_MIN_MATCH_RATE,
+)
+
 
 class IIIFMapping:
     """
@@ -127,10 +134,8 @@ class IIIFMapping:
         Returns:
             Path or None: Path to the detected CSV or None if not found.
         """
-        patterns = ["*iiif*.csv", "*mapping*.csv", "*manifest*.csv"]
-
         candidates = []
-        for pattern in patterns:
+        for pattern in IIIF_CSV_PATTERNS:
             candidates.extend(doc_dir.glob(pattern))
 
         if not candidates:
@@ -146,11 +151,11 @@ class IIIFMapping:
         # Validate candidates
         for csv_path in candidates:
             # Skip very large files
-            if csv_path.stat().st_size > 10_000_000:
+            if csv_path.stat().st_size > IIIF_CSV_MAX_SIZE:
                 continue
 
             try:
-                df = pd.read_csv(csv_path, header=None, nrows=100)
+                df = pd.read_csv(csv_path, header=None, nrows=IIIF_CSV_SAMPLE_ROWS)
 
                 if df.shape[1] < 3 or df.empty:
                     continue
@@ -163,8 +168,8 @@ class IIIFMapping:
                     if val in alto_names or val.replace(".xml", "") in alto_names
                 )
 
-                # Require at least 30% match rate
-                if matches > 0 and matches / len(col2_values) > 0.3:
+                # Require minimum match rate
+                if matches > 0 and matches / len(col2_values) > IIIF_CSV_MIN_MATCH_RATE:
                     return csv_path
 
             except Exception:

@@ -14,6 +14,12 @@ from datetime import datetime
 from collections import defaultdict
 from lxml import etree
 
+from config import (
+    SEGMONTO,
+    PLACEHOLDER_INFO_UNAVAILABLE,
+    PLACEHOLDER_NO_METADATA,
+)
+
 
 class DefaultTree:
     """
@@ -59,10 +65,10 @@ class DefaultTree:
         """
         # Determine default text based on metadata availability
         if self.sru and self.sru.get("found"):
-            default_text = "Information not available."
+            default_text = PLACEHOLDER_INFO_UNAVAILABLE
             num_authors = len(self.sru.get("authors", []))
         else:
-            default_text = "Metadata not found in catalogue."
+            default_text = PLACEHOLDER_NO_METADATA
             num_authors = 1
 
         # Build main header structure
@@ -192,40 +198,23 @@ class DefaultTree:
         # <appInfo>
         appInfo = etree.SubElement(encodingDesc, "appInfo")
 
-        # Kraken
-        app_kraken = etree.SubElement(appInfo, "application")
-        app_kraken.attrib["ident"] = "Kraken"
-        app_kraken.attrib["version"] = self.versions["KRAKEN_VERSION"]
-        label = etree.SubElement(app_kraken, "label")
-        label.text = "Kraken"
-        ptr = etree.SubElement(app_kraken, "ptr")
-        ptr.attrib["target"] = "https://github.com/mittagessen/kraken"
-
-        # YOLO
-        app_yolo = etree.SubElement(appInfo, "application")
-        app_yolo.attrib["ident"] = "YOLO"
-        app_yolo.attrib["version"] = self.versions["YOLO_VERSION"]
-        label = etree.SubElement(app_yolo, "label")
-        label.text = "YOLO - Ultralytics"
-        ptr = etree.SubElement(app_yolo, "ptr")
-        ptr.attrib["target"] = "https://github.com/ultralytics/ultralytics"
-
-        # YALTAi
-        app_yaltai = etree.SubElement(appInfo, "application")
-        app_yaltai.attrib["ident"] = "YALTAi"
-        app_yaltai.attrib["version"] = self.versions["YALTAI_VERSION"]
-        label = etree.SubElement(app_yaltai, "label")
-        label.text = "YALTAi - You Actually Look Twice At it"
-        ptr = etree.SubElement(app_yaltai, "ptr")
-        ptr.attrib["target"] = "https://github.com/PonteIneptique/YALTAi"
+        # Build application entries from config
+        for app_key, app_data in self.versions.items():
+            app_el = etree.SubElement(appInfo, "application")
+            app_el.attrib["ident"] = app_data["ident"]
+            app_el.attrib["version"] = app_data["version"]
+            label = etree.SubElement(app_el, "label")
+            label.text = app_data["label"]
+            ptr = etree.SubElement(app_el, "ptr")
+            ptr.attrib["target"] = app_data["url"]
 
         # <classDecl> for SegmOnto taxonomy
         classDecl = etree.SubElement(encodingDesc, "classDecl")
-        taxonomy_id = {"{http://www.w3.org/XML/1998/namespace}id": "SegmOnto"}
+        taxonomy_id = {"{http://www.w3.org/XML/1998/namespace}id": SEGMONTO["id"]}
         self.children["taxonomy"] = etree.SubElement(classDecl, "taxonomy", taxonomy_id)
 
         tax_bibl = etree.SubElement(self.children["taxonomy"], "bibl")
         tax_title = etree.SubElement(tax_bibl, "title")
-        tax_title.text = "SegmOnto"
+        tax_title.text = SEGMONTO["id"]
         tax_ptr = etree.SubElement(tax_bibl, "ptr")
-        tax_ptr.attrib["target"] = "https://github.com/segmonto"
+        tax_ptr.attrib["target"] = SEGMONTO["url"]

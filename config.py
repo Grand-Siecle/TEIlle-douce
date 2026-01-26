@@ -27,14 +27,38 @@ OUTPUT_DIR = Path("tei_output")
 METADATA_CSV = Path("metadata_livre.csv")
 
 # =============================================================================
+# PROCESSING PARAMETERS
+# =============================================================================
+
+# Maximum number of parallel workers for multiprocessing
+# Set to a lower value if you experience memory issues
+MAX_WORKERS = 8
+
+# =============================================================================
 # APPLICATION VERSIONS
 # =============================================================================
 
-# Versions of OCR/HTR applications used to generate ALTO files
+# OCR/HTR applications used to generate ALTO files
+# Each entry contains: version, ident (xml attribute), label, url
 APP_VERSIONS = {
-    "KRAKEN_VERSION": "4.3.x",
-    "YOLO_VERSION": "8.0.x",
-    "YALTAI_VERSION": "1.0.x",
+    "KRAKEN": {
+        "version": "4.3.x",
+        "ident": "Kraken",
+        "label": "Kraken",
+        "url": "https://github.com/mittagessen/kraken",
+    },
+    "YOLO": {
+        "version": "8.0.x",
+        "ident": "YOLO",
+        "label": "YOLO - Ultralytics",
+        "url": "https://github.com/ultralytics/ultralytics",
+    },
+    "YALTAI": {
+        "version": "1.0.x",
+        "ident": "YALTAi",
+        "label": "YALTAi - You Actually Look Twice At it",
+        "url": "https://github.com/PonteIneptique/YALTAi",
+    },
 }
 
 # Model information for OCR/HTR
@@ -48,6 +72,50 @@ MODELS_VERSIONS = {
         "source": "https://doi.org/10.5281/zenodo.10602196",
     },
 }
+
+# =============================================================================
+# SEGMONTO TAXONOMY CONFIGURATION
+# =============================================================================
+
+# SegmOnto taxonomy identifier and URL
+SEGMONTO = {
+    "id": "SegmOnto",
+    "url": "https://github.com/segmonto",
+    "zones_category_id": "SegmOntoZones",
+    "lines_category_id": "SegmOntoLines",
+}
+
+# =============================================================================
+# CSV CONFIGURATION
+# =============================================================================
+
+# Delimiter for metadata CSV files
+CSV_DELIMITER = ";"
+
+# Patterns to auto-detect IIIF mapping CSV files in document directories
+IIIF_CSV_PATTERNS = ["*iiif*.csv", "*mapping*.csv", "*manifest*.csv"]
+
+# Maximum CSV file size to process (in bytes) - skip larger files
+IIIF_CSV_MAX_SIZE = 10_000_000
+
+# Number of CSV rows to sample for validation
+IIIF_CSV_SAMPLE_ROWS = 100
+
+# Minimum match rate for CSV validation (30% = 0.3)
+IIIF_CSV_MIN_MATCH_RATE = 0.3
+
+# Regex pattern to extract BDD prefix from document folder names
+BDD_PREFIX_PATTERN = r"([A-Za-z]+?\d+)"
+
+# =============================================================================
+# PLACEHOLDER TEXTS
+# =============================================================================
+
+# Default placeholder text when metadata exists but field is empty
+PLACEHOLDER_INFO_UNAVAILABLE = "Information not available."
+
+# Default placeholder text when no metadata found at all
+PLACEHOLDER_NO_METADATA = "Metadata not found in catalogue."
 
 # =============================================================================
 # IIIF CONFIGURATION

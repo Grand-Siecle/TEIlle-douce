@@ -15,6 +15,8 @@ from collections import defaultdict
 
 import pandas as pd
 
+from config import CSV_DELIMITER, BDD_PREFIX_PATTERN
+
 
 def load_metadata(csv_path):
     """
@@ -31,7 +33,7 @@ def load_metadata(csv_path):
         return None
 
     try:
-        return pd.read_csv(csv_path, sep=";")
+        return pd.read_csv(csv_path, sep=CSV_DELIMITER)
     except Exception as e:
         print(f"[warn] Failed to read {csv_path}: {e}")
         return None
@@ -72,7 +74,7 @@ def _extract_bdd_prefix(doc_folder_name):
     Returns:
         str: Extracted prefix or original name.
     """
-    match = re.match(r"([A-Za-z]+?\d+)", doc_folder_name)
+    match = re.match(BDD_PREFIX_PATTERN, doc_folder_name)
     return match.group(1) if match else doc_folder_name
 
 

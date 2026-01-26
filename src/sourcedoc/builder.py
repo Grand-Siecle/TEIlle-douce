@@ -14,6 +14,7 @@ from multiprocessing import Pool, cpu_count
 
 from lxml import etree
 
+from config import MAX_WORKERS
 from ..constants import NS_ALTO
 from ..utils.files import Files
 from ..metadata.iiif import IIIFMapping
@@ -192,7 +193,7 @@ def build_sourcedoc(
     ]
 
     # Limit workers to avoid resource exhaustion
-    workers = min(cpu_count(), 8)
+    workers = min(cpu_count(), MAX_WORKERS)
 
     results = {}
 
