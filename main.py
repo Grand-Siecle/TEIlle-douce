@@ -204,11 +204,14 @@ def main():
                 parent_task_pages=task_pages,
             )
 
-            # Build body
-            tree.build_body()
+            # Build body (with language detection)
+            tree.build_body(detect_lang=True)
 
             # Override TEI header with CSV metadata
             override_teiheader_from_csv(tree.root, row)
+
+            # Finalize langUsage with detected languages (after CSV override)
+            tree.finalize_langusage()
 
             # Write output file
             out_path = OUTPUT_DIR / f"{doc_name}.tei.xml"
