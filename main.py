@@ -204,11 +204,20 @@ def main():
                 parent_task_pages=task_pages,
             )
 
-            # Build body
-            tree.build_body()
+            # Build body (with language detection)
+            with console.status("[cyan]Detecting languages...[/cyan]", spinner="dots"):
+                tree.build_body(detect_lang=True)
+
+            # Show detected languages summary
+            if tree.lang_stats:
+                langs = [f"{k}:{v}" for k, v in sorted(tree.lang_stats.items(), key=lambda x: -x[1])[:4]]
+                console.print(f"  [dim]Languages: {', '.join(langs)}[/dim]")
 
             # Override TEI header with CSV metadata
             override_teiheader_from_csv(tree.root, row)
+
+            # Finalize langUsage with detected languages (after CSV override)
+            tree.finalize_langusage()
 
             # Write output file
             out_path = OUTPUT_DIR / f"{doc_name}.tei.xml"
