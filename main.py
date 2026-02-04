@@ -24,6 +24,7 @@ from config import (
     OCR_DIR,
     OUTPUT_DIR,
     METADATA_CSV,
+    METADATA_PERSON_CSV,
     APP_VERSIONS,
     IIIF_URI,
     RESPONSIBILITY,
@@ -32,10 +33,11 @@ from config import (
 # Import modules
 from src import TEI
 from src.teiheader import build_header
-from src.metadata import (load_metadata, 
-                          find_metadata_row, 
-                          build_metadata_dict, 
-                          override_teiheader_from_csv)
+from src.metadata import (load_metadata,
+                          find_metadata_row,
+                          build_metadata_dict,
+                          override_teiheader_from_csv,
+                          load_person_database)
 from src.utils import write_xml
 
 
@@ -153,6 +155,11 @@ def main():
 
     # Load global metadata CSV
     df_meta = load_metadata(METADATA_CSV)
+
+    # Load person metadata database
+    person_db = load_person_database(METADATA_PERSON_CSV)
+    if person_db and len(person_db) > 0:
+        console.print(f"[dim]Loaded {len(person_db)} persons from {METADATA_PERSON_CSV}[/dim]")
 
     # Build pipeline configuration
     config = build_config()

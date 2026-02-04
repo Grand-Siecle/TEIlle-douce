@@ -6,10 +6,10 @@
 Metadata module for ALTO2TEI pipeline.
 
 This module provides classes and functions for loading document metadata
-from CSV files and handling IIIF URL mappings.
+from CSV files, handling IIIF URL mappings, and person metadata.
 
 Usage:
-    from src.metadata import load_metadata, IIIFMapping
+    from src.metadata import load_metadata, IIIFMapping, PersonDatabase
 
     # Load metadata from CSV
     df, row = load_metadata(csv_path, doc_name)
@@ -18,9 +18,23 @@ Usage:
     mapping = IIIFMapping()
     mapping.load_from_csv(csv_path)
     url = mapping.get_url(filename)
+
+    # Use person database
+    person_db = PersonDatabase(person_csv_path)
+    author_data = person_db.enrich_author_data("PERS0001")
 """
 
-from .csv import load_metadata, find_metadata_row, build_metadata_dict, override_teiheader_from_csv
+from .csv_book import load_metadata, find_metadata_row, build_metadata_dict, override_teiheader_from_csv
+from .csv_person import PersonDatabase, load_person_database, get_person_database
 from .iiif import IIIFMapping
 
-__all__ = ["load_metadata", "find_metadata_row", "build_metadata_dict", "override_teiheader_from_csv", "IIIFMapping"]
+__all__ = [
+    "load_metadata",
+    "find_metadata_row",
+    "build_metadata_dict",
+    "override_teiheader_from_csv",
+    "IIIFMapping",
+    "PersonDatabase",
+    "load_person_database",
+    "get_person_database",
+]

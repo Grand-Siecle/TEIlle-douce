@@ -1,12 +1,13 @@
 # -----------------------------------------------------------
-# CSV metadata loading module
-# Loads document metadata from semicolon-delimited CSV files
+# Book metadata loading module (csv_book)
+# Loads document/book metadata from semicolon-delimited CSV files
 # -----------------------------------------------------------
 """
-CSV metadata loading module.
+Book metadata loading module.
 
-This module provides functions to load and parse document metadata from
-CSV files. The expected format is semicolon-delimited with headers.
+This module provides functions to load and parse document/book metadata
+from CSV files (metadata_livre.csv). The expected format is semicolon-delimited
+with headers. It integrates with csv_person for author/contributor enrichment.
 """
 
 import re
@@ -15,7 +16,8 @@ from collections import defaultdict
 
 import pandas as pd
 
-from config import CSV_DELIMITER, BDD_PREFIX_PATTERN
+from config import CSV_DELIMITER, BDD_PREFIX_PATTERN, METADATA_PERSON_CSV
+from .csv_person import load_person_database, get_person_database
 
 
 def load_metadata(csv_path):
@@ -135,17 +137,37 @@ def build_metadata_dict(row):
             "iiif": defaultdict(lambda: None),
         }
 
-    # Extract author information (split on |)
+    # Load person database if not already loaded
+    person_db = get_person_database()
+    if person_db is None:
+        person_db = load_person_database(METADATA_PERSON_CSV)
+
+    # Extract author information (split on |) - enriched with person data
     authors = []
     for aid in _safe_value_list(row, "ID_auteur"):
-        authors.append({
-            "xmlid": aid,
-            "name": aid,
-            "secondary_name": None,
-            "namelink": None,
-            "primary_name": None,
-            "isni": None,
-        })
+        if person_db and aid in person_db:
+            author_data = person_db.enrich_author_data(aid, role="author")
+            authors.append({
+                "xmlid": author_data["xmlid"],
+                "name": author_data["name"],
+                "secondary_name": author_data["forename"],
+                "namelink": author_data["namelink"],
+                "primary_name": author_data["surname"],
+                "isni": author_data["isni"],
+                "ark": author_data["ark"],
+                "birth_date": author_data["birth_date"],
+                "death_date": author_data["death_date"],
+                "role": "author",
+            })
+        else:
+            authors.append({
+                "xmlid": aid,
+                "name": aid,
+                "secondary_name": None,
+                "namelink": None,
+                "primary_name": None,
+                "isni": None,
+            })
 
     # Extract lists for fields that support multiple values
     publishers = _safe_value_list(row, "ID_Editeur") or _safe_value_list(row, "ID_imprimeurs")
@@ -250,22 +272,69 @@ def override_teiheader_from_csv(root, row):
     # Contributors - split on | for each role
     auteurs = _safe_value_list(row, "ID_auteur")
     imprimeurs = _safe_value_list(row, "ID_imprimeurs")
+    libraires = _safe_value_list(row, "ID_libraires")
     editeurs = _safe_value_list(row, "ID_Editeur")
     traducteurs = _safe_value_list(row, "ID_Traducteurs")
 
-    # Combine all contributors for titleStmt/author
-    all_contribs = auteurs + traducteurs + imprimeurs + editeurs
-    if all_contribs:
-        titleStmt = root.find(".//teiHeader/fileDesc/titleStmt")
-        if titleStmt is not None:
-            # Remove existing empty author elements
-            for old_author in titleStmt.findall("author"):
-                if not old_author.text or old_author.text.strip() == "":
-                    titleStmt.remove(old_author)
-            # Add one author element per contributor
-            for contrib in all_contribs:
-                author_el = etree.SubElement(titleStmt, "author")
-                author_el.text = contrib
+    # Load person database for enrichment
+    person_db = get_person_database()
+    if person_db is None:
+        person_db = load_person_database(METADATA_PERSON_CSV)
+
+    def create_persname_element(parent, person_data):
+        """Create a persName element with forename, surname, and identifiers."""
+        persname = etree.SubElement(parent, "persName")
+        if person_data.get("forename"):
+            forename = etree.SubElement(persname, "forename")
+            forename.text = person_data["forename"]
+        if person_data.get("namelink"):
+            namelink = etree.SubElement(persname, "nameLink")
+            namelink.text = person_data["namelink"]
+        if person_data.get("surname"):
+            surname = etree.SubElement(persname, "surname")
+            surname.text = person_data["surname"]
+        # Add ISNI pointer
+        if person_data.get("isni"):
+            ptr = etree.SubElement(persname, "ptr", type="isni")
+            ptr.attrib["target"] = f"https://isni.org/isni/{person_data['isni']}"
+        # Add ARK pointer
+        if person_data.get("ark"):
+            ptr = etree.SubElement(persname, "ptr", type="ark")
+            ptr.attrib["target"] = person_data["ark"]
+        return persname
+
+    def create_author_element(parent, person_id, role):
+        """Create an author/editor element with full person data."""
+        if person_db and person_id in person_db:
+            person_data = person_db.enrich_author_data(person_id, role=role)
+            author_el = etree.SubElement(parent, "author")
+            author_el.attrib["role"] = role
+            author_el.attrib["ref"] = f"#{person_id}"
+            create_persname_element(author_el, person_data)
+        else:
+            author_el = etree.SubElement(parent, "author")
+            author_el.attrib["role"] = role
+            author_el.text = person_id
+        return author_el
+
+    # Add contributors to titleStmt
+    titleStmt = root.find(".//teiHeader/fileDesc/titleStmt")
+    if titleStmt is not None:
+        # Remove existing empty author elements
+        for old_author in titleStmt.findall("author"):
+            if not old_author.text or old_author.text.strip() == "":
+                titleStmt.remove(old_author)
+        # Add one author element per contributor with role
+        for aid in auteurs:
+            create_author_element(titleStmt, aid, "author")
+        for tid in traducteurs:
+            create_author_element(titleStmt, tid, "translator")
+        for iid in imprimeurs:
+            create_author_element(titleStmt, iid, "printer")
+        for lid in libraires:
+            create_author_element(titleStmt, lid, "bookseller")
+        for eid in editeurs:
+            create_author_element(titleStmt, eid, "editor")
 
     # Publication places - support multiple
     lieux = _safe_value_list(row, "Lieu_publication")
@@ -346,3 +415,86 @@ def override_teiheader_from_csv(root, row):
             if manifest:
                 id_manifest = etree.SubElement(idno_parent, "idno", type="iiif")
                 id_manifest.text = manifest
+
+    # Build listPerson in particDesc with all referenced persons
+    all_person_ids = set(auteurs + traducteurs + imprimeurs + libraires + editeurs)
+    if all_person_ids and person_db:
+        profileDesc = root.find(".//teiHeader/profileDesc")
+        if profileDesc is not None:
+            particDesc = etree.SubElement(profileDesc, "particDesc")
+            listPerson = etree.SubElement(particDesc, "listPerson")
+
+            for pid in sorted(all_person_ids):
+                if pid in person_db:
+                    person_data = person_db.enrich_author_data(pid)
+                    person_el = etree.SubElement(listPerson, "person")
+                    person_el.attrib["{http://www.w3.org/XML/1998/namespace}id"] = pid
+
+                    # persName
+                    persname = etree.SubElement(person_el, "persName")
+                    if person_data.get("forename"):
+                        forename = etree.SubElement(persname, "forename")
+                        forename.text = person_data["forename"]
+                    if person_data.get("namelink"):
+                        namelink = etree.SubElement(persname, "nameLink")
+                        namelink.text = person_data["namelink"]
+                    if person_data.get("surname"):
+                        surname = etree.SubElement(persname, "surname")
+                        surname.text = person_data["surname"]
+
+                    # birth
+                    if person_data.get("birth_date"):
+                        birth = etree.SubElement(person_el, "birth")
+                        birth.attrib["when"] = _normalize_date(person_data["birth_date"])
+                        if person_data.get("birth_place"):
+                            placename = etree.SubElement(birth, "placeName")
+                            placename.text = person_data["birth_place"]
+
+                    # death
+                    if person_data.get("death_date"):
+                        death = etree.SubElement(person_el, "death")
+                        death.attrib["when"] = _normalize_date(person_data["death_date"])
+                        if person_data.get("death_place"):
+                            placename = etree.SubElement(death, "placeName")
+                            placename.text = person_data["death_place"]
+
+                    # idno - ISNI
+                    if person_data.get("isni"):
+                        idno_isni = etree.SubElement(person_el, "idno", type="isni")
+                        idno_isni.text = person_data["isni"]
+
+                    # idno - ARK
+                    if person_data.get("ark"):
+                        idno_ark = etree.SubElement(person_el, "idno", type="ark")
+                        idno_ark.text = person_data["ark"]
+
+                    # note
+                    if person_data.get("note"):
+                        note = etree.SubElement(person_el, "note")
+                        note.text = person_data["note"]
+                else:
+                    # Person not in database - create minimal entry
+                    person_el = etree.SubElement(listPerson, "person")
+                    person_el.attrib["{http://www.w3.org/XML/1998/namespace}id"] = pid
+                    persname = etree.SubElement(person_el, "persName")
+                    persname.text = pid
+
+
+def _normalize_date(date_str):
+    """
+    Normalize a date string to ISO format for TEI @when attribute.
+
+    Handles formats like: 1590, 1590/05/22, 15, 159, etc.
+
+    Args:
+        date_str (str): Date string from CSV.
+
+    Returns:
+        str: Normalized date string.
+    """
+    if not date_str:
+        return ""
+    date_str = str(date_str).strip()
+    # Replace / with - for ISO format
+    date_str = date_str.replace("/", "-")
+    return date_str

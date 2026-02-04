@@ -26,6 +26,14 @@ OUTPUT_DIR = Path("tei_output")
 #                   ARK, manifest_iiif, Format
 METADATA_CSV = Path("metadata_livre.csv")
 
+# CSV file containing person metadata (semicolon-delimited)
+# Expected columns: BDD (PERSXXXX), ARK, ISNI, Label_categ, Prenoms, Nom,
+#                   Sexe, RoleName, GenName, Surnoms, Annee_naissance,
+#                   ID_Ville_naissance, Ville_naissance, Annee_mort,
+#                   ID_Ville_mort, Ville_mort, Confession, Formation,
+#                   Professions, Notes
+METADATA_PERSON_CSV = Path("metadata_personne.csv")
+
 # =============================================================================
 # PROCESSING PARAMETERS
 # =============================================================================
