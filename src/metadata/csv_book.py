@@ -303,38 +303,68 @@ def override_teiheader_from_csv(root, row):
             ptr.attrib["target"] = person_data["ark"]
         return persname
 
-    def create_author_element(parent, person_id, role):
-        """Create an author/editor element with full person data."""
+    def create_author_element(parent, person_id):
+        """Create an author element with full person data."""
         if person_db and person_id in person_db:
-            person_data = person_db.enrich_author_data(person_id, role=role)
+            person_data = person_db.enrich_author_data(person_id, role="author")
             author_el = etree.SubElement(parent, "author")
-            author_el.attrib["role"] = role
             author_el.attrib["ref"] = f"#{person_id}"
             create_persname_element(author_el, person_data)
         else:
             author_el = etree.SubElement(parent, "author")
-            author_el.attrib["role"] = role
             author_el.text = person_id
         return author_el
 
-    # Add contributors to titleStmt
+    def create_editor_element(parent, person_id, role):
+        """Create an editor element with role (e.g., translator)."""
+        if person_db and person_id in person_db:
+            person_data = person_db.enrich_author_data(person_id, role=role)
+            editor_el = etree.SubElement(parent, "editor")
+            editor_el.attrib["role"] = role
+            editor_el.attrib["ref"] = f"#{person_id}"
+            create_persname_element(editor_el, person_data)
+        else:
+            editor_el = etree.SubElement(parent, "editor")
+            editor_el.attrib["role"] = role
+            editor_el.text = person_id
+        return editor_el
+
+    def create_bibl_respstmt(parent, person_id, resp_label):
+        """Create a respStmt in bibl with French role label and enriched person data."""
+        respstmt = etree.SubElement(parent, "respStmt")
+        resp_el = etree.SubElement(respstmt, "resp")
+        resp_el.text = resp_label
+        if person_db and person_id in person_db:
+            person_data = person_db.enrich_author_data(person_id)
+            persname = etree.SubElement(respstmt, "persName")
+            persname.attrib["ref"] = f"#{person_id}"
+            if person_data.get("forename"):
+                forename = etree.SubElement(persname, "forename")
+                forename.text = person_data["forename"]
+            if person_data.get("namelink"):
+                namelink = etree.SubElement(persname, "nameLink")
+                namelink.text = person_data["namelink"]
+            if person_data.get("surname"):
+                surname = etree.SubElement(persname, "surname")
+                surname.text = person_data["surname"]
+        else:
+            persname = etree.SubElement(respstmt, "persName")
+            persname.text = person_id
+        return respstmt
+
+    # titleStmt: only authors and translators (intellectual contributors)
     titleStmt = root.find(".//teiHeader/fileDesc/titleStmt")
     if titleStmt is not None:
         # Remove existing empty author elements
         for old_author in titleStmt.findall("author"):
             if not old_author.text or old_author.text.strip() == "":
                 titleStmt.remove(old_author)
-        # Add one author element per contributor with role
+        # Authors
         for aid in auteurs:
-            create_author_element(titleStmt, aid, "author")
+            create_author_element(titleStmt, aid)
+        # Translators as <editor role="translator">
         for tid in traducteurs:
-            create_author_element(titleStmt, tid, "translator")
-        for iid in imprimeurs:
-            create_author_element(titleStmt, iid, "printer")
-        for lid in libraires:
-            create_author_element(titleStmt, lid, "bookseller")
-        for eid in editeurs:
-            create_author_element(titleStmt, eid, "editor")
+            create_editor_element(titleStmt, tid, "translator")
 
     # Publication places - support multiple
     lieux = _safe_value_list(row, "Lieu_publication")
@@ -345,14 +375,19 @@ def override_teiheader_from_csv(root, row):
         "pubPlace"
     )
 
-    # Publishers - combine editeurs and imprimeurs
-    publishers = editeurs if editeurs else imprimeurs
-    set_text_multi(
-        ".//teiHeader/fileDesc/sourceDesc/bibl/publisher",
-        publishers,
-        ".//teiHeader/fileDesc/sourceDesc/bibl",
-        "publisher"
-    )
+    # sourceDesc/bibl: imprimeurs, libraires, éditeurs as <respStmt>
+    bibl = root.find(".//teiHeader/fileDesc/sourceDesc/bibl")
+    if bibl is not None:
+        # Remove placeholder publisher elements
+        for old_pub in bibl.findall("publisher"):
+            bibl.remove(old_pub)
+        # Add respStmt for each production/distribution role
+        for iid in imprimeurs:
+            create_bibl_respstmt(bibl, iid, "Imprimeur")
+        for lid in libraires:
+            create_bibl_respstmt(bibl, lid, "Libraire")
+        for eid in editeurs:
+            create_bibl_respstmt(bibl, eid, "Éditeur")
 
     # Date
     set_text(".//teiHeader/fileDesc/sourceDesc/bibl/date", row.get("Date_01") or row.get("Date_02"))
@@ -426,52 +461,133 @@ def override_teiheader_from_csv(root, row):
 
             for pid in sorted(all_person_ids):
                 if pid in person_db:
-                    person_data = person_db.enrich_author_data(pid)
+                    person = person_db.get(pid)
                     person_el = etree.SubElement(listPerson, "person")
                     person_el.attrib["{http://www.w3.org/XML/1998/namespace}id"] = pid
 
-                    # persName
+                    # sex attribute
+                    if person.get("sex"):
+                        person_el.attrib["sex"] = person["sex"]
+
+                    # persName with all sub-elements
                     persname = etree.SubElement(person_el, "persName")
-                    if person_data.get("forename"):
+                    if person.get("role_name"):
+                        rolename_el = etree.SubElement(persname, "roleName")
+                        rolename_el.text = person["role_name"]
+                    if person.get("forename"):
                         forename = etree.SubElement(persname, "forename")
-                        forename.text = person_data["forename"]
-                    if person_data.get("namelink"):
-                        namelink = etree.SubElement(persname, "nameLink")
-                        namelink.text = person_data["namelink"]
-                    if person_data.get("surname"):
+                        forename.text = person["forename"]
+                    if person.get("gen_name"):
+                        genname_el = etree.SubElement(persname, "genName")
+                        genname_el.text = person["gen_name"]
+                    if person.get("surname"):
                         surname = etree.SubElement(persname, "surname")
-                        surname.text = person_data["surname"]
+                        surname.text = person["surname"]
+                    if person.get("nicknames"):
+                        addname_el = etree.SubElement(persname, "addName", type="nickname")
+                        addname_el.text = person["nicknames"]
 
                     # birth
-                    if person_data.get("birth_date"):
+                    if person.get("birth_date") or person.get("birth_place"):
                         birth = etree.SubElement(person_el, "birth")
-                        birth.attrib["when"] = _normalize_date(person_data["birth_date"])
-                        if person_data.get("birth_place"):
+                        if person.get("birth_date"):
+                            birth.attrib["when"] = _normalize_date(person["birth_date"])
+                        if person.get("birth_place"):
                             placename = etree.SubElement(birth, "placeName")
-                            placename.text = person_data["birth_place"]
+                            placename.text = person["birth_place"]
+                            if person.get("birth_place_id"):
+                                placename.attrib["ref"] = person["birth_place_id"]
 
                     # death
-                    if person_data.get("death_date"):
+                    if person.get("death_date") or person.get("death_place"):
                         death = etree.SubElement(person_el, "death")
-                        death.attrib["when"] = _normalize_date(person_data["death_date"])
-                        if person_data.get("death_place"):
+                        if person.get("death_date"):
+                            death.attrib["when"] = _normalize_date(person["death_date"])
+                        if person.get("death_place"):
                             placename = etree.SubElement(death, "placeName")
-                            placename.text = person_data["death_place"]
+                            placename.text = person["death_place"]
+                            if person.get("death_place_id"):
+                                placename.attrib["ref"] = person["death_place_id"]
+
+                    # faith (Confession)
+                    if person.get("confession"):
+                        faith_el = etree.SubElement(person_el, "faith")
+                        faith_el.text = person["confession"]
+
+                    # education (Formation)
+                    if person.get("formation"):
+                        education_el = etree.SubElement(person_el, "education")
+                        education_el.text = person["formation"]
+
+                    # occupation (Professions)
+                    if person.get("professions"):
+                        occupation_el = etree.SubElement(person_el, "occupation")
+                        occupation_el.text = person["professions"]
 
                     # idno - ISNI
-                    if person_data.get("isni"):
+                    if person.get("isni"):
                         idno_isni = etree.SubElement(person_el, "idno", type="isni")
-                        idno_isni.text = person_data["isni"]
+                        idno_isni.text = person["isni"]
 
                     # idno - ARK
-                    if person_data.get("ark"):
+                    if person.get("ark"):
                         idno_ark = etree.SubElement(person_el, "idno", type="ark")
-                        idno_ark.text = person_data["ark"]
+                        idno_ark.text = person["ark"]
 
-                    # note
-                    if person_data.get("note"):
-                        note = etree.SubElement(person_el, "note")
-                        note.text = person_data["note"]
+                    # portraits
+                    if person.get("portraits"):
+                        note_el = etree.SubElement(person_el, "note", type="portrait")
+                        note_el.text = person["portraits"]
+
+                    # oeuvre
+                    if person.get("oeuvre"):
+                        note_el = etree.SubElement(person_el, "note", type="works")
+                        note_el.text = person["oeuvre"]
+
+                    # milieux / réseaux
+                    if person.get("milieux_reseaux"):
+                        note_el = etree.SubElement(person_el, "note", type="networks")
+                        note_el.text = person["milieux_reseaux"]
+
+                    # contacts artistes
+                    if person.get("contacts_artistes"):
+                        note_el = etree.SubElement(person_el, "note", type="contacts")
+                        note_el.text = person["contacts_artistes"]
+
+                    # fortune critique
+                    if person.get("fortune_critique"):
+                        note_el = etree.SubElement(person_el, "note", type="reception")
+                        note_el.text = person["fortune_critique"]
+
+                    # publications
+                    if person.get("publications"):
+                        note_el = etree.SubElement(person_el, "note", type="publications")
+                        note_el.text = person["publications"]
+
+                    # citations
+                    if person.get("citations"):
+                        note_el = etree.SubElement(person_el, "note", type="citations")
+                        note_el.text = person["citations"]
+
+                    # bibliographie
+                    if person.get("bibliographie"):
+                        note_el = etree.SubElement(person_el, "note", type="bibliography")
+                        note_el.text = person["bibliographie"]
+
+                    # webographie
+                    if person.get("webographie"):
+                        note_el = etree.SubElement(person_el, "note", type="webography")
+                        note_el.text = person["webographie"]
+
+                    # notes
+                    if person.get("note"):
+                        note_el = etree.SubElement(person_el, "note")
+                        note_el.text = person["note"]
+
+                    # commentaires
+                    if person.get("commentaires"):
+                        note_el = etree.SubElement(person_el, "note", type="comments")
+                        note_el.text = person["commentaires"]
                 else:
                     # Person not in database - create minimal entry
                     person_el = etree.SubElement(listPerson, "person")

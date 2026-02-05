@@ -138,7 +138,17 @@ class PersonDatabase:
             "confession": safe_val("Confession"),
             "formation": safe_val("Formation"),
             "professions": safe_val("Professions"),
+            "portraits": safe_val("Portraits"),
+            "oeuvre": safe_val("Oeuvre"),
+            "milieux_reseaux": safe_val("Milieux_reseaux"),
+            "contacts_artistes": safe_val("Contacts_artistes"),
+            "fortune_critique": safe_val("Fortune_critique"),
+            "publications": safe_val("Publications"),
+            "citations": safe_val("Citations"),
+            "bibliographie": safe_val("Bibliographie"),
+            "webographie": safe_val("Webographie"),
             "note": safe_val("Notes"),
+            "commentaires": safe_val("Commentaires"),
         }
 
     def get(self, person_id):
