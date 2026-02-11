@@ -178,6 +178,36 @@ FASTTEXT_MODEL_PATH = None
 # =============================================================================
 
 # Information about who created the TEI encoding (appears in teiHeader)
+# =============================================================================
+# LINGUISTIC ENRICHMENT
+# =============================================================================
+
+# Enable/disable linguistic enrichment (tokenization, POS, lemmatization)
+ENRICHMENT_ENABLED = True
+
+# PyHellen API server URL
+PYHELLEN_URL = "http://localhost:8000"
+
+# Request timeout in seconds (higher for first request / model loading)
+PYHELLEN_TIMEOUT = 120
+
+# Mapping from TEI language ident to PyHellen model name
+PYHELLEN_MODELS = {"fra": "freem", "lat": "lasla", "grc": "grc"}
+
+# TEI container elements to enrich
+ENRICHMENT_CONTAINERS = {"ab", "note", "fw"}
+
+# Minimum text length (chars) to attempt enrichment
+ENRICHMENT_MIN_TEXT_LENGTH = 5
+
+# Placeholder for future integration
+NORMALIZATION_ENABLED = False
+NORMALIZATION_URL = None
+
+# =============================================================================
+# RESPONSIBILITY STATEMENT
+# =============================================================================
+
 RESPONSIBILITY = {
     "text": "TEI SegmOnto encoding from ALTO (custom pipeline).",
     "resp": [

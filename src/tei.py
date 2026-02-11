@@ -19,6 +19,7 @@ from .sourcedoc import build_sourcedoc
 from .body import build_body, Text
 from .metadata import IIIFMapping
 from .lang import build_langusage
+from .enrichment import enrich_body as _enrich_body
 
 
 class TEI:
@@ -150,6 +151,22 @@ class TEI:
         text = Text(self.root)
         self.lang_stats = build_body(self.root, text.data, detect_lang=detect_lang)
         return self.lang_stats
+
+    def enrich_body(self, progress_callback=None):
+        """
+        Apply linguistic enrichment to body containers.
+
+        Tokenizes text, adds POS tags, lemmas, and sentence boundaries
+        using the PyHellen NLP API. Transforms container structure from
+        <lb/>+text to <s>/<w>/<pc>/<lb/>.
+
+        Args:
+            progress_callback: Optional callable(current, total) for progress updates.
+
+        Returns:
+            dict: Enrichment statistics.
+        """
+        return _enrich_body(self.root, progress_callback=progress_callback)
 
     def finalize_langusage(self):
         """

@@ -28,6 +28,7 @@ from config import (
     APP_VERSIONS,
     IIIF_URI,
     RESPONSIBILITY,
+    ENRICHMENT_ENABLED,
 )
 
 # Import modules
@@ -219,6 +220,25 @@ def main():
             if tree.lang_stats:
                 langs = [f"{k}:{v}" for k, v in sorted(tree.lang_stats.items(), key=lambda x: -x[1])[:4]]
                 console.print(f"  [dim]Languages: {', '.join(langs)}[/dim]")
+
+            # Linguistic enrichment
+            if ENRICHMENT_ENABLED:
+                task_enrich = progress.add_task(
+                    f"[cyan]{doc_name}: Annotation linguistique[/cyan]", total=None, visible=True
+                )
+
+                def _enrich_progress(current, total):
+                    progress.update(task_enrich, completed=current, total=total)
+
+                enrich_stats = tree.enrich_body(progress_callback=_enrich_progress)
+                progress.update(task_enrich, visible=False)
+
+                if enrich_stats and enrich_stats.get("containers_enriched", 0) > 0:
+                    console.print(
+                        f"  [dim]Annotation: {enrich_stats['containers_enriched']} containers, "
+                        f"{enrich_stats['tokens_total']} tokens, "
+                        f"{enrich_stats['sentences_total']} sentences[/dim]"
+                    )
 
             # Override TEI header with CSV metadata
             override_teiheader_from_csv(tree.root, row)
