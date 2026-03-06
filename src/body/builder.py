@@ -22,6 +22,27 @@ from ..lang import get_detector
 XML_LANG = f"{{{NS_XML}}}lang"
 
 
+def _append_choice(parent, original, modernized):
+    """
+    Append a <choice><orig>…</orig><reg type="modernized">…</reg></choice>
+    element as a child of *parent*.
+
+    Args:
+        parent: The container element (ab, note, fw, hi).
+        original: Original historical text.
+        modernized: Modernized text.
+
+    Returns:
+        etree.Element: The created <choice> element.
+    """
+    choice = etree.SubElement(parent, "choice")
+    orig = etree.SubElement(choice, "orig")
+    orig.text = original
+    reg = etree.SubElement(choice, "reg", type="modernized")
+    reg.text = modernized
+    return choice
+
+
 def build_body(root, data, detect_lang=True):
     """
     Build the TEI <body> element from extracted line data.
@@ -173,6 +194,44 @@ def _apply_language_detection(containers, detector):
         # into the existing structure without breaking the <lb/> references
         if foreign_segments:
             _insert_foreign_tags(element, full_text, foreign_segments, detector)
+
+
+def apply_modernization(root, modernized_texts):
+    """
+    Post-process the body to insert <choice><orig>/<reg> for modernized lines.
+
+    Finds all <lb> elements in the body, matches them 1:1 with
+    *modernized_texts*, and wraps lines that differ in <choice>.
+
+    Args:
+        root: TEI root element (body must already be built).
+        modernized_texts: List of modernized strings aligned with <lb> elements.
+
+    Returns:
+        int: Number of lines that were modernized.
+    """
+    body = root.find(".//body")
+    if body is None:
+        return 0
+
+    lbs = list(body.iter("lb"))
+    count = 0
+
+    for i, lb in enumerate(lbs):
+        if i >= len(modernized_texts):
+            break
+        original = lb.tail or ""
+        mod = modernized_texts[i]
+        if not mod or mod == original:
+            continue
+        # Clear the tail text from the lb, insert <choice> after it
+        lb.tail = None
+        choice = _append_choice(lb.getparent(), original, mod)
+        # Move <choice> right after <lb/> (append puts it at the end)
+        lb.addnext(choice)
+        count += 1
+
+    return count
 
 
 def _insert_foreign_tags(element, full_text, foreign_segments, detector):

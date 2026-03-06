@@ -16,7 +16,7 @@ from lxml import etree
 from .constants import NS_TEI, XML_ID
 from .teiheader import build_header
 from .sourcedoc import build_sourcedoc
-from .body import build_body, Text
+from .body import build_body, apply_modernization, Text
 from .metadata import IIIFMapping
 from .lang import build_langusage
 from .enrichment import enrich_body as _enrich_body
@@ -142,15 +142,46 @@ class TEI:
         Returns:
             dict or None: Language statistics if detect_lang=True.
                          Format: {"fra": 1716, "lat": 38, "grc": 7}
-
-        Example:
-            >>> tree.build_body(detect_lang=True)
-            >>> print(tree.lang_stats)
-            {'fra': 1716, 'lat': 38, 'grc': 7}
         """
         text = Text(self.root)
         self.lang_stats = build_body(self.root, text.data, detect_lang=detect_lang)
         return self.lang_stats
+
+    def modernize_body(self, progress_callback=None):
+        """
+        Modernize text in the body via the VieuxParler API.
+
+        Collects all line texts from <lb> elements, sends them to the
+        modernization API, and wraps differing lines in <choice>.
+
+        Must be called after build_body().
+
+        Args:
+            progress_callback: Optional callable(completed, total) for progress.
+
+        Returns:
+            int: Number of lines modernized, or 0 on failure.
+        """
+        from .modernize import modernize_texts
+
+        body = self.root.find(".//body")
+        if body is None:
+            return 0
+
+        lbs = list(body.iter("lb"))
+        original_texts = [lb.tail or "" for lb in lbs]
+
+        try:
+            modernized = modernize_texts(
+                original_texts, lang="fra", progress_callback=progress_callback
+            )
+        except Exception:
+            return 0
+
+        if modernized is None:
+            return 0
+
+        return apply_modernization(self.root, modernized)
 
     def enrich_body(self, progress_callback=None):
         """
