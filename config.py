@@ -200,9 +200,24 @@ ENRICHMENT_CONTAINERS = {"ab", "note", "fw"}
 # Minimum text length (chars) to attempt enrichment
 ENRICHMENT_MIN_TEXT_LENGTH = 5
 
-# Placeholder for future integration
-NORMALIZATION_ENABLED = False
-NORMALIZATION_URL = None
+# =============================================================================
+# TEXT MODERNIZATION (API)
+# =============================================================================
+
+# Enable/disable text modernization (old French -> modern French)
+MODERNIZE_ENABLED = True
+
+# Mapping from TEI language ident to modernization API base URL
+# Add entries for other languages as APIs become available
+MODERNIZE_API = {
+    "fra": "http://localhost:8010",
+}
+
+# Number of lines per batch request to the modernization API
+MODERNIZE_BATCH_SIZE = 64
+
+# Timeout in seconds for modernization API calls
+MODERNIZE_TIMEOUT = 300
 
 # =============================================================================
 # RESPONSIBILITY STATEMENT

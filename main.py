@@ -29,6 +29,7 @@ from config import (
     IIIF_URI,
     RESPONSIBILITY,
     ENRICHMENT_ENABLED,
+    MODERNIZE_ENABLED,
 )
 
 # Import modules
@@ -162,6 +163,26 @@ def main():
     if person_db and len(person_db) > 0:
         console.print(f"[dim]Loaded {len(person_db)} persons from {METADATA_PERSON_CSV}[/dim]")
 
+    # Check modernization API availability
+    do_modernize = False
+    if MODERNIZE_ENABLED:
+        from src.modernize import check_api as check_modernize_api
+        if check_modernize_api():
+            do_modernize = True
+            console.print("[green]Modernization API (VieuxParler) available.[/green]")
+        else:
+            console.print("[yellow]Warning: Modernization API unreachable — continuing without modernization.[/yellow]")
+
+    # Check linguistic enrichment API availability
+    do_enrich = False
+    if ENRICHMENT_ENABLED:
+        from src.enrichment.client import check_server as check_enrichment_api
+        if check_enrichment_api():
+            do_enrich = True
+            console.print("[green]Enrichment API (PyHellen) available.[/green]")
+        else:
+            console.print("[yellow]Warning: Enrichment API unreachable — continuing without linguistic annotation.[/yellow]")
+
     # Build pipeline configuration
     config = build_config()
 
@@ -212,17 +233,34 @@ def main():
                 parent_task_pages=task_pages,
             )
 
-            # Build body (with language detection)
-            with console.status("[cyan]Detecting languages...[/cyan]", spinner="dots"):
-                tree.build_body(detect_lang=True)
+            # Step 1: Build body + language detection
+            task_lang = progress.add_task(
+                f"[cyan]{doc_name}: Detection des langues[/cyan]", total=None, visible=True
+            )
+            tree.build_body(detect_lang=True)
+            progress.update(task_lang, visible=False)
 
-            # Show detected languages summary
             if tree.lang_stats:
                 langs = [f"{k}:{v}" for k, v in sorted(tree.lang_stats.items(), key=lambda x: -x[1])[:4]]
                 console.print(f"  [dim]Languages: {', '.join(langs)}[/dim]")
 
-            # Linguistic enrichment
-            if ENRICHMENT_ENABLED:
+            # Step 2: Text modernization
+            if do_modernize:
+                task_mod = progress.add_task(
+                    f"[cyan]{doc_name}: Modernisation du texte[/cyan]", total=None, visible=True
+                )
+
+                def _mod_progress(current, total):
+                    progress.update(task_mod, completed=current, total=total)
+
+                mod_count = tree.modernize_body(progress_callback=_mod_progress)
+                progress.update(task_mod, visible=False)
+
+                if mod_count > 0:
+                    console.print(f"  [dim]Modernisation: {mod_count} lines[/dim]")
+
+            # Step 3: Linguistic enrichment
+            if do_enrich:
                 task_enrich = progress.add_task(
                     f"[cyan]{doc_name}: Annotation linguistique[/cyan]", total=None, visible=True
                 )
