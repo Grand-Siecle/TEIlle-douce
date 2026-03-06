@@ -28,6 +28,7 @@ from config import (
     APP_VERSIONS,
     IIIF_URI,
     RESPONSIBILITY,
+    MODERNIZE_ENABLED,
 )
 
 # Import modules
@@ -38,6 +39,7 @@ from src.metadata import (load_metadata,
                           build_metadata_dict,
                           override_teiheader_from_csv,
                           load_person_database)
+from src.modernize import check_api
 from src.utils import write_xml
 
 
@@ -161,6 +163,15 @@ def main():
     if person_db and len(person_db) > 0:
         console.print(f"[dim]Loaded {len(person_db)} persons from {METADATA_PERSON_CSV}[/dim]")
 
+    # Check modernization API availability
+    do_modernize = False
+    if MODERNIZE_ENABLED:
+        if check_api():
+            do_modernize = True
+            console.print("[dim]Modernization API: connected[/dim]")
+        else:
+            console.print("[yellow]Modernization API: unreachable, skipping modernization[/yellow]")
+
     # Build pipeline configuration
     config = build_config()
 
@@ -211,9 +222,13 @@ def main():
                 parent_task_pages=task_pages,
             )
 
-            # Build body (with language detection)
-            with console.status("[cyan]Detecting languages...[/cyan]", spinner="dots"):
-                tree.build_body(detect_lang=True)
+            # Build body (with language detection and optional modernization)
+            status_msg = "[cyan]Detecting languages"
+            if do_modernize:
+                status_msg += " + modernizing text"
+            status_msg += "...[/cyan]"
+            with console.status(status_msg, spinner="dots"):
+                tree.build_body(detect_lang=True, modernize=do_modernize)
 
             # Show detected languages summary
             if tree.lang_stats:

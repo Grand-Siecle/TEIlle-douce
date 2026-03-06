@@ -19,6 +19,7 @@ from .sourcedoc import build_sourcedoc
 from .body import build_body, Text
 from .metadata import IIIFMapping
 from .lang import build_langusage
+from .modernize import modernize_texts, check_api
 
 
 class TEI:
@@ -117,13 +118,16 @@ class TEI:
             iiif_mapping=self.iiif_mapping,
         )
 
-    def build_body(self, detect_lang=True):
+    def build_body(self, detect_lang=True, modernize=False):
         """
         Build the `<body>` element from sourceDoc text.
 
         Extracts text lines from the sourceDoc and assembles them into
         the TEI body structure with appropriate elements (`<ab>`, `<note>`,
         `<fw>`, `<lb/>`, etc.).
+
+        When `modernize=True`, calls the modernization API to get modern
+        spelling for each line, wrapping them in `<choice><orig>/<reg>`.
 
         When `detect_lang=True`, uses FastText to detect the language of
         each text container and adds `xml:lang` attributes. Language
@@ -137,18 +141,26 @@ class TEI:
             detect_lang (bool): If True, detect languages with FastText
                                and add `xml:lang` attributes to containers.
                                Defaults to True.
+            modernize (bool): If True, call the modernization API to
+                             generate `<choice><orig>/<reg>` pairs.
+                             Defaults to False.
 
         Returns:
             dict or None: Language statistics if detect_lang=True.
                          Format: {"fra": 1716, "lat": 38, "grc": 7}
-
-        Example:
-            >>> tree.build_body(detect_lang=True)
-            >>> print(tree.lang_stats)
-            {'fra': 1716, 'lat': 38, 'grc': 7}
         """
         text = Text(self.root)
-        self.lang_stats = build_body(self.root, text.data, detect_lang=detect_lang)
+
+        # Modernize texts via API if requested
+        modernized = None
+        if modernize:
+            original_texts = [line.text for line in text.data]
+            if original_texts:
+                modernized = modernize_texts(original_texts)
+
+        self.lang_stats = build_body(
+            self.root, text.data, detect_lang=detect_lang, modernized=modernized,
+        )
         return self.lang_stats
 
     def finalize_langusage(self):

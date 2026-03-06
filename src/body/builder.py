@@ -22,7 +22,23 @@ from ..lang import get_detector
 XML_LANG = f"{{{NS_XML}}}lang"
 
 
-def build_body(root, data, detect_lang=True):
+def _append_choice(parent, original, modernized):
+    """
+    Append a <choice><orig>...</orig><reg>...</reg></choice> to parent.
+
+    Args:
+        parent: The container element (fw, note, ab, hi).
+        original (str): Original text.
+        modernized (str): Modernized text.
+    """
+    choice = etree.SubElement(parent, "choice")
+    orig = etree.SubElement(choice, "orig")
+    orig.text = original
+    reg = etree.SubElement(choice, "reg", type="modernized")
+    reg.text = modernized
+
+
+def build_body(root, data, detect_lang=True, modernized=None):
     """
     Build the TEI <body> element from extracted line data.
 
@@ -34,6 +50,10 @@ def build_body(root, data, detect_lang=True):
     - <hi> for emphasized lines (drop capitals, headings)
     - <lb/> for line breaks
 
+    When modernized texts are provided, each line is wrapped in
+    <choice><orig>original</orig><reg type="modernized">modern</reg></choice>
+    instead of plain text.
+
     When detect_lang=True, detects language at the container level
     and adds xml:lang attributes. For mixed-language containers,
     uses <foreign> tags for non-primary language segments.
@@ -42,6 +62,7 @@ def build_body(root, data, detect_lang=True):
         root (etree.Element): TEI root element to append body to.
         data (list): List of Line namedtuples from Text class.
         detect_lang (bool): Whether to detect and add xml:lang attributes.
+        modernized (list or None): List of modernized texts, same length as data.
 
     Returns:
         dict or None: Language statistics if detect_lang=True, else None.
@@ -59,13 +80,19 @@ def build_body(root, data, detect_lang=True):
     # Track containers for language detection
     containers = []  # list of (element, list of line texts)
 
-    for line in data:
+    for line_idx, line in enumerate(data):
         # Prepare zone attributes (without language for now)
         zone_atts = {"corresp": f"#{line.zone_id}", "type": line.zone_type}
 
         # Create <lb/> with reference to line's xml:id
         lb = etree.Element("lb", corresp=f"#{line.id}")
-        lb.tail = f"{line.text}"
+
+        # Check if we have a modernized version for this line
+        mod_text = modernized[line_idx] if modernized else None
+        has_mod = mod_text is not None and mod_text != line.text
+
+        if not has_mod:
+            lb.tail = f"{line.text}"
 
         # Add page break at first line of each page
         if int(line.n) == 1:
@@ -85,6 +112,8 @@ def build_body(root, data, detect_lang=True):
             fw = etree.Element("fw", zone_atts)
             last_element.addnext(fw)
             fw.append(lb)
+            if has_mod:
+                _append_choice(fw, line.text, mod_text)
             # Track for language detection
             if detector:
                 containers.append((fw, [line.text]))
@@ -95,10 +124,14 @@ def build_body(root, data, detect_lang=True):
                 note = etree.Element("note", zone_atts)
                 last_element.addnext(note)
                 note.append(lb)
+                if has_mod:
+                    _append_choice(note, line.text, mod_text)
                 if detector:
                     containers.append((note, [line.text]))
             else:
                 last_element.append(lb)
+                if has_mod:
+                    _append_choice(last_element, line.text, mod_text)
                 # Add text to existing container
                 if detector and containers and containers[-1][0] == last_element:
                     containers[-1][1].append(line.text)
@@ -128,12 +161,18 @@ def build_body(root, data, detect_lang=True):
                     hi = etree.Element("hi", rend=line.line_type)
                     last_element.append(hi)
                     hi.append(lb)
+                    if has_mod:
+                        _append_choice(hi, line.text, mod_text)
                 elif ab_children[-1].tag == "hi":
                     ab_children[-1].append(lb)
+                    if has_mod:
+                        _append_choice(ab_children[-1], line.text, mod_text)
 
             # Regular lines
             elif line.line_type and line.line_type.startswith("Default"):
                 last_element.append(lb)
+                if has_mod:
+                    _append_choice(last_element, line.text, mod_text)
 
     # Now apply language detection to containers
     if detector:
