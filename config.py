@@ -174,6 +174,25 @@ LANG_FALLBACK = "fra"
 FASTTEXT_MODEL_PATH = None
 
 # =============================================================================
+# TEXT MODERNIZATION (API)
+# =============================================================================
+
+# Enable/disable text modernization via external API
+MODERNIZE_ENABLED = True
+
+# Modernization API endpoints per language
+# Key: TEI language ident (e.g., "fra"), Value: API base URL
+MODERNIZE_API = {
+    "fra": "http://localhost:8010",
+}
+
+# Batch size for API calls (number of lines per request)
+MODERNIZE_BATCH_SIZE = 64
+
+# Timeout for batch API calls (seconds)
+MODERNIZE_TIMEOUT = 300
+
+# =============================================================================
 # RESPONSIBILITY STATEMENT
 # =============================================================================
 
