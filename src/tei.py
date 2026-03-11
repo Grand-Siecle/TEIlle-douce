@@ -164,29 +164,34 @@ class TEI:
         lbs = list(body.iter("lb"))
         return [(lb.get("corresp"), lb.tail or "") for lb in lbs]
 
-    def modernize_body(self, progress_callback=None):
+    def modernize_body(self, line_data=None, enriched=False, progress_callback=None):
         """
         Modernize text in the body via the VieuxParler API.
 
-        Collects all line texts from <lb> elements, sends them to the
-        modernization API, and wraps differing lines in <choice>.
-
-        Must be called after build_body().
+        When enriched=False (default), wraps <lb> tails in <choice>.
+        When enriched=True, wraps <w>/<pc> groups per line in <choice><orig>/<reg>.
 
         Args:
-            progress_callback: Optional callable(completed, total) for progress.
+            line_data: Pre-extracted [(corresp, text)] from extract_line_data().
+                       Required when enriched=True (lb tails no longer exist).
+                       If None and enriched=False, extracts from current DOM.
+            enriched: Whether enrich_body() has already been called.
+            progress_callback: Optional callable(completed, total).
 
         Returns:
             int: Number of lines modernized, or 0 on failure.
         """
         from .modernize import modernize_texts
 
-        body = self.root.find(".//body")
-        if body is None:
-            return 0
+        # Get line texts
+        if line_data is None:
+            body = self.root.find(".//body")
+            if body is None:
+                return 0
+            lbs = list(body.iter("lb"))
+            line_data = [(lb.get("corresp"), lb.tail or "") for lb in lbs]
 
-        lbs = list(body.iter("lb"))
-        original_texts = [lb.tail or "" for lb in lbs]
+        original_texts = [text for _, text in line_data]
 
         try:
             modernized = modernize_texts(
@@ -198,7 +203,15 @@ class TEI:
         if modernized is None:
             return 0
 
-        return apply_modernization(self.root, modernized)
+        if enriched:
+            # Build corresp -> modernized mapping for lines that changed
+            corresp_to_mod = {}
+            for (corresp, orig), mod in zip(line_data, modernized):
+                if mod and mod != orig and corresp:
+                    corresp_to_mod[corresp] = mod
+            return apply_modernization_enriched(self.root, corresp_to_mod)
+        else:
+            return apply_modernization(self.root, modernized)
 
     def enrich_body(self, progress_callback=None):
         """
