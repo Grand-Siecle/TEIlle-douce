@@ -244,22 +244,12 @@ def main():
                 langs = [f"{k}:{v}" for k, v in sorted(tree.lang_stats.items(), key=lambda x: -x[1])[:4]]
                 console.print(f"  [dim]Languages: {', '.join(langs)}[/dim]")
 
-            # Step 2: Text modernization
+            # Step 2: Extract line data for modernization (before enrichment modifies DOM)
+            line_data = None
             if do_modernize:
-                task_mod = progress.add_task(
-                    f"[cyan]{doc_name}: Modernisation du texte[/cyan]", total=None, visible=True
-                )
+                line_data = tree.extract_line_data()
 
-                def _mod_progress(current, total):
-                    progress.update(task_mod, completed=current, total=total)
-
-                mod_count = tree.modernize_body(progress_callback=_mod_progress)
-                progress.update(task_mod, visible=False)
-
-                if mod_count > 0:
-                    console.print(f"  [dim]Modernisation: {mod_count} lines[/dim]")
-
-            # Step 3: Linguistic enrichment
+            # Step 3: Linguistic enrichment (must run before modernization is applied)
             if do_enrich:
                 task_enrich = progress.add_task(
                     f"[cyan]{doc_name}: Annotation linguistique[/cyan]", total=None, visible=True
@@ -277,6 +267,25 @@ def main():
                         f"{enrich_stats['tokens_total']} tokens, "
                         f"{enrich_stats['sentences_total']} sentences[/dim]"
                     )
+
+            # Step 4: Text modernization (applied after enrichment)
+            if do_modernize:
+                task_mod = progress.add_task(
+                    f"[cyan]{doc_name}: Modernisation du texte[/cyan]", total=None, visible=True
+                )
+
+                def _mod_progress(current, total):
+                    progress.update(task_mod, completed=current, total=total)
+
+                mod_count = tree.modernize_body(
+                    line_data=line_data,
+                    enriched=do_enrich,
+                    progress_callback=_mod_progress,
+                )
+                progress.update(task_mod, visible=False)
+
+                if mod_count > 0:
+                    console.print(f"  [dim]Modernisation: {mod_count} lines[/dim]")
 
             # Override TEI header with CSV metadata
             override_teiheader_from_csv(tree.root, row)
