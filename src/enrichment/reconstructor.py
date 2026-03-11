@@ -8,6 +8,8 @@ Rebuilds TEI container elements with <w>, <pc>, <s>, and <lb/> elements
 based on aligned and segmented NLP tokens.
 """
 
+import uuid
+
 from lxml import etree
 
 from ..constants import NS_XML, XML_ID
@@ -141,37 +143,68 @@ def _create_pc(parent, at):
 
 def _create_cross_line_w(parent, at, inserted_lbs):
     """
-    Create a <w> element for a word split across lines.
+    Create fragmented <w> elements for a word split across lines.
 
-    Structure:
-        <w lemma="..." pos="...">part1<lb corresp="#..."/>part2</w>
+    Instead of a single <w> with embedded <lb/>, produces:
+        <w xml:id="w_X1" next="#w_X2" part="I" lemma="..." pos="...">part1</w>
+        <lb corresp="#..."/>
+        <w xml:id="w_X2" prev="#w_X1" part="F" lemma="..." pos="...">part2</w>
     """
-    w = etree.SubElement(parent, "w")
 
+    parts = at.original_parts or [at.token.form]
+    lb_elems = at.lb_elements or []
+
+    if len(parts) < 2:
+        # Fallback: not actually cross-line
+        _create_w(parent, at)
+        return
+
+    # Generate unique IDs for linking
+    base_id = uuid.uuid4().hex[:12]
+    w_ids = [f"w_{base_id}_{i}" for i in range(len(parts))]
+
+    # Shared attributes (applied to all fragments)
+    shared_attrs = {}
     if at.token.lemma:
-        w.set("lemma", at.token.lemma)
+        shared_attrs["lemma"] = at.token.lemma
     if at.token.pos:
-        w.set("pos", at.token.pos)
+        shared_attrs["pos"] = at.token.pos
     if at.token.morph:
-        w.set("msd", at.token.morph)
-    if at.token.treated and at.token.treated != at.token.form:
-        w.set("norm", at.token.treated)
+        shared_attrs["msd"] = at.token.morph
 
-    # First part as w.text
-    if at.original_parts:
-        w.text = at.original_parts[0]
+    for i, part_text in enumerate(parts):
+        w = etree.SubElement(parent, "w")
+        w.text = part_text
+        w.set(XML_ID, w_ids[i])
 
-    # Insert <lb/> elements between parts
-    for i, lb_elem in enumerate(at.lb_elements):
-        lb = etree.SubElement(w, "lb")
-        # Get corresp from the original lb element
-        if lb_elem is not None:
-            corresp = lb_elem.get("corresp")
-            if corresp:
-                lb.set("corresp", corresp)
-            inserted_lbs.add(id(lb_elem))
+        # Set part attribute: I (initial), M (medial), F (final)
+        if i == 0:
+            w.set("part", "I")
+        elif i == len(parts) - 1:
+            w.set("part", "F")
+        else:
+            w.set("part", "M")
 
-        # Remaining part as lb.tail
-        part_idx = i + 1
-        if part_idx < len(at.original_parts):
-            lb.tail = at.original_parts[part_idx]
+        # Set next/prev linking
+        if i < len(parts) - 1:
+            w.set("next", f"#{w_ids[i + 1]}")
+        if i > 0:
+            w.set("prev", f"#{w_ids[i - 1]}")
+
+        # Copy shared attributes
+        for k, v in shared_attrs.items():
+            w.set(k, v)
+
+        # @norm only on initial fragment (represents the full word)
+        if i == 0 and at.token.treated and at.token.treated != at.token.form:
+            w.set("norm", at.token.treated)
+
+        # Insert <lb/> between parts (after each part except the last)
+        if i < len(lb_elems):
+            lb = etree.SubElement(parent, "lb")
+            lb_orig = lb_elems[i]
+            if lb_orig is not None:
+                corresp = lb_orig.get("corresp")
+                if corresp:
+                    lb.set("corresp", corresp)
+                inserted_lbs.add(id(lb_orig))
