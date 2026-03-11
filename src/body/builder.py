@@ -13,10 +13,14 @@ Enhanced with FastText language detection at the paragraph/container level
 with support for mixed-language detection using <foreign> tags.
 """
 
+import logging
+
 from lxml import etree
 
 from ..constants import NS_XML
 from ..lang import get_detector
+
+logger = logging.getLogger(__name__)
 
 # xml:lang attribute key with namespace
 XML_LANG = f"{{{NS_XML}}}lang"
@@ -308,6 +312,8 @@ def _wrap_line_groups(parent, corresp_to_mod):
         groups.append((current_lb, current_elements))
 
     # Wrap groups in reverse order to preserve tree indices
+    from config import DEBUG
+
     count = 0
     for lb, elements in reversed(groups):
         corresp = lb.get("corresp")
@@ -315,6 +321,19 @@ def _wrap_line_groups(parent, corresp_to_mod):
             continue
 
         mod_text = corresp_to_mod[corresp]
+
+        # Reconstruct original line text from <w>/<pc> for logging
+        orig_parts = [
+            e.text for e in elements
+            if e.tag in ("w", "pc") and e.text
+        ]
+        orig_text = " ".join(orig_parts)
+
+        if DEBUG:
+            logger.debug(
+                "Wrapping line %s: orig=%r → reg=%r",
+                corresp, orig_text[:80], mod_text[:80],
+            )
 
         choice = etree.Element("choice")
         orig = etree.SubElement(choice, "orig")

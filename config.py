@@ -6,6 +6,13 @@
 from pathlib import Path
 
 # =============================================================================
+# DEBUG
+# =============================================================================
+
+# Enable verbose logging for modernization, enrichment, etc.
+DEBUG = False
+
+# =============================================================================
 # DIRECTORIES
 # =============================================================================
 
@@ -210,7 +217,7 @@ MODERNIZE_ENABLED = True
 # Mapping from TEI language ident to modernization API base URL
 # Add entries for other languages as APIs become available
 MODERNIZE_API = {
-    "fra": "http://localhost:8010",
+    "fra": "http://localhost:8011",
 }
 
 # Number of lines per batch request to the modernization API

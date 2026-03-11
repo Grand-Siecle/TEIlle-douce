@@ -12,6 +12,7 @@ Usage:
     python3 main.py
 """
 
+import logging
 import sys
 from time import perf_counter
 from zipfile import ZipFile
@@ -30,7 +31,15 @@ from config import (
     RESPONSIBILITY,
     ENRICHMENT_ENABLED,
     MODERNIZE_ENABLED,
+    DEBUG,
 )
+
+# Configure logging
+if DEBUG:
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format="%(name)s [%(levelname)s] %(message)s",
+    )
 
 # Import modules
 from src import TEI
