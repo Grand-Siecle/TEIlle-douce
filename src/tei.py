@@ -16,7 +16,7 @@ from lxml import etree
 from .constants import NS_TEI, XML_ID
 from .teiheader import build_header
 from .sourcedoc import build_sourcedoc
-from .body import build_body, apply_modernization, Text
+from .body import build_body, apply_modernization, apply_modernization_enriched, Text
 from .metadata import IIIFMapping
 from .lang import build_langusage
 from .enrichment import enrich_body as _enrich_body
@@ -146,6 +146,23 @@ class TEI:
         text = Text(self.root)
         self.lang_stats = build_body(self.root, text.data, detect_lang=detect_lang)
         return self.lang_stats
+
+    def extract_line_data(self):
+        """
+        Extract line texts and corresp values from <lb> elements.
+
+        Must be called after build_body() and before enrich_body(),
+        because enrichment replaces <lb> tails with <w>/<pc> elements.
+
+        Returns:
+            list[tuple[str|None, str]]: List of (corresp, text) tuples,
+                one per <lb> element in document order.
+        """
+        body = self.root.find(".//body")
+        if body is None:
+            return []
+        lbs = list(body.iter("lb"))
+        return [(lb.get("corresp"), lb.tail or "") for lb in lbs]
 
     def modernize_body(self, progress_callback=None):
         """
