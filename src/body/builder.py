@@ -14,6 +14,7 @@ with support for mixed-language detection using <foreign> tags.
 """
 
 import logging
+from dataclasses import dataclass, field
 
 from lxml import etree
 
@@ -24,6 +25,133 @@ logger = logging.getLogger(__name__)
 
 # xml:lang attribute key with namespace
 XML_LANG = f"{{{NS_XML}}}lang"
+
+
+@dataclass
+class _SentenceSegment:
+    """A portion of a sentence that falls on one line."""
+    s_elem: object          # original <s> element
+    s_xml_id: str           # original xml:id
+    tokens: list = field(default_factory=list)  # <w>, <pc>, <hi> elements
+    is_full: bool = True    # True if entire <s> is on this line
+
+
+@dataclass
+class _LineGroup:
+    """All content belonging to one line (delimited by <lb/>)."""
+    lb_corresp: str | None
+    lb_element: object      # original <lb/> element
+    segments: list = field(default_factory=list)  # list of _SentenceSegment
+
+
+def _parse_line_groups(container):
+    """
+    Parse an enriched container into line groups.
+
+    Walks <s> children of the container. Inside each <s>, groups
+    tokens by <lb/> boundaries into LineGroup objects.
+
+    Args:
+        container: An enriched lxml Element (<ab>, <note>, <fw>)
+                   containing <s>/<w>/<pc>/<lb> structure.
+
+    Returns:
+        list[_LineGroup]: Line groups in document order.
+    """
+    groups = []
+    current_group = None
+
+    for s_elem in container:
+        if not isinstance(s_elem.tag, str):
+            continue
+
+        tag = s_elem.tag
+        if tag == "s":
+            s_id = s_elem.get(f"{{{NS_XML}}}id", "")
+            # Track whether this <s> has been split across lines
+            segment_for_this_s = None
+            s_has_multiple_lines = False
+
+            for child in s_elem:
+                if not isinstance(child.tag, str):
+                    continue
+                ctag = child.tag
+
+                if ctag == "lb":
+                    # Start a new line group
+                    if segment_for_this_s is not None:
+                        s_has_multiple_lines = True
+                        segment_for_this_s.is_full = False
+                    current_group = _LineGroup(
+                        lb_corresp=child.get("corresp"),
+                        lb_element=child,
+                    )
+                    groups.append(current_group)
+                    segment_for_this_s = _SentenceSegment(
+                        s_elem=s_elem, s_xml_id=s_id
+                    )
+                    current_group.segments.append(segment_for_this_s)
+
+                elif ctag in ("w", "pc"):
+                    if current_group is None:
+                        # Edge case: tokens before any <lb/>
+                        current_group = _LineGroup(lb_corresp=None, lb_element=None)
+                        groups.append(current_group)
+                        segment_for_this_s = _SentenceSegment(
+                            s_elem=s_elem, s_xml_id=s_id
+                        )
+                        current_group.segments.append(segment_for_this_s)
+                    elif segment_for_this_s is None:
+                        segment_for_this_s = _SentenceSegment(
+                            s_elem=s_elem, s_xml_id=s_id
+                        )
+                        current_group.segments.append(segment_for_this_s)
+                    segment_for_this_s.tokens.append(child)
+
+                elif ctag == "hi":
+                    # <hi> contains <w>/<pc>/<lb> — recurse
+                    for hi_child in child:
+                        if not isinstance(hi_child.tag, str):
+                            continue
+                        hctag = hi_child.tag
+                        if hctag == "lb":
+                            if segment_for_this_s is not None:
+                                s_has_multiple_lines = True
+                                segment_for_this_s.is_full = False
+                            current_group = _LineGroup(
+                                lb_corresp=hi_child.get("corresp"),
+                                lb_element=hi_child,
+                            )
+                            groups.append(current_group)
+                            segment_for_this_s = _SentenceSegment(
+                                s_elem=s_elem, s_xml_id=s_id
+                            )
+                            current_group.segments.append(segment_for_this_s)
+                        elif hctag in ("w", "pc"):
+                            if segment_for_this_s is None:
+                                segment_for_this_s = _SentenceSegment(
+                                    s_elem=s_elem, s_xml_id=s_id
+                                )
+                                if current_group:
+                                    current_group.segments.append(segment_for_this_s)
+                            segment_for_this_s.tokens.append(hi_child)
+
+            # If this <s> was split, mark all its segments as not full
+            if s_has_multiple_lines:
+                for g in groups:
+                    for seg in g.segments:
+                        if seg.s_elem is s_elem:
+                            seg.is_full = False
+
+        elif tag == "lb":
+            # Bare <lb> at container level
+            current_group = _LineGroup(
+                lb_corresp=s_elem.get("corresp"),
+                lb_element=s_elem,
+            )
+            groups.append(current_group)
+
+    return groups
 
 
 def _append_choice(parent, original, modernized):
