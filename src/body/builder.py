@@ -154,6 +154,141 @@ def _parse_line_groups(container):
     return groups
 
 
+def _rebuild_with_modernization(container, groups, corresp_to_mod):
+    """
+    Rebuild an enriched container with <choice> wrapping for modernized lines.
+
+    Clears the container and rebuilds it with:
+    - <lb/> as direct children
+    - <choice><orig><s>...</s></orig><reg>text</reg></choice> for modernized lines
+    - <s> fragments directly for non-modernized lines
+
+    Sentences spanning line boundaries are fragmented with @part/@next/@prev.
+
+    Args:
+        container: The lxml Element to rebuild.
+        groups: list[_LineGroup] from _parse_line_groups().
+        corresp_to_mod: Dict mapping corresp values to modernized text.
+
+    Returns:
+        int: Number of lines wrapped in <choice>.
+    """
+    # Phase 1: Build fragment mapping for sentences split across lines
+    s_occurrences = {}
+    for i, group in enumerate(groups):
+        for seg in group.segments:
+            s_occurrences.setdefault(seg.s_xml_id, []).append((i, seg))
+
+    # Phase 2: Assign fragment IDs
+    fragment_ids = {}  # (s_xml_id, line_index) -> new_id
+    for s_id, occurrences in s_occurrences.items():
+        if len(occurrences) > 1:
+            for j, (line_idx, seg) in enumerate(occurrences):
+                frag_id = f"{s_id}_{j}"
+                fragment_ids[(s_id, line_idx)] = frag_id
+        else:
+            line_idx = occurrences[0][0]
+            fragment_ids[(s_id, line_idx)] = s_id
+
+    # Phase 3: Clear container children
+    attribs = dict(container.attrib)
+    container.text = None
+    for child in list(container):
+        container.remove(child)
+    for k, v in attribs.items():
+        container.set(k, v)
+
+    # Phase 4: Rebuild
+    XML_ID_KEY = f"{{{NS_XML}}}id"
+    count = 0
+
+    for i, group in enumerate(groups):
+        # Add <lb/>
+        if group.lb_element is not None:
+            lb = etree.SubElement(container, "lb")
+            if group.lb_corresp:
+                lb.set("corresp", group.lb_corresp)
+
+        # Check if this line is modernized
+        is_modernized = group.lb_corresp and group.lb_corresp in corresp_to_mod
+
+        if is_modernized:
+            choice = etree.SubElement(container, "choice")
+            orig = etree.SubElement(choice, "orig")
+
+            for seg in group.segments:
+                s_new = etree.SubElement(orig, "s")
+                frag_id = fragment_ids.get((seg.s_xml_id, i), seg.s_xml_id)
+                s_new.set(XML_ID_KEY, frag_id)
+
+                # Set @part/@next/@prev for fragmented sentences
+                occurrences = s_occurrences.get(seg.s_xml_id, [])
+                if len(occurrences) > 1:
+                    frag_idx = [idx for idx, (li, _) in enumerate(occurrences) if li == i][0]
+                    total = len(occurrences)
+
+                    if frag_idx == 0:
+                        s_new.set("part", "I")
+                    elif frag_idx == total - 1:
+                        s_new.set("part", "F")
+                    else:
+                        s_new.set("part", "M")
+
+                    if frag_idx < total - 1:
+                        next_line_idx = occurrences[frag_idx + 1][0]
+                        next_id = fragment_ids.get((seg.s_xml_id, next_line_idx))
+                        if next_id:
+                            s_new.set("next", f"#{next_id}")
+                    if frag_idx > 0:
+                        prev_line_idx = occurrences[frag_idx - 1][0]
+                        prev_id = fragment_ids.get((seg.s_xml_id, prev_line_idx))
+                        if prev_id:
+                            s_new.set("prev", f"#{prev_id}")
+
+                # Copy tokens into new <s>
+                for token in seg.tokens:
+                    s_new.append(token)
+
+            reg = etree.SubElement(choice, "reg", type="modernized")
+            reg.text = corresp_to_mod[group.lb_corresp]
+            count += 1
+
+        else:
+            # Non-modernized line: add <s> fragments directly to container
+            for seg in group.segments:
+                s_new = etree.SubElement(container, "s")
+                frag_id = fragment_ids.get((seg.s_xml_id, i), seg.s_xml_id)
+                s_new.set(XML_ID_KEY, frag_id)
+
+                occurrences = s_occurrences.get(seg.s_xml_id, [])
+                if len(occurrences) > 1:
+                    frag_idx = [idx for idx, (li, _) in enumerate(occurrences) if li == i][0]
+                    total = len(occurrences)
+
+                    if frag_idx == 0:
+                        s_new.set("part", "I")
+                    elif frag_idx == total - 1:
+                        s_new.set("part", "F")
+                    else:
+                        s_new.set("part", "M")
+
+                    if frag_idx < total - 1:
+                        next_line_idx = occurrences[frag_idx + 1][0]
+                        next_id = fragment_ids.get((seg.s_xml_id, next_line_idx))
+                        if next_id:
+                            s_new.set("next", f"#{next_id}")
+                    if frag_idx > 0:
+                        prev_line_idx = occurrences[frag_idx - 1][0]
+                        prev_id = fragment_ids.get((seg.s_xml_id, prev_line_idx))
+                        if prev_id:
+                            s_new.set("prev", f"#{prev_id}")
+
+                for token in seg.tokens:
+                    s_new.append(token)
+
+    return count
+
+
 def _append_choice(parent, original, modernized):
     """
     Append a <choice><orig>…</orig><reg type="modernized">…</reg></choice>
@@ -370,9 +505,14 @@ def apply_modernization_enriched(root, corresp_to_mod):
     """
     Post-process an enriched body to insert <choice><orig>/<reg> per line.
 
-    After enrichment, the body has <s>/<w>/<pc>/<lb> structure.
-    For each <lb> whose @corresp is in *corresp_to_mod*, this wraps the
-    following <w>/<pc> siblings in <choice><orig>…</orig><reg>…</reg></choice>.
+    After enrichment, containers have <s>/<w>/<pc>/<lb> structure.
+    This function restructures containers so that:
+    - <lb/> and <choice> are direct children of the container
+    - <s> elements (potentially fragmented) live inside <choice><orig>
+    - <reg> contains the modernized line text
+
+    Containers without any modernized lines are left untouched.
+    Non-enriched containers (no <s> children) fall back to plain wrapping.
 
     Args:
         root: TEI root element (body must already be enriched).
@@ -388,96 +528,23 @@ def apply_modernization_enriched(root, corresp_to_mod):
     count = 0
     for container in body.iter("ab", "note", "fw"):
         has_sentences = any(c.tag == "s" for c in container)
+
         if has_sentences:
-            # Enriched container: process <s> children and <hi> within them
-            for s_elem in list(container):
-                if s_elem.tag == "s":
-                    count += _wrap_line_groups(s_elem, corresp_to_mod)
-                    # Also recurse into <hi> inside <s>
-                    for hi in list(s_elem):
-                        if hi.tag == "hi":
-                            count += _wrap_line_groups(hi, corresp_to_mod)
+            # Enriched container: parse and rebuild
+            groups = _parse_line_groups(container)
+
+            # Check if any line in this container needs modernization
+            has_mod = any(
+                g.lb_corresp and g.lb_corresp in corresp_to_mod
+                for g in groups
+            )
+            if not has_mod:
+                continue
+
+            count += _rebuild_with_modernization(container, groups, corresp_to_mod)
         else:
             # Non-enriched container: wrap <lb> tails directly
             count += _wrap_plain_lines(container, corresp_to_mod)
-
-    return count
-
-
-def _wrap_line_groups(parent, corresp_to_mod):
-    """
-    Wrap <w>/<pc> groups after each <lb> in <choice><orig>/<reg>.
-
-    Iterates direct children of *parent*. Groups elements between
-    consecutive <lb/> elements. For each group whose <lb> @corresp
-    is in corresp_to_mod, wraps the group in <choice>.
-
-    Args:
-        parent: An <s> or <hi> element.
-        corresp_to_mod: Dict mapping corresp values to modernized text.
-
-    Returns:
-        int: Number of groups wrapped.
-    """
-    # Collect line groups: (lb_element, [following sibling elements])
-    groups = []
-    current_lb = None
-    current_elements = []
-
-    for child in list(parent):
-        tag = child.tag if isinstance(child.tag, str) else ""
-        if tag == "lb":
-            if current_lb is not None:
-                groups.append((current_lb, current_elements))
-            current_lb = child
-            current_elements = []
-        elif tag not in ("hi", "s", "choice"):
-            # Collect <w>, <pc>, <foreign>, etc.
-            current_elements.append(child)
-
-    # Don't forget the last group
-    if current_lb is not None:
-        groups.append((current_lb, current_elements))
-
-    # Wrap groups in reverse order to preserve tree indices
-    from config import DEBUG
-
-    count = 0
-    for lb, elements in reversed(groups):
-        corresp = lb.get("corresp")
-        if not corresp or corresp not in corresp_to_mod or not elements:
-            continue
-
-        mod_text = corresp_to_mod[corresp]
-
-        # Reconstruct original line text from <w>/<pc> for logging
-        orig_parts = [
-            e.text for e in elements
-            if e.tag in ("w", "pc") and e.text
-        ]
-        orig_text = " ".join(orig_parts)
-
-        if DEBUG:
-            logger.debug(
-                "Wrapping line %s: orig=%r → reg=%r",
-                corresp, orig_text[:80], mod_text[:80],
-            )
-
-        choice = etree.Element("choice")
-        orig = etree.SubElement(choice, "orig")
-        reg = etree.SubElement(choice, "reg", type="modernized")
-        reg.text = mod_text
-
-        # Move elements into <orig>
-        for elem in elements:
-            parent.remove(elem)
-            orig.append(elem)
-
-        # Insert <choice> right after <lb/>
-        lb.addnext(choice)
-        count += 1
-
-    return count
 
 
 def _wrap_plain_lines(container, corresp_to_mod):
