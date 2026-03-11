@@ -234,6 +234,135 @@ def apply_modernization(root, modernized_texts):
     return count
 
 
+def apply_modernization_enriched(root, corresp_to_mod):
+    """
+    Post-process an enriched body to insert <choice><orig>/<reg> per line.
+
+    After enrichment, the body has <s>/<w>/<pc>/<lb> structure.
+    For each <lb> whose @corresp is in *corresp_to_mod*, this wraps the
+    following <w>/<pc> siblings in <choice><orig>…</orig><reg>…</reg></choice>.
+
+    Args:
+        root: TEI root element (body must already be enriched).
+        corresp_to_mod: Dict mapping corresp values to modernized text strings.
+
+    Returns:
+        int: Number of lines wrapped in <choice>.
+    """
+    body = root.find(".//body")
+    if body is None:
+        return 0
+
+    count = 0
+    for container in body.iter("ab", "note", "fw"):
+        has_sentences = any(c.tag == "s" for c in container)
+        if has_sentences:
+            # Enriched container: process <s> children and <hi> within them
+            for s_elem in list(container):
+                if s_elem.tag == "s":
+                    count += _wrap_line_groups(s_elem, corresp_to_mod)
+                    # Also recurse into <hi> inside <s>
+                    for hi in list(s_elem):
+                        if hi.tag == "hi":
+                            count += _wrap_line_groups(hi, corresp_to_mod)
+        else:
+            # Non-enriched container: wrap <lb> tails directly
+            count += _wrap_plain_lines(container, corresp_to_mod)
+
+    return count
+
+
+def _wrap_line_groups(parent, corresp_to_mod):
+    """
+    Wrap <w>/<pc> groups after each <lb> in <choice><orig>/<reg>.
+
+    Iterates direct children of *parent*. Groups elements between
+    consecutive <lb/> elements. For each group whose <lb> @corresp
+    is in corresp_to_mod, wraps the group in <choice>.
+
+    Args:
+        parent: An <s> or <hi> element.
+        corresp_to_mod: Dict mapping corresp values to modernized text.
+
+    Returns:
+        int: Number of groups wrapped.
+    """
+    # Collect line groups: (lb_element, [following sibling elements])
+    groups = []
+    current_lb = None
+    current_elements = []
+
+    for child in list(parent):
+        tag = child.tag if isinstance(child.tag, str) else ""
+        if tag == "lb":
+            if current_lb is not None:
+                groups.append((current_lb, current_elements))
+            current_lb = child
+            current_elements = []
+        elif tag not in ("hi", "s", "choice"):
+            # Collect <w>, <pc>, <foreign>, etc.
+            current_elements.append(child)
+
+    # Don't forget the last group
+    if current_lb is not None:
+        groups.append((current_lb, current_elements))
+
+    # Wrap groups in reverse order to preserve tree indices
+    count = 0
+    for lb, elements in reversed(groups):
+        corresp = lb.get("corresp")
+        if not corresp or corresp not in corresp_to_mod or not elements:
+            continue
+
+        mod_text = corresp_to_mod[corresp]
+
+        choice = etree.Element("choice")
+        orig = etree.SubElement(choice, "orig")
+        reg = etree.SubElement(choice, "reg", type="modernized")
+        reg.text = mod_text
+
+        # Move elements into <orig>
+        for elem in elements:
+            parent.remove(elem)
+            orig.append(elem)
+
+        # Insert <choice> right after <lb/>
+        lb.addnext(choice)
+        count += 1
+
+    return count
+
+
+def _wrap_plain_lines(container, corresp_to_mod):
+    """
+    Wrap <lb> tail text in <choice> for non-enriched containers.
+
+    Fallback for containers that enrichment skipped (too short, unsupported
+    language, etc.).
+
+    Args:
+        container: A container element (ab, note, fw) with <lb/> children.
+        corresp_to_mod: Dict mapping corresp values to modernized text.
+
+    Returns:
+        int: Number of lines wrapped.
+    """
+    count = 0
+    for lb in list(container.iter("lb")):
+        corresp = lb.get("corresp")
+        original = lb.tail or ""
+        if not corresp or corresp not in corresp_to_mod:
+            continue
+        mod_text = corresp_to_mod[corresp]
+        if mod_text == original:
+            continue
+        lb.tail = None
+        choice = _append_choice(lb.getparent(), original, mod_text)
+        lb.addnext(choice)
+        count += 1
+    return count
+
+
 def _insert_foreign_tags(element, full_text, foreign_segments, detector):
     """
     Insert <foreign> tags for detected foreign language segments.

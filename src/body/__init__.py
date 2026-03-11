@@ -14,7 +14,7 @@ Usage:
     build_body(root, text.data)
 """
 
-from .builder import build_body, apply_modernization
+from .builder import build_body, apply_modernization, apply_modernization_enriched
 from .text import Text
 
-__all__ = ["build_body", "apply_modernization", "Text"]
+__all__ = ["build_body", "apply_modernization", "apply_modernization_enriched", "Text"]
