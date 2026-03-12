@@ -546,6 +546,8 @@ def apply_modernization_enriched(root, corresp_to_mod):
             # Non-enriched container: wrap <lb> tails directly
             count += _wrap_plain_lines(container, corresp_to_mod)
 
+    return count
+
 
 def _wrap_plain_lines(container, corresp_to_mod):
     """
