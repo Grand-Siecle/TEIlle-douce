@@ -9,6 +9,7 @@ pre-trained language identification model (lid.176.bin) to detect
 the language of text content, with support for mixed-language detection.
 """
 
+import logging
 import re
 import warnings
 from pathlib import Path
@@ -22,6 +23,8 @@ from config import (
     LANG_DEFAULT,
     FASTTEXT_MODEL_PATH,
 )
+
+logger = logging.getLogger(__name__)
 
 # Import fallback with default to None if not defined
 try:
@@ -188,12 +191,11 @@ class LanguageDetector:
         """Download the FastText language identification model."""
         import urllib.request
 
-        print(f"Downloading FastText model to {model_path}...")
-        print("This may take a few minutes (file is ~126MB)")
+        logger.warning("Downloading FastText model to %s (file is ~126MB)...", model_path)
 
         try:
             urllib.request.urlretrieve(self.MODEL_URL, model_path)
-            print("Download complete.")
+            logger.warning("FastText model download complete.")
         except Exception as e:
             raise RuntimeError(
                 f"Failed to download FastText model: {e}\n"

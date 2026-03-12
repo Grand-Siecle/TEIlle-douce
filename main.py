@@ -32,14 +32,28 @@ from config import (
     ENRICHMENT_ENABLED,
     MODERNIZE_ENABLED,
     DEBUG,
+    LOG_FILE,
 )
 
 # Configure logging
-if DEBUG:
-    logging.basicConfig(
-        level=logging.DEBUG,
-        format="%(name)s [%(levelname)s] %(message)s",
-    )
+_log_format = "%(asctime)s %(name)s [%(levelname)s] %(message)s"
+_log_datefmt = "%Y-%m-%d %H:%M:%S"
+_handlers = []
+
+# File handler: always write DEBUG+ to log file
+if LOG_FILE:
+    _file_handler = logging.FileHandler(str(LOG_FILE), mode="w", encoding="utf-8")
+    _file_handler.setLevel(logging.DEBUG)
+    _file_handler.setFormatter(logging.Formatter(_log_format, datefmt=_log_datefmt))
+    _handlers.append(_file_handler)
+
+# Console handler: WARNING+ by default, DEBUG+ if DEBUG is enabled
+_console_handler = logging.StreamHandler()
+_console_handler.setLevel(logging.DEBUG if DEBUG else logging.WARNING)
+_console_handler.setFormatter(logging.Formatter("%(name)s [%(levelname)s] %(message)s"))
+_handlers.append(_console_handler)
+
+logging.basicConfig(level=logging.DEBUG, handlers=_handlers)
 
 # Import modules
 from src import TEI

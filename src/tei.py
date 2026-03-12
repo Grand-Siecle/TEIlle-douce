@@ -9,11 +9,14 @@ This module provides the TEI class which is the central data structure
 for carrying document state through the conversion pipeline.
 """
 
+import logging
 from pathlib import Path
 
 from lxml import etree
 
 from .constants import NS_TEI, XML_ID
+
+logger = logging.getLogger(__name__)
 from .teiheader import build_header
 from .sourcedoc import build_sourcedoc
 from .body import build_body, apply_modernization, apply_modernization_enriched, Text
@@ -197,7 +200,8 @@ class TEI:
             modernized = modernize_texts(
                 original_texts, lang="fra", progress_callback=progress_callback
             )
-        except Exception:
+        except Exception as e:
+            logger.error("Modernization failed: %s: %r", type(e).__name__, e)
             return 0
 
         if modernized is None:

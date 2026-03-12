@@ -9,12 +9,15 @@ This module handles the construction of the TEI <sourceDoc> element from
 ALTO XML files. Uses multiprocessing for parallel page processing.
 """
 
+import logging
 from pathlib import Path
 from multiprocessing import Pool, cpu_count
 
 from lxml import etree
 
 from config import MAX_WORKERS
+
+logger = logging.getLogger(__name__)
 from ..constants import NS_ALTO
 from ..utils.files import Files
 from ..metadata.iiif import IIIFMapping
@@ -217,5 +220,7 @@ def build_sourcedoc(
         frag = results.get(f.num)
         if frag:
             sourceDoc.append(etree.fromstring(frag))
+        else:
+            logger.warning("No result for page %d (%s)", f.num, f.filepath.name)
 
     return output_tei_root

@@ -10,6 +10,7 @@ from CSV files (metadata_livre.csv). The expected format is semicolon-delimited
 with headers. It integrates with csv_person for author/contributor enrichment.
 """
 
+import logging
 import re
 from pathlib import Path
 from collections import defaultdict
@@ -17,6 +18,8 @@ from collections import defaultdict
 import pandas as pd
 
 from config import CSV_DELIMITER, BDD_PREFIX_PATTERN, METADATA_PERSON_CSV
+
+logger = logging.getLogger(__name__)
 from .csv_person import load_person_database, get_person_database
 
 
@@ -37,7 +40,7 @@ def load_metadata(csv_path):
     try:
         return pd.read_csv(csv_path, sep=CSV_DELIMITER)
     except Exception as e:
-        print(f"[warn] Failed to read {csv_path}: {e}")
+        logger.warning("Failed to read %s: %s", csv_path, e)
         return None
 
 

@@ -6,11 +6,15 @@
 from pathlib import Path
 
 # =============================================================================
-# DEBUG
+# DEBUG & LOGGING
 # =============================================================================
 
-# Enable verbose logging for modernization, enrichment, etc.
-DEBUG = False
+# Enable verbose logging in console for modernization, enrichment, etc.
+DEBUG = True
+
+# Log file path (all DEBUG+ messages are always written here, regardless of DEBUG flag)
+# Set to None to disable file logging
+LOG_FILE = Path("pipeline.log")
 
 # =============================================================================
 # DIRECTORIES
@@ -225,6 +229,9 @@ MODERNIZE_BATCH_SIZE = 64
 
 # Timeout in seconds for modernization API calls
 MODERNIZE_TIMEOUT = 300
+
+# Max concurrent requests to the modernization API (avoid PoolTimeout)
+MODERNIZE_MAX_CONCURRENT = 3
 
 # =============================================================================
 # RESPONSIBILITY STATEMENT

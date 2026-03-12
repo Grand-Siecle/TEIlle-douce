@@ -83,14 +83,14 @@ def enrich_body(root, progress_callback=None):
             containers.append(elem)
 
     stats["containers_found"] = len(containers)
-    logger.info(f"Found {len(containers)} containers to enrich")
+    logger.debug("Found %d containers to enrich", len(containers))
 
     # Process each container sequentially
     all_sentences = []
 
     for i, container in enumerate(containers):
         if i > 0 and i % 100 == 0:
-            logger.info(f"Progress: {i}/{len(containers)} containers processed")
+            logger.debug("Progress: %d/%d containers processed", i, len(containers))
 
         try:
             sentences = _process_container(container, stats)
@@ -106,9 +106,9 @@ def enrich_body(root, progress_callback=None):
     # Cross-container sentence chaining
     chain_cross_container(all_sentences)
 
-    logger.info(
-        f"Enrichment complete: {stats['containers_enriched']} enriched, "
-        f"{stats['tokens_total']} tokens, {stats['sentences_total']} sentences"
+    logger.debug(
+        "Enrichment complete: %d enriched, %d tokens, %d sentences",
+        stats['containers_enriched'], stats['tokens_total'], stats['sentences_total'],
     )
 
     return stats
