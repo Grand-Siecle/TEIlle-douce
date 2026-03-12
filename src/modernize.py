@@ -19,7 +19,7 @@ import logging
 
 import httpx
 
-from config import DEBUG, MODERNIZE_API, MODERNIZE_BATCH_SIZE, MODERNIZE_TIMEOUT
+from config import DEBUG, MODERNIZE_API, MODERNIZE_BATCH_SIZE, MODERNIZE_TIMEOUT, MODERNIZE_MAX_CONCURRENT
 
 logger = logging.getLogger(__name__)
 
@@ -92,7 +92,7 @@ def modernize_texts(texts, lang="fra", progress_callback=None):
 
 
 async def _modernize_all(texts, base_url, progress_callback=None):
-    """Send all batches concurrently, validate, retry divergent lines."""
+    """Send all batches with limited concurrency, validate, retry divergent lines."""
     results = list(texts)  # pre-fill with originals as fallback
     batches = [
         (i, texts[i : i + MODERNIZE_BATCH_SIZE])
@@ -100,10 +100,12 @@ async def _modernize_all(texts, base_url, progress_callback=None):
     ]
     total_batches = len(batches)
     completed = 0
+    sem = asyncio.Semaphore(MODERNIZE_MAX_CONCURRENT)
 
     async def _tracked_batch(client, batch_texts):
         nonlocal completed
-        result = await _send_batch(client, base_url, batch_texts)
+        async with sem:
+            result = await _send_batch(client, base_url, batch_texts)
         completed += 1
         if progress_callback:
             progress_callback(completed, total_batches)
@@ -148,9 +150,15 @@ async def _modernize_all(texts, base_url, progress_callback=None):
             logger.debug(
                 "Retrying %d divergent lines individually", len(divergent)
             )
+        retry_sem = asyncio.Semaphore(MODERNIZE_MAX_CONCURRENT)
+
+        async def _retry_one(client, orig):
+            async with retry_sem:
+                return await _send_batch(client, base_url, [orig], batch_size=1)
+
         async with httpx.AsyncClient(timeout=MODERNIZE_TIMEOUT) as client:
             retry_tasks = [
-                _send_batch(client, base_url, [orig], batch_size=1)
+                _retry_one(client, orig)
                 for _, orig in divergent
             ]
             retry_responses = await asyncio.gather(
@@ -201,5 +209,5 @@ async def _send_batch(client, base_url, batch_texts, batch_size=None):
         return data.get("translations")
     except Exception as e:
         if DEBUG:
-            logger.debug("_send_batch error: %s", e)
+            logger.debug("_send_batch error: %s: %r", type(e).__name__, e)
         return None
