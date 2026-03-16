@@ -153,12 +153,11 @@ IIIF_URI = {
 # LANGUAGE DETECTION CONFIGURATION
 # =============================================================================
 
-# Supported languages for FastText detection
-# Format: {"ISO 639-1 code": {"name": "Full name", "ident": "TEI ident code"}}
-# See: https://en.wikipedia.org/wiki/List_of_ISO_639-1_codes
+# Languages to detect (add/uncomment as needed)
+# Uses lingua-language-detector restricted to this subset
 SUPPORTED_LANGUAGES = {
     "fr": {"name": "French", "ident": "fra"},
-    "el": {"name": "Ancient Greek", "ident": "grc"},  # FastText uses "el" for Greek
+    "el": {"name": "Ancient Greek", "ident": "grc"},
     "la": {"name": "Latin", "ident": "lat"},
     #"de": {"name": "German", "ident": "deu"},
     #"nl": {"name": "Dutch", "ident": "nld"},
@@ -166,29 +165,13 @@ SUPPORTED_LANGUAGES = {
     #"en": {"name": "English", "ident": "eng"},
 }
 
-# Minimum confidence threshold for language detection (0.0-1.0)
-# Note: For historical OCR text, lower values (0.3-0.5) work better
+# Minimum confidence for direct acceptance (0.0-1.0)
+# Below this, heuristic fallback is tried for short texts
 LANG_CONFIDENCE_THRESHOLD = 0.35
 
-# Minimum text length to attempt language detection
 LANG_MIN_TEXT_LENGTH = 10
+LANG_DEFAULT = "und"  # undetermined (ISO 639-2)
 
-# Default language when detection fails or text is too short
-LANG_DEFAULT = "und"  # "und" = undetermined (ISO 639-2)
-
-# Fallback language when detected language is not in SUPPORTED_LANGUAGES
-# Set to None to use LANG_DEFAULT, or a TEI ident like "fra" for French
-LANG_FALLBACK = "fra"
-
-# FastText model path (lid.176.bin for language identification)
-# If None, will auto-download to ~/.fasttext/
-FASTTEXT_MODEL_PATH = None
-
-# =============================================================================
-# RESPONSIBILITY STATEMENT
-# =============================================================================
-
-# Information about who created the TEI encoding (appears in teiHeader)
 # =============================================================================
 # LINGUISTIC ENRICHMENT
 # =============================================================================
