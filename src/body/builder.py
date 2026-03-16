@@ -9,7 +9,7 @@ This module constructs the <body> element of a TEI document by assembling
 text lines extracted from the sourceDoc. It handles different zone types
 (MainZone, NumberingZone, MarginTextZone, etc.) and wraps them appropriately.
 
-Enhanced with FastText language detection at the paragraph/container level
+Enhanced with Lingua language detection at the paragraph/container level
 with support for mixed-language detection using <foreign> tags.
 """
 
@@ -423,7 +423,7 @@ def build_body(root, data, detect_lang=True):
             elif line.line_type and line.line_type.startswith("Default"):
                 last_element.append(lb)
 
-    # Now apply language detection to containers
+    # Apply language detection to containers
     if detector:
         _apply_language_detection(containers, detector)
         return detector.get_stats()

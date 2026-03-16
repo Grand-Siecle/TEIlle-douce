@@ -4,15 +4,12 @@
 """
 Heuristic rules for language detection.
 
-This module provides rule-based language detection to complement FastText,
-particularly useful for:
+This module provides rule-based language detection as fallback
+when statistical model confidence is low, particularly useful for:
 - Short texts where statistical models struggle
 - OCR-degraded historical texts
 - Texts with distinctive character sets (Greek, etc.)
 - Common citation patterns (Latin scholarly references)
-
-The heuristics are applied as a fallback when FastText confidence is low
-or when the detected language is not in the supported list.
 """
 
 import re
@@ -318,50 +315,7 @@ class LanguageHeuristics:
 
         return (best_lang, best_score)
 
-    def detect_if_better(self, text, fasttext_lang, fasttext_conf, supported_langs):
-        """
-        Use heuristics only if they provide better detection than FastText.
-
-        This is the main entry point for fallback detection. It applies
-        heuristics when:
-        1. FastText detected an unsupported language
-        2. FastText confidence is very low
-        3. Heuristics strongly indicate a different language
-
-        Args:
-            text (str): Text to analyze.
-            fasttext_lang (str): Language detected by FastText.
-            fasttext_conf (float): FastText confidence (0-1).
-            supported_langs (dict): Supported languages from config.
-
-        Returns:
-            tuple: (final_lang, source) where source is "fasttext" or "heuristic"
-        """
-        # Get supported language idents
-        supported_idents = {info["ident"] for info in supported_langs.values()}
-
-        # If FastText gave a supported language with good confidence, keep it
-        if fasttext_lang in supported_idents and fasttext_conf >= 0.5:
-            return (fasttext_lang, "fasttext")
-
-        # Try heuristics
-        heur_lang, heur_score = self.detect(text)
-
-        # If heuristics found something and it's supported
-        if heur_lang and heur_lang in supported_idents:
-            # If FastText was unsupported or very low confidence, use heuristics
-            if fasttext_lang not in supported_idents or fasttext_conf < 0.3:
-                return (heur_lang, "heuristic")
-
-            # If heuristics are confident enough, override FastText
-            if heur_score >= 5:  # Strong heuristic signal
-                return (heur_lang, "heuristic")
-
-        # Fall back to FastText result (even if unsupported - let detector handle fallback)
-        return (fasttext_lang, "fasttext")
-
-
-# Module-level instance for convenience
+# Global singleton
 _heuristics = None
 
 
