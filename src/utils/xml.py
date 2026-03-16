@@ -8,9 +8,12 @@ XML output module.
 This module provides utilities for writing TEI XML files to disk.
 """
 
+import logging
 from pathlib import Path
 
 from lxml import etree
+
+logger = logging.getLogger(__name__)
 
 
 def write_xml(root, output_path, pretty_print=True):
@@ -28,9 +31,13 @@ def write_xml(root, output_path, pretty_print=True):
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    etree.ElementTree(root).write(
-        str(output_path),
-        encoding="utf-8",
-        xml_declaration=True,
-        pretty_print=pretty_print,
-    )
+    try:
+        etree.ElementTree(root).write(
+            str(output_path),
+            encoding="utf-8",
+            xml_declaration=True,
+            pretty_print=pretty_print,
+        )
+    except Exception as e:
+        logger.error("Failed to write XML to %s: %s", output_path, e)
+        raise

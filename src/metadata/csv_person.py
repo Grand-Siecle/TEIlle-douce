@@ -10,12 +10,15 @@ CSV files (metadata_personne.csv). The expected format is semicolon-delimited
 with headers. Person identifiers follow the pattern PERSXXXX.
 """
 
+import logging
 from pathlib import Path
 from collections import defaultdict
 
 import pandas as pd
 
 from config import CSV_DELIMITER
+
+logger = logging.getLogger(__name__)
 
 
 # Role mapping from CSV Label_categ to TEI role names
@@ -68,7 +71,7 @@ class PersonDatabase:
             self._build_index(df)
             return True
         except Exception as e:
-            print(f"[warn] Failed to read person metadata {csv_path}: {e}")
+            logger.warning("Failed to read person metadata %s: %s", csv_path, e)
             return False
 
     def _build_index(self, df):

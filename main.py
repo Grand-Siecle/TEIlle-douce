@@ -12,6 +12,7 @@ Usage:
     python3 main.py
 """
 
+import logging
 import sys
 from time import perf_counter
 from zipfile import ZipFile
@@ -28,7 +29,31 @@ from config import (
     APP_VERSIONS,
     IIIF_URI,
     RESPONSIBILITY,
+    ENRICHMENT_ENABLED,
+    MODERNIZE_ENABLED,
+    DEBUG,
+    LOG_FILE,
 )
+
+# Configure logging
+_log_format = "%(asctime)s %(name)s [%(levelname)s] %(message)s"
+_log_datefmt = "%Y-%m-%d %H:%M:%S"
+_handlers = []
+
+# File handler: always write DEBUG+ to log file
+if LOG_FILE:
+    _file_handler = logging.FileHandler(str(LOG_FILE), mode="w", encoding="utf-8")
+    _file_handler.setLevel(logging.DEBUG)
+    _file_handler.setFormatter(logging.Formatter(_log_format, datefmt=_log_datefmt))
+    _handlers.append(_file_handler)
+
+# Console handler: WARNING+ by default, DEBUG+ if DEBUG is enabled
+_console_handler = logging.StreamHandler()
+_console_handler.setLevel(logging.DEBUG if DEBUG else logging.WARNING)
+_console_handler.setFormatter(logging.Formatter("%(name)s [%(levelname)s] %(message)s"))
+_handlers.append(_console_handler)
+
+logging.basicConfig(level=logging.DEBUG, handlers=_handlers)
 
 # Import modules
 from src import TEI
@@ -161,6 +186,26 @@ def main():
     if person_db and len(person_db) > 0:
         console.print(f"[dim]Loaded {len(person_db)} persons from {METADATA_PERSON_CSV}[/dim]")
 
+    # Check modernization API availability
+    do_modernize = False
+    if MODERNIZE_ENABLED:
+        from src.modernize import check_api as check_modernize_api
+        if check_modernize_api():
+            do_modernize = True
+            console.print("[green]Modernization API (VieuxParler) available.[/green]")
+        else:
+            console.print("[yellow]Warning: Modernization API unreachable — continuing without modernization.[/yellow]")
+
+    # Check linguistic enrichment API availability
+    do_enrich = False
+    if ENRICHMENT_ENABLED:
+        from src.enrichment.client import check_server as check_enrichment_api
+        if check_enrichment_api():
+            do_enrich = True
+            console.print("[green]Enrichment API (PyHellen) available.[/green]")
+        else:
+            console.print("[yellow]Warning: Enrichment API unreachable — continuing without linguistic annotation.[/yellow]")
+
     # Build pipeline configuration
     config = build_config()
 
@@ -211,14 +256,59 @@ def main():
                 parent_task_pages=task_pages,
             )
 
-            # Build body (with language detection)
-            with console.status("[cyan]Detecting languages...[/cyan]", spinner="dots"):
-                tree.build_body(detect_lang=True)
+            # Step 1: Build body + language detection
+            task_lang = progress.add_task(
+                f"[cyan]{doc_name}: Detection des langues[/cyan]", total=None, visible=True
+            )
+            tree.build_body(detect_lang=True)
+            progress.update(task_lang, visible=False)
 
-            # Show detected languages summary
             if tree.lang_stats:
                 langs = [f"{k}:{v}" for k, v in sorted(tree.lang_stats.items(), key=lambda x: -x[1])[:4]]
                 console.print(f"  [dim]Languages: {', '.join(langs)}[/dim]")
+
+            # Step 2: Extract line data for modernization (before enrichment modifies DOM)
+            line_data = None
+            if do_modernize:
+                line_data = tree.extract_line_data()
+
+            # Step 3: Linguistic enrichment (must run before modernization is applied)
+            if do_enrich:
+                task_enrich = progress.add_task(
+                    f"[cyan]{doc_name}: Annotation linguistique[/cyan]", total=None, visible=True
+                )
+
+                def _enrich_progress(current, total):
+                    progress.update(task_enrich, completed=current, total=total)
+
+                enrich_stats = tree.enrich_body(progress_callback=_enrich_progress)
+                progress.update(task_enrich, visible=False)
+
+                if enrich_stats and enrich_stats.get("containers_enriched", 0) > 0:
+                    console.print(
+                        f"  [dim]Annotation: {enrich_stats['containers_enriched']} containers, "
+                        f"{enrich_stats['tokens_total']} tokens, "
+                        f"{enrich_stats['sentences_total']} sentences[/dim]"
+                    )
+
+            # Step 4: Text modernization (applied after enrichment)
+            if do_modernize:
+                task_mod = progress.add_task(
+                    f"[cyan]{doc_name}: Modernisation du texte[/cyan]", total=None, visible=True
+                )
+
+                def _mod_progress(current, total):
+                    progress.update(task_mod, completed=current, total=total)
+
+                mod_count = tree.modernize_body(
+                    line_data=line_data,
+                    enriched=do_enrich,
+                    progress_callback=_mod_progress,
+                )
+                progress.update(task_mod, visible=False)
+
+                if mod_count > 0:
+                    console.print(f"  [dim]Modernisation: {mod_count} lines[/dim]")
 
             # Override TEI header with CSV metadata
             override_teiheader_from_csv(tree.root, row)

@@ -9,6 +9,7 @@ This module provides the IIIFMapping class for managing mappings between
 ALTO filenames and IIIF image URLs loaded from CSV files.
 """
 
+import logging
 from pathlib import Path
 from typing import Dict, Optional
 
@@ -20,6 +21,8 @@ from config import (
     IIIF_CSV_SAMPLE_ROWS,
     IIIF_CSV_MIN_MATCH_RATE,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class IIIFMapping:
@@ -52,14 +55,14 @@ class IIIFMapping:
             bool: True if loading succeeded, False otherwise.
         """
         if not csv_path.exists():
-            print(f"[warn] CSV not found: {csv_path}")
+            logger.warning("CSV not found: %s", csv_path)
             return False
 
         try:
             df = pd.read_csv(csv_path, header=None)
 
             if df.shape[1] < 3:
-                print(f"[warn] Invalid CSV (< 3 columns): {csv_path.name}")
+                logger.warning("Invalid CSV (< 3 columns): %s", csv_path.name)
                 return False
 
             count = 0
@@ -79,7 +82,7 @@ class IIIFMapping:
             return True
 
         except Exception as e:
-            print(f"[error] Reading CSV {csv_path.name}: {e}")
+            logger.error("Reading CSV %s: %s", csv_path.name, e)
             return False
 
     def get_url(self, filename: str) -> Optional[str]:

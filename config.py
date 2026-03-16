@@ -6,6 +6,17 @@
 from pathlib import Path
 
 # =============================================================================
+# DEBUG & LOGGING
+# =============================================================================
+
+# Enable verbose logging in console for modernization, enrichment, etc.
+DEBUG = True
+
+# Log file path (all DEBUG+ messages are always written here, regardless of DEBUG flag)
+# Set to None to disable file logging
+LOG_FILE = Path("pipeline.log")
+
+# =============================================================================
 # DIRECTORIES
 # =============================================================================
 
@@ -178,6 +189,54 @@ FASTTEXT_MODEL_PATH = None
 # =============================================================================
 
 # Information about who created the TEI encoding (appears in teiHeader)
+# =============================================================================
+# LINGUISTIC ENRICHMENT
+# =============================================================================
+
+# Enable/disable linguistic enrichment (tokenization, POS, lemmatization)
+ENRICHMENT_ENABLED = True
+
+# PyHellen API server URL
+PYHELLEN_URL = "http://localhost:8000"
+
+# Request timeout in seconds (higher for first request / model loading)
+PYHELLEN_TIMEOUT = 120
+
+# Mapping from TEI language ident to PyHellen model name
+PYHELLEN_MODELS = {"fra": "freem", "lat": "lasla", "grc": "grc"}
+
+# TEI container elements to enrich
+ENRICHMENT_CONTAINERS = {"ab", "note", "fw"}
+
+# Minimum text length (chars) to attempt enrichment
+ENRICHMENT_MIN_TEXT_LENGTH = 5
+
+# =============================================================================
+# TEXT MODERNIZATION (API)
+# =============================================================================
+
+# Enable/disable text modernization (old French -> modern French)
+MODERNIZE_ENABLED = True
+
+# Mapping from TEI language ident to modernization API base URL
+# Add entries for other languages as APIs become available
+MODERNIZE_API = {
+    "fra": "http://localhost:8011",
+}
+
+# Number of lines per batch request to the modernization API
+MODERNIZE_BATCH_SIZE = 64
+
+# Timeout in seconds for modernization API calls
+MODERNIZE_TIMEOUT = 300
+
+# Max concurrent requests to the modernization API (avoid PoolTimeout)
+MODERNIZE_MAX_CONCURRENT = 3
+
+# =============================================================================
+# RESPONSIBILITY STATEMENT
+# =============================================================================
+
 RESPONSIBILITY = {
     "text": "TEI SegmOnto encoding from ALTO (custom pipeline).",
     "resp": [

@@ -9,16 +9,20 @@ This module provides the TEI class which is the central data structure
 for carrying document state through the conversion pipeline.
 """
 
+import logging
 from pathlib import Path
 
 from lxml import etree
 
 from .constants import NS_TEI, XML_ID
+
+logger = logging.getLogger(__name__)
 from .teiheader import build_header
 from .sourcedoc import build_sourcedoc
-from .body import build_body, Text
+from .body import build_body, apply_modernization, apply_modernization_enriched, Text
 from .metadata import IIIFMapping
 from .lang import build_langusage
+from .enrichment import enrich_body as _enrich_body
 
 
 class TEI:
@@ -141,15 +145,93 @@ class TEI:
         Returns:
             dict or None: Language statistics if detect_lang=True.
                          Format: {"fra": 1716, "lat": 38, "grc": 7}
-
-        Example:
-            >>> tree.build_body(detect_lang=True)
-            >>> print(tree.lang_stats)
-            {'fra': 1716, 'lat': 38, 'grc': 7}
         """
         text = Text(self.root)
         self.lang_stats = build_body(self.root, text.data, detect_lang=detect_lang)
         return self.lang_stats
+
+    def extract_line_data(self):
+        """
+        Extract line texts and corresp values from <lb> elements.
+
+        Must be called after build_body() and before enrich_body(),
+        because enrichment replaces <lb> tails with <w>/<pc> elements.
+
+        Returns:
+            list[tuple[str|None, str]]: List of (corresp, text) tuples,
+                one per <lb> element in document order.
+        """
+        body = self.root.find(".//body")
+        if body is None:
+            return []
+        lbs = list(body.iter("lb"))
+        return [(lb.get("corresp"), lb.tail or "") for lb in lbs]
+
+    def modernize_body(self, line_data=None, enriched=False, progress_callback=None):
+        """
+        Modernize text in the body via the VieuxParler API.
+
+        When enriched=False (default), wraps <lb> tails in <choice>.
+        When enriched=True, wraps <w>/<pc> groups per line in <choice><orig>/<reg>.
+
+        Args:
+            line_data: Pre-extracted [(corresp, text)] from extract_line_data().
+                       Required when enriched=True (lb tails no longer exist).
+                       If None and enriched=False, extracts from current DOM.
+            enriched: Whether enrich_body() has already been called.
+            progress_callback: Optional callable(completed, total).
+
+        Returns:
+            int: Number of lines modernized, or 0 on failure.
+        """
+        from .modernize import modernize_texts
+
+        # Get line texts
+        if line_data is None:
+            body = self.root.find(".//body")
+            if body is None:
+                return 0
+            lbs = list(body.iter("lb"))
+            line_data = [(lb.get("corresp"), lb.tail or "") for lb in lbs]
+
+        original_texts = [text for _, text in line_data]
+
+        try:
+            modernized = modernize_texts(
+                original_texts, lang="fra", progress_callback=progress_callback
+            )
+        except Exception as e:
+            logger.error("Modernization failed: %s: %r", type(e).__name__, e)
+            return 0
+
+        if modernized is None:
+            return 0
+
+        if enriched:
+            # Build corresp -> modernized mapping for lines that changed
+            corresp_to_mod = {}
+            for (corresp, orig), mod in zip(line_data, modernized):
+                if mod and mod != orig and corresp:
+                    corresp_to_mod[corresp] = mod
+            return apply_modernization_enriched(self.root, corresp_to_mod)
+        else:
+            return apply_modernization(self.root, modernized)
+
+    def enrich_body(self, progress_callback=None):
+        """
+        Apply linguistic enrichment to body containers.
+
+        Tokenizes text, adds POS tags, lemmas, and sentence boundaries
+        using the PyHellen NLP API. Transforms container structure from
+        <lb/>+text to <s>/<w>/<pc>/<lb/>.
+
+        Args:
+            progress_callback: Optional callable(current, total) for progress updates.
+
+        Returns:
+            dict: Enrichment statistics.
+        """
+        return _enrich_body(self.root, progress_callback=progress_callback)
 
     def finalize_langusage(self):
         """

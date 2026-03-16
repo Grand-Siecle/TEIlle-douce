@@ -8,8 +8,11 @@ File ordering module.
 This module provides the Files class for ordering ALTO files by page number.
 """
 
+import logging
 import re
 from collections import namedtuple
+
+logger = logging.getLogger(__name__)
 
 
 # Named tuple for file data
@@ -70,7 +73,7 @@ class Files:
                     others.append(File(999999, filepath))
             else:
                 others.append(File(999999, filepath))
-                print(f"[warn] File ignored (no page number detected): {filepath.name}")
+                logger.warning("File ignored (no page number detected): %s", filepath.name)
 
         if not numbered and not others:
             raise ValueError(f"No valid ALTO files found for {self.doc}")
