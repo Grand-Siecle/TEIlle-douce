@@ -1,5 +1,5 @@
 lxml
 pandas
 rich
-fasttext
+lingua-language-detector
 httpx

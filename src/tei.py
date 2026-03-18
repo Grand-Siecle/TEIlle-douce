@@ -129,7 +129,7 @@ class TEI:
         the TEI body structure with appropriate elements (`<ab>`, `<note>`,
         `<fw>`, `<lb/>`, etc.).
 
-        When `detect_lang=True`, uses FastText to detect the language of
+        When `detect_lang=True`, uses Lingua to detect the language of
         each text container and adds `xml:lang` attributes. Language
         statistics are stored in `self.lang_stats` for later use.
 
@@ -138,7 +138,7 @@ class TEI:
             to update the `<langUsage>` element in the TEI header.
 
         Args:
-            detect_lang (bool): If True, detect languages with FastText
+            detect_lang (bool): If True, detect languages with Lingua
                                and add `xml:lang` attributes to containers.
                                Defaults to True.
 
