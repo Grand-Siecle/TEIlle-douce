@@ -62,23 +62,24 @@ class LanguageHeuristics:
             },
 
             # Latin - scholarly/ecclesiastical vocabulary
+            # Only words that are unambiguously Latin (not shared with French)
             "lat": {
                 "chars": set(),  # Latin alphabet shared with other languages
                 "words": [
-                    # Very common Latin words
-                    "est", "non", "sed", "et", "in", "ad", "de", "ex", "cum",
-                    "per", "pro", "quod", "qui", "quae", "quia", "sic", "ita",
+                    # Unambiguous Latin function words
+                    "sed", "cum", "quod", "quae", "quia", "sic", "ita",
                     "ergo", "idem", "enim", "autem", "vel", "aut", "nec", "neque",
+                    "atque", "tamen", "etiam", "quidem", "ideo", "unde",
                     # Philosophical/theological terms
-                    "esse", "ens", "veritas", "ratio", "natura", "virtus",
-                    "anima", "corpus", "intellectus", "voluntas", "fides",
+                    "esse", "ens", "veritas", "virtus",
+                    "anima", "intellectus", "voluntas", "fides",
                     # Scholarly citations
-                    "ibid", "ibidem", "cap", "lib", "dist", "articulus",
+                    "ibid", "ibidem", "articulus",
                     "quaestio", "obiectio", "respondeo", "dico", "dicendum",
-                    # Verbs
+                    # Unambiguous Latin verbs
                     "dicit", "dicitur", "potest", "debet", "habet", "facit",
-                    # Common endings patterns (as words)
-                    "orum", "arum", "ibus", "atur", "itur", "antur", "untur",
+                    # Distinctive Latin endings
+                    "orum", "arum", "ibus", "antur", "untur",
                 ],
                 "patterns": [
                     r"\bS\.\s*Thom",  # S. Thomas (Aquinas)
@@ -92,24 +93,35 @@ class LanguageHeuristics:
             },
 
             # French - distinctive patterns and common words
+            # Reinforced for early modern French (16th-18th c.)
             "fra": {
-                "chars": set("çœŒ"),  # Distinctive French characters
+                "chars": set("çœŒéèêëàâùûîïôæÆ"),  # French diacritics
                 "words": [
-                    # Articles and determiners
-                    "le", "la", "les", "un", "une", "des", "du", "de", "au", "aux",
+                    # Articles and determiners (unambiguous for French)
+                    "le", "la", "les", "une", "des", "du", "au", "aux",
                     # Pronouns
                     "je", "tu", "il", "elle", "nous", "vous", "ils", "elles",
-                    "ce", "cette", "ces", "qui", "que", "dont", "où",
+                    "ce", "cette", "ces", "dont", "où",
                     # Prepositions
                     "dans", "sur", "sous", "avec", "pour", "par", "sans", "chez",
+                    "entre", "vers", "depuis", "devant", "après",
                     # Conjunctions
-                    "et", "ou", "mais", "donc", "car", "ni", "comme", "si",
+                    "ou", "mais", "donc", "car", "ni", "comme", "si",
+                    "parce", "lorsque", "puisque", "quoique",
                     # Common verbs
-                    "est", "sont", "avoir", "faire", "dire", "voir", "pouvoir",
+                    "sont", "avoir", "faire", "dire", "voir", "pouvoir",
+                    "fut", "peut", "doit", "fait", "dit", "soit",
                     # Adverbs
                     "plus", "moins", "bien", "mal", "très", "aussi", "encore",
-                    # Historical French
+                    "toujours", "jamais", "rien", "point", "mesme",
+                    # Demonstratives / possessives
+                    "son", "ses", "leur", "leurs", "mon", "nos", "vos",
+                    # Early modern French / old orthography
                     "estre", "auoit", "estoit", "mesme", "tousiours", "iamais",
+                    "auec", "faisoit", "pouuoit", "deuoit", "auant",
+                    "lequel", "laquelle", "lesquels", "lesquelles",
+                    "ceste", "icelle", "iceluy", "ledit", "ladite",
+                    "chapitre", "philosophe", "quelque", "plusieurs",
                 ],
                 "patterns": [
                     r"\bl['']",  # l'homme, l'art
@@ -119,6 +131,13 @@ class LanguageHeuristics:
                     r"\bs['']",  # s'il, s'est
                     r"\bc['']",  # c'est, c'était
                     r"«.*?»",  # French quotation marks
+                    # French suffix patterns (not shared with Latin)
+                    r"\b\w+ment\b",  # -ment (adverbs)
+                    r"\b\w+eux\b",  # -eux (adjectives)
+                    r"\b\w+euse\b",  # -euse
+                    r"\b\w+ois\b",  # -ois (old French adjectives)
+                    r"\b\w+oit\b",  # -oit (old French verb endings)
+                    r"\b\w+oient\b",  # -oient (old French 3rd pl.)
                 ],
             },
 
