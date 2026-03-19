@@ -338,10 +338,11 @@ def main():
                     from src.enrichment.ner_models import NERModels
 
                     # Lazy-load models (shared across documents)
-                    if not hasattr(main, "_ner_models"):
-                        main._ner_models = NERModels(NER_MODELS)
+                    global _ner_models
+                    if _ner_models is None:
+                        _ner_models = NERModels(NER_MODELS)
 
-                    ner_models = main._ner_models
+                    ner_models = _ner_models
 
                     # Phase 7: Extract blocks + inference
                     ner_blocks = extract_ner_blocks(tree.root, NER_CONTAINERS)
