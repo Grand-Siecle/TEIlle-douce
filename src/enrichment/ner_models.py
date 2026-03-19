@@ -14,6 +14,39 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+class _FlairNERWrapper:
+    """
+    Wraps a Flair SequenceTagger to behave like a HuggingFace NER pipeline.
+
+    Callable with a list of strings, returns list of list of dicts with
+    keys: entity_group, score, start, end.
+    """
+
+    def __init__(self, tagger):
+        self._tagger = tagger
+
+    def __call__(self, texts):
+        from flair.data import Sentence
+
+        sentences = [Sentence(t) for t in texts]
+        self._tagger.predict(sentences)
+
+        all_results = []
+        for sentence in sentences:
+            preds = []
+            for entity in sentence.get_spans("ner"):
+                preds.append(
+                    {
+                        "entity_group": entity.get_label("ner").value,
+                        "score": entity.get_label("ner").score,
+                        "start": entity.start_position,
+                        "end": entity.end_position,
+                    }
+                )
+            all_results.append(preds)
+        return all_results
+
+
 class NERModels:
     """
     Lazy-loading wrapper for NER models.
@@ -33,17 +66,14 @@ class NERModels:
 
     @property
     def camembert(self):
-        """HuggingFace NER pipeline for French classical text."""
+        """Flair SequenceTagger for French classical text (wrapped as HF-like pipeline)."""
         if self._camembert is None:
             model_id = self._config["camembert"]["model_id"]
-            logger.info("Loading CamemBERT NER model: %s", model_id)
-            from transformers import pipeline as hf_pipeline
+            logger.info("Loading CamemBERT NER model (Flair): %s", model_id)
+            from flair.models import SequenceTagger
 
-            self._camembert = hf_pipeline(
-                "ner",
-                model=model_id,
-                aggregation_strategy="simple",
-            )
+            tagger = SequenceTagger.load(model_id)
+            self._camembert = _FlairNERWrapper(tagger)
             logger.info("CamemBERT NER model loaded")
         return self._camembert
 
