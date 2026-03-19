@@ -318,7 +318,6 @@ def extract_ner_blocks(root, containers_config):
 def _run_camembert(blocks, model, label_map, threshold):
     """Run CamemBERT NER on a list of blocks."""
     results = []
-    texts = [b.text for b in blocks]
 
     for i, block in enumerate(blocks):
         try:
