@@ -78,6 +78,9 @@ from src.utils import write_xml
 
 console = Console()
 
+# Lazy-loaded NER models (shared across documents when NER is enabled)
+_ner_models = None
+
 
 # =============================================================================
 # UTILITY FUNCTIONS
