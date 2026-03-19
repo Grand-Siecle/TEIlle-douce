@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 from lxml import etree
 
 from ..constants import NS_TEI, NS_XML
+from ..utils.xml import local_tag as _local
 
 logger = logging.getLogger(__name__)
 
@@ -77,13 +78,6 @@ def _build_label_map(entity_types_config):
 # =============================================================================
 # BLOCK EXTRACTION
 # =============================================================================
-
-
-def _local(tag):
-    """Strip namespace from a tag name."""
-    if isinstance(tag, str) and "}" in tag:
-        return tag.split("}", 1)[1]
-    return tag
 
 
 def _find_choices(container):

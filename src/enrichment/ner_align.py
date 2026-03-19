@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 from lxml import etree
 
 from ..constants import NS_TEI, NS_XML
+from ..utils.xml import local_tag as _local
 
 logger = logging.getLogger(__name__)
 
@@ -87,13 +88,6 @@ def _align_orig_spans(block, spans):
         )
 
     return aligned
-
-
-def _local(tag):
-    """Strip namespace from a tag name."""
-    if isinstance(tag, str) and "}" in tag:
-        return tag.split("}", 1)[1]
-    return tag
 
 
 def _align_reg_spans(block, spans):

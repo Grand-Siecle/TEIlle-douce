@@ -21,6 +21,7 @@ from pathlib import Path
 from lxml import etree
 
 from ..constants import NS_TEI, NS_XML
+from ..utils.xml import local_tag as _local
 
 logger = logging.getLogger(__name__)
 
@@ -84,13 +85,6 @@ def _normalize(text):
     stripped = "".join(c for c in nfkd if not unicodedata.combining(c))
     # Collapse whitespace
     return " ".join(stripped.split())
-
-
-def _local(tag):
-    """Strip namespace from tag."""
-    if isinstance(tag, str) and "}" in tag:
-        return tag.split("}", 1)[1]
-    return tag
 
 
 # =============================================================================
