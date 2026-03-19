@@ -257,52 +257,61 @@ def resolve_wikidata(entities, entity_types_config, min_confidence, max_rps, tim
         logger.warning("Wikidata resolution failed: %s", e)
 
 
+async def _resolve_one_entity(client, ent, semaphore):
+    """Resolve a single entity against Wikidata."""
+    async with semaphore:
+        try:
+            qid = None
+
+            # Try identifier-based lookup if local match has ISNI/ARK
+            if ent.local_match:
+                from ..metadata.csv_person import get_person_database
+
+                pdb = get_person_database()
+                if pdb:
+                    person = pdb.get(ent.local_match)
+                    if person:
+                        isni = person.get("isni")
+                        if isni:
+                            qid = await client.search_by_identifier("P213", isni)
+                        if not qid:
+                            ark = person.get("ark")
+                            if ark:
+                                qid = await client.search_by_identifier("P268", ark)
+
+            # Fall back to name search
+            if not qid:
+                qid = await client.search_entity(
+                    ent.canonical_name, ent.entity_type
+                )
+
+            if not qid:
+                return False
+
+            # Fetch properties
+            props = await client.fetch_properties(qid, ent.entity_type)
+            ent.wikidata_id = qid
+            ent.wikidata_label = props.get("label", "")
+            ent.wikidata_data = props
+            return True
+
+        except Exception as e:
+            logger.debug("Wikidata failed for '%s': %s", ent.canonical_name, e)
+            return False
+
+
 async def _resolve_wikidata_async(entities, max_rps, timeout):
-    """Async Wikidata resolution."""
+    """Async Wikidata resolution with concurrent requests."""
     from ..utils.wikidata import WikidataClient
 
-    resolved = 0
+    semaphore = asyncio.Semaphore(max_rps)
 
     async with WikidataClient(max_rps=max_rps, timeout=timeout) as client:
-        for ent in entities:
-            try:
-                qid = None
+        results = await asyncio.gather(
+            *(_resolve_one_entity(client, ent, semaphore) for ent in entities)
+        )
 
-                # Try identifier-based lookup if local match has ISNI/ARK
-                if ent.local_match:
-                    from ..metadata.csv_person import get_person_database
-
-                    pdb = get_person_database()
-                    if pdb:
-                        person = pdb.get(ent.local_match)
-                        if person:
-                            isni = person.get("isni")
-                            if isni:
-                                qid = await client.search_by_identifier("P213", isni)
-                            if not qid:
-                                ark = person.get("ark")
-                                if ark:
-                                    qid = await client.search_by_identifier("P268", ark)
-
-                # Fall back to name search
-                if not qid:
-                    qid = await client.search_entity(
-                        ent.canonical_name, ent.entity_type
-                    )
-
-                if not qid:
-                    continue
-
-                # Fetch properties
-                props = await client.fetch_properties(qid, ent.entity_type)
-                ent.wikidata_id = qid
-                ent.wikidata_label = props.get("label", "")
-                ent.wikidata_data = props
-                resolved += 1
-
-            except Exception as e:
-                logger.debug("Wikidata failed for '%s': %s", ent.canonical_name, e)
-
+    resolved = sum(1 for r in results if r)
     logger.info("NER: resolved %d entities via Wikidata", resolved)
 
 
@@ -574,6 +583,11 @@ def add_refs_to_body(root, entities, entity_types_config):
     """
     # Build lookup: (entity_type, frozenset of w_ids) → xml_id
     # and (entity_type, text) → xml_id for raw text entities
+    #
+    # NOTE: id() relies on lxml reusing the same element proxies throughout
+    # the single-pass pipeline. If the tree is re-parsed or serialized between
+    # Phase 8 injection and this point, all id() values will change and no
+    # @ref attributes will be set.
     w_lookup = {}
     text_lookup = {}
 
