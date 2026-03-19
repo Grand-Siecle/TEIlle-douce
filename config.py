@@ -217,6 +217,145 @@ MODERNIZE_TIMEOUT = 300
 MODERNIZE_MAX_CONCURRENT = 3
 
 # =============================================================================
+# NAMED ENTITY RECOGNITION (NER)
+# =============================================================================
+
+# Enable/disable automatic NER pipeline (runs after modernization)
+NER_ENABLED = True
+
+# Entity types to detect — add/remove entries to customize
+# Each key maps to a TEI annotation strategy + optional Wikidata enrichment
+NER_ENTITY_TYPES = {
+    "person": {
+        "tei_element": "persName",
+        "tei_list": "listPerson",
+        "tei_item": "person",
+        "tei_parent": "particDesc",
+        "gliner_label": "person name",
+        "camembert_label": "PER",
+        "wikidata_lookup": True,
+        "csv_file": "entities_persons.csv",
+    },
+    "place": {
+        "tei_element": "placeName",
+        "tei_list": "listPlace",
+        "tei_item": "place",
+        "tei_parent": "settingDesc",
+        "gliner_label": "place name",
+        "camembert_label": "LOC",
+        "wikidata_lookup": True,
+        "csv_file": "entities_places.csv",
+    },
+    "organization": {
+        "tei_element": "orgName",
+        "tei_list": "listOrg",
+        "tei_item": "org",
+        "tei_parent": "particDesc",
+        "gliner_label": "organization",
+        "camembert_label": "ORG",
+        "wikidata_lookup": True,
+        "csv_file": "entities_orgs.csv",
+    },
+    "date": {
+        "tei_element": "date",
+        "tei_list": None,
+        "tei_item": None,
+        "tei_parent": None,
+        "gliner_label": "date",
+        "camembert_label": "DATE",
+        "wikidata_lookup": False,
+        "csv_file": None,
+    },
+    "artwork": {
+        "tei_element": "objectName",
+        "tei_list": "listObject",
+        "tei_item": "object",
+        "tei_parent": "standOff",
+        "gliner_label": "artwork",
+        "camembert_label": None,
+        "wikidata_lookup": True,
+        "csv_file": "entities_artworks.csv",
+    },
+    "literary_work": {
+        "tei_element": "title",
+        "tei_list": "listBibl",
+        "tei_item": "bibl",
+        "tei_parent": "standOff",
+        "gliner_label": "literary work",
+        "camembert_label": None,
+        "wikidata_lookup": True,
+        "csv_file": "entities_works.csv",
+    },
+    "material": {
+        "tei_element": "material",
+        "tei_list": None,
+        "tei_item": None,
+        "tei_parent": None,
+        "gliner_label": "material",
+        "camembert_label": None,
+        "wikidata_lookup": False,
+        "csv_file": "entities_materials.csv",
+    },
+    "technique": {
+        "tei_element": "rs",
+        "tei_element_attrs": {"type": "technique"},
+        "tei_list": None,
+        "tei_item": None,
+        "tei_parent": None,
+        "gliner_label": "artistic technique",
+        "camembert_label": None,
+        "wikidata_lookup": False,
+        "csv_file": "entities_techniques.csv",
+    },
+    "event": {
+        "tei_element": "rs",
+        "tei_element_attrs": {"type": "event"},
+        "tei_list": "listEvent",
+        "tei_item": "event",
+        "tei_parent": "standOff",
+        "gliner_label": "historical event",
+        "camembert_label": None,
+        "wikidata_lookup": True,
+        "csv_file": "entities_events.csv",
+    },
+}
+
+# NER models configuration
+NER_MODELS = {
+    "camembert": {
+        "model_id": "pjox/camembert-classical-fr-ner",
+        "batch_size": 32,
+        "languages": ["fra"],
+        "source_text": "orig",
+    },
+    "gliner": {
+        "model_id": "urchade/gliner_multi-v2.1",
+        "batch_size": 16,
+        "languages": None,  # all languages
+        "source_text": "reg",  # <reg> for fra, raw text for others
+    },
+}
+
+# Minimum confidence score to keep a NER prediction
+NER_CONFIDENCE_THRESHOLD = 0.5
+
+# Minimum confidence for Wikidata lookup (avoid noisy queries)
+NER_WIKIDATA_MIN_CONFIDENCE = 0.7
+
+# Output directory for entity CSV files
+NER_OUTPUT_DIR = Path("entities")
+
+# TEI containers to scan for NER (same as enrichment by default)
+NER_CONTAINERS = {"ab", "note", "fw"}
+
+# Confidence → @cert mapping thresholds
+NER_CERT_THRESHOLDS = {"low": 0.0, "mid": 0.6, "high": 0.85}
+
+# Wikidata rate limiting
+NER_WIKIDATA_MAX_RPS = 10
+NER_WIKIDATA_TIMEOUT = 30
+
+# =============================================================================
 # RESPONSIBILITY STATEMENT
 # =============================================================================
 

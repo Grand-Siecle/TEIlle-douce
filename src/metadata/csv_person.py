@@ -239,6 +239,10 @@ class PersonDatabase:
         """Check if a person ID exists in the database."""
         return person_id in self._persons
 
+    def __iter__(self):
+        """Iterate over person IDs in the database."""
+        return iter(self._persons)
+
     def __len__(self):
         """Return the number of persons in the database."""
         return len(self._persons)
