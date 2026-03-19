@@ -259,20 +259,26 @@ class WikidataClient:
 
         return result
 
-    async def _sparql(self, query):
-        """Execute a SPARQL query against Wikidata."""
+    async def _sparql(self, query, retries=2):
+        """Execute a SPARQL query against Wikidata with retry."""
         params = {"query": query, "format": "json"}
         headers = {"Accept": "application/sparql-results+json"}
-        await self._limiter.acquire()
-        try:
-            resp = await self._client.get(
-                WIKIDATA_SPARQL, params=params, headers=headers
-            )
-            resp.raise_for_status()
-            return resp.json()
-        except (httpx.HTTPError, httpx.TimeoutException) as e:
-            logger.warning("Wikidata SPARQL failed: %s", e)
-            return None
+        for attempt in range(retries + 1):
+            await self._limiter.acquire()
+            try:
+                resp = await self._client.get(
+                    WIKIDATA_SPARQL, params=params, headers=headers
+                )
+                resp.raise_for_status()
+                return resp.json()
+            except (httpx.HTTPError, httpx.TimeoutException) as e:
+                if attempt < retries:
+                    wait = 2 ** attempt
+                    logger.debug("SPARQL retry %d after %ss: %s", attempt + 1, wait, e)
+                    await asyncio.sleep(wait)
+                else:
+                    logger.warning("Wikidata SPARQL failed after %d retries: %s", retries, e)
+                    return None
 
 
 def _sparql_value(row, var_name):
