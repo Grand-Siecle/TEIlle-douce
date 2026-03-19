@@ -196,8 +196,11 @@ def link_local(entities, person_db):
             if not surname:
                 continue
 
-            # Match: full name, surname only, or surname in canonical
-            if norm_name == full or norm_name == surname or surname in norm_name:
+            # Match: full name, surname only, or surname as whole word in canonical
+            surname_words = surname.split()
+            name_words = norm_name.split()
+            surname_in_name = all(sw in name_words for sw in surname_words) if surname_words else False
+            if norm_name == full or norm_name == surname or surname_in_name:
                 ent.local_match = pid
                 linked += 1
                 logger.debug(
