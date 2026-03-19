@@ -18,6 +18,6 @@ Usage:
 """
 
 from .files import Files
-from .xml import write_xml
+from .xml import write_xml, local_tag
 
-__all__ = ["Files", "write_xml"]
+__all__ = ["Files", "write_xml", "local_tag"]
