@@ -109,6 +109,8 @@ class LinguaDetector:
         self.detector = (
             LanguageDetectorBuilder
             .from_languages(*languages)
+            .with_preloaded_language_models()
+            .with_minimum_relative_distance(0.25)
             .build()
         )
         logger.info(
