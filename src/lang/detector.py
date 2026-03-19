@@ -66,6 +66,9 @@ class LinguaDetector:
     MIN_SEGMENT_WORDS = 3
     SHORT_TEXT_WORDS = 8
 
+    # Confidence boost for the document's dominant language
+    PRIOR_BOOST = 0.15
+
     def __init__(
         self,
         supported_langs=None,
@@ -79,6 +82,7 @@ class LinguaDetector:
         self.default_lang = default_lang or LANG_DEFAULT
         self.detector = None
         self.stats = Counter()
+        self._document_prior = None  # dominant language from first pass
 
         # lingua enum name -> TEI ident (e.g. "FRENCH" -> "fra")
         self._lingua_name_to_tei = {}
@@ -149,12 +153,49 @@ class LinguaDetector:
             return self.default_lang
         return self._lingua_name_to_tei.get(lingua_lang.name, self.default_lang)
 
+    def compute_document_prior(self, texts):
+        """
+        First pass: detect the dominant language from all document texts.
+
+        Concatenates a sample of texts and runs lingua on the combined text
+        to establish the document-level dominant language.
+
+        Args:
+            texts: Iterable of text strings from all containers.
+        """
+        # Sample up to 5000 chars for efficiency
+        sample = []
+        total = 0
+        for t in texts:
+            if t and t.strip():
+                cleaned = self.clean_text(t)
+                sample.append(cleaned)
+                total += len(cleaned)
+                if total > 5000:
+                    break
+
+        combined = " ".join(sample)
+        if len(combined) < self.min_text_length:
+            return
+
+        self._ensure_detector()
+        confs = self.detector.compute_language_confidence_values(combined)
+        if confs:
+            prior = self._lang_to_tei(confs[0].language)
+            prior_conf = confs[0].value
+            if prior_conf >= self.confidence_threshold:
+                self._document_prior = prior
+                logger.info(
+                    "Document prior: %s (confidence=%.3f)", prior, prior_conf
+                )
+
     def _detect_single(self, text):
         """
         Detect language for a single text segment.
 
         Returns (language_code, confidence). Falls back to heuristics
-        for short texts with low lingua confidence.
+        for short texts with low lingua confidence. When a document prior
+        is set, boosts its confidence to reduce false positives.
         """
         if len(text) < self.min_text_length:
             return (self.default_lang, 0.0)
@@ -164,6 +205,19 @@ class LinguaDetector:
         confs = self.detector.compute_language_confidence_values(text)
         if not confs:
             return (self.default_lang, 0.0)
+
+        # Apply document prior: boost the dominant language's confidence
+        if self._document_prior and len(confs) >= 2:
+            conf_map = {self._lang_to_tei(c.language): c.value for c in confs}
+            prior_conf = conf_map.get(self._document_prior, 0.0)
+            best_lang = self._lang_to_tei(confs[0].language)
+            best_conf = confs[0].value
+
+            # If the prior language is close to the best, boost it
+            if best_lang != self._document_prior and prior_conf > 0:
+                boosted = prior_conf + self.PRIOR_BOOST
+                if boosted >= best_conf:
+                    return (self._document_prior, boosted)
 
         best = confs[0]
         detected = self._lang_to_tei(best.language)
@@ -222,14 +276,24 @@ class LinguaDetector:
             lang_word_counts[self._lang_to_tei(r.language)] += r.word_count
         majority_lang = lang_word_counts.most_common(1)[0][0]
 
-        # Collect foreign segments
+        # Collect foreign segments, validated by heuristics
+        heuristics = _get_heuristics()
         foreign_segments = []
         for r in multi_results:
             tei_lang = self._lang_to_tei(r.language)
             if tei_lang != majority_lang and tei_lang != self.default_lang:
                 if r.word_count >= self.MIN_SEGMENT_WORDS:
+                    seg_text = cleaned[r.start_index:r.end_index]
+                    # Validate: heuristics must not say it's the majority lang
+                    heur_lang, heur_score = heuristics.detect(seg_text)
+                    if heur_lang == majority_lang and heur_score >= 2:
+                        logger.debug(
+                            "Rejected foreign segment '%s' — heuristics say %s",
+                            seg_text[:50], majority_lang,
+                        )
+                        continue
                     foreign_segments.append(LinguaSegment(
-                        text=cleaned[r.start_index:r.end_index],
+                        text=seg_text,
                         lang=tei_lang,
                         start=r.start_index,
                         end=r.end_index,
@@ -249,6 +313,7 @@ class LinguaDetector:
 
     def reset_stats(self):
         self.stats.clear()
+        self._document_prior = None
 
 
 # Global singleton
