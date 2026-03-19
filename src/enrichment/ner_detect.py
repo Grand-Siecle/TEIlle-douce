@@ -1,0 +1,458 @@
+# -----------------------------------------------------------
+# Phase 7: NER block extraction and inference.
+# -----------------------------------------------------------
+"""
+NER detection pipeline (Phase 7).
+
+Extracts text blocks from TEI containers, runs CamemBERT and/or GLiNER
+inference, and returns typed NER spans.
+
+The extraction handles three cases:
+- French tokenized: <choice>/<orig>/<w> for CamemBERT, <reg> for GLiNER
+- Non-French tokenized: <choice>/<orig>/<w> for GLiNER
+- Raw text (no <choice>): plain text for GLiNER
+"""
+
+import logging
+from dataclasses import dataclass, field
+
+from lxml import etree
+
+from ..constants import NS_TEI, NS_XML
+
+logger = logging.getLogger(__name__)
+
+XML_LANG = f"{{{NS_XML}}}lang"
+TEI_NS = f"{{{NS_TEI}}}"
+
+
+# =============================================================================
+# DATACLASSES
+# =============================================================================
+
+
+@dataclass
+class NERBlock:
+    """A text block extracted for NER inference."""
+
+    lang: str  # "fra", "lat", "grc", ...
+    text: str  # flat text for inference
+    source: str  # "orig" | "reg" | "raw"
+    container: etree._Element  # parent XML node (<ab>, <note>, etc.)
+    # For source="orig": mapping (start_char, end_char) → <w> element
+    char_to_w: list[tuple[int, int, etree._Element]] = field(default_factory=list)
+    # For source="reg": mapping (start_char, end_char) → <reg> element
+    char_to_reg: list[tuple[int, int, etree._Element]] = field(default_factory=list)
+
+
+@dataclass
+class NERSpan:
+    """An entity detected by a NER model."""
+
+    start_char: int
+    end_char: int
+    text: str
+    label: str  # raw model label ("PER", "person name", etc.)
+    entity_type: str  # normalized key ("person", "place", etc.)
+    confidence: float
+    model: str  # "camembert" | "gliner"
+
+
+# =============================================================================
+# LABEL MAPPING
+# =============================================================================
+
+
+def _build_label_map(entity_types_config):
+    """Build reverse mapping from model labels to entity type keys."""
+    label_map = {}
+    for key, cfg in entity_types_config.items():
+        if cfg.get("camembert_label"):
+            label_map[cfg["camembert_label"]] = key
+        if cfg.get("gliner_label"):
+            label_map[cfg["gliner_label"]] = key
+    return label_map
+
+
+# =============================================================================
+# BLOCK EXTRACTION
+# =============================================================================
+
+
+def _local(tag):
+    """Strip namespace from a tag name."""
+    if isinstance(tag, str) and "}" in tag:
+        return tag.split("}", 1)[1]
+    return tag
+
+
+def _find_choices(container):
+    """Find all <choice> elements that have <orig> and <reg type='modernized'>."""
+    choices = []
+    for elem in container.iter():
+        if _local(elem.tag) == "choice":
+            orig = None
+            reg = None
+            for child in elem:
+                local = _local(child.tag)
+                if local == "orig":
+                    orig = child
+                elif local == "reg" and child.get("type") == "modernized":
+                    reg = child
+            if orig is not None:
+                choices.append((elem, orig, reg))
+    return choices
+
+
+def _extract_w_text(orig_elem):
+    """
+    Reconstruct flat text from <w> and <pc> elements inside <orig>.
+
+    Returns:
+        tuple: (text, char_to_w) where char_to_w maps char ranges to <w> elements.
+    """
+    parts = []
+    char_to_w = []
+    pos = 0
+
+    for s_elem in orig_elem.iter():
+        local = _local(s_elem.tag)
+        if local == "w":
+            token_text = s_elem.text or ""
+            if not token_text:
+                continue
+            if pos > 0:
+                parts.append(" ")
+                pos += 1
+            start = pos
+            parts.append(token_text)
+            pos += len(token_text)
+            char_to_w.append((start, pos, s_elem))
+        elif local == "pc":
+            token_text = s_elem.text or ""
+            if not token_text:
+                continue
+            # Punctuation: attach directly (no space before if join="left")
+            join = s_elem.get("join", "")
+            if join != "left" and pos > 0:
+                parts.append(" ")
+                pos += 1
+            start = pos
+            parts.append(token_text)
+            pos += len(token_text)
+
+    return "".join(parts), char_to_w
+
+
+def _extract_orig_block(container, lang, choices):
+    """
+    Extract a block from <orig> elements (for CamemBERT on French,
+    or for non-French tokenized blocks).
+
+    Concatenates text from all <w> elements across all <choice> in the container.
+    """
+    all_text_parts = []
+    all_char_to_w = []
+    global_pos = 0
+
+    for _choice, orig, _reg in choices:
+        text, char_to_w = _extract_w_text(orig)
+        if not text:
+            continue
+        if global_pos > 0:
+            all_text_parts.append(" ")
+            global_pos += 1
+        offset = global_pos
+        all_text_parts.append(text)
+        for start, end, w_elem in char_to_w:
+            all_char_to_w.append((start + offset, end + offset, w_elem))
+        global_pos += len(text)
+
+    full_text = "".join(all_text_parts)
+    if not full_text.strip():
+        return None
+
+    return NERBlock(
+        lang=lang,
+        text=full_text,
+        source="orig",
+        container=container,
+        char_to_w=all_char_to_w,
+    )
+
+
+def _extract_reg_block(container, lang, choices):
+    """
+    Extract a block from <reg type="modernized"> elements (for GLiNER on French).
+
+    Concatenates text from all <reg> elements across all <choice> in the container.
+    """
+    all_text_parts = []
+    all_char_to_reg = []
+    global_pos = 0
+
+    for _choice, _orig, reg in choices:
+        if reg is None:
+            continue
+        text = reg.text or ""
+        if not text.strip():
+            continue
+        if global_pos > 0:
+            all_text_parts.append(" ")
+            global_pos += 1
+        start = global_pos
+        all_text_parts.append(text)
+        global_pos += len(text)
+        all_char_to_reg.append((start, global_pos, reg))
+
+    full_text = "".join(all_text_parts)
+    if not full_text.strip():
+        return None
+
+    return NERBlock(
+        lang=lang,
+        text=full_text,
+        source="reg",
+        container=container,
+        char_to_reg=all_char_to_reg,
+    )
+
+
+def _extract_raw_block(container, lang):
+    """
+    Extract a raw text block (no <choice> structure).
+
+    Used for non-enriched/non-modernized containers.
+    """
+    text = etree.tostring(container, method="text", encoding="unicode") or ""
+    text = text.strip()
+    if not text:
+        return None
+
+    return NERBlock(
+        lang=lang,
+        text=text,
+        source="raw",
+        container=container,
+    )
+
+
+def extract_ner_blocks(root, containers_config):
+    """
+    Extract all NER blocks from the TEI body.
+
+    For French containers with <choice>:
+      - One "orig" block (for CamemBERT)
+      - One "reg" block (for GLiNER)
+    For non-French containers with <choice>:
+      - One "orig" block (for GLiNER)
+    For containers without <choice>:
+      - One "raw" block (for GLiNER)
+
+    Args:
+        root: TEI root lxml Element.
+        containers_config: Set of container tag names to scan (e.g. {"ab", "note", "fw"}).
+
+    Returns:
+        list[NERBlock]: Extracted blocks ready for inference.
+    """
+    body = None
+    for elem in root.iter():
+        if _local(elem.tag) == "body":
+            body = elem
+            break
+
+    if body is None:
+        logger.warning("No <body> element found, skipping NER extraction")
+        return []
+
+    blocks = []
+
+    for elem in body.iter():
+        local = _local(elem.tag)
+        if local not in containers_config:
+            continue
+
+        lang = elem.get(XML_LANG, "und")
+        if lang == "und":
+            continue
+
+        choices = _find_choices(elem)
+        is_fra = lang == "fra"
+
+        if choices:
+            if is_fra:
+                # French: CamemBERT on <orig>, GLiNER on <reg>
+                orig_block = _extract_orig_block(elem, lang, choices)
+                if orig_block:
+                    blocks.append(orig_block)
+                reg_block = _extract_reg_block(elem, lang, choices)
+                if reg_block:
+                    blocks.append(reg_block)
+            else:
+                # Non-French tokenized: GLiNER on <orig> text
+                orig_block = _extract_orig_block(elem, lang, choices)
+                if orig_block:
+                    blocks.append(orig_block)
+        else:
+            # No enrichment/modernization: raw text
+            raw_block = _extract_raw_block(elem, lang)
+            if raw_block:
+                blocks.append(raw_block)
+
+    logger.info(
+        "NER: extracted %d blocks (%d orig, %d reg, %d raw)",
+        len(blocks),
+        sum(1 for b in blocks if b.source == "orig"),
+        sum(1 for b in blocks if b.source == "reg"),
+        sum(1 for b in blocks if b.source == "raw"),
+    )
+    return blocks
+
+
+# =============================================================================
+# NER INFERENCE
+# =============================================================================
+
+
+def _run_camembert(blocks, model, label_map, threshold):
+    """Run CamemBERT NER on a list of blocks."""
+    results = []
+    texts = [b.text for b in blocks]
+
+    for i, block in enumerate(blocks):
+        try:
+            preds = model(block.text)
+        except Exception as e:
+            logger.warning("CamemBERT failed on block %d: %s", i, e)
+            results.append([])
+            continue
+
+        spans = []
+        for pred in preds:
+            label = pred.get("entity_group", pred.get("entity", ""))
+            score = pred.get("score", 0.0)
+            if score < threshold:
+                continue
+            entity_type = label_map.get(label)
+            if entity_type is None:
+                continue
+            spans.append(
+                NERSpan(
+                    start_char=pred["start"],
+                    end_char=pred["end"],
+                    text=block.text[pred["start"] : pred["end"]],
+                    label=label,
+                    entity_type=entity_type,
+                    confidence=score,
+                    model="camembert",
+                )
+            )
+        results.append(spans)
+
+    return results
+
+
+def _run_gliner(blocks, model, labels, label_map, threshold):
+    """Run GLiNER NER on a list of blocks."""
+    results = []
+
+    for i, block in enumerate(blocks):
+        try:
+            preds = model.predict_entities(block.text, labels, threshold=threshold)
+        except Exception as e:
+            logger.warning("GLiNER failed on block %d: %s", i, e)
+            results.append([])
+            continue
+
+        spans = []
+        for pred in preds:
+            label = pred.get("label", "")
+            score = pred.get("score", 0.0)
+            entity_type = label_map.get(label)
+            if entity_type is None:
+                continue
+            spans.append(
+                NERSpan(
+                    start_char=pred["start"],
+                    end_char=pred["end"],
+                    text=pred.get("text", block.text[pred["start"] : pred["end"]]),
+                    label=label,
+                    entity_type=entity_type,
+                    confidence=score,
+                    model="gliner",
+                )
+            )
+        results.append(spans)
+
+    return results
+
+
+def detect_entities(blocks, models, entity_types_config, models_config, threshold):
+    """
+    Run NER inference on extracted blocks.
+
+    Dispatches blocks to the appropriate model(s) based on language and source.
+
+    Args:
+        blocks: List of NERBlock from extract_ner_blocks().
+        models: NERModels instance (lazy-loading).
+        entity_types_config: NER_ENTITY_TYPES from config.
+        models_config: NER_MODELS from config.
+        threshold: Minimum confidence score.
+
+    Returns:
+        list[list[NERSpan]]: One list of spans per input block.
+    """
+    if not blocks:
+        return []
+
+    label_map = _build_label_map(entity_types_config)
+
+    # Build GLiNER labels list
+    gliner_labels = [
+        cfg["gliner_label"]
+        for cfg in entity_types_config.values()
+        if cfg.get("gliner_label")
+    ]
+
+    # CamemBERT labels (for filtering — model produces its own labels)
+    camembert_langs = set(models_config["camembert"].get("languages") or [])
+
+    # Separate blocks by model target
+    camembert_blocks = []  # (index, block)
+    gliner_blocks = []  # (index, block)
+
+    for i, block in enumerate(blocks):
+        if block.source == "orig" and block.lang in camembert_langs:
+            # French orig → CamemBERT
+            camembert_blocks.append((i, block))
+        else:
+            # Everything else → GLiNER
+            gliner_blocks.append((i, block))
+
+    # Initialize results
+    all_results = [[] for _ in blocks]
+
+    # Run CamemBERT
+    if camembert_blocks:
+        logger.info("Running CamemBERT on %d French blocks", len(camembert_blocks))
+        cam_blocks = [b for _, b in camembert_blocks]
+        cam_results = _run_camembert(cam_blocks, models.camembert, label_map, threshold)
+        for (idx, _), spans in zip(camembert_blocks, cam_results):
+            all_results[idx] = spans
+
+    # Run GLiNER
+    if gliner_blocks:
+        logger.info("Running GLiNER on %d blocks", len(gliner_blocks))
+        gli_blocks = [b for _, b in gliner_blocks]
+        gli_results = _run_gliner(
+            gli_blocks, models.gliner, gliner_labels, label_map, threshold
+        )
+        for (idx, _), spans in zip(gliner_blocks, gli_results):
+            all_results[idx] = spans
+
+    total_spans = sum(len(s) for s in all_results)
+    logger.info("NER: detected %d entity spans across %d blocks", total_spans, len(blocks))
+
+    return all_results
