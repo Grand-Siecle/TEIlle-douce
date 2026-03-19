@@ -423,8 +423,12 @@ def build_body(root, data, detect_lang=True):
             elif line.line_type and line.line_type.startswith("Default"):
                 last_element.append(lb)
 
-    # Apply language detection to containers
+    # Apply language detection to containers (two-pass)
     if detector:
+        # Pass 1: establish document-level dominant language
+        all_texts = (t for _, texts in containers for t in texts if t)
+        detector.compute_document_prior(all_texts)
+        # Pass 2: detect per-container with document prior as bias
         _apply_language_detection(containers, detector)
         return detector.get_stats()
 
