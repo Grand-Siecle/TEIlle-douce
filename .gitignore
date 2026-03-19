@@ -8,5 +8,7 @@ OCR/
 tei_output/
 *.csv
 *.log
+plans/
+superpowers/
 
 CLAUDE.md
