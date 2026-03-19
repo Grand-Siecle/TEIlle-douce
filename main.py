@@ -31,6 +31,16 @@ from config import (
     RESPONSIBILITY,
     ENRICHMENT_ENABLED,
     MODERNIZE_ENABLED,
+    NER_ENABLED,
+    NER_ENTITY_TYPES,
+    NER_MODELS,
+    NER_CONFIDENCE_THRESHOLD,
+    NER_WIKIDATA_MIN_CONFIDENCE,
+    NER_OUTPUT_DIR,
+    NER_CONTAINERS,
+    NER_CERT_THRESHOLDS,
+    NER_WIKIDATA_MAX_RPS,
+    NER_WIKIDATA_TIMEOUT,
     DEBUG,
     LOG_FILE,
 )
@@ -309,6 +319,71 @@ def main():
 
                 if mod_count > 0:
                     console.print(f"  [dim]Modernisation: {mod_count} lines[/dim]")
+
+            # Step 5: Named Entity Recognition (after enrichment + modernization)
+            if NER_ENABLED:
+                task_ner = progress.add_task(
+                    f"[cyan]{doc_name}: Reconnaissance d'entites nommees[/cyan]",
+                    total=None,
+                    visible=True,
+                )
+
+                try:
+                    from src.enrichment.ner_detect import extract_ner_blocks, detect_entities
+                    from src.enrichment.ner_align import align_and_inject
+                    from src.enrichment.ner_resolve import resolve_entities
+                    from src.enrichment.ner_models import NERModels
+
+                    # Lazy-load models (shared across documents)
+                    if not hasattr(main, "_ner_models"):
+                        main._ner_models = NERModels(NER_MODELS)
+
+                    ner_models = main._ner_models
+
+                    # Phase 7: Extract blocks + inference
+                    ner_blocks = extract_ner_blocks(tree.root, NER_CONTAINERS)
+                    ner_spans = detect_entities(
+                        ner_blocks, ner_models, NER_ENTITY_TYPES,
+                        NER_MODELS, NER_CONFIDENCE_THRESHOLD,
+                    )
+
+                    # Phase 8: Align + merge + inject
+                    aligned = align_and_inject(
+                        tree.root, ner_blocks, ner_spans,
+                        NER_ENTITY_TYPES, NER_CERT_THRESHOLDS,
+                    )
+
+                    # Phase 9: Resolve + Wikidata + CSV + header + @ref
+                    resolved = resolve_entities(
+                        tree.root, aligned, NER_ENTITY_TYPES,
+                        person_db, NER_OUTPUT_DIR,
+                        NER_WIKIDATA_MIN_CONFIDENCE,
+                        NER_WIKIDATA_MAX_RPS, NER_WIKIDATA_TIMEOUT,
+                    )
+
+                    if resolved:
+                        by_type = {}
+                        for ent in resolved:
+                            by_type[ent.entity_type] = by_type.get(ent.entity_type, 0) + 1
+                        total_mentions = sum(len(e.mentions) for e in resolved)
+                        type_str = ", ".join(
+                            f"{c} {t}" for t, c in sorted(by_type.items(), key=lambda x: -x[1])
+                        )
+                        console.print(
+                            f"  [dim]NER: {len(resolved)} entities ({type_str}), "
+                            f"{total_mentions} mentions[/dim]"
+                        )
+
+                except ImportError as e:
+                    console.print(
+                        f"[yellow]Warning: NER dependencies not installed ({e}) "
+                        f"— skipping NER.[/yellow]"
+                    )
+                except Exception as e:
+                    logging.getLogger(__name__).error("NER pipeline failed: %s", e, exc_info=True)
+                    console.print(f"[yellow]Warning: NER failed ({e}) — continuing.[/yellow]")
+
+                progress.update(task_ner, visible=False)
 
             # Override TEI header with CSV metadata
             override_teiheader_from_csv(tree.root, row)
