@@ -184,7 +184,7 @@ def link_local(entities, person_db):
         norm_name = _normalize(ent.canonical_name)
 
         # Try matching against all persons in the database
-        for pid in person_db._persons:
+        for pid in person_db:
             person = person_db.get(pid)
             if not person:
                 continue
