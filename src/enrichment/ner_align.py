@@ -427,7 +427,7 @@ def _make_entity_element(entity_type, cert, entity_types_config):
 
     # Use TEI namespace for parsed trees
     full_tag = f"{TEI_NS}{tag}"
-    elem = etree.Element(full_tag, **{k: v for k, v in attrs.items()})
+    elem = etree.Element(full_tag, **attrs)
     return elem
 
 
