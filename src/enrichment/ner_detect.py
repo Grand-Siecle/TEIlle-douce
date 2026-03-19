@@ -309,74 +309,84 @@ def extract_ner_blocks(root, containers_config):
 # =============================================================================
 
 
-def _run_camembert(blocks, model, label_map, threshold):
-    """Run CamemBERT NER on a list of blocks."""
-    results = []
+def _run_camembert(blocks, model, label_map, threshold, batch_size=32):
+    """Run CamemBERT NER on a list of blocks using batch inference."""
+    results = [[] for _ in blocks]
+    texts = [b.text for b in blocks]
 
-    for i, block in enumerate(blocks):
+    for batch_start in range(0, len(texts), batch_size):
+        batch_texts = texts[batch_start : batch_start + batch_size]
         try:
-            preds = model(block.text)
+            batch_preds = model(batch_texts)
         except Exception as e:
-            logger.warning("CamemBERT failed on block %d: %s", i, e)
-            results.append([])
+            logger.warning("CamemBERT batch failed at offset %d: %s", batch_start, e)
             continue
 
-        spans = []
-        for pred in preds:
-            label = pred.get("entity_group", pred.get("entity", ""))
-            score = pred.get("score", 0.0)
-            if score < threshold:
-                continue
-            entity_type = label_map.get(label)
-            if entity_type is None:
-                continue
-            spans.append(
-                NERSpan(
-                    start_char=pred["start"],
-                    end_char=pred["end"],
-                    text=block.text[pred["start"] : pred["end"]],
-                    label=label,
-                    entity_type=entity_type,
-                    confidence=score,
-                    model="camembert",
+        for j, preds in enumerate(batch_preds):
+            idx = batch_start + j
+            block = blocks[idx]
+            spans = []
+            for pred in preds:
+                label = pred.get("entity_group", pred.get("entity", ""))
+                score = pred.get("score", 0.0)
+                if score < threshold:
+                    continue
+                entity_type = label_map.get(label)
+                if entity_type is None:
+                    continue
+                spans.append(
+                    NERSpan(
+                        start_char=pred["start"],
+                        end_char=pred["end"],
+                        text=block.text[pred["start"] : pred["end"]],
+                        label=label,
+                        entity_type=entity_type,
+                        confidence=score,
+                        model="camembert",
+                    )
                 )
-            )
-        results.append(spans)
+            results[idx] = spans
 
     return results
 
 
-def _run_gliner(blocks, model, labels, label_map, threshold):
-    """Run GLiNER NER on a list of blocks."""
-    results = []
+def _run_gliner(blocks, model, labels, label_map, threshold, batch_size=16):
+    """Run GLiNER NER on a list of blocks using batch inference."""
+    results = [[] for _ in blocks]
+    texts = [b.text for b in blocks]
 
-    for i, block in enumerate(blocks):
+    for batch_start in range(0, len(texts), batch_size):
+        batch_texts = texts[batch_start : batch_start + batch_size]
         try:
-            preds = model.predict_entities(block.text, labels, threshold=threshold)
+            batch_preds = model.batch_predict_entities(
+                batch_texts, labels, threshold=threshold
+            )
         except Exception as e:
-            logger.warning("GLiNER failed on block %d: %s", i, e)
-            results.append([])
+            logger.warning("GLiNER batch failed at offset %d: %s", batch_start, e)
             continue
 
-        spans = []
-        for pred in preds:
-            label = pred.get("label", "")
-            score = pred.get("score", 0.0)
-            entity_type = label_map.get(label)
-            if entity_type is None:
-                continue
-            spans.append(
-                NERSpan(
-                    start_char=pred["start"],
-                    end_char=pred["end"],
-                    text=pred.get("text", block.text[pred["start"] : pred["end"]]),
-                    label=label,
-                    entity_type=entity_type,
-                    confidence=score,
-                    model="gliner",
+        for j, preds in enumerate(batch_preds):
+            idx = batch_start + j
+            block = blocks[idx]
+            spans = []
+            for pred in preds:
+                label = pred.get("label", "")
+                score = pred.get("score", 0.0)
+                entity_type = label_map.get(label)
+                if entity_type is None:
+                    continue
+                spans.append(
+                    NERSpan(
+                        start_char=pred["start"],
+                        end_char=pred["end"],
+                        text=pred.get("text", block.text[pred["start"] : pred["end"]]),
+                        label=label,
+                        entity_type=entity_type,
+                        confidence=score,
+                        model="gliner",
+                    )
                 )
-            )
-        results.append(spans)
+            results[idx] = spans
 
     return results
 
@@ -431,7 +441,8 @@ def detect_entities(blocks, models, entity_types_config, models_config, threshol
     if camembert_blocks:
         logger.info("Running CamemBERT on %d French blocks", len(camembert_blocks))
         cam_blocks = [b for _, b in camembert_blocks]
-        cam_results = _run_camembert(cam_blocks, models.camembert, label_map, threshold)
+        cam_batch = models_config["camembert"].get("batch_size", 32)
+        cam_results = _run_camembert(cam_blocks, models.camembert, label_map, threshold, cam_batch)
         for (idx, _), spans in zip(camembert_blocks, cam_results):
             all_results[idx] = spans
 
@@ -439,8 +450,9 @@ def detect_entities(blocks, models, entity_types_config, models_config, threshol
     if gliner_blocks:
         logger.info("Running GLiNER on %d blocks", len(gliner_blocks))
         gli_blocks = [b for _, b in gliner_blocks]
+        gli_batch = models_config["gliner"].get("batch_size", 16)
         gli_results = _run_gliner(
-            gli_blocks, models.gliner, gliner_labels, label_map, threshold
+            gli_blocks, models.gliner, gliner_labels, label_map, threshold, gli_batch
         )
         for (idx, _), spans in zip(gliner_blocks, gli_results):
             all_results[idx] = spans
