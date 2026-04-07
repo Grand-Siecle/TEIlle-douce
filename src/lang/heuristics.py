@@ -106,7 +106,7 @@ class LanguageHeuristics:
                     "dans", "sur", "sous", "avec", "pour", "par", "sans", "chez",
                     "entre", "vers", "depuis", "devant", "après",
                     # Conjunctions
-                    "ou", "mais", "donc", "car", "ni", "comme", "si",
+                    "ou", "mais", "donc", "car", "ni", "comme",
                     "parce", "lorsque", "puisque", "quoique",
                     # Common verbs
                     "sont", "avoir", "faire", "dire", "voir", "pouvoir",
