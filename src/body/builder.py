@@ -444,7 +444,7 @@ def _apply_language_detection(containers, detector):
 
     Args:
         containers: List of (element, [line_texts]) tuples.
-        detector: LanguageDetector instance.
+        detector: LinguaDetector instance.
     """
     for element, line_texts in containers:
         # Join all line texts for this container
@@ -594,8 +594,8 @@ def _insert_foreign_tags(element, full_text, foreign_segments, detector):
     Args:
         element: The container element (ab, note, fw).
         full_text: The full text content of the container.
-        foreign_segments: List of LangSegment objects.
-        detector: LanguageDetector instance.
+        foreign_segments: List of LinguaSegment objects.
+        detector: LinguaDetector instance.
     """
     # For each foreign segment, create a <foreign> element
     # We add them as siblings after the container, or as notes
