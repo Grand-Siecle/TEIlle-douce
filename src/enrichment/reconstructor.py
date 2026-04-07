@@ -36,8 +36,9 @@ def rebuild_container(container, sentences, spans):
         sentences: List of Sentence objects for this container.
         spans: List of TextSpan objects from extraction.
     """
-    # Save container attributes
+    # Save container attributes and <foreign> children (from lang detection)
     attribs = dict(container.attrib)
+    foreign_elements = [child for child in container if child.tag == "foreign"]
 
     # Clear all children and text
     container.text = None
@@ -105,6 +106,10 @@ def rebuild_container(container, sentences, spans):
                     prev_line_index = at.spans[-1].line_index
             else:
                 _create_w(target, at)
+
+    # Re-append <foreign> elements preserved from language detection
+    for fe in foreign_elements:
+        container.append(fe)
 
 
 def _insert_lb(parent, span, aligned_token, inserted_lbs):
