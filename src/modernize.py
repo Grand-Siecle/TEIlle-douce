@@ -195,6 +195,58 @@ async def _modernize_all(texts, base_url, progress_callback=None):
     return results if any_success else None
 
 
+def dehyphenate_lines(texts):
+    """
+    Join words split by ¬ or - across consecutive lines.
+
+    For each line ending with ¬ (or -), the last word fragment is merged
+    with the first word of the next line. The merged word replaces the
+    fragment on the current line; the next line loses its first word.
+
+    This must be called before sending lines to the modernization API,
+    so the model sees complete words instead of fragments.
+
+    Args:
+        texts: List of line texts.
+
+    Returns:
+        list: Modified texts with hyphenated words rejoined.
+    """
+    joined = list(texts)
+
+    for i in range(len(joined) - 1):
+        line = joined[i]
+        if not line:
+            continue
+        stripped = line.rstrip()
+        if not stripped.endswith("¬") and not stripped.endswith("-"):
+            continue
+
+        # Find the word fragment before the hyphen
+        before_hyphen = stripped[:-1]
+        last_space = before_hyphen.rfind(" ")
+        if last_space == -1:
+            suffix = before_hyphen
+            prefix_line = ""
+        else:
+            suffix = before_hyphen[last_space + 1:]
+            prefix_line = before_hyphen[:last_space + 1]
+
+        # First word of next line
+        next_line = joined[i + 1]
+        if not next_line or not next_line.strip():
+            continue
+        next_words = next_line.split(None, 1)
+        next_first = next_words[0] if next_words else ""
+        next_rest = next_words[1] if len(next_words) > 1 else ""
+
+        # Merge: current line gets full word, next line loses first word
+        joined[i] = prefix_line + suffix + next_first
+        joined[i + 1] = next_rest
+
+    return joined
+
+
 async def _send_batch(client, base_url, batch_texts, batch_size=None):
     """POST a single batch to /translate/batch."""
     if batch_size is None:

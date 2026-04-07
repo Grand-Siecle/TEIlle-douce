@@ -184,7 +184,7 @@ class TEI:
         Returns:
             int: Number of lines modernized, or 0 on failure.
         """
-        from .modernize import modernize_texts
+        from .modernize import modernize_texts, dehyphenate_lines
 
         # Get line texts
         if line_data is None:
@@ -196,9 +196,13 @@ class TEI:
 
         original_texts = [text for _, text in line_data]
 
+        # Dehyphenate before modernization: join words split by ¬/-
+        # across lines so the API sees complete words.
+        joined_texts = dehyphenate_lines(original_texts)
+
         try:
             modernized = modernize_texts(
-                original_texts, lang="fra", progress_callback=progress_callback
+                joined_texts, lang="fra", progress_callback=progress_callback
             )
         except Exception as e:
             logger.error("Modernization failed: %s: %r", type(e).__name__, e)
