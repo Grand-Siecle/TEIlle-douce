@@ -195,19 +195,23 @@ async def _modernize_all(texts, base_url, progress_callback=None):
     return results if any_success else None
 
 
-def dehyphenate_lines(texts):
+def dehyphenate_lines(texts, zone_types=None):
     """
-    Join words split by ¬ or - across consecutive lines.
+    Join words split by ¬ or - across lines of the same zone type.
 
-    For each line ending with ¬ (or -), the last word fragment is merged
-    with the first word of the next line. The merged word replaces the
-    fragment on the current line; the next line loses its first word.
+    For each line ending with ¬ (or -), finds the next line with the
+    same zone type and merges the word fragments. The full word appears
+    on BOTH lines to give the modernization API maximum context:
+    - Line N: "...le souverain"  (fragment replaced by full word)
+    - Line M: "souverain Arbitre:..."  (full word prepended)
 
-    This must be called before sending lines to the modernization API,
-    so the model sees complete words instead of fragments.
+    Lines of different zone types (e.g. MainZone vs RunningTitleZone)
+    are never merged, preventing cross-container corruption.
 
     Args:
         texts: List of line texts.
+        zone_types: Optional list of zone type strings (same length as texts).
+                    If None, joins with immediately next line (legacy behavior).
 
     Returns:
         list: Modified texts with hyphenated words rejoined.
@@ -232,17 +236,32 @@ def dehyphenate_lines(texts):
             suffix = before_hyphen[last_space + 1:]
             prefix_line = before_hyphen[:last_space + 1]
 
-        # First word of next line
-        next_line = joined[i + 1]
+        # Find the next line with the same zone type
+        my_zone = zone_types[i] if zone_types else None
+        target = None
+        for j in range(i + 1, len(joined)):
+            if zone_types is None:
+                target = j
+                break
+            if zone_types[j] == my_zone:
+                target = j
+                break
+
+        if target is None:
+            continue
+
+        next_line = joined[target]
         if not next_line or not next_line.strip():
             continue
         next_words = next_line.split(None, 1)
         next_first = next_words[0] if next_words else ""
-        next_rest = next_words[1] if len(next_words) > 1 else ""
 
-        # Merge: current line gets full word, next line loses first word
-        joined[i] = prefix_line + suffix + next_first
-        joined[i + 1] = next_rest
+        # Full word = suffix + first word of continuation line
+        full_word = suffix + next_first
+
+        # Both lines get the full word for maximum API context
+        joined[i] = prefix_line + full_word
+        joined[target] = full_word + (" " + next_words[1] if len(next_words) > 1 else "")
 
     return joined
 

@@ -152,20 +152,29 @@ class TEI:
 
     def extract_line_data(self):
         """
-        Extract line texts and corresp values from <lb> elements.
+        Extract line texts, corresp values, and zone types from <lb> elements.
 
         Must be called after build_body() and before enrich_body(),
         because enrichment replaces <lb> tails with <w>/<pc> elements.
 
         Returns:
-            list[tuple[str|None, str]]: List of (corresp, text) tuples,
-                one per <lb> element in document order.
+            list[tuple[str|None, str, str]]: List of (corresp, text, zone_type)
+                tuples, one per <lb> element in document order.
         """
         body = self.root.find(".//body")
         if body is None:
             return []
-        lbs = list(body.iter("lb"))
-        return [(lb.get("corresp"), lb.tail or "") for lb in lbs]
+        result = []
+        for lb in body.iter("lb"):
+            corresp = lb.get("corresp")
+            text = lb.tail or ""
+            # Walk up to the container (ab, note, fw) to get zone type
+            parent = lb.getparent()
+            while parent is not None and parent.tag not in ("ab", "note", "fw"):
+                parent = parent.getparent()
+            zone_type = parent.get("type", "") if parent is not None else ""
+            result.append((corresp, text, zone_type))
+        return result
 
     def modernize_body(self, line_data=None, enriched=False, progress_callback=None):
         """
@@ -188,17 +197,15 @@ class TEI:
 
         # Get line texts
         if line_data is None:
-            body = self.root.find(".//body")
-            if body is None:
-                return 0
-            lbs = list(body.iter("lb"))
-            line_data = [(lb.get("corresp"), lb.tail or "") for lb in lbs]
+            line_data = self.extract_line_data()
 
-        original_texts = [text for _, text in line_data]
+        original_texts = [text for _, text, *_ in line_data]
+        zone_types = [zt for _, _, zt, *_ in line_data] if len(line_data[0]) > 2 else None
 
         # Dehyphenate before modernization: join words split by ¬/-
         # across lines so the API sees complete words.
-        joined_texts = dehyphenate_lines(original_texts)
+        # Only joins within the same zone type to avoid cross-container merges.
+        joined_texts = dehyphenate_lines(original_texts, zone_types=zone_types)
 
         try:
             modernized = modernize_texts(
@@ -214,7 +221,8 @@ class TEI:
         if enriched:
             # Build corresp -> modernized mapping for lines that changed
             corresp_to_mod = {}
-            for (corresp, orig), mod in zip(line_data, modernized):
+            for ld, mod in zip(line_data, modernized):
+                corresp, orig = ld[0], ld[1]
                 if mod and mod != orig and corresp:
                     corresp_to_mod[corresp] = mod
             return apply_modernization_enriched(self.root, corresp_to_mod)
