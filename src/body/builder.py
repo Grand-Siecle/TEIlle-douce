@@ -423,8 +423,12 @@ def build_body(root, data, detect_lang=True):
             elif line.line_type and line.line_type.startswith("Default"):
                 last_element.append(lb)
 
-    # Apply language detection to containers
+    # Apply language detection to containers (two-pass)
     if detector:
+        # Pass 1: establish document-level dominant language
+        all_texts = (t for _, texts in containers for t in texts if t)
+        detector.compute_document_prior(all_texts)
+        # Pass 2: detect per-container with document prior as bias
         _apply_language_detection(containers, detector)
         return detector.get_stats()
 
@@ -440,7 +444,7 @@ def _apply_language_detection(containers, detector):
 
     Args:
         containers: List of (element, [line_texts]) tuples.
-        detector: LanguageDetector instance.
+        detector: LinguaDetector instance.
     """
     for element, line_texts in containers:
         # Join all line texts for this container
@@ -590,8 +594,8 @@ def _insert_foreign_tags(element, full_text, foreign_segments, detector):
     Args:
         element: The container element (ab, note, fw).
         full_text: The full text content of the container.
-        foreign_segments: List of LangSegment objects.
-        detector: LanguageDetector instance.
+        foreign_segments: List of LinguaSegment objects.
+        detector: LinguaDetector instance.
     """
     # For each foreign segment, create a <foreign> element
     # We add them as siblings after the container, or as notes

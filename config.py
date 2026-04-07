@@ -170,7 +170,7 @@ SUPPORTED_LANGUAGES = {
 LANG_CONFIDENCE_THRESHOLD = 0.35
 
 LANG_MIN_TEXT_LENGTH = 10
-LANG_DEFAULT = "und"  # undetermined (ISO 639-2)
+LANG_DEFAULT = "fra"  # fallback to French for ambiguous texts
 
 # =============================================================================
 # LINGUISTIC ENRICHMENT
