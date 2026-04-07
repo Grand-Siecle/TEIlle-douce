@@ -456,8 +456,8 @@ def _apply_language_detection(containers, detector):
         # Detect language with segments
         primary_lang, foreign_segments = detector.detect_with_segments(full_text)
 
-        # Set primary language on container
-        if primary_lang and primary_lang != detector.default_lang:
+        # Set primary language on container (always, including default)
+        if primary_lang:
             element.attrib[XML_LANG] = primary_lang
 
         # If there are foreign segments, we need to wrap them
