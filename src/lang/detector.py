@@ -138,6 +138,13 @@ class LinguaDetector:
         text = text.replace('ï', 'i')
         text = text.replace('ü', 'u')
 
+        # Ramist letter normalization (pre-17th c. typography):
+        # u/v: 'uu' mid-word → 'uv' (pouuoir→pouvoir, trouuer→trouver)
+        text = re.sub(r'(?<=\w)uu(?=\w)', 'uv', text)
+        # i/j: word-initial 'i' before vowel → 'j' (ie→je, iamais→jamais)
+        text = re.sub(r'\bi(?=[aeiouyàâéèêëîïôùûœ])', 'j', text)
+        text = re.sub(r'\bI(?=[aeiouyàâéèêëîïôùûœAEIOUY])', 'J', text)
+
         text = re.sub(r'\s+', ' ', text)
         text = re.sub(r'[|¦]', '', text)
 
@@ -209,8 +216,20 @@ class LinguaDetector:
         confidence = best.value
         prior = self._document_prior or self.default_lang
 
-        # Lingua agrees with prior — accept directly
-        if detected == prior:
+        # Lingua agrees with prior — but still verify non-default languages
+        # with heuristics (the prior itself may have been wrong)
+        if detected == prior and detected == self.default_lang:
+            return (detected, confidence)
+        if detected == prior and detected != self.default_lang:
+            # Prior is non-default (e.g. lat): check heuristics can confirm
+            heuristics = _get_heuristics()
+            heur_lang, heur_score = heuristics.detect(text)
+            if heur_lang == self.default_lang and heur_score >= 2:
+                logger.debug(
+                    "Heuristics override prior+lingua: %s(%.3f) -> %s (heur=%.1f) | %s",
+                    detected, confidence, self.default_lang, heur_score, text[:60],
+                )
+                return (self.default_lang, confidence)
             return (detected, confidence)
 
         # Lingua disagrees with prior — consult heuristics
@@ -312,8 +331,11 @@ class LinguaDetector:
                 if r.word_count >= self.MIN_SEGMENT_WORDS:
                     seg_text = cleaned[r.start_index:r.end_index]
                     # Validate: heuristics must not say it's the primary lang
+                    # Threshold 1: any single primary-lang signal rejects
+                    # the segment. Tested: separates all false-latin (fr≥1)
+                    # from real latin (fr=0), with one edge case ("si")
                     heur_lang, heur_score = heuristics.detect(seg_text)
-                    if heur_lang == primary_lang and heur_score >= 2:
+                    if heur_lang == primary_lang and heur_score >= 1:
                         logger.debug(
                             "Rejected foreign segment '%s' — heuristics say %s",
                             seg_text[:50], primary_lang,
