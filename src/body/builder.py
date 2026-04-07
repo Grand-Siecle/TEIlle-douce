@@ -347,6 +347,8 @@ def build_body(root, data, detect_lang=True):
     # Track containers for language detection
     containers = []  # list of (element, list of line texts)
 
+    last_page_id = None
+
     for line in data:
         # Prepare zone attributes (without language for now)
         zone_atts = {"corresp": f"#{line.zone_id}", "type": line.zone_type}
@@ -355,10 +357,11 @@ def build_body(root, data, detect_lang=True):
         lb = etree.Element("lb", corresp=f"#{line.id}")
         lb.tail = f"{line.text}"
 
-        # Add page break at first line of each page
-        if int(line.n) == 1:
+        # Add page break when the page changes (not per zone)
+        if line.page_id != last_page_id:
             pb = etree.Element("pb", corresp=f"#{line.page_id}")
             div.append(pb)
+            last_page_id = line.page_id
 
         # Ensure div has at least one element
         if len(div) == 0:
