@@ -16,6 +16,7 @@ original text is kept.
 
 import asyncio
 import logging
+import re
 
 import httpx
 
@@ -27,6 +28,9 @@ logger = logging.getLogger(__name__)
 # orig_words * TOLERANCE_RATIO + TOLERANCE_ABS extra words.
 TOLERANCE_RATIO = 1.5
 TOLERANCE_ABS = 2
+
+# Lines matching this pattern have no real textual content to modernize.
+_SKIP_RE = re.compile(r'^[\s\W\d]*$')
 
 
 def _is_divergent(original, modernized):
@@ -88,7 +92,25 @@ def modernize_texts(texts, lang="fra", progress_callback=None):
     if not base_url:
         return None
 
-    return asyncio.run(_modernize_all(texts, base_url, progress_callback))
+    # Filter out lines with no real textual content (whitespace, digits,
+    # punctuation only) — sending them to the API wastes time and can
+    # produce hallucinated output.
+    sendable_idx = [i for i, t in enumerate(texts) if not _SKIP_RE.match(t)]
+    if not sendable_idx:
+        return None
+    sendable_texts = [texts[i] for i in sendable_idx]
+
+    modernized = asyncio.run(
+        _modernize_all(sendable_texts, base_url, progress_callback)
+    )
+    if modernized is None:
+        return None
+
+    # Re-expand to full list, keeping originals for skipped lines.
+    full = list(texts)
+    for j, idx in enumerate(sendable_idx):
+        full[idx] = modernized[j]
+    return full
 
 
 async def _modernize_all(texts, base_url, progress_callback=None):
