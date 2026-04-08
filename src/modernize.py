@@ -35,10 +35,13 @@ TOLERANCE_ABS = 2
 # original and modernized text.  Below this threshold the API output
 # is considered hallucinated.  Legitimate old-French → modern-French
 # changes (cognoiſtre → connaître) stay above ~0.73 after normalization.
-SIMILARITY_MIN = 0.6
+SIMILARITY_MIN = 0.8
 
 # Lines matching this pattern have no real textual content to modernize.
 _SKIP_RE = re.compile(r'^[\s\W\d]*$')
+
+# Minimum number of alphabetic characters for a line to be worth modernizing.
+_MIN_ALPHA = 3
 
 
 def _normalize_for_comparison(text):
@@ -120,7 +123,10 @@ def modernize_texts(texts, lang="fra", progress_callback=None):
     # Filter out lines with no real textual content (whitespace, digits,
     # punctuation only) — sending them to the API wastes time and can
     # produce hallucinated output.
-    sendable_idx = [i for i, t in enumerate(texts) if not _SKIP_RE.match(t)]
+    sendable_idx = [
+        i for i, t in enumerate(texts)
+        if not _SKIP_RE.match(t) and sum(c.isalpha() for c in t) >= _MIN_ALPHA
+    ]
     if not sendable_idx:
         return None
     sendable_texts = [texts[i] for i in sendable_idx]
