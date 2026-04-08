@@ -17,6 +17,8 @@ original text is kept.
 import asyncio
 import logging
 import re
+import unicodedata
+from difflib import SequenceMatcher
 
 import httpx
 
@@ -29,15 +31,30 @@ logger = logging.getLogger(__name__)
 TOLERANCE_RATIO = 1.5
 TOLERANCE_ABS = 2
 
+# Minimum character-level similarity (after normalization) between
+# original and modernized text.  Below this threshold the API output
+# is considered hallucinated.  Legitimate old-French → modern-French
+# changes (cognoiſtre → connaître) stay above ~0.73 after normalization.
+SIMILARITY_MIN = 0.6
+
 # Lines matching this pattern have no real textual content to modernize.
 _SKIP_RE = re.compile(r'^[\s\W\d]*$')
+
+
+def _normalize_for_comparison(text):
+    """Normalize text for similarity comparison: long-s, accents, case."""
+    text = text.replace("ſ", "s").replace("¬", "").lower()
+    nfkd = unicodedata.normalize("NFKD", text)
+    return "".join(c for c in nfkd if unicodedata.category(c) != "Mn")
 
 
 def _is_divergent(original, modernized):
     """
     Check if modernized text diverges too much from original.
 
-    Returns True if the word count difference exceeds tolerance.
+    Returns True if:
+    - the word count difference exceeds tolerance, OR
+    - the character-level similarity (after normalization) is too low.
     """
     if not original or not modernized:
         return False
@@ -45,7 +62,15 @@ def _is_divergent(original, modernized):
     mod_wc = len(modernized.split())
     if orig_wc == 0:
         return mod_wc > TOLERANCE_ABS
-    return mod_wc > orig_wc * TOLERANCE_RATIO + TOLERANCE_ABS
+    if mod_wc > orig_wc * TOLERANCE_RATIO + TOLERANCE_ABS:
+        return True
+    # Character-level similarity check (catches hallucinations with
+    # similar word count, e.g. Greek OCR artifacts → invented French).
+    n_orig = _normalize_for_comparison(original)
+    n_mod = _normalize_for_comparison(modernized)
+    if SequenceMatcher(None, n_orig, n_mod).ratio() < SIMILARITY_MIN:
+        return True
+    return False
 
 
 def check_api(lang="fra"):
@@ -144,7 +169,7 @@ async def _modernize_all(texts, base_url, progress_callback=None):
     any_success = False
     divergent = []  # list of (global_index, original_text)
 
-    for (start, batch_texts), response in zip(batches, responses):
+    for (start, _batch_texts), response in zip(batches, responses):
         if isinstance(response, Exception) or response is None:
             if DEBUG:
                 logger.debug(
