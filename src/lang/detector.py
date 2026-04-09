@@ -327,18 +327,28 @@ class LinguaDetector:
         foreign_segments = []
         for r in multi_results:
             tei_lang = self._lang_to_tei(r.language)
-            if tei_lang != primary_lang and tei_lang != self.default_lang:
+            if tei_lang != primary_lang:
                 if r.word_count >= self.MIN_SEGMENT_WORDS:
                     seg_text = cleaned[r.start_index:r.end_index]
-                    # Validate: heuristics must not say it's the primary lang
-                    # Threshold 1: any single primary-lang signal rejects
-                    # the segment. Tested: separates all false-latin (fr≥1)
-                    # from real latin (fr=0), with one edge case ("si")
+                    # Validate with heuristics (two checks):
+                    # 1) Reject if heuristics positively say primary lang (≥2).
+                    # 2) Reject if heuristics find NO signal for the detected
+                    #    foreign lang either — ambiguous segments are not tagged.
                     heur_lang, heur_score = heuristics.detect(seg_text)
-                    if heur_lang == primary_lang and heur_score >= 1:
+                    if heur_lang == primary_lang and heur_score >= 2:
                         logger.debug(
                             "Rejected foreign segment '%s' — heuristics say %s",
                             seg_text[:50], primary_lang,
+                        )
+                        continue
+                    # Check the detected foreign lang has some heuristic backing
+                    foreign_heur_lang, foreign_heur_score = heuristics.detect_lang(
+                        seg_text, tei_lang,
+                    )
+                    if foreign_heur_score == 0:
+                        logger.debug(
+                            "Rejected foreign segment '%s' — no %s signal",
+                            seg_text[:50], tei_lang,
                         )
                         continue
                     foreign_segments.append(LinguaSegment(
