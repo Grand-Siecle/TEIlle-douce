@@ -72,7 +72,19 @@ class NERModels:
             logger.info("Loading CamemBERT NER model (Flair): %s", model_id)
             from flair.models import SequenceTagger
 
-            tagger = SequenceTagger.load(model_id)
+            # Flair expects pytorch_model.bin in the repo, but some repos
+            # use a custom filename. Download explicitly when model_id
+            # contains a filename (namespace/repo/file).
+            if model_id.count("/") > 1:
+                from huggingface_hub import hf_hub_download
+                parts = model_id.split("/", 2)
+                local_path = hf_hub_download(
+                    repo_id=f"{parts[0]}/{parts[1]}",
+                    filename=parts[2],
+                )
+                tagger = SequenceTagger.load(local_path)
+            else:
+                tagger = SequenceTagger.load(model_id)
             self._camembert = _FlairNERWrapper(tagger)
             logger.info("CamemBERT NER model loaded")
         return self._camembert
