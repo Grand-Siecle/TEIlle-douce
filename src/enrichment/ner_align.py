@@ -461,12 +461,19 @@ def _inject_tokenized_entities(entities, cert_thresholds, entity_types_config):
 
             # Insert wrapper before the first <w> in the group
             first_w = group[0]
-            idx = list(parent).index(first_w)
+            try:
+                idx = list(parent).index(first_w)
+            except ValueError:
+                logger.debug("Skipping entity injection — <w> no longer in expected parent")
+                continue
             parent.insert(idx, wrapper)
 
             # Move all <w> in the group into the wrapper
             for w in group:
-                parent.remove(w)
+                if w.getparent() is parent:
+                    parent.remove(w)
+                elif w.getparent() is not None:
+                    w.getparent().remove(w)
                 wrapper.append(w)
 
 
