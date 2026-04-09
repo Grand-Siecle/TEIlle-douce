@@ -190,8 +190,12 @@ def _rebuild_with_modernization(container, groups, corresp_to_mod):
             line_idx = occurrences[0][0]
             fragment_ids[(s_id, line_idx)] = s_id
 
-    # Phase 3: Clear container children
+    # Phase 3: Clear container children (preserve <foreign> elements)
     attribs = dict(container.attrib)
+    foreign_elements = [
+        child for child in container
+        if child.tag == "foreign" or child.tag.endswith("}foreign")
+    ]
     container.text = None
     for child in list(container):
         container.remove(child)
@@ -285,6 +289,10 @@ def _rebuild_with_modernization(container, groups, corresp_to_mod):
 
                 for token in seg.tokens:
                     s_new.append(token)
+
+    # Re-append <foreign> elements preserved from language detection
+    for fe in foreign_elements:
+        container.append(fe)
 
     return count
 

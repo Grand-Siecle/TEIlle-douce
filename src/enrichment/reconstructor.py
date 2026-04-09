@@ -38,7 +38,10 @@ def rebuild_container(container, sentences, spans):
     """
     # Save container attributes and <foreign> children (from lang detection)
     attribs = dict(container.attrib)
-    foreign_elements = [child for child in container if child.tag == "foreign"]
+    foreign_elements = [
+        child for child in container
+        if child.tag == "foreign" or child.tag.endswith("}foreign")
+    ]
 
     # Clear all children and text
     container.text = None

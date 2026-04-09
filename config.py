@@ -177,7 +177,7 @@ LANG_DEFAULT = "fra"  # fallback to French for ambiguous texts
 # =============================================================================
 
 # Enable/disable linguistic enrichment (tokenization, POS, lemmatization)
-ENRICHMENT_ENABLED = False #True
+ENRICHMENT_ENABLED = True
 
 # PyHellen API server URL
 PYHELLEN_URL = "http://localhost:8000"
@@ -203,7 +203,7 @@ ENRICHMENT_MIN_TEXT_LENGTH = 5
 # =============================================================================
 
 # Enable/disable text modernization (old French -> modern French)
-MODERNIZE_ENABLED = False #True
+MODERNIZE_ENABLED = True
 
 # Mapping from TEI language ident to modernization API base URL
 # Add entries for other languages as APIs become available
@@ -225,7 +225,7 @@ MODERNIZE_MAX_CONCURRENT = 3
 # =============================================================================
 
 # Enable/disable automatic NER pipeline (runs after modernization)
-NER_ENABLED = False #True
+NER_ENABLED = True
 
 # Entity types to detect — add/remove entries to customize
 # Each key maps to a TEI annotation strategy + optional Wikidata enrichment
