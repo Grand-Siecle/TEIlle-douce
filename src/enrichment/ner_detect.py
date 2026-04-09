@@ -358,7 +358,7 @@ def _run_gliner(blocks, model, labels, label_map, threshold, batch_size=16):
     for batch_start in range(0, len(texts), batch_size):
         batch_texts = texts[batch_start : batch_start + batch_size]
         try:
-            batch_preds = model.batch_predict_entities(
+            batch_preds = model.inference(
                 batch_texts, labels, threshold=threshold
             )
         except Exception as e:
