@@ -70,15 +70,22 @@ class LanguageHeuristics:
                     "sed", "cum", "quod", "quae", "quia", "sic", "ita",
                     "ergo", "idem", "enim", "autem", "vel", "aut", "nec", "neque",
                     "atque", "tamen", "etiam", "quidem", "ideo", "unde",
-                    # Philosophical/theological terms
-                    "esse", "ens", "veritas", "virtus",
-                    "anima", "intellectus", "voluntas", "fides",
-                    # Scholarly citations
-                    "ibid", "ibidem", "articulus",
-                    "quaestio", "obiectio", "respondeo", "dico", "dicendum",
-                    # Unambiguous Latin verbs
+                    "nam", "ubi", "sicut", "tanquam", "quasi", "apud",
+                    # Pronouns / demonstratives (not French)
+                    "hic", "haec", "hoc", "ille", "illa", "illud",
+                    "ipse", "ipsa", "ipsum", "eius", "eorum",
+                    # Common Latin verbs (not French)
                     "dicit", "dicitur", "potest", "debet", "habet", "facit",
-                    # Distinctive Latin endings
+                    "inquit", "fuit", "sunt", "erat", "fieri",
+                    "videtur", "patet", "oportet",
+                    # Common nouns / adjectives
+                    "esse", "ens", "veritas", "virtus", "omnis", "omnes",
+                    "anima", "intellectus", "voluntas", "fides",
+                    "nihil", "aliud", "aliquid", "nullus", "nulla",
+                    # Scholarly / ecclesiastical
+                    "ibid", "ibidem", "articulus", "liber",
+                    "quaestio", "obiectio", "respondeo", "dico", "dicendum",
+                    # Distinctive Latin endings (as words)
                     "orum", "arum", "ibus", "antur", "untur",
                 ],
                 "patterns": [
@@ -89,6 +96,9 @@ class LanguageHeuristics:
                     r"\bdist\.\s*\d+",  # dist. 1
                     r"\bq\.\s*\d+",  # q. 1 (quaestio)
                     r"\bart\.\s*\d+",  # art. 1 (articulus)
+                    r"\b\w+orum\b",   # genitive plural (-orum)
+                    r"\b\w+arum\b",   # genitive plural (-arum)
+                    r"\b\w+ibus\b",   # ablative/dative plural (-ibus)
                 ],
             },
 
@@ -116,9 +126,13 @@ class LanguageHeuristics:
                     "toujours", "jamais", "rien", "point", "mesme",
                     # Demonstratives / possessives
                     "son", "ses", "leur", "leurs", "mon", "nos", "vos",
+                    # Common words not shared with Latin
+                    "pas", "on", "y", "tant", "cet", "ceux",
+                    "très", "chez", "assez", "beaucoup", "trop",
                     # Early modern French / old orthography
                     "estre", "auoit", "estoit", "mesme", "tousiours", "iamais",
                     "auec", "faisoit", "pouuoit", "deuoit", "auant",
+                    "nostre", "vostre", "mesmes", "vn",
                     "lequel", "laquelle", "lesquels", "lesquelles",
                     "ceste", "icelle", "iceluy", "ledit", "ladite",
                     "chapitre", "philosophe", "quelque", "plusieurs",
@@ -333,6 +347,22 @@ class LanguageHeuristics:
             return (None, best_score)
 
         return (best_lang, best_score)
+
+    def detect_lang(self, text, lang):
+        """
+        Score a specific language for *text*.
+
+        Returns:
+            tuple: (lang, score) — score is 0 when no signal is found.
+        """
+        if not text or lang not in self.rules:
+            return (lang, 0)
+        rules = self.rules[lang]
+        score = 0
+        score += self._count_char_matches(text, rules["chars"]) * self.char_weight
+        score += self._count_word_matches(text, rules["words"])
+        score += self._count_pattern_matches(text, rules["patterns"]) * 1.5
+        return (lang, score)
 
 # Global singleton
 _heuristics = None
