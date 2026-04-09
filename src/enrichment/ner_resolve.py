@@ -679,20 +679,8 @@ def inject_editorial_declaration(root):
             name = _sub(resp_stmt, "name")
             name.text = "NER Pipeline (CamemBERT + GLiNER)"
 
-    # Add interpretation to encodingDesc/editorialDecl
-    encoding_desc = _find_or_create(tei_header, "encodingDesc")
-    editorial_decl = _find_or_create(encoding_desc, "editorialDecl")
-    interpretation = _sub(editorial_decl, "interpretation")
-    p = _sub(interpretation, "p")
-    p.text = (
-        "Named entities were automatically detected using a hybrid NER pipeline. "
-        "French text was processed with CamemBERT-classical-fr-ner on original "
-        "orthography and GLiNER-multi-v2.1 on modernized text. Non-French text "
-        "was processed with GLiNER only. Annotations carry @resp=\"#ner-auto\" "
-        "and @cert (low < 0.6, mid 0.6\u20130.85, high > 0.85). Identifiers "
-        "were resolved against local authority files and Wikidata where "
-        "confidence exceeded 0.7."
-    )
+    # Editorial declaration for NER is now in config.EDITORIAL_DECLARATIONS
+    # and injected by the header builder. Nothing to add here.
 
 
 # =============================================================================

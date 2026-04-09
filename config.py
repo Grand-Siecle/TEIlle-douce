@@ -177,7 +177,7 @@ LANG_DEFAULT = "fra"  # fallback to French for ambiguous texts
 # =============================================================================
 
 # Enable/disable linguistic enrichment (tokenization, POS, lemmatization)
-ENRICHMENT_ENABLED = True
+ENRICHMENT_ENABLED = False #True
 
 # PyHellen API server URL
 PYHELLEN_URL = "http://localhost:8000"
@@ -189,7 +189,11 @@ PYHELLEN_TIMEOUT = 120
 PYHELLEN_MODELS = {"fra": "freem", "lat": "lasla", "grc": "grc"}
 
 # TEI container elements to enrich
-ENRICHMENT_CONTAINERS = {"ab", "note", "fw"}
+ENRICHMENT_CONTAINERS = {
+                        "ab", 
+                        "note", 
+                         #"fw"
+                         }
 
 # Minimum text length (chars) to attempt enrichment
 ENRICHMENT_MIN_TEXT_LENGTH = 5
@@ -199,7 +203,7 @@ ENRICHMENT_MIN_TEXT_LENGTH = 5
 # =============================================================================
 
 # Enable/disable text modernization (old French -> modern French)
-MODERNIZE_ENABLED = True
+MODERNIZE_ENABLED = False #True
 
 # Mapping from TEI language ident to modernization API base URL
 # Add entries for other languages as APIs become available
@@ -221,7 +225,7 @@ MODERNIZE_MAX_CONCURRENT = 3
 # =============================================================================
 
 # Enable/disable automatic NER pipeline (runs after modernization)
-NER_ENABLED = True
+NER_ENABLED = False #True
 
 # Entity types to detect — add/remove entries to customize
 # Each key maps to a TEI annotation strategy + optional Wikidata enrichment
@@ -323,7 +327,7 @@ NER_ENTITY_TYPES = {
 # NER models configuration
 NER_MODELS = {
     "camembert": {
-        "model_id": "pjox/camembert-classical-fr-ner",
+        "model_id": "pjox/camembert-classical-fr-ner/final-model.pt",
         "batch_size": 32,
         "languages": ["fra"],
         "source_text": "orig",
@@ -354,6 +358,70 @@ NER_CERT_THRESHOLDS = {"low": 0.0, "mid": 0.6, "high": 0.85}
 # Wikidata rate limiting
 NER_WIKIDATA_MAX_RPS = 10
 NER_WIKIDATA_TIMEOUT = 30
+
+# =============================================================================
+# EDITORIAL DECLARATIONS (encodingDesc/editorialDecl)
+# =============================================================================
+
+# Each entry produces a child element of <editorialDecl> in the TEI header.
+# Only entries whose "enabled" key is True (or whose matching pipeline flag
+# is True) are injected.  Set to None or remove an entry to skip it.
+EDITORIAL_DECLARATIONS = {
+    "normalization": {
+        "enabled": MODERNIZE_ENABLED,
+        "attrs": {"method": "markup"},
+        "text": (
+            "Original historical spelling is preserved in orig elements. "
+            "Modernized spelling is provided in reg elements, generated "
+            "automatically via a translation API (LSTM Fairseq/FreEM model). "
+            "Lines whose modernized form diverges too far from the original "
+            "(word-count ratio or character-level similarity after "
+            "normalization below 0.8) are left unmodified."
+        ),
+    },
+    "segmentation": {
+        "enabled": ENRICHMENT_ENABLED,
+        "attrs": {},
+        "text": (
+            "Linguistic annotation (tokenization, POS tagging, "
+            "lemmatization, sentence segmentation) was produced "
+            "automatically by the PyHellen NLP API. Tokens are "
+            "encoded as w elements with @lemma, @pos and @msd "
+            "attributes; punctuation as pc elements; sentence "
+            "boundaries as s elements."
+        ),
+    },
+    "interpretation": {
+        "enabled": NER_ENABLED,
+        "attrs": {},
+        "text": (
+            "Named entities were automatically detected using a hybrid "
+            "NER pipeline. French text was processed with "
+            "CamemBERT-classical-fr-ner on original orthography and "
+            "GLiNER-multi-v2.1 on modernized text. Non-French text "
+            "was processed with GLiNER only. Annotations carry "
+            '@resp="#ner-auto" and @cert (low < 0.6, mid 0.6\u20130.85, '
+            "high > 0.85). Identifiers were resolved against local "
+            "authority files and Wikidata where confidence exceeded 0.7."
+        ),
+    },
+    "langUsage": {
+        "enabled": True,
+        "attrs": {},
+        "text": (
+            "Language detection uses Lingua (statistical n-gram model) at "
+            "the container level (ab, note, fw). Mixed-language containers "
+            "are segmented by Lingua's detect_multiple_languages_of, which "
+            "identifies contiguous blocks via sliding-window character "
+            "n-gram comparison. Segments classified as foreign are validated "
+            "by rule-based heuristics (character sets, keywords, patterns): "
+            "a segment is rejected if the primary-language heuristic score "
+            "reaches 2, or if the target-language heuristic score is 0. "
+            "Greek is detected reliably through Unicode character ranges; "
+            "Latin relies on distinctive vocabulary not shared with French."
+        ),
+    },
+}
 
 # =============================================================================
 # RESPONSIBILITY STATEMENT

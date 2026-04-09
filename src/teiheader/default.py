@@ -19,7 +19,7 @@ from config import (
     SEGMONTO,
     PLACEHOLDER_INFO_UNAVAILABLE,
     PLACEHOLDER_NO_METADATA,
-    MODERNIZE_ENABLED,
+    EDITORIAL_DECLARATIONS,
 )
 
 
@@ -229,18 +229,14 @@ class DefaultTree:
 
     def _build_encoding_desc(self, encodingDesc):
         """Build the <encodingDesc> section with application info and taxonomy."""
-        # <editorialDecl> for text modernization policy
-        if MODERNIZE_ENABLED:
+        # <editorialDecl> from config declarations
+        enabled = {k: v for k, v in EDITORIAL_DECLARATIONS.items() if v.get("enabled")}
+        if enabled:
             editorialDecl = etree.SubElement(encodingDesc, "editorialDecl")
-            normalization = etree.SubElement(
-                editorialDecl, "normalization", method="markup"
-            )
-            p = etree.SubElement(normalization, "p")
-            p.text = (
-                "Original historical spelling is preserved in orig elements. "
-                "Modernized spelling is provided in reg elements, generated "
-                "automatically via a translation API (LSTM model)."
-            )
+            for key, decl in enabled.items():
+                child = etree.SubElement(editorialDecl, key, **(decl.get("attrs") or {}))
+                p = etree.SubElement(child, "p")
+                p.text = decl["text"]
 
         # <appInfo>
         appInfo = etree.SubElement(encodingDesc, "appInfo")
