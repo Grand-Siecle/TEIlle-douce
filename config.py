@@ -350,7 +350,9 @@ NER_WIKIDATA_MIN_CONFIDENCE = 0.7
 NER_OUTPUT_DIR = Path("entities")
 
 # TEI containers to scan for NER (same as enrichment by default)
-NER_CONTAINERS = {"ab", "note", "fw"}
+# <fw> excluded: running titles and page numbers rarely contain entities
+# and produce only noise in practice.
+NER_CONTAINERS = {"ab", "note"}
 
 # Confidence → @cert mapping thresholds
 NER_CERT_THRESHOLDS = {"low": 0.0, "mid": 0.6, "high": 0.85}
