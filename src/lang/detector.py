@@ -11,8 +11,31 @@ rule-based heuristics to avoid misclassification.
 
 import logging
 import re
+import unicodedata
 from collections import Counter
 from dataclasses import dataclass
+
+
+# Character-level substitutions applied during cleaning (1→1 or 1→2).
+# Extend this table to cover additional historical/OCR normalizations;
+# the idx_map machinery handles length changes automatically.
+_CHAR_SUBS = {
+    "ſ": "s",     # long s
+    "æ": "ae",    # ligatures
+    "œ": "oe",
+    "Æ": "Ae",
+    "Œ": "Oe",
+    "ß": "ss",
+    "ë": "e",     # diacritics flattened for lingua
+    "ï": "i",
+    "ü": "u",
+}
+
+# Characters that are deleted entirely (typographic noise / OCR artifacts).
+_DELETE_CHARS = frozenset("|¦")
+
+# Vowels that trigger word-initial i/I → j/J (Ramist rule).
+_J_VOWELS = frozenset("aeiouyàâéèêëîïôùûœAEIOUYÀÂÉÈÊËÎÏÔÙÛŒ")
 
 from config import (
     SUPPORTED_LANGUAGES,
@@ -119,36 +142,144 @@ class LinguaDetector:
         )
 
     def clean_text(self, text):
-        """Normalize OCR/historical text for detection."""
+        """Normalize OCR/historical text for detection (string only)."""
+        cleaned, _ = self._clean_with_map(text)
+        return cleaned
+
+    def _clean_with_map(self, text):
+        """
+        Normalize text *and* return a per-character origin map.
+
+        Runs a single char-by-char pass applying every normalization
+        ``clean_text`` performs (historical character subs, Ramist u/v
+        and i/j, hyphen rejoin at line breaks, whitespace collapse,
+        pipe deletion), while emitting an index table ``idx_map`` such
+        that ``idx_map[i]`` is the offset in the *original* text of the
+        i-th character of the cleaned output.
+
+        This map lets callers translate cleaned-text offsets back to
+        the original without the word-count heuristic: a segment
+        ``[c_start, c_end)`` in cleaned maps to
+        ``(idx_map[c_start], idx_map[c_end - 1] + 1)`` in the input.
+        Deleted characters (hyphens, collapsed whitespace, pipe
+        separators) have no entry in ``idx_map``, giving a natural
+        "snap inside" semantics: the segment boundary lands on the
+        nearest kept character.
+
+        One-to-many substitutions (``æ`` → ``ae``) produce two entries
+        pointing back at the same input offset.
+
+        Args:
+            text: Raw input text.
+
+        Returns:
+            tuple[str, list[int]]: cleaned text and its idx_map.
+        """
         if not text:
-            return ""
+            return "", []
 
-        # Rejoin hyphenated line breaks
-        text = re.sub(r'(\w)[¬\-]\s*\n?\s*(\w)', r'\1\2', text)
-        text = re.sub(r'¬', '', text)
+        # Normalize to NFC so combining sequences become precomposed
+        # where possible. This is conservative in length for our
+        # corpus (17th-c. printed characters are already precomposed)
+        # and keeps the idx_map in code-point units throughout.
+        src = unicodedata.normalize("NFC", text)
 
-        # Historical character normalization
-        text = text.replace('ſ', 's')
-        text = text.replace('æ', 'ae')
-        text = text.replace('œ', 'oe')
-        text = text.replace('Æ', 'Ae')
-        text = text.replace('Œ', 'Oe')
-        text = text.replace('ß', 'ss')
-        text = text.replace('ë', 'e')
-        text = text.replace('ï', 'i')
-        text = text.replace('ü', 'u')
+        out = []
+        idx_map = []
+        n = len(src)
+        i = 0
+        last_emitted_was_space = True  # True → strip leading whitespace
+        word_just_started = True        # True → next alpha char is word-initial
 
-        # Ramist letter normalization (pre-17th c. typography):
-        # u/v: 'uu' mid-word → 'uv' (pouuoir→pouvoir, trouuer→trouver)
-        text = re.sub(r'(?<=\w)uu(?=\w)', 'uv', text)
-        # i/j: word-initial 'i' before vowel → 'j' (ie→je, iamais→jamais)
-        text = re.sub(r'\bi(?=[aeiouyàâéèêëîïôùûœ])', 'j', text)
-        text = re.sub(r'\bI(?=[aeiouyàâéèêëîïôùûœAEIOUY])', 'J', text)
+        while i < n:
+            c = src[i]
 
-        text = re.sub(r'\s+', ' ', text)
-        text = re.sub(r'[|¦]', '', text)
+            # 1→0  Pipe / broken-bar separators (OCR noise)
+            if c in _DELETE_CHARS:
+                i += 1
+                continue
 
-        return text.strip()
+            # 1→0  Line-break hyphen: <word>¬[\s]*<word> or <word>-[\s]*<word>
+            # Consume the hyphen and the whitespace that follows, if the
+            # previous kept char was a letter and the next non-space char
+            # is also a letter. Falls through to normal handling otherwise.
+            if c in "¬-":
+                prev_kept = out[-1] if out else ""
+                if prev_kept and prev_kept.isalpha():
+                    j = i + 1
+                    while j < n and src[j].isspace():
+                        j += 1
+                    if j < n and src[j].isalpha():
+                        i = j
+                        word_just_started = False
+                        continue
+                # Not a word-splitting hyphen; fall through to keep "-"
+                # (but drop bare ¬ — same behaviour as the old cleaner).
+                if c == "¬":
+                    i += 1
+                    continue
+
+            # Whitespace collapse: keep one space if the previous emitted
+            # char wasn't already a space; drop further runs of whitespace.
+            if c.isspace():
+                if not last_emitted_was_space:
+                    out.append(" ")
+                    idx_map.append(i)
+                    last_emitted_was_space = True
+                word_just_started = True
+                i += 1
+                continue
+
+            # Character-level substitutions (1→1 or 1→2)
+            mapped = _CHAR_SUBS.get(c)
+            if mapped is not None:
+                for sub_ch in mapped:
+                    out.append(sub_ch)
+                    idx_map.append(i)
+                last_emitted_was_space = False
+                word_just_started = False
+                i += 1
+                continue
+
+            # Ramist: mid-word 'uu' → 'uv'. We check AFTER confirming the
+            # previous kept char is alpha (inside a word) AND the char
+            # after the pair is also alpha.
+            if c == "u" and out and out[-1].isalpha():
+                if i + 1 < n and src[i + 1] == "u":
+                    if i + 2 < n and src[i + 2].isalpha():
+                        out.append("u"); idx_map.append(i)
+                        out.append("v"); idx_map.append(i + 1)
+                        last_emitted_was_space = False
+                        word_just_started = False
+                        i += 2
+                        continue
+
+            # Ramist: word-initial i/I before a vowel → j/J.
+            if word_just_started and c in ("i", "I"):
+                if i + 1 < n and src[i + 1] in _J_VOWELS:
+                    out.append("j" if c == "i" else "J")
+                    idx_map.append(i)
+                    last_emitted_was_space = False
+                    word_just_started = False
+                    i += 1
+                    continue
+
+            # Default: identity copy.
+            out.append(c)
+            idx_map.append(i)
+            last_emitted_was_space = False
+            if c.isalpha() or c.isdigit():
+                word_just_started = False
+            else:
+                word_just_started = True
+            i += 1
+
+        # Trim trailing whitespace.
+        while out and out[-1] == " ":
+            out.pop()
+            idx_map.pop()
+
+        return "".join(out), idx_map
 
     def _lang_to_tei(self, lingua_lang):
         """Convert a lingua Language enum to TEI ident code."""
@@ -296,31 +427,37 @@ class LinguaDetector:
 
     def detect_foreign_segments(self, text, primary_lang=None):
         """
-        Detect foreign-language segments, with offsets in the input text.
+        Detect foreign-language segments with offsets in the input text.
 
-        Unlike ``detect_with_segments``, this method aligns lingua's
-        cleaned-text offsets back to the input text via word-level
-        alignment. The returned offsets can be used directly to slice
-        ``text`` (typically the dehyphenated text from enrichment).
+        Cleans *text* once, keeping a per-character origin map, runs
+        lingua's multi-language detector on the cleaned string, then
+        translates each accepted segment's cleaned-offset bounds back
+        to the original via the map — no word-count heuristic, so the
+        alignment stays correct even when the cleaning rejoins
+        hyphenated words, expands ligatures, or deletes separators.
+
+        Segments whose language is the primary one are discarded, as
+        are segments shorter than ``MIN_SEGMENT_WORDS`` or rejected by
+        rule-based heuristics (see ``detect_with_segments``).
 
         Args:
-            text: Input text (typically post-dehyphenation).
-            primary_lang: TEI ident of the container's primary language.
-                          If None, will be detected from the text itself.
+            text: Input text (as extracted from the TEI container).
+            primary_lang: TEI ident of the container's primary language;
+                if None, detected from the text itself.
 
         Returns:
-            list[tuple[int, int, str]]: List of (start, end, tei_lang)
-                with offsets in the INPUT text, filtered to exclude the
-                primary language and validated by heuristics.
+            list[tuple[int, int, str]]: ``(start, end, tei_lang)`` with
+            offsets in the *input* text, ready to slice ``.tail`` data.
         """
-        cleaned = self.clean_text(text)
+        cleaned, idx_map = self._clean_with_map(text)
         if len(cleaned) < self.min_text_length:
             return []
 
         self._ensure_detector()
 
-        cleaned_words = _tokenize_words(cleaned)
-        if len(cleaned_words) < self.MIN_SEGMENT_WORDS * 2:
+        # Count words cheaply without tokenizing (contiguous non-space runs).
+        word_count = sum(1 for _ in re.finditer(r"\S+", cleaned))
+        if word_count < self.MIN_SEGMENT_WORDS * 2:
             return []
 
         if primary_lang is None:
@@ -330,24 +467,10 @@ class LinguaDetector:
         if len(multi_results) <= 1:
             return []
 
-        # Word-level alignment between cleaned and input text.
-        # clean_text modifies chars inside words (æ→ae, ſ→s, …) but it
-        # can also change word count when hyphenated words are rejoined
-        # or when "|" separators are dropped. When that happens we skip
-        # foreign wrapping for this container rather than produce wrong
-        # offsets — the container still gets its primary xml:lang.
-        input_words = _tokenize_words(text)
-        if len(cleaned_words) != len(input_words):
-            logger.debug(
-                "Word count mismatch in clean_text alignment "
-                "(cleaned=%d, input=%d) — skipping foreign segment wrap "
-                "for this container.",
-                len(cleaned_words), len(input_words),
-            )
-            return []
-
         heuristics = _get_heuristics()
         segments = []
+        cleaned_len = len(cleaned)
+
         for r in multi_results:
             tei_lang = self._lang_to_tei(r.language)
             if tei_lang == primary_lang:
@@ -357,7 +480,6 @@ class LinguaDetector:
 
             seg_text = cleaned[r.start_index:r.end_index]
 
-            # Reject if heuristics say the segment is primary language
             heur_lang, heur_score = heuristics.detect(seg_text)
             if heur_lang == primary_lang and heur_score >= 2:
                 logger.debug(
@@ -365,7 +487,6 @@ class LinguaDetector:
                     seg_text[:50], primary_lang,
                 )
                 continue
-            # Reject if no heuristic signal for the detected foreign lang
             _, foreign_heur_score = heuristics.detect_lang(seg_text, tei_lang)
             if foreign_heur_score == 0:
                 logger.debug(
@@ -374,22 +495,16 @@ class LinguaDetector:
                 )
                 continue
 
-            # Find cleaned words fully inside the segment range, map to input.
-            first_idx = None
-            last_idx = None
-            for i, (ws, we) in enumerate(cleaned_words):
-                if ws >= r.start_index and first_idx is None:
-                    first_idx = i
-                if we <= r.end_index:
-                    last_idx = i
-            if first_idx is None or last_idx is None or first_idx > last_idx:
+            # Map cleaned offsets back to the input via idx_map.
+            # Clamp on the rare chance lingua returns out-of-bounds.
+            c_start = max(0, min(r.start_index, cleaned_len))
+            c_end = max(c_start, min(r.end_index, cleaned_len))
+            if c_start >= cleaned_len or c_end <= c_start:
                 continue
-            in_start = input_words[first_idx][0]
-            in_end = input_words[last_idx][1]
-
+            in_start = idx_map[c_start]
+            in_end = idx_map[c_end - 1] + 1
             segments.append((in_start, in_end, tei_lang))
 
-        # Update stats for foreign segments
         for _, _, lang in segments:
             self.stats[lang] += 1
 
