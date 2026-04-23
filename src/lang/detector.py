@@ -294,6 +294,107 @@ class LinguaDetector:
         self.stats[lang] += 1
         return lang
 
+    def detect_foreign_segments(self, text, primary_lang=None):
+        """
+        Detect foreign-language segments, with offsets in the input text.
+
+        Unlike ``detect_with_segments``, this method aligns lingua's
+        cleaned-text offsets back to the input text via word-level
+        alignment. The returned offsets can be used directly to slice
+        ``text`` (typically the dehyphenated text from enrichment).
+
+        Args:
+            text: Input text (typically post-dehyphenation).
+            primary_lang: TEI ident of the container's primary language.
+                          If None, will be detected from the text itself.
+
+        Returns:
+            list[tuple[int, int, str]]: List of (start, end, tei_lang)
+                with offsets in the INPUT text, filtered to exclude the
+                primary language and validated by heuristics.
+        """
+        cleaned = self.clean_text(text)
+        if len(cleaned) < self.min_text_length:
+            return []
+
+        self._ensure_detector()
+
+        cleaned_words = _tokenize_words(cleaned)
+        if len(cleaned_words) < self.MIN_SEGMENT_WORDS * 2:
+            return []
+
+        if primary_lang is None:
+            primary_lang, _ = self._detect_single(cleaned)
+
+        multi_results = self.detector.detect_multiple_languages_of(cleaned)
+        if len(multi_results) <= 1:
+            return []
+
+        # Word-level alignment between cleaned and input text.
+        # clean_text modifies chars inside words (æ→ae, ſ→s, …) but it
+        # can also change word count when hyphenated words are rejoined
+        # or when "|" separators are dropped. When that happens we skip
+        # foreign wrapping for this container rather than produce wrong
+        # offsets — the container still gets its primary xml:lang.
+        input_words = _tokenize_words(text)
+        if len(cleaned_words) != len(input_words):
+            logger.debug(
+                "Word count mismatch in clean_text alignment "
+                "(cleaned=%d, input=%d) — skipping foreign segment wrap "
+                "for this container.",
+                len(cleaned_words), len(input_words),
+            )
+            return []
+
+        heuristics = _get_heuristics()
+        segments = []
+        for r in multi_results:
+            tei_lang = self._lang_to_tei(r.language)
+            if tei_lang == primary_lang:
+                continue
+            if r.word_count < self.MIN_SEGMENT_WORDS:
+                continue
+
+            seg_text = cleaned[r.start_index:r.end_index]
+
+            # Reject if heuristics say the segment is primary language
+            heur_lang, heur_score = heuristics.detect(seg_text)
+            if heur_lang == primary_lang and heur_score >= 2:
+                logger.debug(
+                    "Rejected foreign segment '%s' — heuristics say %s",
+                    seg_text[:50], primary_lang,
+                )
+                continue
+            # Reject if no heuristic signal for the detected foreign lang
+            _, foreign_heur_score = heuristics.detect_lang(seg_text, tei_lang)
+            if foreign_heur_score == 0:
+                logger.debug(
+                    "Rejected foreign segment '%s' — no %s signal",
+                    seg_text[:50], tei_lang,
+                )
+                continue
+
+            # Find cleaned words fully inside the segment range, map to input.
+            first_idx = None
+            last_idx = None
+            for i, (ws, we) in enumerate(cleaned_words):
+                if ws >= r.start_index and first_idx is None:
+                    first_idx = i
+                if we <= r.end_index:
+                    last_idx = i
+            if first_idx is None or last_idx is None or first_idx > last_idx:
+                continue
+            in_start = input_words[first_idx][0]
+            in_end = input_words[last_idx][1]
+
+            segments.append((in_start, in_end, tei_lang))
+
+        # Update stats for foreign segments
+        for _, _, lang in segments:
+            self.stats[lang] += 1
+
+        return segments
+
     def detect_with_segments(self, text):
         """
         Detect primary language and foreign segments.
@@ -373,6 +474,23 @@ class LinguaDetector:
     def reset_stats(self):
         self.stats.clear()
         self._document_prior = None
+
+
+def _tokenize_words(text):
+    """Return list of (start, end) for whitespace-separated tokens in *text*."""
+    words = []
+    i = 0
+    n = len(text)
+    while i < n:
+        while i < n and text[i].isspace():
+            i += 1
+        if i >= n:
+            break
+        start = i
+        while i < n and not text[i].isspace():
+            i += 1
+        words.append((start, i))
+    return words
 
 
 # Global singleton

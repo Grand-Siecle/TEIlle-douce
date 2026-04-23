@@ -12,6 +12,11 @@ to their source XML elements.
 from dataclasses import dataclass
 from lxml import etree
 
+from ..constants import NS_XML
+
+
+XML_LANG = f"{{{NS_XML}}}lang"
+
 
 @dataclass
 class TextSpan:
@@ -25,15 +30,23 @@ class TextSpan:
     hi_rend: str | None
     line_index: int
     has_hyphen: bool
+    # Language of the text fragment. ``None`` means the container's
+    # primary language; a TEI ident (e.g. ``"lat"``) means the text
+    # came from inside a <foreign xml:lang="…"> element.
+    lang: str | None = None
+    # Parent <foreign> element if the text is inside one, else None.
+    # Kept for the reconstructor so it can rebuild the wrapper.
+    foreign_element: object = None
 
 
 def extract_spans(container):
     """
     Extract text spans from a TEI container element.
 
-    Walks the container's children, extracting text from <lb/> tails
-    and <hi> sub-elements. Builds a concatenated raw_text with spans
-    tracking their offsets.
+    Walks the container's children, extracting text from <lb/> tails,
+    <hi> sub-elements, and <foreign> elements inserted by the
+    language-detection phase. Builds a concatenated raw_text with
+    spans tracking their offsets.
 
     Args:
         container: An lxml Element (<ab>, <note>, or <fw>).
@@ -43,82 +56,146 @@ def extract_spans(container):
                and spans is a list of TextSpan objects.
     """
     spans = []
-    offset = 0
-    line_index = 0
-
-    for child in container:
-        tag = etree.QName(child.tag).localname if isinstance(child.tag, str) else child.tag
-
-        if tag == "lb":
-            span, offset, line_index = _process_lb(
-                child, None, None, offset, line_index, spans
-            )
-
-        elif tag == "hi":
-            hi_rend = child.get("rend")
-            for hi_child in child:
-                hi_tag = etree.QName(hi_child.tag).localname if isinstance(hi_child.tag, str) else hi_child.tag
-                if hi_tag == "lb":
-                    span, offset, line_index = _process_lb(
-                        hi_child, child, hi_rend, offset, line_index, spans
-                    )
-
-        elif tag == "foreign":
-            # Skip existing <foreign> elements (will be replaced)
-            pass
-
+    state = _ExtractState(offset=0, line_index=0, last_lb=None)
+    _walk_children(container, None, None, spans, state)
     raw_text = "".join(s.text for s in spans)
     return raw_text, spans
 
 
-def _process_lb(lb_elem, hi_elem, hi_rend, offset, line_index, spans):
-    """
-    Process a single <lb/> element and its tail text.
+@dataclass
+class _ExtractState:
+    """Mutable offsets / counters threaded through the walk."""
+    offset: int
+    line_index: int
+    last_lb: object  # last <lb/> element seen, for <foreign> association
 
-    Args:
-        lb_elem: The <lb/> element.
-        hi_elem: Parent <hi> element if inside one, else None.
-        hi_rend: @rend value of parent <hi>, or None.
-        offset: Current offset in raw_text.
-        line_index: Current line counter.
-        spans: List to append the new TextSpan to.
 
-    Returns:
-        tuple: (span_or_None, new_offset, new_line_index)
+def _walk_children(parent, hi_elem, hi_rend, spans, state):
     """
+    Iterate ``parent``'s children, dispatching on tag.
+
+    ``hi_elem``/``hi_rend`` are propagated from an enclosing <hi>.
+    """
+    for child in parent:
+        tag = etree.QName(child.tag).localname if isinstance(child.tag, str) else child.tag
+
+        if tag == "lb":
+            _process_lb(child, hi_elem, hi_rend, spans, state)
+
+        elif tag == "hi":
+            new_hi_rend = child.get("rend")
+            _walk_children(child, child, new_hi_rend, spans, state)
+
+        elif tag == "foreign":
+            _process_foreign(child, hi_elem, hi_rend, spans, state)
+
+
+def _process_lb(lb_elem, hi_elem, hi_rend, spans, state):
+    """Record a TextSpan for a <lb/> and its tail text."""
+    state.last_lb = lb_elem
+
     text = lb_elem.tail or ""
     if not text:
-        # Still record a span for the lb even without text
         spans.append(TextSpan(
             text="",
-            offset_start=offset,
-            offset_end=offset,
+            offset_start=state.offset,
+            offset_end=state.offset,
             lb_element=lb_elem,
             lb_corresp=lb_elem.get("corresp"),
             hi_element=hi_elem,
             hi_rend=hi_rend,
-            line_index=line_index,
+            line_index=state.line_index,
             has_hyphen=False,
+            lang=None,
+            foreign_element=None,
         ))
-        return None, offset, line_index + 1
+        state.line_index += 1
+        return
 
-    # Add space separator between lines (except first)
-    if spans and spans[-1].text:
-        text = " " + text
+    text = _maybe_prepend_separator(text, state.line_index, spans)
 
     has_hyphen = text.rstrip().endswith("¬") or text.rstrip().endswith("-")
 
-    span = TextSpan(
+    spans.append(TextSpan(
         text=text,
-        offset_start=offset,
-        offset_end=offset + len(text),
+        offset_start=state.offset,
+        offset_end=state.offset + len(text),
         lb_element=lb_elem,
         lb_corresp=lb_elem.get("corresp"),
         hi_element=hi_elem,
         hi_rend=hi_rend,
-        line_index=line_index,
+        line_index=state.line_index,
         has_hyphen=has_hyphen,
-    )
-    spans.append(span)
+        lang=None,
+        foreign_element=None,
+    ))
+    state.offset += len(text)
+    state.line_index += 1
 
-    return span, offset + len(text), line_index + 1
+
+def _process_foreign(foreign_elem, hi_elem, hi_rend, spans, state):
+    """
+    Record spans for a <foreign> element's text and tail.
+
+    A <foreign> inserted by the language-detection phase lives on the
+    same line as the preceding <lb/>, so both ``.text`` (foreign-lang)
+    and ``.tail`` (back to primary-lang) inherit that line's index and
+    lb reference. The lang field distinguishes the two halves.
+    """
+    foreign_lang = foreign_elem.get(XML_LANG)
+    anchor_lb = state.last_lb
+    anchor_corresp = anchor_lb.get("corresp") if anchor_lb is not None else None
+    anchor_line_idx = max(0, state.line_index - 1)
+
+    if foreign_elem.text:
+        text = _maybe_prepend_separator(foreign_elem.text, anchor_line_idx, spans)
+        has_hyphen = text.rstrip().endswith("¬") or text.rstrip().endswith("-")
+        spans.append(TextSpan(
+            text=text,
+            offset_start=state.offset,
+            offset_end=state.offset + len(text),
+            lb_element=anchor_lb,
+            lb_corresp=anchor_corresp,
+            hi_element=hi_elem,
+            hi_rend=hi_rend,
+            line_index=anchor_line_idx,
+            has_hyphen=has_hyphen,
+            lang=foreign_lang,
+            foreign_element=foreign_elem,
+        ))
+        state.offset += len(text)
+
+    if foreign_elem.tail:
+        text = _maybe_prepend_separator(foreign_elem.tail, anchor_line_idx, spans)
+        has_hyphen = text.rstrip().endswith("¬") or text.rstrip().endswith("-")
+        spans.append(TextSpan(
+            text=text,
+            offset_start=state.offset,
+            offset_end=state.offset + len(text),
+            lb_element=anchor_lb,
+            lb_corresp=anchor_corresp,
+            hi_element=hi_elem,
+            hi_rend=hi_rend,
+            line_index=anchor_line_idx,
+            has_hyphen=has_hyphen,
+            lang=None,
+            foreign_element=None,
+        ))
+        state.offset += len(text)
+
+
+def _maybe_prepend_separator(text, line_idx, spans):
+    """
+    Prepend a single space when ``text`` starts a new line.
+
+    The raw text concatenates per-line tails; a separator must be
+    injected when the current ``line_idx`` differs from the line of
+    the most recent non-empty span. No-op for empty text or when no
+    previous non-empty span exists.
+    """
+    if not text:
+        return text
+    prev_non_empty = next((s for s in reversed(spans) if s.text), None)
+    if prev_non_empty is not None and prev_non_empty.line_index != line_idx:
+        return " " + text
+    return text

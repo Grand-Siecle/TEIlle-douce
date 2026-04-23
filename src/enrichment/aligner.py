@@ -97,6 +97,18 @@ def align_tokens(tokens, spans, offset_map, hyphen_joins):
             if len(hi_set) == 1:
                 hi_element = covered_spans[0].hi_element
 
+        # Propagate language from the covering span(s). If a token
+        # spans multiple spans with differing langs (rare edge case),
+        # the token's lang from PyHellen tagging (set in pipeline) wins.
+        covered_langs = {s.lang for s in covered_spans if s.lang is not None}
+        if token.origin_lang:
+            token_lang = token.origin_lang
+        elif len(covered_langs) == 1:
+            token_lang = covered_langs.pop()
+        else:
+            token_lang = None
+        token.origin_lang = token_lang or ""
+
         aligned.append(AlignedToken(
             token=token,
             spans=covered_spans,
