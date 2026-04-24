@@ -20,6 +20,7 @@ from lxml import etree
 
 from ..constants import NS_TEI, NS_XML
 from ..utils.xml import local_tag as _local
+from .ner_filter import filter_spans, extract_title_from_tei
 
 logger = logging.getLogger(__name__)
 
@@ -391,7 +392,7 @@ def _run_gliner(blocks, model, labels, label_map, threshold, batch_size=16):
     return results
 
 
-def detect_entities(blocks, models, entity_types_config, models_config, threshold):
+def detect_entities(blocks, models, entity_types_config, models_config, threshold, root=None):
     """
     Run NER inference on extracted blocks.
 
@@ -422,17 +423,25 @@ def detect_entities(blocks, models, entity_types_config, models_config, threshol
     # CamemBERT labels (for filtering — model produces its own labels)
     camembert_langs = set(models_config["camembert"].get("languages") or [])
 
-    # Separate blocks by model target
+    # Separate blocks by model target, skipping blocks too short to
+    # contain a meaningful entity (saves inference time).
+    MIN_BLOCK_LENGTH = 10  # characters
+
     camembert_blocks = []  # (index, block)
     gliner_blocks = []  # (index, block)
+    skipped = 0
 
     for i, block in enumerate(blocks):
+        if len(block.text.strip()) < MIN_BLOCK_LENGTH:
+            skipped += 1
+            continue
         if block.source == "orig" and block.lang in camembert_langs:
-            # French orig → CamemBERT
             camembert_blocks.append((i, block))
         else:
-            # Everything else → GLiNER
             gliner_blocks.append((i, block))
+
+    if skipped:
+        logger.info("NER: skipped %d blocks shorter than %d chars", skipped, MIN_BLOCK_LENGTH)
 
     # Initialize results
     all_results = [[] for _ in blocks]
@@ -458,6 +467,16 @@ def detect_entities(blocks, models, entity_types_config, models_config, threshol
             all_results[idx] = spans
 
     total_spans = sum(len(s) for s in all_results)
-    logger.info("NER: detected %d entity spans across %d blocks", total_spans, len(blocks))
+    logger.info("NER: detected %d raw spans across %d blocks", total_spans, len(blocks))
+
+    # ── Post-detection filtering ────────────────────────────────────
+    title = extract_title_from_tei(root) if root is not None else None
+    for i, spans in enumerate(all_results):
+        if spans:
+            all_results[i] = filter_spans(spans, title=title)
+
+    filtered_total = sum(len(s) for s in all_results)
+    if filtered_total < total_spans:
+        logger.info("NER: %d spans after filtering (-%d)", filtered_total, total_spans - filtered_total)
 
     return all_results

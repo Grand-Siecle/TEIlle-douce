@@ -22,6 +22,11 @@ from lxml import etree
 
 from ..constants import NS_TEI, NS_XML
 from ..utils.xml import local_tag as _local
+from .ner_filter import (
+    fix_canonical_names,
+    fuzzy_merge_entities,
+    filter_resolved_entities,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -719,6 +724,15 @@ def resolve_entities(
 
     # Step 1: Group mentions into unique entities
     entities = group_mentions(aligned_entities)
+
+    # Step 1b: Fix duplicated canonical names ("bonus bonus" → "bonus")
+    fix_canonical_names(entities)
+
+    # Step 1c: Fuzzy-merge spelling variants (Tertulus/tertules/Tertullies)
+    entities = fuzzy_merge_entities(entities)
+
+    # Step 1d: Prune single-mention low-confidence entities
+    entities = filter_resolved_entities(entities)
 
     # Step 2: Link to local person database
     link_local(entities, person_db)

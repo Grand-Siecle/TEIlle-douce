@@ -20,6 +20,7 @@ from lxml import etree
 
 from ..constants import NS_TEI, NS_XML
 from ..utils.xml import local_tag as _local
+from .ner_filter import filter_aligned_by_pos
 
 logger = logging.getLogger(__name__)
 
@@ -627,15 +628,19 @@ def align_and_inject(root, blocks, all_spans, entity_types_config, cert_threshol
             final_aligned.extend(reg_aligned)
             final_aligned.extend(raw_aligned)
 
-    # Step 3: Resolve overlaps
-    resolved = resolve_overlaps(final_aligned)
+    # Step 3: POS-based filtering (uses @pos from linguistic enrichment)
+    pos_filtered = filter_aligned_by_pos(final_aligned)
+
+    # Step 4: Resolve overlaps
+    resolved = resolve_overlaps(pos_filtered)
     logger.info(
-        "NER: %d entities after merge, %d after overlap resolution",
+        "NER: %d after merge, %d after POS filter, %d after overlap resolution",
         len(final_aligned),
+        len(pos_filtered),
         len(resolved),
     )
 
-    # Step 4: Inject into XML
+    # Step 5: Inject into XML
     inject_entities(resolved, cert_thresholds, entity_types_config)
 
     return resolved

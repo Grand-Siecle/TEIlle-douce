@@ -95,10 +95,12 @@ class NERModels:
         if self._gliner is None:
             model_id = self._config["gliner"]["model_id"]
             logger.info("Loading GLiNER model: %s", model_id)
+            import torch
             from gliner import GLiNER
 
-            self._gliner = GLiNER.from_pretrained(model_id)
-            logger.info("GLiNER model loaded")
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+            self._gliner = GLiNER.from_pretrained(model_id).to(device)
+            logger.info("GLiNER model loaded on %s", device)
         return self._gliner
 
     @property

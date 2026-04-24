@@ -349,6 +349,7 @@ def main():
                     ner_spans = detect_entities(
                         ner_blocks, ner_models, NER_ENTITY_TYPES,
                         NER_MODELS, NER_CONFIDENCE_THRESHOLD,
+                        root=tree.root,
                     )
 
                     # Phase 8: Align + merge + inject

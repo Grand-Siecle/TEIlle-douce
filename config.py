@@ -218,7 +218,7 @@ MODERNIZE_BATCH_SIZE = 64
 MODERNIZE_TIMEOUT = 300
 
 # Max concurrent requests to the modernization API (avoid PoolTimeout)
-MODERNIZE_MAX_CONCURRENT = 3
+MODERNIZE_MAX_CONCURRENT = 8
 
 # =============================================================================
 # NAMED ENTITY RECOGNITION (NER)
@@ -328,20 +328,20 @@ NER_ENTITY_TYPES = {
 NER_MODELS = {
     "camembert": {
         "model_id": "pjox/camembert-classical-fr-ner/final-model.pt",
-        "batch_size": 32,
+        "batch_size": 64,
         "languages": ["fra"],
         "source_text": "orig",
     },
     "gliner": {
         "model_id": "urchade/gliner_multi-v2.1",
-        "batch_size": 16,
+        "batch_size": 32,
         "languages": None,  # all languages
         "source_text": "reg",  # <reg> for fra, raw text for others
     },
 }
 
 # Minimum confidence score to keep a NER prediction
-NER_CONFIDENCE_THRESHOLD = 0.5
+NER_CONFIDENCE_THRESHOLD = 0.6
 
 # Minimum confidence for Wikidata lookup (avoid noisy queries)
 NER_WIKIDATA_MIN_CONFIDENCE = 0.7
