@@ -651,7 +651,7 @@ def add_refs_to_body(root, entities, entity_types_config):
 def inject_editorial_declaration(root):
     """
     Add NER methodology description to <encodingDesc>/<editorialDecl>
-    and <respStmt xml:id="ner-auto"> to <titleStmt>.
+    and <respStmt xml:id="ner-auto"> to <editionStmt> (created if absent).
 
     Args:
         root: TEI root element.
@@ -664,25 +664,36 @@ def inject_editorial_declaration(root):
     if tei_header is None:
         return
 
-    # Add respStmt to titleStmt
+    # Add respStmt to editionStmt (created after titleStmt if missing)
     file_desc = None
     for child in tei_header:
         if _local(child.tag) == "fileDesc":
             file_desc = child
             break
     if file_desc is not None:
-        title_stmt = None
-        for child in file_desc:
-            if _local(child.tag) == "titleStmt":
-                title_stmt = child
+        title_stmt_idx = None
+        edition_stmt = None
+        for idx, child in enumerate(file_desc):
+            local = _local(child.tag)
+            if local == "titleStmt":
+                title_stmt_idx = idx
+            elif local == "editionStmt":
+                edition_stmt = child
                 break
-        if title_stmt is not None:
-            resp_stmt = _sub(title_stmt, "respStmt")
-            resp_stmt.set(XML_ID, "ner-auto")
-            resp = _sub(resp_stmt, "resp")
-            resp.text = "Automatic named entity recognition"
-            name = _sub(resp_stmt, "name")
-            name.text = "NER Pipeline (CamemBERT + GLiNER)"
+
+        if edition_stmt is None:
+            edition_stmt = etree.Element(_tei("editionStmt"))
+            edition = etree.SubElement(edition_stmt, _tei("edition"))
+            edition.text = "Édition enrichie avec annotations d'entités nommées automatiques"
+            insert_idx = (title_stmt_idx + 1) if title_stmt_idx is not None else 0
+            file_desc.insert(insert_idx, edition_stmt)
+
+        resp_stmt = _sub(edition_stmt, "respStmt")
+        resp_stmt.set(XML_ID, "ner-auto")
+        resp = _sub(resp_stmt, "resp")
+        resp.text = "Automatic named entity recognition"
+        name = _sub(resp_stmt, "name")
+        name.text = "NER Pipeline (CamemBERT + GLiNER)"
 
     # Editorial declaration for NER is now in config.EDITORIAL_DECLARATIONS
     # and injected by the header builder. Nothing to add here.
