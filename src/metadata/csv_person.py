@@ -230,7 +230,9 @@ class PersonDatabase:
             "birth_date": person.get("birth_date"),
             "death_date": person.get("death_date"),
             "birth_place": person.get("birth_place"),
+            "birth_place_id": person.get("birth_place_id"),
             "death_place": person.get("death_place"),
+            "death_place_id": person.get("death_place_id"),
             "role": role or (person.get("roles")[0] if person.get("roles") else None),
             "note": person.get("note"),
         }

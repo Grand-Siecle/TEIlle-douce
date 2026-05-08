@@ -313,6 +313,30 @@ def override_teiheader_from_csv(root, row):
             author_el = etree.SubElement(parent, "author")
             author_el.attrib["ref"] = f"#{person_id}"
             create_persname_element(author_el, person_data)
+            if person_data.get("birth_date") or person_data.get("birth_place"):
+                birth = etree.SubElement(author_el, "birth")
+                if person_data.get("birth_date"):
+                    birth.attrib["when"] = str(person_data["birth_date"])
+                    date_el = etree.SubElement(birth, "date")
+                    date_el.text = str(person_data["birth_date"])
+                if person_data.get("birth_place"):
+                    place = etree.SubElement(birth, "placeName")
+                    place.text = str(person_data["birth_place"])
+                    if person_data.get("birth_place_id"):
+                        ptr = etree.SubElement(place, "ptr", type="geonames")
+                        ptr.attrib["target"] = f"https://www.geonames.org/{person_data['birth_place_id']}/"
+            if person_data.get("death_date") or person_data.get("death_place"):
+                death = etree.SubElement(author_el, "death")
+                if person_data.get("death_date"):
+                    death.attrib["when"] = str(person_data["death_date"])
+                    date_el = etree.SubElement(death, "date")
+                    date_el.text = str(person_data["death_date"])
+                if person_data.get("death_place"):
+                    place = etree.SubElement(death, "placeName")
+                    place.text = str(person_data["death_place"])
+                    if person_data.get("death_place_id"):
+                        ptr = etree.SubElement(place, "ptr", type="geonames")
+                        ptr.attrib["target"] = f"https://www.geonames.org/{person_data['death_place_id']}/"
         else:
             author_el = etree.SubElement(parent, "author")
             author_el.text = person_id
