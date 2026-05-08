@@ -100,15 +100,16 @@ def _normalize(text):
 def _get_canonical_name(entity):
     """Extract canonical form from an AlignedEntity."""
     if entity.w_elements:
-        # Use lemma attributes from <w> elements
-        lemmas = []
+        # Use lemma attributes from <w> elements; fall back to surface text
+        # when lemma is a foreign-language sentinel (e.g. "@latin", "@italian").
+        tokens = []
         for w in entity.w_elements:
             lemma = w.get("lemma")
-            if lemma:
-                lemmas.append(lemma)
+            if lemma and not lemma.startswith("@"):
+                tokens.append(lemma)
             else:
-                lemmas.append(w.text or "")
-        return " ".join(lemmas)
+                tokens.append(w.text or "")
+        return " ".join(tokens)
     return entity.text
 
 

@@ -265,6 +265,18 @@ def filter_aligned_by_pos(entities):
             continue
 
         pos_tags = [w.get("pos", "") for w in ent.w_elements]
+        lemmas = [w.get("lemma", "") or "" for w in ent.w_elements]
+
+        # ── Rule 0: All words flagged as foreign language → reject ─
+        # Foreign-language detector marks tokens with sentinel lemmas
+        # like "@latin", "@italian", etc. These are noise, not entities.
+        if lemmas and all(lem.startswith("@") for lem in lemmas):
+            logger.debug(
+                "POS filter: '%s' (%s) → all-foreign lemmas %s",
+                ent.text, ent.entity_type, lemmas,
+            )
+            rejected += 1
+            continue
 
         # ── Rule 1: All words carry a non-entity POS ───────────────
         # Applies to EVERY entity type.  A DET/PRE/VER/CON/PRO is
