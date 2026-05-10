@@ -212,7 +212,7 @@ def link_local(entities, person_db):
 # =============================================================================
 
 
-def resolve_wikidata(entities, entity_types_config, min_confidence, max_rps, timeout):
+def resolve_wikidata(entities, entity_types_config, min_confidence, max_rps, timeout, enabled=True):
     """
     Enrich entities with Wikidata identifiers and properties.
 
@@ -224,7 +224,12 @@ def resolve_wikidata(entities, entity_types_config, min_confidence, max_rps, tim
         min_confidence: Minimum confidence for Wikidata lookup.
         max_rps: Maximum requests per second.
         timeout: HTTP timeout in seconds.
+        enabled: When False, skip all Wikidata calls.
     """
+    if not enabled:
+        logger.info("NER: Wikidata lookup disabled, skipping")
+        return
+
     # Filter entities eligible for Wikidata
     eligible = []
     for ent in entities:
@@ -728,6 +733,7 @@ def resolve_entities(
     min_confidence,
     max_rps,
     wikidata_timeout,
+    wikidata_enabled=True,
 ):
     """
     Phase 9 orchestrator: group, link, Wikidata, CSV, header, @ref.
@@ -741,6 +747,7 @@ def resolve_entities(
         min_confidence: Minimum confidence for Wikidata lookup.
         max_rps: Wikidata rate limit.
         wikidata_timeout: Wikidata HTTP timeout.
+        wikidata_enabled: When False, skip the Wikidata enrichment step.
 
     Returns:
         list[ResolvedEntity]: All resolved entities.
@@ -765,7 +772,8 @@ def resolve_entities(
 
     # Step 3: Wikidata enrichment
     resolve_wikidata(
-        entities, entity_types_config, min_confidence, max_rps, wikidata_timeout
+        entities, entity_types_config, min_confidence, max_rps, wikidata_timeout,
+        enabled=wikidata_enabled,
     )
 
     # Step 4: Write CSV files

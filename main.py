@@ -39,6 +39,7 @@ from config import (
     NER_OUTPUT_DIR,
     NER_CONTAINERS,
     NER_CERT_THRESHOLDS,
+    NER_WIKIDATA_ENABLED,
     NER_WIKIDATA_MAX_RPS,
     NER_WIKIDATA_TIMEOUT,
     DEBUG,
@@ -364,6 +365,7 @@ def main():
                         person_db, NER_OUTPUT_DIR,
                         NER_WIKIDATA_MIN_CONFIDENCE,
                         NER_WIKIDATA_MAX_RPS, NER_WIKIDATA_TIMEOUT,
+                        wikidata_enabled=NER_WIKIDATA_ENABLED,
                     )
 
                     if resolved:

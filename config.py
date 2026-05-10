@@ -357,6 +357,10 @@ NER_CONTAINERS = {"ab", "note"}
 # Confidence → @cert mapping thresholds
 NER_CERT_THRESHOLDS = {"low": 0.0, "mid": 0.6, "high": 0.85}
 
+# Wikidata enrichment (disable to skip all wbsearchentities/SPARQL calls,
+# e.g. when offline, rate-limited, or behind a 403)
+NER_WIKIDATA_ENABLED = False
+
 # Wikidata rate limiting
 NER_WIKIDATA_MAX_RPS = 10
 NER_WIKIDATA_TIMEOUT = 30
