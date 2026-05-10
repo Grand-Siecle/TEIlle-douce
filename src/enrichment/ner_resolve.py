@@ -596,10 +596,17 @@ def add_refs_to_body(root, entities, entity_types_config):
     # @ref attributes will be set.
     w_lookup = {}
     text_lookup = {}
+    reg_lookup = {}  # id(reg_elem) → {(start, end): xml_id}
 
     for ent in entities:
         for mention in ent.mentions:
-            if mention.w_elements:
+            reg_fragments = getattr(mention, "reg_fragments", None) or []
+            if reg_fragments:
+                for reg_elem, fstart, fend in reg_fragments:
+                    reg_lookup.setdefault(id(reg_elem), {})[
+                        (fstart, fend)
+                    ] = ent.xml_id
+            elif mention.w_elements:
                 w_ids = frozenset(id(w) for w in mention.w_elements)
                 w_lookup[w_ids] = ent.xml_id
             elif mention.text_node is not None:
@@ -619,7 +626,7 @@ def add_refs_to_body(root, entities, entity_types_config):
         if elem.get("resp") != "#ner-auto":
             continue
 
-        # Try to match by child <w> elements
+        # Try to match by child <w> elements (entities wrapping <w> in <orig>)
         w_children = [ch for ch in elem if _local(ch.tag) == "w"]
         if w_children:
             w_ids = frozenset(id(w) for w in w_children)
@@ -629,7 +636,25 @@ def add_refs_to_body(root, entities, entity_types_config):
                 ref_count += 1
                 continue
 
-        # Try to match by text content
+        # Try to match entities injected inside <reg> via parent identity
+        parent = elem.getparent()
+        if parent is not None and _local(parent.tag) == "reg":
+            reg_ents = reg_lookup.get(id(parent))
+            if reg_ents:
+                wrapped_text = elem.text or ""
+                for (rs, re_), xml_id in reg_ents.items():
+                    # Match on wrapped text length and content (positions are
+                    # in the original pre-injection <reg> coordinates).
+                    if rs is None or re_ is None:
+                        continue
+                    if (re_ - rs) == len(wrapped_text):
+                        elem.set("ref", f"#{xml_id}")
+                        ref_count += 1
+                        break
+                if elem.get("ref"):
+                    continue
+
+        # Try to match by text content (raw text injection)
         local_tag = _local(elem.tag)
         for etype, cfg in entity_types_config.items():
             if cfg.get("tei_element") == local_tag:

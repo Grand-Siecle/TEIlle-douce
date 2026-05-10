@@ -5,15 +5,19 @@
 NER alignment and injection pipeline (Phase 8).
 
 Aligns NER spans to XML nodes, merges results from CamemBERT and GLiNER,
-resolves overlaps, and injects entity annotations into <orig> and raw text.
+resolves overlaps, and injects entity annotations.
 
 Three alignment cases:
-1. CamemBERT on <orig>: char offsets → <w> elements via char_to_w
-2. GLiNER on <reg>: char offsets → <reg> → parent <choice> → <w> in <orig>
+1. CamemBERT on <orig>: char offsets → <w> elements (wrap <w> in <orig>)
+2. GLiNER on <reg>: char offsets → list of (<reg>, start, end) fragments
+   • Single fragment  → mixed-content wrap inside <reg>
+   • Multi fragments  → one wrapper per <reg>, linked via @xml:id+@next/@prev
+   • Cross-model merged (CamemBERT+GLiNER) → injection in <reg> (GLiNER target)
 3. GLiNER on raw text: char offsets → text node splitting
 """
 
 import logging
+import uuid
 from dataclasses import dataclass, field
 
 from lxml import etree
@@ -47,6 +51,12 @@ class AlignedEntity:
     text_node: object = None
     text_start: int = None
     text_end: int = None
+    # For French GLiNER on <reg>: inject directly inside <reg> (mixed content).
+    # List of fragments. One fragment = single-line entity. Multiple fragments =
+    # entity split across consecutive <reg> elements (multi-line), linked via
+    # @next/@prev at injection time. When non-empty, takes precedence over
+    # w_elements injection.
+    reg_fragments: list = field(default_factory=list)  # list[(reg_elem, start, end)]
 
 
 # =============================================================================
@@ -93,11 +103,13 @@ def _align_orig_spans(block, spans):
 
 def _align_reg_spans(block, spans):
     """
-    Align NER spans from <reg> text to <w> elements in the corresponding <orig>.
+    Align NER spans from <reg> text to (a) the <reg> elements they cover for
+    in-place mixed-content injection and (b) the <w> elements in the sibling
+    <orig> for POS filtering and canonical-name extraction.
 
-    Case 2 (GLiNER on French <reg>).
-    Maps: span chars → <reg> element → parent <choice> → sibling <orig> → <w> elements.
-    Uses positional word matching between <reg> text and <orig> <w> tokens.
+    Case 2 (GLiNER on French <reg>). Returns one AlignedEntity per span;
+    multi-<reg> spans yield a single entity with multiple reg_fragments,
+    linked at injection time via @next/@prev.
     """
     aligned = []
 
@@ -175,6 +187,11 @@ def _align_reg_spans(block, spans):
             )
             continue
 
+        # Build reg_fragments list: one per covered <reg>. Sorted by document
+        # order via covered_regs ordering (which matches block.char_to_reg).
+        # Multi-fragment entities get linked via @next/@prev at injection time.
+        reg_fragments = list(covered_regs)
+
         aligned.append(
             AlignedEntity(
                 entity_type=span.entity_type,
@@ -182,6 +199,7 @@ def _align_reg_spans(block, spans):
                 confidence=span.confidence,
                 model=span.model,
                 w_elements=all_w,
+                reg_fragments=reg_fragments,
             )
         )
 
@@ -297,7 +315,8 @@ def merge_model_results(camembert_aligned, gliner_aligned):
             overlap_ratio = best_overlap / union_size if union_size > 0 else 0
 
             if overlap_ratio > 0.5 and cam_ent.entity_type == gli_ent.entity_type:
-                # Same entity, same type → merge with confidence boost
+                # Same entity, same type → merge with confidence boost.
+                # Preserve GLiNER's <reg> fragments so injection lands in <reg>.
                 used_gliner.add(best_match)
                 merged.append(
                     AlignedEntity(
@@ -306,6 +325,7 @@ def merge_model_results(camembert_aligned, gliner_aligned):
                         confidence=min(1.0, max(cam_ent.confidence, gli_ent.confidence) + 0.1),
                         model="both",
                         w_elements=cam_ent.w_elements,
+                        reg_fragments=list(gli_ent.reg_fragments),
                     )
                 )
             elif overlap_ratio > 0.5 and cam_ent.entity_type != gli_ent.entity_type:
@@ -319,6 +339,7 @@ def merge_model_results(camembert_aligned, gliner_aligned):
                         confidence=gli_ent.confidence,
                         model=gli_ent.model,
                         w_elements=cam_ent.w_elements,  # use CamemBERT's w mapping
+                        reg_fragments=list(gli_ent.reg_fragments),
                     )
                 )
             else:
@@ -478,6 +499,114 @@ def _inject_tokenized_entities(entities, cert_thresholds, entity_types_config):
                 wrapper.append(w)
 
 
+def _inject_reg_entities(entities, cert_thresholds, entity_types_config):
+    """
+    Inject entity tags directly inside <reg> elements (mixed content).
+
+    Used for French GLiNER detections so that annotations are visible on the
+    modernized text rather than wrapped around <w> in <orig>.
+
+    Single-<reg> entities are wrapped in mixed content. Multi-<reg> entities
+    are split into one wrapper per <reg> and linked via @xml:id + @next/@prev
+    so the fragments can be reassembled.
+    """
+    # Step 1: per-entity fragment xml:ids (assign upfront so injection can
+    # cross-reference even though wrappers are written in <reg> order).
+    ent_fragment_ids = {}  # id(ent) → list[str] (one xml:id per fragment)
+    for ent in entities:
+        if not ent.reg_fragments:
+            continue
+        n = len(ent.reg_fragments)
+        if n == 1:
+            ent_fragment_ids[id(ent)] = [None]  # no xml:id needed
+        else:
+            base = uuid.uuid4().hex[:8]
+            ent_fragment_ids[id(ent)] = [f"ent-{base}-{i}" for i in range(n)]
+
+    # Step 2: group injection tasks by <reg>. Each task carries the entity,
+    # the fragment offsets in that <reg>, and the fragment's xml:id+links.
+    by_reg = {}  # id(reg_elem) → (reg_elem, [task, ...])
+    for ent in entities:
+        if not ent.reg_fragments:
+            continue
+        frag_ids = ent_fragment_ids[id(ent)]
+        for frag_idx, (reg_elem, fstart, fend) in enumerate(ent.reg_fragments):
+            xml_id = frag_ids[frag_idx]
+            prev_id = frag_ids[frag_idx - 1] if frag_idx > 0 else None
+            next_id = frag_ids[frag_idx + 1] if frag_idx + 1 < len(frag_ids) else None
+            task = {
+                "ent": ent,
+                "start": fstart,
+                "end": fend,
+                "xml_id": xml_id,
+                "prev_id": prev_id,
+                "next_id": next_id,
+            }
+            key = id(reg_elem)
+            by_reg.setdefault(key, (reg_elem, []))
+            by_reg[key][1].append(task)
+
+    # Step 3: for each <reg>, splice in wrappers in document order.
+    for _, (reg_elem, tasks) in by_reg.items():
+        original_text = reg_elem.text or ""
+        if not original_text:
+            continue
+
+        forward = sorted(tasks, key=lambda t: (t["start"], t["end"]))
+
+        # Defensive overlap drop (overlap resolver runs in <w>-space, which
+        # may not catch coincidental same-<reg>-offset clashes).
+        non_overlap = []
+        last_end = -1
+        for task in forward:
+            if task["start"] is None or task["end"] is None:
+                continue
+            if task["start"] < last_end:
+                logger.debug(
+                    "Skipping overlapping reg entity '%s' at %d-%d",
+                    task["ent"].text, task["start"], task["end"],
+                )
+                continue
+            non_overlap.append(task)
+            last_end = task["end"]
+
+        if not non_overlap:
+            continue
+
+        reg_elem.text = None
+        pos = 0
+        prev_elem = None
+
+        for task in non_overlap:
+            ent = task["ent"]
+            cert = _confidence_to_cert(ent.confidence, cert_thresholds)
+
+            before = original_text[pos:task["start"]]
+            if prev_elem is None:
+                reg_elem.text = (reg_elem.text or "") + before
+            else:
+                prev_elem.tail = (prev_elem.tail or "") + before
+
+            wrapper = _make_entity_element(ent.entity_type, cert, entity_types_config)
+            wrapper.text = original_text[task["start"]:task["end"]]
+            wrapper.tail = ""
+            if task["xml_id"]:
+                wrapper.set(XML_ID, task["xml_id"])
+            if task["prev_id"]:
+                wrapper.set("prev", f"#{task['prev_id']}")
+            if task["next_id"]:
+                wrapper.set("next", f"#{task['next_id']}")
+            reg_elem.append(wrapper)
+            prev_elem = wrapper
+            pos = task["end"]
+
+        remaining = original_text[pos:]
+        if prev_elem is None:
+            reg_elem.text = (reg_elem.text or "") + remaining
+        else:
+            prev_elem.tail = (prev_elem.tail or "") + remaining
+
+
 def _inject_raw_text_entities(entities, cert_thresholds, entity_types_config):
     """
     Inject entity tags into raw text by splitting text nodes.
@@ -552,6 +681,8 @@ def inject_entities(aligned_entities, cert_thresholds, entity_types_config):
     """
     Inject all aligned entities into the TEI XML.
 
+    Reg-fragment entities → mixed-content wrap inside <reg> (multi-fragment
+    entities linked via @xml:id + @next/@prev).
     Tokenized entities → wrap <w> in <orig>.
     Raw text entities → split text nodes.
 
@@ -560,8 +691,19 @@ def inject_entities(aligned_entities, cert_thresholds, entity_types_config):
         cert_thresholds: NER_CERT_THRESHOLDS from config.
         entity_types_config: NER_ENTITY_TYPES from config.
     """
-    tokenized = [e for e in aligned_entities if e.w_elements]
-    raw = [e for e in aligned_entities if e.text_node is not None and not e.w_elements]
+    reg_inj = [e for e in aligned_entities if e.reg_fragments]
+    tokenized = [
+        e for e in aligned_entities
+        if not e.reg_fragments and e.w_elements
+    ]
+    raw = [
+        e for e in aligned_entities
+        if not e.reg_fragments and e.text_node is not None and not e.w_elements
+    ]
+
+    if reg_inj:
+        _inject_reg_entities(reg_inj, cert_thresholds, entity_types_config)
+        logger.info("NER: injected %d <reg> entity annotations", len(reg_inj))
 
     if tokenized:
         _inject_tokenized_entities(tokenized, cert_thresholds, entity_types_config)
