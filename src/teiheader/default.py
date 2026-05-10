@@ -20,6 +20,7 @@ from config import (
     PLACEHOLDER_INFO_UNAVAILABLE,
     PLACEHOLDER_NO_METADATA,
     EDITORIAL_DECLARATIONS,
+    LANG_USAGE_DESCRIPTION,
 )
 
 
@@ -224,6 +225,9 @@ class DefaultTree:
     def _build_profile_desc(self, profileDesc):
         """Build the <profileDesc> section with language info."""
         langUsage = etree.SubElement(profileDesc, "langUsage")
+        if LANG_USAGE_DESCRIPTION:
+            p = etree.SubElement(langUsage, "p")
+            p.text = LANG_USAGE_DESCRIPTION
         self.children["language"] = etree.SubElement(langUsage, "language")
         self.children["language"].attrib["ident"] = ""
 

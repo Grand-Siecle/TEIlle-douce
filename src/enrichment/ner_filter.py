@@ -80,7 +80,7 @@ def _is_proper_noun(pos):
 
 def _is_unknown_pos(pos):
     """True if POS is unknown or unset."""
-    return not pos or pos in ("UNK", "_", "-", "FOR", "u", "n")
+    return not pos or pos in ("UNK", "_", "-", "FOR", "u")
 
 # Latin/French common nouns that POS taggers sometimes mark PROPN
 # because they are frequently capitalised in historical texts.
