@@ -10,7 +10,7 @@ from pathlib import Path
 # =============================================================================
 
 # Enable verbose logging in console for modernization, enrichment, etc.
-DEBUG = True
+DEBUG = False
 
 # Log file path (all DEBUG+ messages are always written here, regardless of DEBUG flag)
 # Set to None to disable file logging
@@ -433,16 +433,56 @@ RESPONSIBILITY = {
     "text": "TEI SegmOnto encoding from ALTO (custom pipeline).",
     "resp": [
         {
-            "forename": "Firstname",
-            "surname": "Lastname",
+            "forename": "Maxime",
+            "surname": "Humeau",
+            "ptr": {
+                "type": "orcid",
+                "target": "https://orcid.org/0000-0001-6860-0916",
+            },
+        },
+        {
+            "forename": "Jan",
+            "surname": "Blanc",
+            "ptr": {
+                "type": "orcid",
+                "target": "https://orcid.org/0000-0002-2091-2520",
+            },
+        },
+        {
+            "forename": "Antoine",
+            "surname": "Gallay",
+            "ptr": {
+                "type": "orcid",
+                "target": "https://orcid.org/0009-0003-2463-9589",
+            },
+        },
+        {
+            "forename": "Gabriel",
+            "surname": "Batalla-Lagleyre",
+            "ptr": {
+                "type": "orcid",
+                "target": "https://orcid.org/0000-0003-4600-0295",
+            },
+        },
+        {
+            "forename": "Pauline",
+            "surname": "Randonneix",
             "ptr": {
                 "type": "orcid",
                 "target": "https://orcid.org/0000-0000-0000-0000",
             },
-        }
+        },
+        {
+            "forename": "Léonie",
+            "surname": "Marquaille",
+            "ptr": {
+                "type": "orcid",
+                "target": "https://orcid.org/0000-0000-0000-0000",
+            },
+        },
     ],
-    "publisher": "Your lab / project",
-    "authority": "Your institution",
+    "publisher": "Projet Grand Siècle",
+    "authority": "Université de Lausanne - UNIL, Université de Genève - UNIGE",
     "availability": {"status": "restricted"},
     "licence": {"target": "https://creativecommons.org/licenses/by/4.0/"},
 }

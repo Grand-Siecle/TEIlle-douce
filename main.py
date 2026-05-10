@@ -354,7 +354,7 @@ def main():
 
                     # Phase 8: Align + merge + inject
                     aligned = align_and_inject(
-                        tree.root, ner_blocks, ner_spans,
+                        ner_blocks, ner_spans,
                         NER_ENTITY_TYPES, NER_CERT_THRESHOLDS,
                     )
 

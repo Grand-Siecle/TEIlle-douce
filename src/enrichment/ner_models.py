@@ -102,13 +102,3 @@ class NERModels:
             self._gliner = GLiNER.from_pretrained(model_id).to(device)
             logger.info("GLiNER model loaded on %s", device)
         return self._gliner
-
-    @property
-    def has_camembert(self):
-        """True if CamemBERT has been loaded."""
-        return self._camembert is not None
-
-    @property
-    def has_gliner(self):
-        """True if GLiNER has been loaded."""
-        return self._gliner is not None

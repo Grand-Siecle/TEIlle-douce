@@ -26,6 +26,19 @@ def local_tag(tag):
     return tag
 
 
+def xml_id_safe(value):
+    """Return ``value`` coerced to a valid XML NCName for use as ``xml:id``.
+
+    NCNames must start with a letter or underscore — never a digit. ALTO
+    pages named purely numerically (e.g. "1.xml") would otherwise yield
+    invalid xml:id values like "1".
+    """
+    s = str(value)
+    if s and s[0].isdigit():
+        return f"f{s}"
+    return s
+
+
 def write_xml(root, output_path, pretty_print=True):
     """
     Write an XML tree to a file.

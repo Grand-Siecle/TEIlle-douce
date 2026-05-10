@@ -22,6 +22,7 @@ from config import (
     ENRICHMENT_MIN_TEXT_LENGTH,
 )
 from ..constants import NS_XML
+from ..utils.xml import local_tag as _local
 from .extractor import extract_spans
 from .dehyphenation import dehyphenate
 from .client import tag_text, get_model, check_server
@@ -64,23 +65,13 @@ def enrich_body(root, progress_callback=None):
         return stats
 
     # Find the body element
-    body = None
-    for elem in root.iter():
-        local = etree.QName(elem.tag).localname if isinstance(elem.tag, str) else elem.tag
-        if local == "body":
-            body = elem
-            break
-
+    body = next((e for e in root.iter() if _local(e.tag) == "body"), None)
     if body is None:
         logger.warning("No <body> element found, skipping enrichment")
         return stats
 
     # Collect all containers in document order
-    containers = []
-    for elem in body.iter():
-        local = etree.QName(elem.tag).localname if isinstance(elem.tag, str) else elem.tag
-        if local in ENRICHMENT_CONTAINERS:
-            containers.append(elem)
+    containers = [e for e in body.iter() if _local(e.tag) in ENRICHMENT_CONTAINERS]
 
     stats["containers_found"] = len(containers)
     logger.debug("Found %d containers to enrich", len(containers))

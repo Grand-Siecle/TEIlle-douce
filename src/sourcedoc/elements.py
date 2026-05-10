@@ -15,6 +15,7 @@ import uuid
 from lxml import etree
 
 from ..constants import NS_ALTO, XML_ID
+from ..utils.xml import xml_id_safe
 
 
 class SurfaceTree:
@@ -70,11 +71,12 @@ class SurfaceTree:
         Returns:
             etree.Element: The created <surface> element.
         """
+        folio_id = xml_id_safe(self.folio)
         surface = etree.Element(
             "surface",
-            {XML_ID: self.folio, **page_attributes},
+            {XML_ID: folio_id, **page_attributes},
         )
-        xml_id = surface.get(XML_ID, self.folio)
+        xml_id = surface.get(XML_ID, folio_id)
 
         # Add IIIF graphic element if mapping is available
         if self.iiif_mapping and self.iiif_mapping.has_mapping():

@@ -13,16 +13,16 @@ header, and adds @ref attributes to body annotations.
 import asyncio
 import csv
 import logging
-import unicodedata
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from lxml import etree
 
-from ..constants import NS_TEI, NS_XML
+from ..constants import NS_TEI, XML_ID
 from ..utils.xml import local_tag as _local
 from .ner_filter import (
+    _normalize,
     fix_canonical_names,
     fuzzy_merge_entities,
     filter_resolved_entities,
@@ -31,7 +31,6 @@ from .ner_filter import (
 logger = logging.getLogger(__name__)
 
 TEI_NS = f"{{{NS_TEI}}}"
-XML_ID = f"{{{NS_XML}}}id"
 
 
 # =============================================================================
@@ -78,21 +77,6 @@ def _make_xml_id(entity_type):
 
 
 # =============================================================================
-# TEXT NORMALIZATION
-# =============================================================================
-
-
-def _normalize(text):
-    """Normalize text for fuzzy matching: lowercase, strip accents, collapse whitespace."""
-    text = text.lower().strip()
-    # Decompose unicode, remove combining marks (accents)
-    nfkd = unicodedata.normalize("NFKD", text)
-    stripped = "".join(c for c in nfkd if not unicodedata.combining(c))
-    # Collapse whitespace
-    return " ".join(stripped.split())
-
-
-# =============================================================================
 # MENTION GROUPING
 # =============================================================================
 
@@ -115,9 +99,10 @@ def _get_canonical_name(entity):
 
 def group_mentions(aligned_entities):
     """
-    Group entity mentions by (type, canonical form).
+    Group entity mentions by (type, normalized canonical form).
 
-    Uses fuzzy matching to group spelling variants of the same entity.
+    Exact match on the normalized canonical only — fuzzy merging of
+    spelling variants is performed separately by ``fuzzy_merge_entities``.
 
     Args:
         aligned_entities: List of AlignedEntity from Phase 8.
@@ -621,6 +606,13 @@ def add_refs_to_body(root, entities, entity_types_config):
     if body is None:
         return
 
+    # Reverse map: TEI element name → entity type (e.g. "persName" → "person")
+    tag_to_etype = {
+        cfg["tei_element"]: etype
+        for etype, cfg in entity_types_config.items()
+        if cfg.get("tei_element")
+    }
+
     ref_count = 0
     for elem in body.iter():
         if elem.get("resp") != "#ner-auto":
@@ -655,15 +647,12 @@ def add_refs_to_body(root, entities, entity_types_config):
                     continue
 
         # Try to match by text content (raw text injection)
-        local_tag = _local(elem.tag)
-        for etype, cfg in entity_types_config.items():
-            if cfg.get("tei_element") == local_tag:
-                text = elem.text or ""
-                xml_id = text_lookup.get((etype, text))
-                if xml_id:
-                    elem.set("ref", f"#{xml_id}")
-                    ref_count += 1
-                break
+        etype = tag_to_etype.get(_local(elem.tag))
+        if etype:
+            xml_id = text_lookup.get((etype, elem.text or ""))
+            if xml_id:
+                elem.set("ref", f"#{xml_id}")
+                ref_count += 1
 
     if ref_count:
         logger.info("NER: added @ref to %d entity annotations", ref_count)
@@ -676,8 +665,11 @@ def add_refs_to_body(root, entities, entity_types_config):
 
 def inject_editorial_declaration(root):
     """
-    Add NER methodology description to <encodingDesc>/<editorialDecl>
-    and <respStmt xml:id="ner-auto"> to <editionStmt> (created if absent).
+    Add <respStmt xml:id="ner-auto"> to <editionStmt> (created after
+    <titleStmt> if absent).
+
+    The methodology description itself lives in
+    config.EDITORIAL_DECLARATIONS and is injected by the header builder.
 
     Args:
         root: TEI root element.
@@ -720,9 +712,6 @@ def inject_editorial_declaration(root):
         resp.text = "Automatic named entity recognition"
         name = _sub(resp_stmt, "name")
         name.text = "NER Pipeline (CamemBERT + GLiNER)"
-
-    # Editorial declaration for NER is now in config.EDITORIAL_DECLARATIONS
-    # and injected by the header builder. Nothing to add here.
 
 
 # =============================================================================

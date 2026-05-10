@@ -10,9 +10,9 @@ to their source XML elements.
 """
 
 from dataclasses import dataclass
-from lxml import etree
 
 from ..constants import NS_XML
+from ..utils.xml import local_tag as _local
 
 
 XML_LANG = f"{{{NS_XML}}}lang"
@@ -77,7 +77,7 @@ def _walk_children(parent, hi_elem, hi_rend, spans, state):
     ``hi_elem``/``hi_rend`` are propagated from an enclosing <hi>.
     """
     for child in parent:
-        tag = etree.QName(child.tag).localname if isinstance(child.tag, str) else child.tag
+        tag = _local(child.tag)
 
         if tag == "lb":
             _process_lb(child, hi_elem, hi_rend, spans, state)

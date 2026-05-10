@@ -15,6 +15,7 @@ from collections import namedtuple
 from lxml import etree
 
 from ..constants import NS_ALTO, XML_ID
+from ..utils.xml import xml_id_safe
 
 
 # Named tuple for zone data
@@ -69,18 +70,19 @@ class Attributes:
         """
         # Get ALTO Page element attributes
         page_el = self.root.find(".//a:Page", namespaces=NS_ALTO)
+        folio_id = xml_id_safe(self.folio)
         if page_el is None:
-            return {XML_ID: self.folio, "n": "0", "ulx": "0", "uly": "0", "lrx": "0", "lry": "0"}
+            return {XML_ID: folio_id, "n": "0", "ulx": "0", "uly": "0", "lrx": "0", "lry": "0"}
 
         att_list = page_el.attrib
 
-        # Extract page number from folio name (e.g., "f12" -> "12")
-        match = re.match(r"f(\d+)", str(self.folio))
+        # Extract page number from folio name (handles "f12" or bare "12")
+        match = re.match(r"f?(\d+)", str(self.folio))
         page_n = match.group(1) if match else "0"
 
         # Map ALTO attributes to TEI format
         return {
-            XML_ID: self.folio,
+            XML_ID: folio_id,
             "n": page_n,
             "ulx": "0",
             "uly": "0",

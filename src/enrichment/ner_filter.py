@@ -320,8 +320,9 @@ def filter_aligned_by_pos(entities):
         # "ancien" (ADJqua), "théologique", "morales", "tout", "autre"
         if len(ent.w_elements) == 1:
             pos = pos_tags[0]
+            pos_upper = pos.upper() if pos else ""
             if _is_non_entity_pos(pos) and (
-                pos.upper().startswith("ADJ") or pos == "a"
+                pos_upper.startswith("ADJ") or pos == "a"
             ):
                 logger.debug(
                     "POS filter: %s '%s' → single-word ADJ (%s)",

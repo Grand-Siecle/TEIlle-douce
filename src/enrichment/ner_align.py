@@ -22,14 +22,13 @@ from dataclasses import dataclass, field
 
 from lxml import etree
 
-from ..constants import NS_TEI, NS_XML
+from ..constants import NS_TEI, XML_ID
 from ..utils.xml import local_tag as _local
 from .ner_filter import filter_aligned_by_pos
 
 logger = logging.getLogger(__name__)
 
 TEI_NS = f"{{{NS_TEI}}}"
-XML_ID = f"{{{NS_XML}}}id"
 
 
 # =============================================================================
@@ -144,11 +143,9 @@ def _align_reg_spans(block, spans):
 
             # Get the span text within this <reg>
             reg_text = reg_elem.text or ""
-            span_text = reg_text[local_start:local_end]
 
             # Collect all <w> from <orig> (across <s> elements)
-            w_elems = list(orig.iter())
-            w_elems = [w for w in w_elems if _local(w.tag) == "w"]
+            w_elems = [e for e in orig.iter() if _local(e.tag) == "w"]
 
             # Tokenize <reg> text to find positional correspondence
             reg_words = reg_text.split()
@@ -623,17 +620,10 @@ def _inject_raw_text_entities(entities, cert_thresholds, entity_types_config):
         by_container[key][1].append(ent)
 
     for _, (container, ents) in by_container.items():
-        # Sort in reverse to inject from end to start (preserves earlier offsets)
-        ents.sort(key=lambda e: e.text_start, reverse=True)
-
         # Get the full text content
         full_text = etree.tostring(container, method="text", encoding="unicode") or ""
 
-        # We need to work with the text/tail structure of child elements.
-        # For simple containers with just text content, we rebuild.
-        # Clear existing text content and rebuild with entity tags.
-
-        # Collect entities sorted forward for reconstruction
+        # Sort entities by start offset for forward reconstruction
         forward_ents = sorted(ents, key=lambda e: e.text_start)
 
         # Remove existing text children (preserve non-text children)
@@ -719,12 +709,11 @@ def inject_entities(aligned_entities, cert_thresholds, entity_types_config):
 # =============================================================================
 
 
-def align_and_inject(root, blocks, all_spans, entity_types_config, cert_thresholds):
+def align_and_inject(blocks, all_spans, entity_types_config, cert_thresholds):
     """
     Phase 8 orchestrator: align spans, merge models, resolve overlaps, inject.
 
     Args:
-        root: TEI root element (for context, not directly modified here).
         blocks: List of NERBlock from Phase 7.
         all_spans: List of list of NERSpan from Phase 7 (parallel to blocks).
         entity_types_config: NER_ENTITY_TYPES from config.
@@ -737,7 +726,6 @@ def align_and_inject(root, blocks, all_spans, entity_types_config, cert_threshol
         return []
 
     # Step 1: Align spans to nodes per block
-    all_aligned = []
     container_aligned = {}  # container_id → {source → [AlignedEntity]}
 
     for block, spans in zip(blocks, all_spans):
