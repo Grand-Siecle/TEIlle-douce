@@ -200,7 +200,7 @@ class TEI:
             line_data = self.extract_line_data()
 
         original_texts = [text for _, text, *_ in line_data]
-        zone_types = [zt for _, _, zt, *_ in line_data] if len(line_data[0]) > 2 else None
+        zone_types = [zt for _, _, zt, *_ in line_data] if line_data and len(line_data[0]) > 2 else None
 
         # Dehyphenate before modernization: join words split by ¬/-
         # across lines so the API sees complete words.

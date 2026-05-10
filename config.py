@@ -407,23 +407,23 @@ EDITORIAL_DECLARATIONS = {
             "authority files and Wikidata where confidence exceeded 0.7."
         ),
     },
-    "langUsage": {
-        "enabled": True,
-        "attrs": {},
-        "text": (
-            "Language detection uses Lingua (statistical n-gram model) at "
-            "the container level (ab, note, fw). Mixed-language containers "
-            "are segmented by Lingua's detect_multiple_languages_of, which "
-            "identifies contiguous blocks via sliding-window character "
-            "n-gram comparison. Segments classified as foreign are validated "
-            "by rule-based heuristics (character sets, keywords, patterns): "
-            "a segment is rejected if the primary-language heuristic score "
-            "reaches 2, or if the target-language heuristic score is 0. "
-            "Greek is detected reliably through Unicode character ranges; "
-            "Latin relies on distinctive vocabulary not shared with French."
-        ),
-    },
 }
+
+# Description of the language-detection methodology, rendered as a <p>
+# inside <profileDesc>/<langUsage>. Kept separate from EDITORIAL_DECLARATIONS
+# because <langUsage> is not a valid child of <editorialDecl> in TEI P5.
+LANG_USAGE_DESCRIPTION = (
+    "Language detection uses Lingua (statistical n-gram model) at "
+    "the container level (ab, note, fw). Mixed-language containers "
+    "are segmented by Lingua's detect_multiple_languages_of, which "
+    "identifies contiguous blocks via sliding-window character "
+    "n-gram comparison. Segments classified as foreign are validated "
+    "by rule-based heuristics (character sets, keywords, patterns): "
+    "a segment is rejected if the primary-language heuristic score "
+    "reaches 2, or if the target-language heuristic score is 0. "
+    "Greek is detected reliably through Unicode character ranges; "
+    "Latin relies on distinctive vocabulary not shared with French."
+)
 
 # =============================================================================
 # RESPONSIBILITY STATEMENT
