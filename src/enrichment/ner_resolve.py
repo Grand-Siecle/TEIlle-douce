@@ -584,22 +584,26 @@ def add_refs_to_body(root, entities, entity_types_config):
     # the single-pass pipeline. If the tree is re-parsed or serialized between
     # Phase 8 injection and this point, all id() values will change and no
     # @ref attributes will be set.
+    # Dual anchoring: a mention can be injected both in <orig> (around <w>)
+    # and in <reg> (mixed content), so populate every applicable lookup.
     w_lookup = {}
+    w_single = {}  # id(w) → xml_id (fallback for per-parent wrapper groups)
     text_lookup = {}
     reg_lookup = {}  # id(reg_elem) → {(start, end): xml_id}
 
     for ent in entities:
         for mention in ent.mentions:
             reg_fragments = getattr(mention, "reg_fragments", None) or []
-            if reg_fragments:
-                for reg_elem, fstart, fend in reg_fragments:
-                    reg_lookup.setdefault(id(reg_elem), {})[
-                        (fstart, fend)
-                    ] = ent.xml_id
-            elif mention.w_elements:
+            for reg_elem, fstart, fend in reg_fragments:
+                reg_lookup.setdefault(id(reg_elem), {})[
+                    (fstart, fend)
+                ] = ent.xml_id
+            if mention.w_elements:
                 w_ids = frozenset(id(w) for w in mention.w_elements)
                 w_lookup[w_ids] = ent.xml_id
-            elif mention.text_node is not None:
+                for w in mention.w_elements:
+                    w_single[id(w)] = ent.xml_id
+            elif not reg_fragments and mention.text_node is not None:
                 text_lookup[(ent.entity_type, mention.text)] = ent.xml_id
 
     # Find all elements with @resp="#ner-auto"
@@ -628,6 +632,14 @@ def add_refs_to_body(root, entities, entity_types_config):
         if w_children:
             w_ids = frozenset(id(w) for w in w_children)
             xml_id = w_lookup.get(w_ids)
+            if xml_id is None:
+                # A multi-parent entity yields one wrapper per <w> group, so
+                # the exact-set match fails; fall back to per-<w> identity
+                # (overlap resolution guarantees a <w> belongs to at most
+                # one entity).
+                candidates = {w_single.get(id(w)) for w in w_children}
+                if len(candidates) == 1 and None not in candidates:
+                    xml_id = candidates.pop()
             if xml_id:
                 elem.set("ref", f"#{xml_id}")
                 ref_count += 1

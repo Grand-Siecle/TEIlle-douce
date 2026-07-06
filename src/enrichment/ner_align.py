@@ -12,8 +12,13 @@ Three alignment cases:
 2. GLiNER on <reg>: char offsets → list of (<reg>, start, end) fragments
    • Single fragment  → mixed-content wrap inside <reg>
    • Multi fragments  → one wrapper per <reg>, linked via @xml:id+@next/@prev
-   • Cross-model merged (CamemBERT+GLiNER) → injection in <reg> (GLiNER target)
 3. GLiNER on raw text: char offsets → text node splitting
+
+Dual anchoring: entities carrying both <w> anchors and <reg> fragments are
+injected on BOTH layers (<orig> and <reg>), so annotations stay visible on
+the diplomatic and the modernized views alike. Orig-only entities under a
+<choice> get their <reg> fragments backfilled (backfill_reg_fragments)
+before injection. Both copies receive the same @ref in Phase 9.
 """
 
 import logging
@@ -50,11 +55,11 @@ class AlignedEntity:
     text_node: object = None
     text_start: int = None
     text_end: int = None
-    # For French GLiNER on <reg>: inject directly inside <reg> (mixed content).
-    # List of fragments. One fragment = single-line entity. Multiple fragments =
-    # entity split across consecutive <reg> elements (multi-line), linked via
-    # @next/@prev at injection time. When non-empty, takes precedence over
-    # w_elements injection.
+    # Anchors inside <reg> (mixed-content injection). List of fragments. One
+    # fragment = single-line entity. Multiple fragments = entity split across
+    # consecutive <reg> elements (multi-line), linked via @next/@prev at
+    # injection time. Dual anchoring: when both reg_fragments and w_elements
+    # are set, the entity is injected in <reg> AND in <orig>.
     reg_fragments: list = field(default_factory=list)  # list[(reg_elem, start, end)]
 
 
@@ -313,7 +318,8 @@ def merge_model_results(camembert_aligned, gliner_aligned):
 
             if overlap_ratio > 0.5 and cam_ent.entity_type == gli_ent.entity_type:
                 # Same entity, same type → merge with confidence boost.
-                # Preserve GLiNER's <reg> fragments so injection lands in <reg>.
+                # Keep both anchor sets (CamemBERT <w> + GLiNER <reg>) for
+                # dual injection.
                 used_gliner.add(best_match)
                 merged.append(
                     AlignedEntity(
@@ -456,14 +462,25 @@ def _inject_tokenized_entities(entities, cert_thresholds, entity_types_config):
 
         cert = _confidence_to_cert(ent.confidence, cert_thresholds)
 
-        # Group consecutive <w> by parent to handle multi-token entities
+        # Group consecutive <w> by parent to handle multi-token entities.
+        # Adjacency is required: moving non-adjacent siblings into one
+        # wrapper would reorder intervening nodes (<pc>, <lb/>) in the
+        # diplomatic text.
         groups = []
         current_group = [ent.w_elements[0]]
 
         for w in ent.w_elements[1:]:
             prev = current_group[-1]
-            # Check if same parent and adjacent
-            if w.getparent() is prev.getparent():
+            parent = w.getparent()
+            if parent is not None and parent is prev.getparent():
+                siblings = list(parent)
+                try:
+                    adjacent = siblings.index(prev) + 1 == siblings.index(w)
+                except ValueError:
+                    adjacent = False
+            else:
+                adjacent = False
+            if adjacent:
                 current_group.append(w)
             else:
                 groups.append(current_group)
@@ -500,8 +517,9 @@ def _inject_reg_entities(entities, cert_thresholds, entity_types_config):
     """
     Inject entity tags directly inside <reg> elements (mixed content).
 
-    Used for French GLiNER detections so that annotations are visible on the
-    modernized text rather than wrapped around <w> in <orig>.
+    Makes annotations visible on the modernized text; with dual anchoring the
+    same entities are also wrapped around <w> in <orig> by
+    _inject_tokenized_entities.
 
     Single-<reg> entities are wrapped in mixed content. Multi-<reg> entities
     are split into one wrapper per <reg> and linked via @xml:id + @next/@prev
@@ -667,9 +685,95 @@ def _inject_raw_text_entities(entities, cert_thresholds, entity_types_config):
             prev_elem.tail = (prev_elem.tail or "") + remaining
 
 
+def _find_orig_and_reg(w):
+    """Climb from a <w> to its <orig> ancestor and the sibling <reg>."""
+    node = w
+    orig = None
+    while node is not None:
+        if _local(node.tag) == "orig":
+            orig = node
+            break
+        node = node.getparent()
+    if orig is None:
+        return None, None
+    choice = orig.getparent()
+    if choice is None or _local(choice.tag) != "choice":
+        return orig, None
+    for child in choice:
+        if _local(child.tag) == "reg":
+            return orig, child
+    return orig, None
+
+
+def backfill_reg_fragments(entities):
+    """
+    Compute <reg> fragments for entities that only carry <w> anchors
+    (CamemBERT-only detections), so they can be dual-injected.
+
+    Inverse of the positional mapping in _align_reg_spans: the i-th <w> of an
+    <orig> corresponds to the i-th word of the sibling <reg> text.  Entities
+    whose <w> are not under a <choice>/<reg> (Latin/Greek, unmodernized lines)
+    are left unchanged and stay orig-only.
+    """
+    filled = 0
+    for ent in entities:
+        if ent.reg_fragments or not ent.w_elements:
+            continue
+
+        # Group the entity's <w> by <orig> ancestor (an entity can span
+        # several <choice> lines); keep document order.
+        by_orig = {}
+        order = []
+        for w in ent.w_elements:
+            orig, reg = _find_orig_and_reg(w)
+            if orig is None or reg is None:
+                continue
+            key = id(orig)
+            if key not in by_orig:
+                by_orig[key] = (orig, reg, [])
+                order.append(key)
+            by_orig[key][2].append(w)
+
+        fragments = []
+        for key in order:
+            orig, reg, ws = by_orig[key]
+            reg_text = reg.text or ""
+            reg_words = reg_text.split()
+            if not reg_words:
+                continue
+            w_elems = [e for e in orig.iter() if _local(e.tag) == "w"]
+            indices = [w_elems.index(w) for w in ws if w in w_elems]
+            indices = [i for i in indices if i < len(reg_words)]
+            if not indices:
+                continue
+
+            # Char offsets of each word in reg_text (mirrors _align_reg_spans)
+            offsets = []
+            pos = 0
+            for word in reg_words:
+                start = reg_text.find(word, pos)
+                offsets.append((start, start + len(word)))
+                pos = start + len(word)
+
+            fragments.append((reg, offsets[min(indices)][0], offsets[max(indices)][1]))
+
+        if fragments:
+            ent.reg_fragments = fragments
+            filled += 1
+
+    if filled:
+        logger.info("NER: backfilled <reg> fragments for %d orig-only entities", filled)
+    return filled
+
+
 def inject_entities(aligned_entities, cert_thresholds, entity_types_config):
     """
     Inject all aligned entities into the TEI XML.
+
+    Dual anchoring: an entity carrying both <w> anchors and <reg> fragments is
+    injected on BOTH layers — wrapped around <w> in <orig> (diplomatic view)
+    and as mixed content inside <reg> (modernized view). Both copies receive
+    the same @ref in Phase 9 (add_refs_to_body).
 
     Reg-fragment entities → mixed-content wrap inside <reg> (multi-fragment
     entities linked via @xml:id + @next/@prev).
@@ -682,10 +786,7 @@ def inject_entities(aligned_entities, cert_thresholds, entity_types_config):
         entity_types_config: NER_ENTITY_TYPES from config.
     """
     reg_inj = [e for e in aligned_entities if e.reg_fragments]
-    tokenized = [
-        e for e in aligned_entities
-        if not e.reg_fragments and e.w_elements
-    ]
+    tokenized = [e for e in aligned_entities if e.w_elements]
     raw = [
         e for e in aligned_entities
         if not e.reg_fragments and e.text_node is not None and not e.w_elements
@@ -770,7 +871,10 @@ def align_and_inject(blocks, all_spans, entity_types_config, cert_thresholds):
         len(resolved),
     )
 
-    # Step 5: Inject into XML
+    # Step 5: Backfill <reg> anchors for orig-only entities (dual anchoring)
+    backfill_reg_fragments(resolved)
+
+    # Step 6: Inject into XML
     inject_entities(resolved, cert_thresholds, entity_types_config)
 
     return resolved
