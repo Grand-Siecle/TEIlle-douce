@@ -153,6 +153,9 @@ PLACEHOLDER_INFO_UNAVAILABLE = "Information not available."
 # Default placeholder text when no metadata found at all
 PLACEHOLDER_NO_METADATA = "Metadata not found in catalogue."
 
+# Placeholder ORCID: respStmt entries carrying this value get no <ptr>
+PLACEHOLDER_ORCID = "0000-0000-0000-0000"
+
 # =============================================================================
 # IIIF CONFIGURATION
 # =============================================================================
@@ -473,6 +476,7 @@ RESPONSIBILITY = {
         {
             "forename": "Pauline",
             "surname": "Randonneix",
+            # TODO: real ORCID needed (placeholder is skipped at generation time)
             "ptr": {
                 "type": "orcid",
                 "target": "https://orcid.org/0000-0000-0000-0000",
@@ -481,6 +485,7 @@ RESPONSIBILITY = {
         {
             "forename": "Léonie",
             "surname": "Marquaille",
+            # TODO: real ORCID needed (placeholder is skipped at generation time)
             "ptr": {
                 "type": "orcid",
                 "target": "https://orcid.org/0000-0000-0000-0000",

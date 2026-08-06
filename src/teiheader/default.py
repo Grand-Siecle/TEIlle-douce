@@ -18,6 +18,7 @@ from config import (
     SEGMONTO,
     PLACEHOLDER_INFO_UNAVAILABLE,
     PLACEHOLDER_NO_METADATA,
+    PLACEHOLDER_ORCID,
     EDITORIAL_DECLARATIONS,
     LANG_USAGE_DESCRIPTION,
 )
@@ -118,7 +119,9 @@ class DefaultTree:
             forename.text = resp_person["forename"]
             surname = etree.SubElement(persName, "surname")
             surname.text = resp_person["surname"]
-            etree.SubElement(persName, "ptr", resp_person["ptr"])
+            resp_ptr = resp_person.get("ptr")
+            if resp_ptr and PLACEHOLDER_ORCID not in (resp_ptr.get("target") or ""):
+                etree.SubElement(persName, "ptr", resp_ptr)
 
         # <extent>
         extent = etree.SubElement(fileDesc, "extent")
