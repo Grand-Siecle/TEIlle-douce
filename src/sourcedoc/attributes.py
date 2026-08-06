@@ -22,6 +22,25 @@ from ..utils.xml import xml_id_safe
 ZoneData = namedtuple("ZoneData", ["attributes", "id"])
 
 
+def format_alto_points(raw):
+    """Convert an ALTO points string ("x y x y" or "x,y x,y", int or float)
+    to the TEI "x,y x,y" integer format.
+
+    Args:
+        raw (str): Raw ALTO points string.
+
+    Returns:
+        str: Formatted points in TEI format ("x,y x,y ...").
+    """
+    if not raw:
+        return ""
+    nums = re.findall(r"-?\d+(?:\.\d+)?", raw)
+    return " ".join(
+        f"{int(float(nums[k]))},{int(float(nums[k + 1]))}"
+        for k in range(0, len(nums) - 1, 2)
+    )
+
+
 class Attributes:
     """
     Parses ALTO element attributes and maps them to TEI format.
@@ -164,10 +183,7 @@ class Attributes:
             polygon = element.find(".//a:Polygon", namespaces=NS_ALTO)
             if polygon is not None and polygon.get("POINTS"):
                 points = polygon.get("POINTS")
-                # Convert "x y x y" to "x,y x,y" format
-                attributes["points"] = " ".join(
-                    [re.sub(r"\s", ",", x) for x in re.findall(r"(\d+ \d+)", points)]
-                )
+                attributes["points"] = format_alto_points(points)
 
             # Add IIIF image source URL
             if "HPOS" in element.attrib:
