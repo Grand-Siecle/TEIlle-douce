@@ -14,9 +14,16 @@ The extraction handles three cases:
 """
 
 import logging
+import re
 from dataclasses import dataclass, field
 
 from lxml import etree
+
+try:
+    import torch
+    _HAS_TORCH = True
+except ImportError:
+    _HAS_TORCH = False
 
 from ..constants import NS_TEI, NS_XML
 from ..utils.xml import local_tag as _local
@@ -351,43 +358,115 @@ def _run_camembert(blocks, model, label_map, threshold, batch_size=32):
     return results
 
 
-def _run_gliner(blocks, model, labels, label_map, threshold, batch_size=16):
-    """Run GLiNER NER on a list of blocks using batch inference."""
-    results = [[] for _ in blocks]
-    texts = [b.text for b in blocks]
+def _chunk_text(text, max_words, overlap_words):
+    """
+    Yield (chunk_text, char_offset) for a long text using a sliding word window.
 
-    for batch_start in range(0, len(texts), batch_size):
-        batch_texts = texts[batch_start : batch_start + batch_size]
+    GLiNER truncates inputs longer than ~384 subword tokens. We slide a window
+    of `max_words` words across the text with `overlap_words` overlap so an
+    entity straddling a chunk boundary is still captured in the next window.
+    Offsets are kept so predicted spans can be remapped to the original text.
+    """
+    word_positions = [(m.start(), m.end()) for m in re.finditer(r"\S+", text)]
+    if len(word_positions) <= max_words:
+        yield text, 0
+        return
+
+    step = max(1, max_words - overlap_words)
+    n = len(word_positions)
+    i = 0
+    while i < n:
+        end_idx = min(i + max_words, n)
+        start_char = word_positions[i][0]
+        end_char = word_positions[end_idx - 1][1]
+        yield text[start_char:end_char], start_char
+        if end_idx >= n:
+            break
+        i += step
+
+
+def _run_gliner(
+    blocks,
+    model,
+    labels,
+    label_map,
+    threshold,
+    batch_size=16,
+    max_words=280,
+    overlap_words=30,
+):
+    """Run GLiNER NER on a list of blocks using batch inference.
+
+    Long blocks are sliced into overlapping word windows to stay under
+    GLiNER's 384-token limit; predicted spans are remapped to block offsets
+    and duplicates from overlap regions are merged.
+    """
+    results = [[] for _ in blocks]
+
+    chunk_block_idx = []
+    chunk_offsets = []
+    chunk_texts = []
+    for bi, block in enumerate(blocks):
+        for chunk_text, offset in _chunk_text(block.text, max_words, overlap_words):
+            chunk_block_idx.append(bi)
+            chunk_offsets.append(offset)
+            chunk_texts.append(chunk_text)
+
+    cuda_available = _HAS_TORCH and torch.cuda.is_available()
+    empty_cache_every = 50  # batches
+
+    for batch_start in range(0, len(chunk_texts), batch_size):
+        batch_texts = chunk_texts[batch_start : batch_start + batch_size]
         try:
             batch_preds = model.inference(
                 batch_texts, labels, threshold=threshold
             )
         except Exception as e:
             logger.warning("GLiNER batch failed at offset %d: %s", batch_start, e)
+            if cuda_available:
+                # Drop any cached blocks from the failed allocation so the
+                # next batch starts from a clean allocator state.
+                torch.cuda.empty_cache()
             continue
 
+        batch_idx = batch_start // batch_size
+        if cuda_available and batch_idx > 0 and batch_idx % empty_cache_every == 0:
+            torch.cuda.empty_cache()
+
         for j, preds in enumerate(batch_preds):
-            idx = batch_start + j
-            block = blocks[idx]
-            spans = []
+            global_idx = batch_start + j
+            bi = chunk_block_idx[global_idx]
+            offset = chunk_offsets[global_idx]
+            block = blocks[bi]
             for pred in preds:
                 label = pred.get("label", "")
-                score = pred.get("score", 0.0)
                 entity_type = label_map.get(label)
                 if entity_type is None:
                     continue
-                spans.append(
+                start = pred["start"] + offset
+                end = pred["end"] + offset
+                results[bi].append(
                     NERSpan(
-                        start_char=pred["start"],
-                        end_char=pred["end"],
-                        text=pred.get("text", block.text[pred["start"] : pred["end"]]),
+                        start_char=start,
+                        end_char=end,
+                        text=block.text[start:end],
                         label=label,
                         entity_type=entity_type,
-                        confidence=score,
+                        confidence=pred.get("score", 0.0),
                         model="gliner",
                     )
                 )
-            results[idx] = spans
+
+    for bi, spans in enumerate(results):
+        if not spans:
+            continue
+        deduped = {}
+        for s in spans:
+            key = (s.start_char, s.end_char, s.entity_type)
+            existing = deduped.get(key)
+            if existing is None or s.confidence > existing.confidence:
+                deduped[key] = s
+        results[bi] = sorted(deduped.values(), key=lambda s: s.start_char)
 
     return results
 
@@ -459,9 +538,19 @@ def detect_entities(blocks, models, entity_types_config, models_config, threshol
     if gliner_blocks:
         logger.info("Running GLiNER on %d blocks", len(gliner_blocks))
         gli_blocks = [b for _, b in gliner_blocks]
-        gli_batch = models_config["gliner"].get("batch_size", 16)
+        gli_cfg = models_config["gliner"]
+        gli_batch = gli_cfg.get("batch_size", 16)
+        gli_max_words = gli_cfg.get("max_words", 280)
+        gli_overlap = gli_cfg.get("overlap_words", 30)
         gli_results = _run_gliner(
-            gli_blocks, models.gliner, gliner_labels, label_map, threshold, gli_batch
+            gli_blocks,
+            models.gliner,
+            gliner_labels,
+            label_map,
+            threshold,
+            gli_batch,
+            gli_max_words,
+            gli_overlap,
         )
         for (idx, _), spans in zip(gliner_blocks, gli_results):
             all_results[idx] = spans

@@ -334,9 +334,14 @@ NER_MODELS = {
     },
     "gliner": {
         "model_id": "urchade/gliner_multi-v2.1",
-        "batch_size": 32,
+        "batch_size": 24,
         "languages": None,  # all languages
         "source_text": "reg",  # <reg> for fra, raw text for others
+        # GLiNER truncates inputs > ~384 subword tokens. Long blocks are sliced
+        # into sliding word windows: max_words per window with overlap_words
+        # of overlap so entities at chunk boundaries are still captured.
+        "max_words": 240,
+        "overlap_words": 30,
     },
 }
 
