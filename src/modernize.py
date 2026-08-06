@@ -252,11 +252,25 @@ def dehyphenate_lines(texts, zone_types=None):
     """
     Join words split by ¬ or - across lines of the same zone type.
 
-    For each line ending with ¬ (or -), finds the next line with the
-    same zone type and merges the word fragments. The full word appears
-    on BOTH lines to give the modernization API maximum context:
-    - Line N: "...le souverain"  (fragment replaced by full word)
-    - Line M: "souverain Arbitre:..."  (full word prepended)
+    For each line ending with ¬ (or -), finds the next same-zone line and
+    merges the word fragment(s). A word can be split across MORE than two
+    lines (e.g. "ex¬" / "tra¬" / "ordinai¬" / "rement grand" — a page break
+    landing mid-word can do this). To handle that, the algorithm walks the
+    chain forward: as long as the candidate line is itself just a single
+    hyphenated fragment (one token, ending in ¬/-), it is absorbed into the
+    accumulating fragment and the walk continues to the next same-zone
+    line; the chain stops at the first line that actually carries more than
+    one fragment (i.e. the word's ending plus following text, or simply
+    isn't a lone fragment).
+
+    The full reconstructed word is written onto line i, onto every
+    intermediate chain line, and onto the terminal line — redundant on
+    purpose, to give the modernization API maximum context on every line
+    touched by the split:
+    - Line N:   "...le souv¬"        -> "...le souverain"
+    - Line N+1: "erain Arbitre:..."  -> "souverain Arbitre:..."
+    (and, for a 3+-line split, every line in between also gets the full
+    word on its own).
 
     Lines of different zone types (e.g. MainZone vs RunningTitleZone)
     are never merged, preventing cross-container corruption.
@@ -271,12 +285,15 @@ def dehyphenate_lines(texts, zone_types=None):
     """
     joined = list(texts)
 
-    # Process right-to-left: this guarantees that when line i looks up its
-    # merge target, any hyphen chain starting at that target (e.g. a word
-    # split across 3+ lines: "extra¬" / "ordinai¬" / "rement") has already
-    # been fully resolved, so line i merges against the final whole word
-    # instead of an intermediate fragment that still ends in ¬.
-    for i in range(len(joined) - 2, -1, -1):
+    def next_same_zone(idx, zone):
+        for j in range(idx + 1, len(joined)):
+            if zone_types is None:
+                return j
+            if zone_types[j] == zone:
+                return j
+        return None
+
+    for i in range(len(joined) - 1):
         line = joined[i]
         if not line:
             continue
@@ -294,32 +311,53 @@ def dehyphenate_lines(texts, zone_types=None):
             suffix = before_hyphen[last_space + 1:]
             prefix_line = before_hyphen[:last_space + 1]
 
-        # Find the next line with the same zone type
         my_zone = zone_types[i] if zone_types else None
-        target = None
-        for j in range(i + 1, len(joined)):
-            if zone_types is None:
-                target = j
-                break
-            if zone_types[j] == my_zone:
-                target = j
-                break
-
-        if target is None:
+        j = next_same_zone(i, my_zone)
+        if j is None:
             continue
 
-        next_line = joined[target]
-        if not next_line or not next_line.strip():
+        # Walk the hyphen chain forward, absorbing every line that is
+        # itself nothing but a single dangling fragment, until we reach
+        # the line that actually terminates the word.
+        fragment = suffix
+        chain = []
+        while True:
+            cand = joined[j]
+            if not cand or not cand.strip():
+                j = None
+                break
+            cand_words = cand.split()
+            cand_stripped = cand.rstrip()
+            is_single_fragment = (
+                len(cand_words) == 1
+                and (cand_stripped.endswith("¬") or cand_stripped.endswith("-"))
+            )
+            if not is_single_fragment:
+                break
+            fragment += cand_words[0][:-1]
+            chain.append(j)
+            nxt = next_same_zone(j, my_zone)
+            if nxt is None:
+                j = None
+                break
+            j = nxt
+
+        if j is None:
+            # Chain never reached a resolving line; leave as-is.
+            # strip_residual_hyphens() is the final backstop for any ¬
+            # that survives to a modernized <reg>.
             continue
+
+        next_line = joined[j]
         next_words = next_line.split(None, 1)
         next_first = next_words[0] if next_words else ""
 
-        # Full word = suffix + first word of continuation line
-        full_word = suffix + next_first
+        full_word = fragment + next_first
 
-        # Both lines get the full word for maximum API context
         joined[i] = prefix_line + full_word
-        joined[target] = full_word + (" " + next_words[1] if len(next_words) > 1 else "")
+        for c in chain:
+            joined[c] = full_word
+        joined[j] = full_word + (" " + next_words[1] if len(next_words) > 1 else "")
 
     return joined
 

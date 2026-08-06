@@ -26,7 +26,30 @@ def test_cross_zone_not_joined():
 
 def test_chained_hyphens():
     out = dehyphenate_lines(["extra¬", "ordinai¬", "rement grand"])
-    assert "¬" not in out[0] and "¬" not in out[1], out
+    assert "¬" not in out[0] and "¬" not in out[1] and "¬" not in out[2], out
+    assert out[0] == "extraordinairement", out
+    assert out[1] == "extraordinairement", out
+    assert out[2] == "extraordinairement grand", out
+
+
+def test_chained_4_lines():
+    out = dehyphenate_lines(["ex¬", "tra¬", "ordinai¬", "rement grand"])
+    assert "¬" not in "".join(out), out
+    assert out[0] == "extraordinairement", out
+    assert out[1] == "extraordinairement", out
+    assert out[2] == "extraordinairement", out
+    assert out[3] == "extraordinairement grand", out
+
+
+def test_cascade_two_words():
+    # Not a hyphen chain: line 1 carries two tokens ("cc dd¬"), so line 0
+    # only absorbs the first ("cc"); the leftover "dd¬" on line 1 still
+    # ends in ¬ and gets resolved against line 2 on a later loop pass.
+    out = dehyphenate_lines(["aaa bb¬", "cc dd¬", "ee"])
+    assert "¬" not in "".join(out), out
+    assert out[0] == "aaa bbcc", out
+    assert out[1] == "bbcc ddee", out
+    assert out[2] == "ddee", out
 
 
 def test_strip_residual():
@@ -38,5 +61,7 @@ if __name__ == "__main__":
     test_basic_join()
     test_cross_zone_not_joined()
     test_chained_hyphens()
+    test_chained_4_lines()
+    test_cascade_two_words()
     test_strip_residual()
     print("OK test_dehyphenation")
