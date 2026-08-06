@@ -17,7 +17,7 @@ Usage:
     write_xml(root, output_path)
 """
 
-from .files import Files
+from .files import Files, parse_document_id, canonical_document_id
 from .xml import write_xml, local_tag
 
-__all__ = ["Files", "write_xml", "local_tag"]
+__all__ = ["Files", "parse_document_id", "canonical_document_id", "write_xml", "local_tag"]

@@ -15,6 +15,7 @@ from pathlib import Path
 from lxml import etree
 
 from .constants import NS_TEI, XML_ID
+from .utils.files import canonical_document_id
 
 logger = logging.getLogger(__name__)
 from .teiheader import build_header
@@ -77,7 +78,7 @@ class TEI:
         Initializes the XML tree with the TEI root element and proper
         namespace declarations.
         """
-        xml_id_att = {XML_ID: f"ark_12148_{self.d}"}
+        xml_id_att = {XML_ID: canonical_document_id(self.d)}
         nsmap = {None: NS_TEI}
         self.root = etree.Element("TEI", xml_id_att, nsmap=nsmap)
 

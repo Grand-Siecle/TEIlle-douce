@@ -10,7 +10,6 @@ but with placeholder text. The structure is later populated with actual
 metadata by the FullTree class.
 """
 
-import re
 from datetime import datetime
 from collections import defaultdict
 from lxml import etree
@@ -22,31 +21,7 @@ from config import (
     EDITORIAL_DECLARATIONS,
     LANG_USAGE_DESCRIPTION,
 )
-
-
-def _parse_document_id(document_name):
-    """
-    Parse document name to extract internal ID and volume.
-
-    Examples:
-        "LIV0326_v2_altos_transcribed" -> ("LIV0326", "v2")
-        "LIV0123_t1_something" -> ("LIV0123", "t1")
-        "ABC999_b_folder" -> ("ABC999", "b")
-
-    Args:
-        document_name (str): The document folder/file name.
-
-    Returns:
-        tuple: (internal_id, volume) - volume may be None if not found.
-    """
-    # Pattern: capture ID (letters + digits) then optional volume marker
-    # Volume patterns: v1, v2, t1, t2, b, etc.
-    match = re.match(r"([A-Za-z]+\d+)(?:_([vVtTbB]\d*|[bB]))?", document_name)
-    if match:
-        internal_id = match.group(1)
-        volume = match.group(2)
-        return internal_id, volume
-    return document_name, None
+from ..utils.files import canonical_document_id
 
 
 class DefaultTree:
@@ -206,16 +181,11 @@ class DefaultTree:
         self.children["idno"] = etree.SubElement(msIdentifier, "idno")
         self.children["idno"].text = default_text
 
-        # Parse document name for internal ID and volume
-        internal_id, volume = _parse_document_id(self.document)
-
-        # altIdentifier with combined internal ID (e.g., "LIV0326_v2")
+        # altIdentifier with the canonical document id (e.g., "LIV0326_v2"),
+        # matching the root xml:id built in src.tei.TEI.build_tree().
         altIdentifier = etree.SubElement(msIdentifier, "altIdentifier")
         alt_idno = etree.SubElement(altIdentifier, "idno", type="internal")
-        if volume:
-            alt_idno.text = f"{internal_id}_{volume}"
-        else:
-            alt_idno.text = internal_id
+        alt_idno.text = canonical_document_id(self.document)
 
         physDesc = etree.SubElement(msDesc, "physDesc")
         objectDesc = etree.SubElement(physDesc, "objectDesc")
