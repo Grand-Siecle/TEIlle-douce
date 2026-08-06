@@ -13,6 +13,7 @@ Usage:
 """
 
 import logging
+import re
 import sys
 from time import perf_counter
 from zipfile import ZipFile
@@ -69,8 +70,10 @@ from src.metadata import (load_metadata,
                           find_metadata_row,
                           build_metadata_dict,
                           override_teiheader_from_csv,
-                          load_person_database)
+                          load_person_database,
+                          select_manifest)
 from src.utils import write_xml
+from src.utils.files import parse_document_id
 
 
 console = Console()
@@ -142,10 +145,32 @@ def _extract_bdd_prefix(doc_folder_name):
     Returns:
         str: Extracted prefix or original name.
     """
-    import re
     from config import BDD_PREFIX_PATTERN
     match = re.match(BDD_PREFIX_PATTERN, doc_folder_name)
     return match.group(1) if match else doc_folder_name
+
+
+def _gallica_image_base(manifest_url):
+    """
+    IIIF image base for a Gallica manifest URL, else None.
+
+    Other IIIF servers (e.g. digitale-sammlungen) expose a different image
+    API that cannot be guessed from the manifest URL alone — @source is
+    then omitted (or would need a per-page IIIF mapping CSV).
+
+    Args:
+        manifest_url (str): IIIF manifest URL, or None.
+
+    Returns:
+        str or None: Image base URL, or None if not a recognized Gallica manifest.
+    """
+    if not manifest_url:
+        return None
+    m = re.match(
+        r"(https://gallica\.bnf\.fr/iiif/ark:/\d+/[a-z0-9]+)/manifest\.json",
+        manifest_url.strip(),
+    )
+    return m.group(1) if m else None
 
 
 # =============================================================================
@@ -247,6 +272,14 @@ def main():
             # Load metadata for this document
             row = find_metadata_row(df_meta, _extract_bdd_prefix(doc_name))
             tree.metadata = build_metadata_dict(row)
+
+            # Resolve this document's IIIF image base from its manifest (Gallica
+            # only — other servers' image APIs aren't derivable from the manifest
+            # URL, so @source is omitted for those pages).
+            manifests = tree.metadata["iiif"].get("manifests") or []
+            volume = parse_document_id(doc_name)[1]
+            doc_manifest = select_manifest(manifests, volume)
+            config["iiifURI"] = dict(IIIF_URI, image_base=_gallica_image_base(doc_manifest))
 
             # Build TEI header
             tree.root, tree.segmonto_zones, tree.segmonto_lines = build_header(

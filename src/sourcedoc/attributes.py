@@ -53,9 +53,12 @@ class Attributes:
         folio (str): Page/folio identifier.
         root (etree.Element): ALTO XML root element.
         tags (dict): Mapping of ALTO tag IDs to labels.
-        scheme (str): URL scheme (http/https).
-        server (str): IIIF server hostname.
-        prefix (str): IIIF image prefix.
+        image_base (str): Full IIIF image base URL derived from the volume's
+            manifest (e.g. Gallica "https://gallica.bnf.fr/iiif/ark:/12148/bpt6k...").
+            None when the image API cannot be derived from the manifest URL
+            (e.g. non-Gallica servers) — in that case @source is omitted.
+        view_number (int): 1-based ordinal of this page within the document,
+            used as the IIIF view number (e.g. "f<N>") in the image URL.
     """
 
     def __init__(self, doc, folio, alto_root, tags, config):
@@ -67,15 +70,14 @@ class Attributes:
             folio (str): Page/folio identifier.
             alto_root (etree.Element): Parsed ALTO XML root element.
             tags (dict): Mapping of ALTO tag IDs to labels.
-            config (dict): IIIF configuration with scheme, server, image_prefix.
+            config (dict): IIIF configuration with image_base and view_number.
         """
         self.doc = doc
         self.folio = folio
         self.root = alto_root
         self.tags = tags
-        self.scheme = config.get("scheme", "https")
-        self.server = config.get("server", "")
-        self.prefix = config.get("image_prefix", "")
+        self.image_base = config.get("image_base")  # e.g. https://gallica.bnf.fr/iiif/ark:/12148/bpt6k106230g
+        self.view_number = config.get("view_number")  # 1-based ordinal of the page in the document
 
     def surface(self):
         """
@@ -185,11 +187,14 @@ class Attributes:
                 points = polygon.get("POINTS")
                 attributes["points"] = format_alto_points(points)
 
-            # Add IIIF image source URL
-            if "HPOS" in element.attrib:
+            # Add IIIF image source URL — only when both a real image base
+            # and a trustworthy 1-based view number are known. A view of 0
+            # means the document's file numbering does not match IIIF view
+            # ordinals, so no resolvable URL can be built.
+            if "HPOS" in element.attrib and self.image_base and self.view_number:
                 attributes["source"] = (
-                    f"{self.scheme}://{self.server}{self.prefix}/"
-                    f"{self.doc}/f{self.folio}/{x},{y},{w},{h}/full/0/native.jpg"
+                    f"{self.image_base}/f{self.view_number}/"
+                    f"{x},{y},{w},{h}/full/0/native.jpg"
                 )
 
             output.append(ZoneData(attributes, element_id))

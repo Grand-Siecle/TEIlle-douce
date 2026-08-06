@@ -48,9 +48,40 @@ def test_format_alto_points_floats():
     assert format_alto_points("") == ""
 
 
+def test_source_url_gallica():
+    root = etree.fromstring(ALTO_TMPL.format(points="10 20 30 40").encode())
+    cfg = dict(CONFIG, image_base="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k106230g",
+               view_number=1)
+    z = Attributes("LIV0008_reconciled", "f0-np", root, {}, cfg).zones("PrintSpace", "TextBlock", [])
+    src = z[0].attributes["source"]
+    assert src == ("https://gallica.bnf.fr/iiif/ark:/12148/bpt6k106230g"
+                   "/f1/672.0,1065.0,413.0,46.0/full/0/native.jpg"), src
+
+
+def test_source_omitted_without_base():
+    # valid view_number but no image_base -> the base check alone must omit @source
+    root = etree.fromstring(ALTO_TMPL.format(points="10 20 30 40").encode())
+    cfg = dict(CONFIG, view_number=1)
+    z = Attributes("LIV0002a_reconciled", "f0-np", root, {}, cfg).zones("PrintSpace", "TextBlock", [])
+    assert "source" not in z[0].attributes
+
+
+def test_source_omitted_without_view_number():
+    # view 0 (or missing) = file numbering does not match IIIF view ordinals
+    root = etree.fromstring(ALTO_TMPL.format(points="10 20 30 40").encode())
+    base = "https://gallica.bnf.fr/iiif/ark:/12148/bpt6k106230g"
+    for view in (0, None):
+        cfg = dict(CONFIG, image_base=base, view_number=view)
+        z = Attributes("LIV0000", "f0-0001", root, {}, cfg).zones("PrintSpace", "TextBlock", [])
+        assert "source" not in z[0].attributes
+
+
 if __name__ == "__main__":
     test_float_points()
     test_int_points()
     test_comma_points()
     test_format_alto_points_floats()
+    test_source_url_gallica()
+    test_source_omitted_without_base()
+    test_source_omitted_without_view_number()
     print("OK test_attributes")
