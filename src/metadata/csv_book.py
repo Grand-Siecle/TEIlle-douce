@@ -21,6 +21,7 @@ from config import CSV_DELIMITER, BDD_PREFIX_PATTERN, METADATA_PERSON_CSV
 
 logger = logging.getLogger(__name__)
 from .csv_person import load_person_database, get_person_database
+from ..utils.files import parse_document_id
 
 
 def load_metadata(csv_path):
@@ -120,6 +121,37 @@ def _safe_value_list(row, key):
     return [v.strip() for v in raw.split("|") if v.strip()]
 
 
+def _volume_index(volume):
+    """'a'->0, 'b'->1, 't2'->1, 'v3'->2 ; None/unknown -> None."""
+    if not volume:
+        return None
+    v = volume.lower()
+    if len(v) == 1 and v.isalpha():
+        return ord(v) - ord("a")
+    m = re.match(r"[vtb](\d+)$", v)
+    if m:
+        return int(m.group(1)) - 1
+    return None
+
+
+def select_manifest(manifests, volume):
+    """
+    Pick the IIIF manifest matching a document volume.
+
+    One manifest: always return it. Several: return the volume's
+    (order of the CSV '|' list = volume order). Unknown/missing volume
+    with several manifests -> None, caller falls back to listing all.
+    """
+    if not manifests:
+        return None
+    if len(manifests) == 1:
+        return manifests[0]
+    idx = _volume_index(volume)
+    if idx is None or idx >= len(manifests):
+        return None
+    return manifests[idx]
+
+
 def build_metadata_dict(row):
     """
     Build a metadata dictionary from a CSV row.
@@ -204,6 +236,7 @@ def build_metadata_dict(row):
     # Build IIIF-like metadata
     iiif_data = {
         "manifest": _safe_value(row, "manifest_iiif"),
+        "manifests": _safe_value_list(row, "manifest_iiif"),
         "ark": _safe_value(row, "ARK"),
         "Creator": _safe_value(row, "ID_auteur"),
         "Title": _safe_value(row, "Titre_long") or _safe_value(row, "Titre_abrege"),
@@ -219,7 +252,7 @@ def build_metadata_dict(row):
     }
 
 
-def override_teiheader_from_csv(root, row):
+def override_teiheader_from_csv(root, row, document_name=None):
     """
     Inject CSV metadata into an existing TEI header.
 
@@ -230,6 +263,9 @@ def override_teiheader_from_csv(root, row):
     Args:
         root (etree.Element): TEI root element.
         row (pd.Series): Metadata row from CSV.
+        document_name (str, optional): Document folder name, used to
+            determine the volume marker for selecting the matching
+            IIIF manifest when several are listed in the CSV.
 
     Returns:
         None: Modifies root in place.
@@ -466,17 +502,24 @@ def override_teiheader_from_csv(root, row):
                 term.text = sujet
 
     # ARK and IIIF manifest identifiers
-    ark = row.get("ARK")
-    manifest = row.get("manifest_iiif")
-    if ark or manifest:
+    ark = _safe_value(row, "ARK")
+    manifests = _safe_value_list(row, "manifest_iiif")
+    if ark or manifests:
         idno_parent = root.find(".//teiHeader/fileDesc/sourceDesc/msDesc/msIdentifier")
         if idno_parent is not None:
             if ark:
                 id_ark = etree.SubElement(idno_parent, "idno", type="ark")
                 id_ark.text = ark
-            if manifest:
+            volume = parse_document_id(document_name)[1] if document_name else None
+            selected = select_manifest(manifests, volume)
+            if selected:
                 id_manifest = etree.SubElement(idno_parent, "idno", type="iiif")
-                id_manifest.text = manifest
+                id_manifest.text = selected
+            else:
+                # Unknown volume: list every manifest, numbered
+                for i, m in enumerate(manifests, 1):
+                    id_manifest = etree.SubElement(idno_parent, "idno", type="iiif", n=str(i))
+                    id_manifest.text = m
 
     # Build listPerson in particDesc with all referenced persons
     all_person_ids = set(auteurs + traducteurs + imprimeurs + libraires + editeurs)
