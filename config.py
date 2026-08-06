@@ -3,7 +3,24 @@
 # Modify these values to customize the pipeline
 # -----------------------------------------------------------
 
+import os
 from pathlib import Path
+
+
+def _env_path(name, default):
+    """Path overridable via environment variable (for fast test runs)."""
+    return Path(os.environ.get(name, default))
+
+
+def _env_bool(name, default):
+    """Boolean overridable via environment variable.
+
+    Truthy values: "1", "true", "yes" (case-insensitive).
+    Any other value counts as False; unset keeps the default.
+    """
+    v = os.environ.get(name)
+    return default if v is None else v.strip().lower() in ("1", "true", "yes")
+
 
 # =============================================================================
 # DEBUG & LOGGING
@@ -21,10 +38,10 @@ LOG_FILE = Path("pipeline.log")
 # =============================================================================
 
 # Input directory containing ALTO XML files or ZIP archives
-OCR_DIR = Path("OCR")
+OCR_DIR = _env_path("ALTO2TEI_OCR_DIR", "OCR")
 
 # Output directory for generated TEI XML files
-OUTPUT_DIR = Path("tei_output")
+OUTPUT_DIR = _env_path("ALTO2TEI_OUTPUT_DIR", "tei_output")
 
 # =============================================================================
 # METADATA SOURCE
@@ -177,7 +194,7 @@ LANG_DEFAULT = "fra"  # fallback to French for ambiguous texts
 # =============================================================================
 
 # Enable/disable linguistic enrichment (tokenization, POS, lemmatization)
-ENRICHMENT_ENABLED = True
+ENRICHMENT_ENABLED = _env_bool("ALTO2TEI_ENRICHMENT", True)
 
 # PyHellen API server URL
 PYHELLEN_URL = "http://localhost:8000"
@@ -203,7 +220,7 @@ ENRICHMENT_MIN_TEXT_LENGTH = 5
 # =============================================================================
 
 # Enable/disable text modernization (old French -> modern French)
-MODERNIZE_ENABLED = True
+MODERNIZE_ENABLED = _env_bool("ALTO2TEI_MODERNIZE", True)
 
 # Mapping from TEI language ident to modernization API base URL
 # Add entries for other languages as APIs become available
@@ -225,7 +242,7 @@ MODERNIZE_MAX_CONCURRENT = 8
 # =============================================================================
 
 # Enable/disable automatic NER pipeline (runs after modernization)
-NER_ENABLED = True
+NER_ENABLED = _env_bool("ALTO2TEI_NER", True)
 
 # Entity types to detect — add/remove entries to customize
 # Each key maps to a TEI annotation strategy + optional Wikidata enrichment
