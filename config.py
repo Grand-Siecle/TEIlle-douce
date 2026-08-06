@@ -245,7 +245,7 @@ MODERNIZE_MAX_CONCURRENT = 8
 NER_ENABLED = _env_bool("ALTO2TEI_NER", True)
 
 # Entity types to detect — add/remove entries to customize
-# Each key maps to a TEI annotation strategy + optional Wikidata enrichment
+# Each key maps to a TEI annotation strategy
 NER_ENTITY_TYPES = {
     "person": {
         "tei_element": "persName",
@@ -254,7 +254,6 @@ NER_ENTITY_TYPES = {
         "tei_parent": "particDesc",
         "gliner_label": "person name",
         "camembert_label": "PER",
-        "wikidata_lookup": True,
         "csv_file": "entities_persons.csv",
     },
     "place": {
@@ -264,7 +263,6 @@ NER_ENTITY_TYPES = {
         "tei_parent": "settingDesc",
         "gliner_label": "place name",
         "camembert_label": "LOC",
-        "wikidata_lookup": True,
         "csv_file": "entities_places.csv",
     },
     "organization": {
@@ -274,7 +272,6 @@ NER_ENTITY_TYPES = {
         "tei_parent": "particDesc",
         "gliner_label": "organization",
         "camembert_label": "ORG",
-        "wikidata_lookup": True,
         "csv_file": "entities_orgs.csv",
     },
     "date": {
@@ -284,7 +281,6 @@ NER_ENTITY_TYPES = {
         "tei_parent": None,
         "gliner_label": "date",
         "camembert_label": "DATE",
-        "wikidata_lookup": False,
         "csv_file": None,
     },
     "artwork": {
@@ -294,7 +290,6 @@ NER_ENTITY_TYPES = {
         "tei_parent": "standOff",
         "gliner_label": "artwork",
         "camembert_label": None,
-        "wikidata_lookup": True,
         "csv_file": "entities_artworks.csv",
     },
     "literary_work": {
@@ -304,7 +299,6 @@ NER_ENTITY_TYPES = {
         "tei_parent": "standOff",
         "gliner_label": "literary work",
         "camembert_label": None,
-        "wikidata_lookup": True,
         "csv_file": "entities_works.csv",
     },
     "material": {
@@ -314,7 +308,6 @@ NER_ENTITY_TYPES = {
         "tei_parent": None,
         "gliner_label": "material",
         "camembert_label": None,
-        "wikidata_lookup": False,
         "csv_file": "entities_materials.csv",
     },
     "technique": {
@@ -325,7 +318,6 @@ NER_ENTITY_TYPES = {
         "tei_parent": None,
         "gliner_label": "artistic technique",
         "camembert_label": None,
-        "wikidata_lookup": False,
         "csv_file": "entities_techniques.csv",
     },
     "event": {
@@ -336,7 +328,6 @@ NER_ENTITY_TYPES = {
         "tei_parent": "standOff",
         "gliner_label": "historical event",
         "camembert_label": None,
-        "wikidata_lookup": True,
         "csv_file": "entities_events.csv",
     },
 }
@@ -365,9 +356,6 @@ NER_MODELS = {
 # Minimum confidence score to keep a NER prediction
 NER_CONFIDENCE_THRESHOLD = 0.6
 
-# Minimum confidence for Wikidata lookup (avoid noisy queries)
-NER_WIKIDATA_MIN_CONFIDENCE = 0.7
-
 # Output directory for entity CSV files
 NER_OUTPUT_DIR = Path("entities")
 
@@ -378,14 +366,6 @@ NER_CONTAINERS = {"ab", "note"}
 
 # Confidence → @cert mapping thresholds
 NER_CERT_THRESHOLDS = {"low": 0.0, "mid": 0.6, "high": 0.85}
-
-# Wikidata enrichment (disable to skip all wbsearchentities/SPARQL calls,
-# e.g. when offline, rate-limited, or behind a 403)
-NER_WIKIDATA_ENABLED = False
-
-# Wikidata rate limiting
-NER_WIKIDATA_MAX_RPS = 10
-NER_WIKIDATA_TIMEOUT = 30
 
 # =============================================================================
 # EDITORIAL DECLARATIONS (encodingDesc/editorialDecl)
@@ -430,7 +410,7 @@ EDITORIAL_DECLARATIONS = {
             "was processed with GLiNER only. Annotations carry "
             '@resp="#ner-auto" and @cert (low < 0.6, mid 0.6\u20130.85, '
             "high > 0.85). Identifiers were resolved against local "
-            "authority files and Wikidata where confidence exceeded 0.7."
+            "authority files."
         ),
     },
 }

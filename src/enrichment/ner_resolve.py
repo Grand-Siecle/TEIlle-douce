@@ -1,20 +1,19 @@
 # -----------------------------------------------------------
-# Phase 9: Entity resolution, Wikidata enrichment, CSV output,
+# Phase 9: Entity resolution, CSV output,
 #           TEI header injection, and @ref linking.
 # -----------------------------------------------------------
 """
 NER resolution pipeline (Phase 9).
 
 Deduplicates entity mentions, links to local metadata (metadata_personne.csv),
-enriches via Wikidata, writes entity CSVs, injects entity lists into the TEI
+writes entity CSVs, injects entity lists into the TEI
 header, and adds @ref attributes to body annotations.
 """
 
-import asyncio
 import csv
 import logging
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 from lxml import etree
@@ -47,9 +46,6 @@ class ResolvedEntity:
     xml_id: str  # e.g. "pers-550e8400-..."
     mentions: list  # list of AlignedEntity
     local_match: str = None  # PERSXXXX from metadata_personne.csv
-    wikidata_id: str = None  # e.g. "Q37577"
-    wikidata_label: str = None
-    wikidata_data: dict = field(default_factory=dict)
 
 
 # =============================================================================
@@ -208,110 +204,6 @@ def link_local(entities, person_db):
 
 
 # =============================================================================
-# WIKIDATA ENRICHMENT
-# =============================================================================
-
-
-def resolve_wikidata(entities, entity_types_config, min_confidence, max_rps, timeout, enabled=True):
-    """
-    Enrich entities with Wikidata identifiers and properties.
-
-    Runs async internally but presents a sync interface.
-
-    Args:
-        entities: List of ResolvedEntity.
-        entity_types_config: NER_ENTITY_TYPES from config.
-        min_confidence: Minimum confidence for Wikidata lookup.
-        max_rps: Maximum requests per second.
-        timeout: HTTP timeout in seconds.
-        enabled: When False, skip all Wikidata calls.
-    """
-    if not enabled:
-        logger.info("NER: Wikidata lookup disabled, skipping")
-        return
-
-    # Filter entities eligible for Wikidata
-    eligible = []
-    for ent in entities:
-        cfg = entity_types_config.get(ent.entity_type, {})
-        if not cfg.get("wikidata_lookup", False):
-            continue
-        best_conf = max((m.confidence for m in ent.mentions), default=0)
-        if best_conf < min_confidence:
-            continue
-        eligible.append(ent)
-
-    if not eligible:
-        logger.info("NER: no entities eligible for Wikidata lookup")
-        return
-
-    logger.info("NER: resolving %d entities against Wikidata", len(eligible))
-
-    try:
-        asyncio.run(_resolve_wikidata_async(eligible, max_rps, timeout))
-    except Exception as e:
-        logger.warning("Wikidata resolution failed: %s", e)
-
-
-async def _resolve_one_entity(client, ent, semaphore):
-    """Resolve a single entity against Wikidata."""
-    async with semaphore:
-        try:
-            qid = None
-
-            # Try identifier-based lookup if local match has ISNI/ARK
-            if ent.local_match:
-                from ..metadata.csv_person import get_person_database
-
-                pdb = get_person_database()
-                if pdb:
-                    person = pdb.get(ent.local_match)
-                    if person:
-                        isni = person.get("isni")
-                        if isni:
-                            qid = await client.search_by_identifier("P213", isni)
-                        if not qid:
-                            ark = person.get("ark")
-                            if ark:
-                                qid = await client.search_by_identifier("P268", ark)
-
-            # Fall back to name search
-            if not qid:
-                qid = await client.search_entity(
-                    ent.canonical_name, ent.entity_type
-                )
-
-            if not qid:
-                return False
-
-            # Fetch properties
-            props = await client.fetch_properties(qid, ent.entity_type)
-            ent.wikidata_id = qid
-            ent.wikidata_label = props.get("label", "")
-            ent.wikidata_data = props
-            return True
-
-        except Exception as e:
-            logger.debug("Wikidata failed for '%s': %s", ent.canonical_name, e)
-            return False
-
-
-async def _resolve_wikidata_async(entities, max_rps, timeout):
-    """Async Wikidata resolution with concurrent requests."""
-    from ..utils.wikidata import WikidataClient
-
-    semaphore = asyncio.Semaphore(max_rps)
-
-    async with WikidataClient(max_rps=max_rps, timeout=timeout) as client:
-        results = await asyncio.gather(
-            *(_resolve_one_entity(client, ent, semaphore) for ent in entities)
-        )
-
-    resolved = sum(1 for r in results if r)
-    logger.info("NER: resolved %d entities via Wikidata", resolved)
-
-
-# =============================================================================
 # CSV OUTPUT
 # =============================================================================
 
@@ -319,43 +211,27 @@ async def _resolve_wikidata_async(entities, max_rps, timeout):
 _CSV_COLUMNS = {
     "person": [
         "xml_id", "canonical_name", "mention_count", "local_id",
-        "wikidata_id", "wikidata_label", "birth_date", "death_date",
-        "birth_place", "death_place", "profession", "movement",
-        "master", "notable_work", "isni", "viaf", "bnf", "ulan",
     ],
     "place": [
         "xml_id", "canonical_name", "mention_count",
-        "wikidata_id", "wikidata_label", "country", "instance_of",
-        "coordinates", "geonames", "tgn",
     ],
     "organization": [
         "xml_id", "canonical_name", "mention_count",
-        "wikidata_id", "wikidata_label", "foundation_date", "founder",
-        "headquarters", "instance_of",
     ],
     "artwork": [
         "xml_id", "canonical_name", "mention_count",
-        "wikidata_id", "wikidata_label", "creator", "creation_date",
-        "material", "technique", "movement", "subject",
-        "location", "collection",
     ],
     "literary_work": [
         "xml_id", "canonical_name", "mention_count",
-        "wikidata_id", "wikidata_label", "author", "publication_date",
-        "language", "subject", "bnf",
     ],
     "event": [
         "xml_id", "canonical_name", "mention_count",
-        "wikidata_id", "wikidata_label", "date", "start_date",
-        "end_date", "location", "participant",
     ],
     "material": [
         "xml_id", "canonical_name", "mention_count",
-        "wikidata_id", "wikidata_label", "instance_of", "use",
     ],
     "technique": [
         "xml_id", "canonical_name", "mention_count",
-        "wikidata_id", "wikidata_label", "instance_of", "use",
     ],
 }
 
@@ -397,13 +273,7 @@ def write_entity_csvs(entities, entity_types_config, output_dir):
                     "canonical_name": ent.canonical_name,
                     "mention_count": len(ent.mentions),
                     "local_id": ent.local_match or "",
-                    "wikidata_id": ent.wikidata_id or "",
-                    "wikidata_label": ent.wikidata_label or "",
                 }
-                # Add Wikidata properties
-                for col in columns:
-                    if col not in row:
-                        row[col] = ent.wikidata_data.get(col, "")
                 writer.writerow(row)
 
             written += 1
@@ -496,68 +366,7 @@ def inject_header_entities(root, entities, entity_types_config):
                 name_elem = _sub(item, name_tag, **extra_attrs)
             name_elem.text = ent.canonical_name
 
-            # Add identifiers
-            if ent.wikidata_id:
-                idno = _sub(item, "idno", type="wikidata")
-                idno.text = ent.wikidata_id
-
-            # Add type-specific properties from Wikidata
-            wd = ent.wikidata_data
-            if wd:
-                _inject_type_specific(item, etype, wd)
-
     logger.info("NER: injected entity lists into TEI header")
-
-
-def _inject_type_specific(item, entity_type, wd):
-    """Add type-specific TEI elements from Wikidata data."""
-    if entity_type == "person":
-        # Authority identifiers
-        for prop, idno_type in [("viaf", "viaf"), ("bnf", "bnf"), ("isni", "isni"), ("ulan", "ulan")]:
-            val = wd.get(prop)
-            if val:
-                idno = _sub(item, "idno", type=idno_type)
-                idno.text = val
-
-        # Birth/death
-        birth = wd.get("birth_date")
-        if birth:
-            b = _sub(item, "birth")
-            if len(birth) <= 10:
-                b.set("when", birth)
-            bp = wd.get("birth_place")
-            if bp:
-                pn = _sub(b, "placeName")
-                pn.text = bp
-
-        death = wd.get("death_date")
-        if death:
-            d = _sub(item, "death")
-            if len(death) <= 10:
-                d.set("when", death)
-            dp = wd.get("death_place")
-            if dp:
-                pn = _sub(d, "placeName")
-                pn.text = dp
-
-    elif entity_type == "place":
-        coords = wd.get("coordinates")
-        if coords:
-            loc = _sub(item, "location")
-            geo = _sub(loc, "geo")
-            geo.text = coords
-
-        for prop, idno_type in [("geonames", "geonames"), ("tgn", "tgn")]:
-            val = wd.get(prop)
-            if val:
-                idno = _sub(item, "idno", type=idno_type)
-                idno.text = val
-
-    elif entity_type == "artwork":
-        creator = wd.get("creator")
-        if creator:
-            note = _sub(item, "note", type="creator")
-            note.text = creator
 
 
 # =============================================================================
@@ -742,13 +551,9 @@ def resolve_entities(
     entity_types_config,
     person_db,
     output_dir,
-    min_confidence,
-    max_rps,
-    wikidata_timeout,
-    wikidata_enabled=True,
 ):
     """
-    Phase 9 orchestrator: group, link, Wikidata, CSV, header, @ref.
+    Phase 9 orchestrator: group, link, CSV, header, @ref.
 
     Args:
         root: TEI root element.
@@ -756,10 +561,6 @@ def resolve_entities(
         entity_types_config: NER_ENTITY_TYPES from config.
         person_db: PersonDatabase instance or None.
         output_dir: Path for entity CSV files.
-        min_confidence: Minimum confidence for Wikidata lookup.
-        max_rps: Wikidata rate limit.
-        wikidata_timeout: Wikidata HTTP timeout.
-        wikidata_enabled: When False, skip the Wikidata enrichment step.
 
     Returns:
         list[ResolvedEntity]: All resolved entities.
@@ -782,22 +583,16 @@ def resolve_entities(
     # Step 2: Link to local person database
     link_local(entities, person_db)
 
-    # Step 3: Wikidata enrichment
-    resolve_wikidata(
-        entities, entity_types_config, min_confidence, max_rps, wikidata_timeout,
-        enabled=wikidata_enabled,
-    )
-
-    # Step 4: Write CSV files
+    # Step 3: Write CSV files
     write_entity_csvs(entities, entity_types_config, output_dir)
 
-    # Step 5: Inject editorial declaration
+    # Step 4: Inject editorial declaration
     inject_editorial_declaration(root)
 
-    # Step 6: Inject entity lists into header
+    # Step 5: Inject entity lists into header
     inject_header_entities(root, entities, entity_types_config)
 
-    # Step 7: Add @ref to body annotations
+    # Step 6: Add @ref to body annotations
     add_refs_to_body(root, entities, entity_types_config)
 
     # Summary stats
@@ -807,13 +602,8 @@ def resolve_entities(
     type_summary = ", ".join(f"{c} {t}" for t, c in sorted(by_type.items(), key=lambda x: -x[1]))
     logger.info("NER: %d unique entities (%s)", len(entities), type_summary)
 
-    wd_count = sum(1 for e in entities if e.wikidata_id)
     local_count = sum(1 for e in entities if e.local_match)
-    if wd_count or local_count:
-        logger.info(
-            "NER: %d resolved via Wikidata, %d linked to local metadata",
-            wd_count,
-            local_count,
-        )
+    if local_count:
+        logger.info("NER: %d linked to local metadata", local_count)
 
     return entities

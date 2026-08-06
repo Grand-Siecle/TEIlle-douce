@@ -35,13 +35,9 @@ from config import (
     NER_ENTITY_TYPES,
     NER_MODELS,
     NER_CONFIDENCE_THRESHOLD,
-    NER_WIKIDATA_MIN_CONFIDENCE,
     NER_OUTPUT_DIR,
     NER_CONTAINERS,
     NER_CERT_THRESHOLDS,
-    NER_WIKIDATA_ENABLED,
-    NER_WIKIDATA_MAX_RPS,
-    NER_WIKIDATA_TIMEOUT,
     DEBUG,
     LOG_FILE,
 )
@@ -359,13 +355,10 @@ def main():
                         NER_ENTITY_TYPES, NER_CERT_THRESHOLDS,
                     )
 
-                    # Phase 9: Resolve + Wikidata + CSV + header + @ref
+                    # Phase 9: Resolve + CSV + header + @ref
                     resolved = resolve_entities(
                         tree.root, aligned, NER_ENTITY_TYPES,
                         person_db, NER_OUTPUT_DIR,
-                        NER_WIKIDATA_MIN_CONFIDENCE,
-                        NER_WIKIDATA_MAX_RPS, NER_WIKIDATA_TIMEOUT,
-                        wikidata_enabled=NER_WIKIDATA_ENABLED,
                     )
 
                     if resolved:
@@ -393,7 +386,7 @@ def main():
                 progress.update(task_ner, visible=False)
 
             # Override TEI header with CSV metadata
-            override_teiheader_from_csv(tree.root, row)
+            override_teiheader_from_csv(tree.root, row, doc_name)
 
             # Finalize langUsage with detected languages (after CSV override)
             tree.finalize_langusage()

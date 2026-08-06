@@ -510,10 +510,6 @@ def _fuzzy_merge_group(entities, threshold, min_length):
             best.mentions.extend(other.mentions)
             if not best.local_match and other.local_match:
                 best.local_match = other.local_match
-            if not best.wikidata_id and other.wikidata_id:
-                best.wikidata_id = other.wikidata_id
-                best.wikidata_label = other.wikidata_label
-                best.wikidata_data = other.wikidata_data
             logger.debug("Fuzzy merged '%s' into '%s'", other.canonical_name, best.canonical_name)
 
         result.append(best)
