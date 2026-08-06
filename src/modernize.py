@@ -271,7 +271,12 @@ def dehyphenate_lines(texts, zone_types=None):
     """
     joined = list(texts)
 
-    for i in range(len(joined) - 1):
+    # Process right-to-left: this guarantees that when line i looks up its
+    # merge target, any hyphen chain starting at that target (e.g. a word
+    # split across 3+ lines: "extra¬" / "ordinai¬" / "rement") has already
+    # been fully resolved, so line i merges against the final whole word
+    # instead of an intermediate fragment that still ends in ¬.
+    for i in range(len(joined) - 2, -1, -1):
         line = joined[i]
         if not line:
             continue

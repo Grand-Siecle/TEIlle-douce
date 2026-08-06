@@ -26,6 +26,12 @@ from .lang import build_langusage
 from .enrichment import enrich_body as _enrich_body
 
 
+def strip_residual_hyphens(modernized):
+    """A modernized reg must never contain the soft hyphen ¬: whatever the
+    API returned, joining the fragments is always the right repair."""
+    return [m.replace("¬", "") if m else m for m in modernized]
+
+
 class TEI:
     """
     Central data structure for TEI document construction.
@@ -218,6 +224,8 @@ class TEI:
 
         if modernized is None:
             return 0
+
+        modernized = strip_residual_hyphens(modernized)
 
         if enriched:
             # Build corresp -> modernized mapping for lines that changed
