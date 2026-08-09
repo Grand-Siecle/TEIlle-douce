@@ -63,8 +63,14 @@ _handlers.append(_console_handler)
 
 logging.basicConfig(level=logging.DEBUG, handlers=_handlers)
 
+# Third-party HTTP libs are extremely chatty at DEBUG and were filling
+# pipeline.log with megabytes of connection traces.
+for _noisy in ("httpx", "httpcore", "urllib3", "asyncio"):
+    logging.getLogger(_noisy).setLevel(logging.WARNING)
+
 # Import modules
 from src import TEI
+from src.body import link_notes_to_lines
 from src.teiheader import build_header
 from src.metadata import (load_metadata,
                           find_metadata_row,
@@ -304,6 +310,7 @@ def main():
                 f"[cyan]{doc_name}: Detection des langues[/cyan]", total=None, visible=True
             )
             tree.build_body(detect_lang=True)
+            link_notes_to_lines(tree.root)
             progress.update(task_lang, visible=False)
 
             if tree.lang_stats:
