@@ -401,6 +401,13 @@ def add_refs_to_body(root, entities, entity_types_config):
     reg_lookup = {}  # id(reg_elem) → {(start, end): xml_id}
 
     for ent in entities:
+        # Types explicitly configured without a header list (tei_list: None,
+        # e.g. material/technique/date) have no xml:id target in the document:
+        # a @ref would dangle. Their body annotations stay, identified by CSV
+        # export only. Configs lacking the key keep the default behavior.
+        cfg = entity_types_config.get(ent.entity_type, {})
+        if "tei_list" in cfg and cfg["tei_list"] is None:
+            continue
         for mention in ent.mentions:
             reg_fragments = getattr(mention, "reg_fragments", None) or []
             for reg_elem, fstart, fend in reg_fragments:
