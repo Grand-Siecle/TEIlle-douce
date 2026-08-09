@@ -15,6 +15,13 @@ Usage:
 """
 
 from .builder import build_body, apply_modernization, apply_modernization_enriched
+from .note_links import link_notes_to_lines
 from .text import Text
 
-__all__ = ["build_body", "apply_modernization", "apply_modernization_enriched", "Text"]
+__all__ = [
+    "build_body",
+    "apply_modernization",
+    "apply_modernization_enriched",
+    "link_notes_to_lines",
+    "Text",
+]
