@@ -6,10 +6,16 @@ addopts = "-q"
 [tool.coverage.run]
 source = ["src", "main", "config", "scripts"]
 omit = ["tests/*", "venv/*"]
+# sourcedoc/builder.py execute du code dans des workers multiprocessing :
+# sans ces deux options, coverage ne voit pas les lignes exercees dans les forks.
+# Consequence : lancer `coverage combine` avant `coverage report`.
+concurrency = ["multiprocessing"]
+parallel = true
+sigterm = true
 
 [tool.coverage.report]
 show_missing = false
 skip_covered = false
 # Cliquet : relever ce seuil a chaque lot de tests livre.
-# Baseline mesuree le 2026-08-26 : 28 %.
-fail_under = 28
+# Baseline mesuree le 2026-08-26 : 28 %. Lot 1 (teiheader, sourcedoc, metadata) : 44 %.
+fail_under = 44
