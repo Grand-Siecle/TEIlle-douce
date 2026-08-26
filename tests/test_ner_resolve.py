@@ -235,9 +235,9 @@ def test_write_entity_csvs_writes_columns_and_rows(tmp_path):
         ),
     ]
 
-    write_entity_csvs(entities, NER_ENTITY_TYPES, tmp_path)
+    write_entity_csvs(entities, NER_ENTITY_TYPES, tmp_path, "LIV0001_reconciled")
 
-    csv_path = tmp_path / "entities_persons.csv"
+    csv_path = tmp_path / "LIV0001_reconciled" / "entities_persons.csv"
     assert csv_path.exists()
     with open(csv_path, newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f, delimiter=";")
@@ -260,8 +260,8 @@ def test_write_entity_csvs_skips_types_without_csv_file(tmp_path):
             mentions=[_mention("date", "1659", 0.9)],
         ),
     ]
-    write_entity_csvs(entities, NER_ENTITY_TYPES, tmp_path)
-    assert list(tmp_path.iterdir()) == []
+    write_entity_csvs(entities, NER_ENTITY_TYPES, tmp_path, "LIV0001_reconciled")
+    assert list((tmp_path / "LIV0001_reconciled").iterdir()) == []
 
 
 # =============================================================================
@@ -492,7 +492,9 @@ def test_resolve_entities_end_to_end_integration(tmp_path):
 
     person_db = FakePersonDB({"PERS0001": {"forename": "Nicolas", "surname": "Poussin"}})
 
-    resolved = resolve_entities(root, aligned, NER_ENTITY_TYPES, person_db, tmp_path)
+    resolved = resolve_entities(
+        root, aligned, NER_ENTITY_TYPES, person_db, tmp_path, "LIV0001_reconciled"
+    )
 
     # --- grouping ---
     assert len(resolved) == 2
@@ -501,13 +503,14 @@ def test_resolve_entities_end_to_end_integration(tmp_path):
     assert len(person_ent.mentions) == 2
     assert person_ent.local_match == "PERS0001"
 
-    # --- CSV written to tmp_path ---
-    with open(tmp_path / "entities_persons.csv", newline="", encoding="utf-8") as f:
+    # --- CSV written into the per-document subfolder (audit 2.4) ---
+    doc_dir = tmp_path / "LIV0001_reconciled"
+    with open(doc_dir / "entities_persons.csv", newline="", encoding="utf-8") as f:
         person_rows = list(csv.DictReader(f, delimiter=";"))
     assert person_rows[0]["canonical_name"] == person_ent.canonical_name
     assert person_rows[0]["local_id"] == "PERS0001"
 
-    with open(tmp_path / "entities_places.csv", newline="", encoding="utf-8") as f:
+    with open(doc_dir / "entities_places.csv", newline="", encoding="utf-8") as f:
         place_rows = list(csv.DictReader(f, delimiter=";"))
     assert place_rows[0]["canonical_name"] == "Rome"
 
@@ -543,11 +546,6 @@ def test_resolve_entities_end_to_end_integration(tmp_path):
 # =============================================================================
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="audit 2.4 - CSV d'entites ecrases entre documents "
-    "(ner_resolve.py:266, mode 'w', dossier global entities/)",
-)
 def test_write_entity_csvs_preserves_entities_across_documents(tmp_path):
     """docs/rapport_audit.md #2.4: write_entity_csvs opens each CSV in mode
     "w" with a fixed filename, inside whatever output_dir it is given. In
@@ -577,9 +575,11 @@ def test_write_entity_csvs_preserves_entities_across_documents(tmp_path):
     )
 
     # Same shared output_dir for both calls, mirroring main.py invoking
-    # write_entity_csvs(..., NER_OUTPUT_DIR) once per document in one run.
-    write_entity_csvs([doc1_entity], entity_types_config, tmp_path)
-    write_entity_csvs([doc2_entity], entity_types_config, tmp_path)
+    # resolve_entities(..., NER_OUTPUT_DIR, doc_name) once per document in one
+    # run. Only the document name differs -- which is precisely what keeps the
+    # two documents' CSVs apart.
+    write_entity_csvs([doc1_entity], entity_types_config, tmp_path, "LIV0001_reconciled")
+    write_entity_csvs([doc2_entity], entity_types_config, tmp_path, "LIV0002_reconciled")
 
     rows = []
     for csv_path in tmp_path.rglob("entities_persons.csv"):

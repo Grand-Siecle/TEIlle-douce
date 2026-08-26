@@ -32,8 +32,10 @@ from src.enrichment.ner_align import (
     merge_model_results,
     resolve_overlaps,
 )
+from src.enrichment.ner_filter import filter_aligned_by_pos
 
 NS = "http://www.tei-c.org/ns/1.0"
+XML_ID = "{http://www.w3.org/XML/1998/namespace}id"
 
 
 def qlocal(el):
@@ -277,6 +279,14 @@ def test_merge_model_results_confidence_clipped_at_one():
 
 
 def test_merge_model_results_same_words_different_type_keeps_both():
+    """
+    Memes mots, types differents -> les DEUX entites sont conservees.
+
+    Une seule atteindra la sortie (resolve_overlaps ne garde qu'une annotation
+    par <w>), mais le choix ne se fait pas ici : voir le test suivant, qui
+    explique pourquoi supprimer la perdante des maintenant perdrait des
+    mentions entieres.
+    """
     w1, w2 = object(), object()
     cam = AlignedEntity(entity_type="person", text="Roy Louis", confidence=0.7, model="camembert", w_elements=[w1, w2])
     gli = AlignedEntity(
@@ -287,15 +297,48 @@ def test_merge_model_results_same_words_different_type_keeps_both():
     result = merge_model_results([cam], [gli])
 
     assert len(result) == 2
-    assert result[0] is cam  # untouched
+    assert result[0] is cam  # intacte
     second = result[1]
     assert second.entity_type == "place"
-    assert second.model == "gliner"  # keeps its own model tag, no "both"
-    assert second.confidence == 0.8  # no confidence boost applied here
-    # Surprising: the second entity borrows CamemBERT's <w> mapping, not
-    # GLiNER's own w_elements (which came from _align_reg_spans).
+    assert second.model == "gliner"   # garde son propre modele, pas "both"
+    assert second.confidence == 0.8   # aucun bonus de confiance ici
+    # L'entite ajoutee emprunte la cartographie <w> de CamemBERT, pas celle de
+    # GLiNER (qui venait de _align_reg_spans).
     assert second.w_elements == cam.w_elements
     assert second.reg_fragments == [("reg", 0, 9)]
+
+
+def test_keeping_both_types_saves_the_mention_when_pos_filter_rejects_the_winner():
+    """
+    Non-regression : pourquoi la branche ci-dessus doit garder les DEUX.
+
+    filter_aligned_by_pos() s'execute entre merge_model_results() et
+    resolve_overlaps(), et plusieurs de ses regles dependent du type -- une
+    'person' doit porter un nom propre. L'annotation la plus confiante peut
+    donc etre rejetee alors que l'autre passe.
+
+    Ici « Apollon » est etiquete NOMcom : la lecture 'person' (0.9) est
+    rejetee par les regles POS, et seule la presence de la lecture 'artwork'
+    (0.6) sauve la mention. Ne garder que la plus confiante a la fusion la
+    ferait disparaitre entierement -- ce que ce test interdit.
+    """
+    w = etree.Element("w")
+    w.set(XML_ID, "w1")
+    w.text = "Apollon"
+    w.set("pos", "NOMcom")
+
+    cam = AlignedEntity("person", "Apollon", 0.9, "camembert", [w], [])
+    gli = AlignedEntity("artwork", "Apollon", 0.6, "gliner", [w], [])
+
+    # La chaine reelle d'align_and_inject : fusion -> filtre POS -> recouvrements
+    fusionnees = merge_model_results([cam], [gli])
+    filtrees = filter_aligned_by_pos(fusionnees)
+    finales = resolve_overlaps(filtrees)
+
+    assert [e.entity_type for e in finales] == ["artwork"], (
+        "la mention doit survivre en 'artwork' apres rejet de la lecture "
+        "'person' par les regles POS"
+    )
 
 
 def test_merge_model_results_partial_overlap_above_threshold_still_merges():
