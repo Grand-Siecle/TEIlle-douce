@@ -17,5 +17,5 @@ sigterm = true
 show_missing = false
 skip_covered = false
 # Cliquet : relever ce seuil a chaque lot de tests livre.
-# Baseline mesuree le 2026-08-26 : 28 %. Lot 1 (teiheader, sourcedoc, metadata) : 44 %.
-fail_under = 44
+# Baseline mesuree le 2026-08-26 : 28 %. Lot 1 (teiheader, sourcedoc, metadata) : 44 %. Lot 2 (body, reconstructor) : 54 %.
+fail_under = 54
