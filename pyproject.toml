@@ -1,0 +1,15 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-q"
+
+[tool.coverage.run]
+source = ["src", "main", "config", "scripts"]
+omit = ["tests/*", "venv/*"]
+
+[tool.coverage.report]
+show_missing = false
+skip_covered = false
+# Cliquet : relever ce seuil a chaque lot de tests livre.
+# Baseline mesuree le 2026-08-26 : 28 %.
+fail_under = 28
