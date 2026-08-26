@@ -24,7 +24,7 @@ Usage:
     author_data = person_db.enrich_author_data("PERS0001")
 """
 
-from .csv_book import load_metadata, find_metadata_row, build_metadata_dict, override_teiheader_from_csv
+from .csv_book import load_metadata, find_metadata_row, build_metadata_dict, override_teiheader_from_csv, select_manifest
 from .csv_person import PersonDatabase, load_person_database, get_person_database
 from .iiif import IIIFMapping
 
@@ -33,6 +33,7 @@ __all__ = [
     "find_metadata_row",
     "build_metadata_dict",
     "override_teiheader_from_csv",
+    "select_manifest",
     "IIIFMapping",
     "PersonDatabase",
     "load_person_database",

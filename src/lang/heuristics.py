@@ -4,15 +4,12 @@
 """
 Heuristic rules for language detection.
 
-This module provides rule-based language detection to complement FastText,
-particularly useful for:
+This module provides rule-based language detection as fallback
+when statistical model confidence is low, particularly useful for:
 - Short texts where statistical models struggle
 - OCR-degraded historical texts
 - Texts with distinctive character sets (Greek, etc.)
 - Common citation patterns (Latin scholarly references)
-
-The heuristics are applied as a fallback when FastText confidence is low
-or when the detected language is not in the supported list.
 """
 
 import re
@@ -65,23 +62,31 @@ class LanguageHeuristics:
             },
 
             # Latin - scholarly/ecclesiastical vocabulary
+            # Only words that are unambiguously Latin (not shared with French)
             "lat": {
                 "chars": set(),  # Latin alphabet shared with other languages
                 "words": [
-                    # Very common Latin words
-                    "est", "non", "sed", "et", "in", "ad", "de", "ex", "cum",
-                    "per", "pro", "quod", "qui", "quae", "quia", "sic", "ita",
+                    # Unambiguous Latin function words
+                    "sed", "cum", "quod", "quae", "quia", "sic", "ita",
                     "ergo", "idem", "enim", "autem", "vel", "aut", "nec", "neque",
-                    # Philosophical/theological terms
-                    "esse", "ens", "veritas", "ratio", "natura", "virtus",
-                    "anima", "corpus", "intellectus", "voluntas", "fides",
-                    # Scholarly citations
-                    "ibid", "ibidem", "cap", "lib", "dist", "articulus",
-                    "quaestio", "obiectio", "respondeo", "dico", "dicendum",
-                    # Verbs
+                    "atque", "tamen", "etiam", "quidem", "ideo", "unde",
+                    "nam", "ubi", "sicut", "tanquam", "quasi", "apud",
+                    # Pronouns / demonstratives (not French)
+                    "hic", "haec", "hoc", "ille", "illa", "illud",
+                    "ipse", "ipsa", "ipsum", "eius", "eorum",
+                    # Common Latin verbs (not French)
                     "dicit", "dicitur", "potest", "debet", "habet", "facit",
-                    # Common endings patterns (as words)
-                    "orum", "arum", "ibus", "atur", "itur", "antur", "untur",
+                    "inquit", "fuit", "sunt", "erat", "fieri",
+                    "videtur", "patet", "oportet",
+                    # Common nouns / adjectives
+                    "esse", "ens", "veritas", "virtus", "omnis", "omnes",
+                    "anima", "intellectus", "voluntas", "fides",
+                    "nihil", "aliud", "aliquid", "nullus", "nulla",
+                    # Scholarly / ecclesiastical
+                    "ibid", "ibidem", "articulus", "liber",
+                    "quaestio", "obiectio", "respondeo", "dico", "dicendum",
+                    # Distinctive Latin endings (as words)
+                    "orum", "arum", "ibus", "antur", "untur",
                 ],
                 "patterns": [
                     r"\bS\.\s*Thom",  # S. Thomas (Aquinas)
@@ -91,28 +96,46 @@ class LanguageHeuristics:
                     r"\bdist\.\s*\d+",  # dist. 1
                     r"\bq\.\s*\d+",  # q. 1 (quaestio)
                     r"\bart\.\s*\d+",  # art. 1 (articulus)
+                    r"\b\w+orum\b",   # genitive plural (-orum)
+                    r"\b\w+arum\b",   # genitive plural (-arum)
+                    r"\b\w+ibus\b",   # ablative/dative plural (-ibus)
                 ],
             },
 
             # French - distinctive patterns and common words
+            # Reinforced for early modern French (16th-18th c.)
             "fra": {
-                "chars": set("çœŒ"),  # Distinctive French characters
+                "chars": set("çœŒéèêëàâùûîïôæÆ"),  # French diacritics
                 "words": [
-                    # Articles and determiners
-                    "le", "la", "les", "un", "une", "des", "du", "de", "au", "aux",
+                    # Articles and determiners (unambiguous for French)
+                    "le", "la", "les", "une", "des", "du", "au", "aux",
                     # Pronouns
                     "je", "tu", "il", "elle", "nous", "vous", "ils", "elles",
-                    "ce", "cette", "ces", "qui", "que", "dont", "où",
+                    "ce", "cette", "ces", "dont", "où",
                     # Prepositions
                     "dans", "sur", "sous", "avec", "pour", "par", "sans", "chez",
+                    "entre", "vers", "depuis", "devant", "après",
                     # Conjunctions
-                    "et", "ou", "mais", "donc", "car", "ni", "comme", "si",
+                    "ou", "mais", "donc", "car", "ni", "comme",
+                    "parce", "lorsque", "puisque", "quoique",
                     # Common verbs
-                    "est", "sont", "avoir", "faire", "dire", "voir", "pouvoir",
+                    "sont", "avoir", "faire", "dire", "voir", "pouvoir",
+                    "fut", "peut", "doit", "fait", "dit", "soit",
                     # Adverbs
                     "plus", "moins", "bien", "mal", "très", "aussi", "encore",
-                    # Historical French
+                    "toujours", "jamais", "rien", "point", "mesme",
+                    # Demonstratives / possessives
+                    "son", "ses", "leur", "leurs", "mon", "nos", "vos",
+                    # Common words not shared with Latin
+                    "pas", "on", "y", "tant", "cet", "ceux",
+                    "très", "chez", "assez", "beaucoup", "trop",
+                    # Early modern French / old orthography
                     "estre", "auoit", "estoit", "mesme", "tousiours", "iamais",
+                    "auec", "faisoit", "pouuoit", "deuoit", "auant",
+                    "nostre", "vostre", "mesmes", "vn",
+                    "lequel", "laquelle", "lesquels", "lesquelles",
+                    "ceste", "icelle", "iceluy", "ledit", "ladite",
+                    "chapitre", "philosophe", "quelque", "plusieurs",
                 ],
                 "patterns": [
                     r"\bl['']",  # l'homme, l'art
@@ -122,6 +145,13 @@ class LanguageHeuristics:
                     r"\bs['']",  # s'il, s'est
                     r"\bc['']",  # c'est, c'était
                     r"«.*?»",  # French quotation marks
+                    # French suffix patterns (not shared with Latin)
+                    r"\b\w+ment\b",  # -ment (adverbs)
+                    r"\b\w+eux\b",  # -eux (adjectives)
+                    r"\b\w+euse\b",  # -euse
+                    r"\b\w+ois\b",  # -ois (old French adjectives)
+                    r"\b\w+oit\b",  # -oit (old French verb endings)
+                    r"\b\w+oient\b",  # -oient (old French 3rd pl.)
                 ],
             },
 
@@ -318,50 +348,23 @@ class LanguageHeuristics:
 
         return (best_lang, best_score)
 
-    def detect_if_better(self, text, fasttext_lang, fasttext_conf, supported_langs):
+    def detect_lang(self, text, lang):
         """
-        Use heuristics only if they provide better detection than FastText.
-
-        This is the main entry point for fallback detection. It applies
-        heuristics when:
-        1. FastText detected an unsupported language
-        2. FastText confidence is very low
-        3. Heuristics strongly indicate a different language
-
-        Args:
-            text (str): Text to analyze.
-            fasttext_lang (str): Language detected by FastText.
-            fasttext_conf (float): FastText confidence (0-1).
-            supported_langs (dict): Supported languages from config.
+        Score a specific language for *text*.
 
         Returns:
-            tuple: (final_lang, source) where source is "fasttext" or "heuristic"
+            tuple: (lang, score) — score is 0 when no signal is found.
         """
-        # Get supported language idents
-        supported_idents = {info["ident"] for info in supported_langs.values()}
+        if not text or lang not in self.rules:
+            return (lang, 0)
+        rules = self.rules[lang]
+        score = 0
+        score += self._count_char_matches(text, rules["chars"]) * self.char_weight
+        score += self._count_word_matches(text, rules["words"])
+        score += self._count_pattern_matches(text, rules["patterns"]) * 1.5
+        return (lang, score)
 
-        # If FastText gave a supported language with good confidence, keep it
-        if fasttext_lang in supported_idents and fasttext_conf >= 0.5:
-            return (fasttext_lang, "fasttext")
-
-        # Try heuristics
-        heur_lang, heur_score = self.detect(text)
-
-        # If heuristics found something and it's supported
-        if heur_lang and heur_lang in supported_idents:
-            # If FastText was unsupported or very low confidence, use heuristics
-            if fasttext_lang not in supported_idents or fasttext_conf < 0.3:
-                return (heur_lang, "heuristic")
-
-            # If heuristics are confident enough, override FastText
-            if heur_score >= 5:  # Strong heuristic signal
-                return (heur_lang, "heuristic")
-
-        # Fall back to FastText result (even if unsupported - let detector handle fallback)
-        return (fasttext_lang, "fasttext")
-
-
-# Module-level instance for convenience
+# Global singleton
 _heuristics = None
 
 

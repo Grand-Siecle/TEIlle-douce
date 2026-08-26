@@ -72,9 +72,6 @@ class LangUsageBuilder:
         for code, info in SUPPORTED_LANGUAGES.items():
             names[info["ident"]] = info["name"]
 
-        # Add default language name
-        names[LANG_DEFAULT] = "Undetermined"
-
         return names
 
     def _find_or_create_langusage(self):

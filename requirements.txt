@@ -1,5 +1,11 @@
 lxml
 pandas
 rich
-fasttext
+lingua-language-detector
 httpx
+
+# Optional: NER pipeline (required when NER_ENABLED=True)
+transformers
+torch
+gliner
+flair

@@ -1,90 +1,92 @@
 # -----------------------------------------------------------
-# FastText language detection for ALTO2TEI pipeline
+# Language detection for ALTO2TEI pipeline
 # -----------------------------------------------------------
 """
-Language detection using FastText with sliding window approach.
+Language detection using lingua-language-detector with heuristic fallback.
 
-This module provides a LanguageDetector class that uses FastText's
-pre-trained language identification model (lid.176.bin) to detect
-the language of text content, with support for mixed-language detection.
+Uses n-gram statistical models restricted to configured languages.
+For short texts (< 8 words) with low confidence, falls back to
+rule-based heuristics to avoid misclassification.
 """
 
 import logging
 import re
-import warnings
-from pathlib import Path
+import unicodedata
 from collections import Counter
 from dataclasses import dataclass
+
+
+# Character-level substitutions applied during cleaning (1→1 or 1→2).
+# Extend this table to cover additional historical/OCR normalizations;
+# the idx_map machinery handles length changes automatically.
+_CHAR_SUBS = {
+    "ſ": "s",     # long s
+    "æ": "ae",    # ligatures
+    "œ": "oe",
+    "Æ": "Ae",
+    "Œ": "Oe",
+    "ß": "ss",
+    "ë": "e",     # diacritics flattened for lingua
+    "ï": "i",
+    "ü": "u",
+}
+
+# Characters that are deleted entirely (typographic noise / OCR artifacts).
+_DELETE_CHARS = frozenset("|¦")
+
+# Vowels that trigger word-initial i/I → j/J (Ramist rule).
+_J_VOWELS = frozenset("aeiouyàâéèêëîïôùûœAEIOUYÀÂÉÈÊËÎÏÔÙÛŒ")
 
 from config import (
     SUPPORTED_LANGUAGES,
     LANG_CONFIDENCE_THRESHOLD,
     LANG_MIN_TEXT_LENGTH,
     LANG_DEFAULT,
-    FASTTEXT_MODEL_PATH,
 )
 
 logger = logging.getLogger(__name__)
 
-# Import fallback with default to None if not defined
-try:
-    from config import LANG_FALLBACK
-except ImportError:
-    LANG_FALLBACK = None
-
-# Import heuristics (lazy to avoid circular import)
+# Lazy-loaded heuristics singleton
 _heuristics = None
 
 def _get_heuristics():
-    """Lazy load heuristics module."""
     global _heuristics
     if _heuristics is None:
         from .heuristics import get_heuristics
         _heuristics = get_heuristics()
     return _heuristics
 
-# Suppress FastText warnings
-warnings.filterwarnings("ignore", category=UserWarning)
-
-# Global detector instance (lazy initialization)
-_detector_instance = None
-
 
 @dataclass
-class LangSegment:
+class LinguaSegment:
     """A segment of text with its detected language."""
     text: str
     lang: str
-    start: int  # character offset in original text
+    start: int
     end: int
 
 
-class LanguageDetector:
+# ISO 639-1 -> lingua Language enum name
+_ISO1_TO_LINGUA_NAME = {
+    "fr": "FRENCH",
+    "la": "LATIN",
+    "el": "GREEK",
+    "de": "GERMAN",
+    "nl": "DUTCH",
+    "it": "ITALIAN",
+    "en": "ENGLISH",
+}
+
+
+class LinguaDetector:
     """
-    Language detector using FastText with sliding window support.
+    Language detector using lingua-language-detector.
 
-    Uses the lid.176.bin model to identify languages. Supports:
-    - Text cleaning (hyphenation removal, normalization)
-    - Sliding window detection for mixed-language texts
-    - Foreign segment detection
-
-    Attributes:
-        model: FastText language identification model.
-        supported_langs (dict): Mapping of supported language codes.
-        confidence_threshold (float): Minimum confidence for detection.
-        min_text_length (int): Minimum text length to attempt detection.
-        default_lang (str): Default language code when detection fails.
-        stats (Counter): Statistics of detected languages.
+    Only loads the languages listed in config.SUPPORTED_LANGUAGES.
+    For short/ambiguous texts, falls back to rule-based heuristics.
     """
 
-    # FastText model URL
-    MODEL_URL = "https://dl.fbaipublicfiles.com/fasttext/supervised-models/lid.176.bin"
-    MODEL_FILENAME = "lid.176.bin"
-
-    # Window parameters for sliding detection
-    WINDOW_SIZE = 50  # words per window
-    WINDOW_STEP = 25  # step size (overlap = WINDOW_SIZE - WINDOW_STEP)
-    MIN_SEGMENT_WORDS = 3  # minimum words for a foreign segment
+    MIN_SEGMENT_WORDS = 3
 
     def __init__(
         self,
@@ -92,256 +94,428 @@ class LanguageDetector:
         confidence_threshold=None,
         min_text_length=None,
         default_lang=None,
-        model_path=None,
     ):
-        """
-        Initialize the language detector.
-
-        Args:
-            supported_langs: Dict of supported language codes (from config if None).
-            confidence_threshold: Min confidence threshold (from config if None).
-            min_text_length: Min text length for detection (from config if None).
-            default_lang: Default language when detection fails (from config if None).
-            model_path: Path to FastText model (auto-downloads if None).
-        """
-        self.supported_langs = supported_langs or SUPPORTED_LANGUAGES
-        self.confidence_threshold = confidence_threshold or LANG_CONFIDENCE_THRESHOLD
-        self.min_text_length = min_text_length or LANG_MIN_TEXT_LENGTH
-        self.default_lang = default_lang or LANG_DEFAULT
-        self.model_path = model_path or FASTTEXT_MODEL_PATH
-        self.model = None
+        self.supported_langs = supported_langs if supported_langs is not None else SUPPORTED_LANGUAGES
+        self.confidence_threshold = confidence_threshold if confidence_threshold is not None else LANG_CONFIDENCE_THRESHOLD
+        self.min_text_length = min_text_length if min_text_length is not None else LANG_MIN_TEXT_LENGTH
+        self.default_lang = default_lang if default_lang is not None else LANG_DEFAULT
+        self.detector = None
         self.stats = Counter()
+        self._document_prior = None  # dominant language from first pass
 
-        # Build reverse mapping: fasttext code -> TEI ident
-        self._lang_map = self._build_lang_map()
-
-    def _build_lang_map(self):
-        """Build mapping from FastText language codes to TEI idents."""
-        lang_map = {}
-
-        # FastText uses ISO 639-1 codes (2-letter) for most languages
-        ft_to_tei = {
-            "fr": "fra",
-            "en": "eng",
-            "de": "deu",
-            "it": "ita",
-            "nl": "nld",
-            "la": "lat",
-            "el": "grc",  # Modern Greek, map to Ancient Greek
-        }
-
+        # lingua enum name -> TEI ident (e.g. "FRENCH" -> "fra")
+        self._lingua_name_to_tei = {}
         for code, info in self.supported_langs.items():
-            if code in ft_to_tei:
-                lang_map[code] = info["ident"]
-            else:
-                lang_map[code] = info["ident"]
+            lingua_name = _ISO1_TO_LINGUA_NAME.get(code)
+            if lingua_name:
+                self._lingua_name_to_tei[lingua_name] = info["ident"]
 
-        return lang_map
-
-    def _ensure_model(self):
-        """Ensure the FastText model is loaded."""
-        if self.model is not None:
+    def _ensure_detector(self):
+        """Build the lingua detector lazily on first use."""
+        if self.detector is not None:
             return
 
-        try:
-            import fasttext
-            fasttext.FastText.eprint = lambda x: None
-        except ImportError:
-            raise ImportError(
-                "fasttext is required for language detection. "
-                "Install it with: pip install fasttext"
+        from lingua import Language, LanguageDetectorBuilder
+
+        languages = []
+        for code in self.supported_langs:
+            lingua_name = _ISO1_TO_LINGUA_NAME.get(code)
+            if lingua_name and hasattr(Language, lingua_name):
+                languages.append(getattr(Language, lingua_name))
+
+        if not languages:
+            raise ValueError(
+                "No lingua Language objects could be built from SUPPORTED_LANGUAGES. "
+                f"Available mappings: {list(_ISO1_TO_LINGUA_NAME.keys())}"
             )
 
-        model_path = self._get_model_path()
-
-        if not model_path.exists():
-            self._download_model(model_path)
-
-        self.model = fasttext.load_model(str(model_path))
-
-        # Workaround for numpy 2.0 compatibility
-        self._original_predict = self.model.predict
-        self.model.predict = self._predict_wrapper
-
-    def _predict_wrapper(self, text, k=1, threshold=0.0, on_unicode_error="strict"):
-        """Wrapper for predict that handles numpy 2.0 compatibility."""
-        result = self.model.f.predict(text, k, threshold, on_unicode_error)
-
-        if len(result) == 0:
-            return ((), [])
-
-        labels = []
-        probs = []
-        for prob, label in result:
-            labels.append(label)
-            probs.append(prob)
-
-        return (tuple(labels), probs)
-
-    def _get_model_path(self):
-        """Get the path to the FastText model file."""
-        if self.model_path:
-            return Path(self.model_path)
-
-        cache_dir = Path.home() / ".fasttext"
-        cache_dir.mkdir(parents=True, exist_ok=True)
-        return cache_dir / self.MODEL_FILENAME
-
-    def _download_model(self, model_path):
-        """Download the FastText language identification model."""
-        import urllib.request
-
-        logger.warning("Downloading FastText model to %s (file is ~126MB)...", model_path)
-
-        try:
-            urllib.request.urlretrieve(self.MODEL_URL, model_path)
-            logger.warning("FastText model download complete.")
-        except Exception as e:
-            raise RuntimeError(
-                f"Failed to download FastText model: {e}\n"
-                f"You can manually download from {self.MODEL_URL} "
-                f"and place it at {model_path}"
-            )
+        self.detector = (
+            LanguageDetectorBuilder
+            .from_languages(*languages)
+            .with_preloaded_language_models()
+            .with_minimum_relative_distance(0.25)
+            .build()
+        )
+        logger.info(
+            "Lingua detector initialized with languages: %s",
+            [lang.name for lang in languages],
+        )
 
     def clean_text(self, text):
-        """
-        Clean text for language detection.
+        """Normalize OCR/historical text for detection (string only)."""
+        cleaned, _ = self._clean_with_map(text)
+        return cleaned
 
-        Removes/normalizes:
-        - Line-break hyphenation (¬, - at end of words)
-        - Historical characters (ſ -> s, etc.)
-        - Multiple spaces
-        - Special OCR artifacts
+    def _clean_with_map(self, text):
+        """
+        Normalize text *and* return a per-character origin map.
+
+        Runs a single char-by-char pass applying every normalization
+        ``clean_text`` performs (historical character subs, Ramist u/v
+        and i/j, hyphen rejoin at line breaks, whitespace collapse,
+        pipe deletion), while emitting an index table ``idx_map`` such
+        that ``idx_map[i]`` is the offset in the *original* text of the
+        i-th character of the cleaned output.
+
+        This map lets callers translate cleaned-text offsets back to
+        the original without the word-count heuristic: a segment
+        ``[c_start, c_end)`` in cleaned maps to
+        ``(idx_map[c_start], idx_map[c_end - 1] + 1)`` in the input.
+        Deleted characters (hyphens, collapsed whitespace, pipe
+        separators) have no entry in ``idx_map``, giving a natural
+        "snap inside" semantics: the segment boundary lands on the
+        nearest kept character.
+
+        One-to-many substitutions (``æ`` → ``ae``) produce two entries
+        pointing back at the same input offset.
 
         Args:
-            text (str): Raw text to clean.
+            text: Raw input text.
 
         Returns:
-            str: Cleaned text.
+            tuple[str, list[int]]: cleaned text and its idx_map.
         """
         if not text:
-            return ""
+            return "", []
 
-        # Remove hyphenation marks (¬ or - followed by newline/space and continuation)
-        # Pattern: word ending with ¬ or - followed by space/newline and next word part
-        text = re.sub(r'(\w)[¬\-]\s*\n?\s*(\w)', r'\1\2', text)
+        # Normalize to NFC so combining sequences become precomposed
+        # where possible. This is conservative in length for our
+        # corpus (17th-c. printed characters are already precomposed)
+        # and keeps the idx_map in code-point units throughout.
+        src = unicodedata.normalize("NFC", text)
 
-        # Remove standalone ¬
-        text = re.sub(r'¬', '', text)
+        out = []
+        idx_map = []
+        n = len(src)
+        i = 0
+        last_emitted_was_space = True  # True → strip leading whitespace
+        word_just_started = True        # True → next alpha char is word-initial
 
-        # Normalize historical/OCR characters
-        # Long s -> s
-        text = text.replace('ſ', 's')
-        # Ligatures
-        text = text.replace('æ', 'ae')
-        text = text.replace('œ', 'oe')
-        text = text.replace('Æ', 'Ae')
-        text = text.replace('Œ', 'Oe')
-        # Old forms
-        text = text.replace('ß', 'ss')
-        # Accented variations sometimes used in old prints
-        text = text.replace('ë', 'e')
-        text = text.replace('ï', 'i')
-        text = text.replace('ü', 'u')
+        while i < n:
+            c = src[i]
 
-        # Normalize whitespace
-        text = re.sub(r'\s+', ' ', text)
+            # 1→0  Pipe / broken-bar separators (OCR noise)
+            if c in _DELETE_CHARS:
+                i += 1
+                continue
 
-        # Remove common OCR artifacts
-        text = re.sub(r'[|¦]', '', text)  # vertical bars
+            # 1→0  Line-break hyphen: <word>¬[\s]*<word> or <word>-[\s]*<word>
+            # Consume the hyphen and the whitespace that follows, if the
+            # previous kept char was a letter and the next non-space char
+            # is also a letter. Falls through to normal handling otherwise.
+            if c in "¬-":
+                prev_kept = out[-1] if out else ""
+                if prev_kept and prev_kept.isalpha():
+                    j = i + 1
+                    while j < n and src[j].isspace():
+                        j += 1
+                    if j < n and src[j].isalpha():
+                        i = j
+                        word_just_started = False
+                        continue
+                # Not a word-splitting hyphen; fall through to keep "-"
+                # (but drop bare ¬ — same behaviour as the old cleaner).
+                if c == "¬":
+                    i += 1
+                    continue
 
-        return text.strip()
+            # Whitespace collapse: keep one space if the previous emitted
+            # char wasn't already a space; drop further runs of whitespace.
+            if c.isspace():
+                if not last_emitted_was_space:
+                    out.append(" ")
+                    idx_map.append(i)
+                    last_emitted_was_space = True
+                word_just_started = True
+                i += 1
+                continue
+
+            # Character-level substitutions (1→1 or 1→2)
+            mapped = _CHAR_SUBS.get(c)
+            if mapped is not None:
+                for sub_ch in mapped:
+                    out.append(sub_ch)
+                    idx_map.append(i)
+                last_emitted_was_space = False
+                word_just_started = False
+                i += 1
+                continue
+
+            # Ramist: mid-word 'uu' → 'uv'. We check AFTER confirming the
+            # previous kept char is alpha (inside a word) AND the char
+            # after the pair is also alpha.
+            if c == "u" and out and out[-1].isalpha():
+                if i + 1 < n and src[i + 1] == "u":
+                    if i + 2 < n and src[i + 2].isalpha():
+                        out.append("u"); idx_map.append(i)
+                        out.append("v"); idx_map.append(i + 1)
+                        last_emitted_was_space = False
+                        word_just_started = False
+                        i += 2
+                        continue
+
+            # Ramist: word-initial i/I before a vowel → j/J.
+            if word_just_started and c in ("i", "I"):
+                if i + 1 < n and src[i + 1] in _J_VOWELS:
+                    out.append("j" if c == "i" else "J")
+                    idx_map.append(i)
+                    last_emitted_was_space = False
+                    word_just_started = False
+                    i += 1
+                    continue
+
+            # Default: identity copy.
+            out.append(c)
+            idx_map.append(i)
+            last_emitted_was_space = False
+            if c.isalpha() or c.isdigit():
+                word_just_started = False
+            else:
+                word_just_started = True
+            i += 1
+
+        # Trim trailing whitespace.
+        while out and out[-1] == " ":
+            out.pop()
+            idx_map.pop()
+
+        return "".join(out), idx_map
+
+    def _lang_to_tei(self, lingua_lang):
+        """Convert a lingua Language enum to TEI ident code."""
+        if lingua_lang is None:
+            return self.default_lang
+        return self._lingua_name_to_tei.get(lingua_lang.name, self.default_lang)
+
+    def compute_document_prior(self, texts):
+        """
+        First pass: detect the dominant language from all document texts.
+
+        Concatenates a sample of texts and runs lingua on the combined text
+        to establish the document-level dominant language.
+
+        Args:
+            texts: Iterable of text strings from all containers.
+        """
+        # Sample up to 5000 chars for efficiency
+        sample = []
+        total = 0
+        for t in texts:
+            if t and t.strip():
+                cleaned = self.clean_text(t)
+                sample.append(cleaned)
+                total += len(cleaned)
+                if total > 5000:
+                    break
+
+        combined = " ".join(sample)
+        if len(combined) < self.min_text_length:
+            return
+
+        self._ensure_detector()
+        confs = self.detector.compute_language_confidence_values(combined)
+        if confs:
+            prior = self._lang_to_tei(confs[0].language)
+            prior_conf = confs[0].value
+            if prior_conf >= self.confidence_threshold:
+                self._document_prior = prior
+                logger.info(
+                    "Document prior: %s (confidence=%.3f)", prior, prior_conf
+                )
 
     def _detect_single(self, text):
         """
         Detect language for a single text segment.
 
-        Uses FastText as primary detector, with heuristic rules as fallback
-        for unsupported languages or low confidence detections.
-
-        Args:
-            text (str): Text to analyze (should be pre-cleaned).
-
-        Returns:
-            tuple: (language_code, confidence)
+        Strategy:
+        1. Get lingua confidence values
+        2. If lingua picks a non-prior language, always check heuristics
+        3. Heuristics can override lingua when they disagree
+        4. For ambiguous cases (low confidence), fall back to prior/default
         """
         if len(text) < self.min_text_length:
             return (self.default_lang, 0.0)
 
-        # Get supported language idents for checking
-        supported_idents = {info["ident"] for info in self.supported_langs.values()}
+        self._ensure_detector()
 
-        self._ensure_model()
-
-        try:
-            predictions = self.model.predict(text, k=1)
-            label = predictions[0][0]
-            confidence = float(predictions[1][0])
-
-            lang_code = label.replace("__label__", "")
-
-            # Map FastText code to TEI ident
-            if lang_code in self._lang_map:
-                detected = self._lang_map[lang_code]
-            elif lang_code in supported_idents:
-                detected = lang_code
-            else:
-                detected = None  # Unsupported language
-
-            # Case 1: Supported language with good confidence - return it
-            if detected and confidence >= self.confidence_threshold:
-                return (detected, confidence)
-
-            # Case 2: Try heuristics for better detection
-            heuristics = _get_heuristics()
-            heur_lang, heur_score = heuristics.detect(text)
-
-            # If heuristics found a supported language with good score
-            if heur_lang and heur_lang in supported_idents and heur_score >= 2:
-                return (heur_lang, confidence)
-
-            # Case 3: FastText detected supported but low confidence
-            if detected and confidence < self.confidence_threshold:
-                # If heuristics agree or have a signal, use FastText result
-                if heur_lang == detected or heur_score >= 1:
-                    return (detected, confidence)
-                # Otherwise return default
-                return (self.default_lang, confidence)
-
-            # Case 4: Unsupported language - use fallback
-            fallback = LANG_FALLBACK if LANG_FALLBACK else self.default_lang
-            return (fallback, confidence)
-
-        except Exception:
+        confs = self.detector.compute_language_confidence_values(text)
+        if not confs:
             return (self.default_lang, 0.0)
 
+        best = confs[0]
+        detected = self._lang_to_tei(best.language)
+        confidence = best.value
+        prior = self._document_prior or self.default_lang
+
+        # Lingua agrees with prior — but still verify non-default languages
+        # with heuristics (the prior itself may have been wrong)
+        if detected == prior and detected == self.default_lang:
+            return (detected, confidence)
+        if detected == prior and detected != self.default_lang:
+            # Prior is non-default (e.g. lat): check heuristics can confirm
+            heuristics = _get_heuristics()
+            heur_lang, heur_score = heuristics.detect(text)
+            if heur_lang == self.default_lang and heur_score >= 2:
+                logger.debug(
+                    "Heuristics override prior+lingua: %s(%.3f) -> %s (heur=%.1f) | %s",
+                    detected, confidence, self.default_lang, heur_score, text[:60],
+                )
+                return (self.default_lang, confidence)
+            return (detected, confidence)
+
+        # Lingua disagrees with prior — consult heuristics
+        supported_idents = {info["ident"] for info in self.supported_langs.values()}
+        heuristics = _get_heuristics()
+        heur_lang, heur_score = heuristics.detect(text)
+
+        # Also check if heuristics have ANY signal for the detected language
+        detected_heur_score = 0
+        if detected in heuristics.rules:
+            rules = heuristics.rules[detected]
+            detected_heur_score = (
+                heuristics._count_char_matches(text, rules["chars"]) * heuristics.char_weight
+                + heuristics._count_word_matches(text, rules["words"])
+                + heuristics._count_pattern_matches(text, rules["patterns"]) * 1.5
+            )
+
+        # With a document prior, lower the bar: even a weak signal for
+        # the prior language overrides lingua, especially if heuristics
+        # found no evidence for the detected language
+        min_heur = 2
+        if self._document_prior:
+            min_heur = 1  # weaker signal is enough with a prior
+
+        # Heuristics say it's the prior language — override lingua
+        if heur_lang == prior and heur_score >= min_heur:
+            logger.debug(
+                "Heuristics override: lingua=%s(%.3f) -> %s (heur=%.1f) | %s",
+                detected, confidence, prior, heur_score, text[:60],
+            )
+            return (prior, confidence)
+
+        # Prior is set, heuristics found no evidence for detected language,
+        # and lingua confidence is not overwhelming — prefer prior
+        if self._document_prior and detected_heur_score < 1 and confidence < 0.9:
+            logger.debug(
+                "Prior fallback: lingua=%s(%.3f) no heuristic support -> %s | %s",
+                detected, confidence, prior, text[:60],
+            )
+            return (prior, confidence)
+
+        # Heuristics say it's a different supported language — use that
+        if heur_lang and heur_lang in supported_idents and heur_score >= min_heur:
+            if heur_lang != detected:
+                logger.debug(
+                    "Heuristics redirect: lingua=%s -> heur=%s (score=%.1f) | %s",
+                    detected, heur_lang, heur_score, text[:60],
+                )
+            return (heur_lang, confidence)
+
+        # No heuristic opinion — trust lingua if confident enough
+        if confidence >= self.confidence_threshold:
+            return (detected, confidence)
+
+        # Low confidence, no heuristic match — fall back to prior
+        return (prior, 0.0)
+
     def detect(self, text):
-        """
-        Detect the primary language of the text.
-
-        Args:
-            text (str): Text to analyze.
-
-        Returns:
-            str: TEI language ident code.
-        """
+        """Detect the primary language. Returns TEI ident code."""
         cleaned = self.clean_text(text)
-        lang, conf = self._detect_single(cleaned)
+        lang, _ = self._detect_single(cleaned)
         self.stats[lang] += 1
         return lang
 
-    def detect_with_segments(self, text):
+    def detect_foreign_segments(self, text, primary_lang=None):
         """
-        Detect languages with sliding window, returning segments.
+        Detect foreign-language segments with offsets in the input text.
 
-        This method detects the primary language and identifies
-        foreign language segments within the text.
+        Cleans *text* once, keeping a per-character origin map, runs
+        lingua's multi-language detector on the cleaned string, then
+        translates each accepted segment's cleaned-offset bounds back
+        to the original via the map — no word-count heuristic, so the
+        alignment stays correct even when the cleaning rejoins
+        hyphenated words, expands ligatures, or deletes separators.
+
+        Segments whose language is the primary one are discarded, as
+        are segments shorter than ``MIN_SEGMENT_WORDS`` or rejected by
+        rule-based heuristics (see ``detect_with_segments``).
 
         Args:
-            text (str): Text to analyze.
+            text: Input text (as extracted from the TEI container).
+            primary_lang: TEI ident of the container's primary language;
+                if None, detected from the text itself.
 
         Returns:
-            tuple: (primary_lang, list of LangSegment for foreign parts)
+            list[tuple[int, int, str]]: ``(start, end, tei_lang)`` with
+            offsets in the *input* text, ready to slice ``.tail`` data.
+        """
+        cleaned, idx_map = self._clean_with_map(text)
+        if len(cleaned) < self.min_text_length:
+            return []
+
+        self._ensure_detector()
+
+        # Count words cheaply without tokenizing (contiguous non-space runs).
+        word_count = sum(1 for _ in re.finditer(r"\S+", cleaned))
+        if word_count < self.MIN_SEGMENT_WORDS * 2:
+            return []
+
+        if primary_lang is None:
+            primary_lang, _ = self._detect_single(cleaned)
+
+        multi_results = self.detector.detect_multiple_languages_of(cleaned)
+        if len(multi_results) <= 1:
+            return []
+
+        heuristics = _get_heuristics()
+        segments = []
+        cleaned_len = len(cleaned)
+
+        for r in multi_results:
+            tei_lang = self._lang_to_tei(r.language)
+            if tei_lang == primary_lang:
+                continue
+            if r.word_count < self.MIN_SEGMENT_WORDS:
+                continue
+
+            seg_text = cleaned[r.start_index:r.end_index]
+
+            heur_lang, heur_score = heuristics.detect(seg_text)
+            if heur_lang == primary_lang and heur_score >= 2:
+                logger.debug(
+                    "Rejected foreign segment '%s' — heuristics say %s",
+                    seg_text[:50], primary_lang,
+                )
+                continue
+            _, foreign_heur_score = heuristics.detect_lang(seg_text, tei_lang)
+            if foreign_heur_score == 0:
+                logger.debug(
+                    "Rejected foreign segment '%s' — no %s signal",
+                    seg_text[:50], tei_lang,
+                )
+                continue
+
+            # Map cleaned offsets back to the input via idx_map.
+            # Clamp on the rare chance lingua returns out-of-bounds.
+            c_start = max(0, min(r.start_index, cleaned_len))
+            c_end = max(c_start, min(r.end_index, cleaned_len))
+            if c_start >= cleaned_len or c_end <= c_start:
+                continue
+            in_start = idx_map[c_start]
+            in_end = idx_map[c_end - 1] + 1
+            segments.append((in_start, in_end, tei_lang))
+
+        for _, _, lang in segments:
+            self.stats[lang] += 1
+
+        return segments
+
+    def detect_with_segments(self, text):
+        """
+        Detect primary language and foreign segments.
+
+        Returns (primary_lang, list[LinguaSegment]) where segments
+        are foreign-language portions of the text.
         """
         cleaned = self.clean_text(text)
 
@@ -349,144 +523,101 @@ class LanguageDetector:
             self.stats[self.default_lang] += 1
             return (self.default_lang, [])
 
-        # Split into words with positions
-        words = []
-        for match in re.finditer(r'\S+', cleaned):
-            words.append((match.group(), match.start(), match.end()))
+        primary_lang, _ = self._detect_single(cleaned)
 
-        if len(words) < self.MIN_SEGMENT_WORDS:
-            lang, _ = self._detect_single(cleaned)
-            self.stats[lang] += 1
-            return (lang, [])
-
-        # Detect language for whole text first (primary language)
-        primary_lang, primary_conf = self._detect_single(cleaned)
-
-        # If text is short or low confidence, don't try segmentation
-        if len(words) < self.WINDOW_SIZE or primary_conf < self.confidence_threshold:
+        # Need enough words for multi-language detection
+        self._ensure_detector()
+        words = cleaned.split()
+        if len(words) < self.MIN_SEGMENT_WORDS * 2:
             self.stats[primary_lang] += 1
             return (primary_lang, [])
 
-        # Sliding window detection
-        window_langs = []
-        for i in range(0, len(words), self.WINDOW_STEP):
-            window_words = words[i:i + self.WINDOW_SIZE]
-            if len(window_words) < self.MIN_SEGMENT_WORDS:
-                continue
+        multi_results = self.detector.detect_multiple_languages_of(cleaned)
 
-            window_text = ' '.join(w[0] for w in window_words)
-            lang, conf = self._detect_single(window_text)
+        if len(multi_results) <= 1:
+            self.stats[primary_lang] += 1
+            return (primary_lang, [])
 
-            if conf >= self.confidence_threshold:
-                start_pos = window_words[0][1]
-                end_pos = window_words[-1][2]
-                window_langs.append((lang, start_pos, end_pos, conf))
-
-        # Find majority language from windows
-        if window_langs:
-            lang_counts = Counter(wl[0] for wl in window_langs)
-            majority_lang = lang_counts.most_common(1)[0][0]
-        else:
-            majority_lang = primary_lang
-
-        # Find foreign segments (different from majority)
+        # Collect foreign segments, validated by heuristics
+        heuristics = _get_heuristics()
         foreign_segments = []
-        current_foreign = None
-
-        for lang, start, end, conf in window_langs:
-            if lang != majority_lang and lang != self.default_lang:
-                if current_foreign is None:
-                    current_foreign = {
-                        'lang': lang,
-                        'start': start,
-                        'end': end
-                    }
-                elif current_foreign['lang'] == lang:
-                    # Extend current segment
-                    current_foreign['end'] = end
-                else:
-                    # Different foreign language, save current and start new
-                    foreign_segments.append(LangSegment(
-                        text=cleaned[current_foreign['start']:current_foreign['end']],
-                        lang=current_foreign['lang'],
-                        start=current_foreign['start'],
-                        end=current_foreign['end']
+        for r in multi_results:
+            tei_lang = self._lang_to_tei(r.language)
+            if tei_lang != primary_lang:
+                if r.word_count >= self.MIN_SEGMENT_WORDS:
+                    seg_text = cleaned[r.start_index:r.end_index]
+                    # Validate with heuristics (two checks):
+                    # 1) Reject if heuristics positively say primary lang (≥2).
+                    # 2) Reject if heuristics find NO signal for the detected
+                    #    foreign lang either — ambiguous segments are not tagged.
+                    heur_lang, heur_score = heuristics.detect(seg_text)
+                    if heur_lang == primary_lang and heur_score >= 2:
+                        logger.debug(
+                            "Rejected foreign segment '%s' — heuristics say %s",
+                            seg_text[:50], primary_lang,
+                        )
+                        continue
+                    # Check the detected foreign lang has some heuristic backing
+                    foreign_heur_lang, foreign_heur_score = heuristics.detect_lang(
+                        seg_text, tei_lang,
+                    )
+                    if foreign_heur_score == 0:
+                        logger.debug(
+                            "Rejected foreign segment '%s' — no %s signal",
+                            seg_text[:50], tei_lang,
+                        )
+                        continue
+                    foreign_segments.append(LinguaSegment(
+                        text=seg_text,
+                        lang=tei_lang,
+                        start=r.start_index,
+                        end=r.end_index,
                     ))
-                    current_foreign = {
-                        'lang': lang,
-                        'start': start,
-                        'end': end
-                    }
-            else:
-                # Back to majority language, save any current foreign segment
-                if current_foreign is not None:
-                    foreign_segments.append(LangSegment(
-                        text=cleaned[current_foreign['start']:current_foreign['end']],
-                        lang=current_foreign['lang'],
-                        start=current_foreign['start'],
-                        end=current_foreign['end']
-                    ))
-                    current_foreign = None
 
-        # Don't forget last segment
-        if current_foreign is not None:
-            foreign_segments.append(LangSegment(
-                text=cleaned[current_foreign['start']:current_foreign['end']],
-                lang=current_foreign['lang'],
-                start=current_foreign['start'],
-                end=current_foreign['end']
-            ))
-
-        # Filter out very short foreign segments
-        foreign_segments = [
-            seg for seg in foreign_segments
-            if len(seg.text.split()) >= self.MIN_SEGMENT_WORDS
-        ]
-
-        self.stats[majority_lang] += 1
+        self.stats[primary_lang] += 1
         for seg in foreign_segments:
             self.stats[seg.lang] += 1
 
-        return (majority_lang, foreign_segments)
+        return (primary_lang, foreign_segments)
 
     def get_stats(self):
-        """
-        Get language usage statistics.
-
-        Returns:
-            dict: Dictionary with language codes as keys and element counts.
-        """
+        """Return language usage counts, sorted by frequency."""
         if not self.stats:
             return {}
-
         return dict(self.stats.most_common())
 
     def reset_stats(self):
-        """Reset language statistics."""
         self.stats.clear()
+        self._document_prior = None
 
+
+def _tokenize_words(text):
+    """Return list of (start, end) for whitespace-separated tokens in *text*."""
+    words = []
+    i = 0
+    n = len(text)
+    while i < n:
+        while i < n and text[i].isspace():
+            i += 1
+        if i >= n:
+            break
+        start = i
+        while i < n and not text[i].isspace():
+            i += 1
+        words.append((start, i))
+    return words
+
+
+# Global singleton
+_instance = None
 
 def get_detector():
-    """
-    Get or create the global language detector instance.
-
-    Returns:
-        LanguageDetector: The global detector instance.
-    """
-    global _detector_instance
-    if _detector_instance is None:
-        _detector_instance = LanguageDetector()
-    return _detector_instance
-
+    """Get or create the global LinguaDetector instance."""
+    global _instance
+    if _instance is None:
+        _instance = LinguaDetector()
+    return _instance
 
 def detect_language(text):
-    """
-    Convenience function to detect language of text.
-
-    Args:
-        text (str): Text to analyze.
-
-    Returns:
-        str: TEI language ident code.
-    """
+    """Convenience function: detect language of text."""
     return get_detector().detect(text)

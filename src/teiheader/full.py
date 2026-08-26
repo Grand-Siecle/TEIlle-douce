@@ -165,6 +165,17 @@ class FullTree:
             if value:
                 self._set_entry(value, element, entry.attribute)
 
+        # Fallback: BnF catalogue URL from the ark; drop the ptr if still empty
+        ptr_el = self.children.get("ptr")
+        if ptr_el is not None and not ptr_el.get("target"):
+            ark = self.sru.get("ark")
+            if ark and str(ark).startswith("ark:/12148/"):
+                ptr_el.set("target", f"https://catalogue.bnf.fr/{ark}")
+            else:
+                parent = ptr_el.getparent()
+                if parent is not None:
+                    parent.remove(ptr_el)
+
     def _set_entry(self, data, tei_element, attribute):
         """
         Set the value of a TEI element.

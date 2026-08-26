@@ -24,70 +24,85 @@ JOIN_LEFT = {".", ",", ";", ":", "!", "?", ")", "]", "»"}
 JOIN_RIGHT = {"(", "[", "«"}
 
 
-def rebuild_container(container, sentences, spans):
+def rebuild_container(container, sentences, spans, primary_lang=None):
     """
     Rebuild a container element with tokenized content.
 
     Replaces all children of the container with <s> elements containing
-    <w>, <pc>, and <lb/> elements.
+    <w>, <pc>, <lb/> and — for foreign-language runs — <foreign> wrappers.
 
     Args:
         container: The lxml Element to rebuild (ab, note, fw).
         sentences: List of Sentence objects for this container.
         spans: List of TextSpan objects from extraction.
+        primary_lang: TEI ident of the container's primary language.
+            Tokens whose ``origin_lang`` differs are wrapped in
+            ``<foreign xml:lang="…">`` inside their sentence.
     """
-    # Save container attributes
-    attribs = dict(container.attrib)
+    if primary_lang is None:
+        primary_lang = container.get(XML_LANG) or ""
 
-    # Clear all children and text
+    # Clear everything (including any <foreign> still sitting around
+    # from the language-detection phase — they are recreated inline
+    # below from token.origin_lang).
+    attribs = dict(container.attrib)
     container.text = None
     for child in list(container):
         container.remove(child)
-
-    # Restore attributes
     for k, v in attribs.items():
         container.set(k, v)
 
-    # Track which lb elements have been inserted
     inserted_lbs = set()
-
-    # Track the last line_index to know when to insert <lb/>
     prev_line_index = None
 
     for sent in sentences:
         s_elem = etree.SubElement(container, "s")
         s_elem.set(XML_ID, sent.xml_id)
-
         if sent.next_id:
             s_elem.set("next", sent.next_id)
         if sent.prev_id:
             s_elem.set("prev", sent.prev_id)
 
-        # Current <hi> wrapper (if tokens are inside a <hi>)
+        # Open-wrapper state: a <hi> wrapper corresponds to an
+        # <hi rend="…"> group, a <foreign> wrapper corresponds to a
+        # run of tokens with origin_lang ≠ primary_lang. <hi> is the
+        # outer wrapper (typographic) and <foreign> sits inside it.
         current_hi = None
         current_hi_elem = None
+        current_foreign = None
+        current_foreign_lang = None
 
         for at in sent.tokens:
-            # Determine the target parent to append to
-            # If this token is inside a <hi>, use or create a <hi> wrapper
-            target = s_elem
-
+            # <hi> layer
             if at.hi_element is not None:
                 hi_rend = at.spans[0].hi_rend if at.spans else None
                 if current_hi_elem is not at.hi_element:
-                    # New <hi> group
                     current_hi = etree.SubElement(s_elem, "hi")
                     if hi_rend:
                         current_hi.set("rend", hi_rend)
                     current_hi_elem = at.hi_element
-                target = current_hi
+                    current_foreign = None
+                    current_foreign_lang = None
+                hi_target = current_hi
             else:
                 current_hi = None
                 current_hi_elem = None
+                hi_target = s_elem
 
-            # Insert <lb/> at line boundaries (only for the first span of this token)
-            # For cross-line words, only insert the lb for the FIRST line;
-            # subsequent lb's go inside the <w> element
+            # <foreign> layer (inside <hi> if present)
+            tok_lang = at.token.origin_lang or ""
+            if tok_lang and tok_lang != primary_lang:
+                if current_foreign_lang != tok_lang or current_foreign is None or current_foreign.getparent() is not hi_target:
+                    current_foreign = etree.SubElement(hi_target, "foreign")
+                    current_foreign.set(XML_LANG, tok_lang)
+                    current_foreign_lang = tok_lang
+                target = current_foreign
+            else:
+                current_foreign = None
+                current_foreign_lang = None
+                target = hi_target
+
+            # Insert <lb/> at line boundaries (first span of this token).
             if at.spans:
                 first_span = at.spans[0]
                 if first_span.lb_element is not None and first_span.line_index != prev_line_index:
@@ -96,7 +111,7 @@ def rebuild_container(container, sentences, spans):
                         _insert_lb(target, first_span, at, inserted_lbs)
                         prev_line_index = first_span.line_index
 
-            # Create the token element
+            # Emit the token element
             if at.token.is_punctuation:
                 _create_pc(target, at)
             elif at.is_cross_line:

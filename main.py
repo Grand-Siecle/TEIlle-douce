@@ -13,6 +13,7 @@ Usage:
 """
 
 import logging
+import re
 import sys
 from time import perf_counter
 from zipfile import ZipFile
@@ -31,6 +32,13 @@ from config import (
     RESPONSIBILITY,
     ENRICHMENT_ENABLED,
     MODERNIZE_ENABLED,
+    NER_ENABLED,
+    NER_ENTITY_TYPES,
+    NER_MODELS,
+    NER_CONFIDENCE_THRESHOLD,
+    NER_OUTPUT_DIR,
+    NER_CONTAINERS,
+    NER_CERT_THRESHOLDS,
     DEBUG,
     LOG_FILE,
 )
@@ -55,18 +63,29 @@ _handlers.append(_console_handler)
 
 logging.basicConfig(level=logging.DEBUG, handlers=_handlers)
 
+# Third-party HTTP libs are extremely chatty at DEBUG and were filling
+# pipeline.log with megabytes of connection traces.
+for _noisy in ("httpx", "httpcore", "urllib3", "asyncio"):
+    logging.getLogger(_noisy).setLevel(logging.WARNING)
+
 # Import modules
 from src import TEI
+from src.body import link_notes_to_lines
 from src.teiheader import build_header
 from src.metadata import (load_metadata,
                           find_metadata_row,
                           build_metadata_dict,
                           override_teiheader_from_csv,
-                          load_person_database)
+                          load_person_database,
+                          select_manifest)
 from src.utils import write_xml
+from src.utils.files import parse_document_id
 
 
 console = Console()
+
+# Lazy-loaded NER models (shared across documents when NER is enabled)
+_ner_models = None
 
 
 # =============================================================================
@@ -132,10 +151,32 @@ def _extract_bdd_prefix(doc_folder_name):
     Returns:
         str: Extracted prefix or original name.
     """
-    import re
     from config import BDD_PREFIX_PATTERN
     match = re.match(BDD_PREFIX_PATTERN, doc_folder_name)
     return match.group(1) if match else doc_folder_name
+
+
+def _gallica_image_base(manifest_url):
+    """
+    IIIF image base for a Gallica manifest URL, else None.
+
+    Other IIIF servers (e.g. digitale-sammlungen) expose a different image
+    API that cannot be guessed from the manifest URL alone — @source is
+    then omitted (or would need a per-page IIIF mapping CSV).
+
+    Args:
+        manifest_url (str): IIIF manifest URL, or None.
+
+    Returns:
+        str or None: Image base URL, or None if not a recognized Gallica manifest.
+    """
+    if not manifest_url:
+        return None
+    m = re.match(
+        r"(https://gallica\.bnf\.fr/iiif/ark:/\d+/[a-z0-9]+)/manifest\.json",
+        manifest_url.strip(),
+    )
+    return m.group(1) if m else None
 
 
 # =============================================================================
@@ -238,6 +279,14 @@ def main():
             row = find_metadata_row(df_meta, _extract_bdd_prefix(doc_name))
             tree.metadata = build_metadata_dict(row)
 
+            # Resolve this document's IIIF image base from its manifest (Gallica
+            # only — other servers' image APIs aren't derivable from the manifest
+            # URL, so @source is omitted for those pages).
+            manifests = tree.metadata["iiif"].get("manifests") or []
+            volume = parse_document_id(doc_name)[1]
+            doc_manifest = select_manifest(manifests, volume)
+            config["iiifURI"] = dict(IIIF_URI, image_base=_gallica_image_base(doc_manifest))
+
             # Build TEI header
             tree.root, tree.segmonto_zones, tree.segmonto_lines = build_header(
                 tree.metadata,
@@ -261,6 +310,7 @@ def main():
                 f"[cyan]{doc_name}: Detection des langues[/cyan]", total=None, visible=True
             )
             tree.build_body(detect_lang=True)
+            link_notes_to_lines(tree.root)
             progress.update(task_lang, visible=False)
 
             if tree.lang_stats:
@@ -310,8 +360,73 @@ def main():
                 if mod_count > 0:
                     console.print(f"  [dim]Modernisation: {mod_count} lines[/dim]")
 
+            # Step 5: Named Entity Recognition (after enrichment + modernization)
+            if NER_ENABLED:
+                task_ner = progress.add_task(
+                    f"[cyan]{doc_name}: Reconnaissance d'entites nommees[/cyan]",
+                    total=None,
+                    visible=True,
+                )
+
+                try:
+                    from src.enrichment.ner_detect import extract_ner_blocks, detect_entities
+                    from src.enrichment.ner_align import align_and_inject
+                    from src.enrichment.ner_resolve import resolve_entities
+                    from src.enrichment.ner_models import NERModels
+
+                    # Lazy-load models (shared across documents)
+                    global _ner_models
+                    if _ner_models is None:
+                        _ner_models = NERModels(NER_MODELS)
+
+                    ner_models = _ner_models
+
+                    # Phase 7: Extract blocks + inference
+                    ner_blocks = extract_ner_blocks(tree.root, NER_CONTAINERS)
+                    ner_spans = detect_entities(
+                        ner_blocks, ner_models, NER_ENTITY_TYPES,
+                        NER_MODELS, NER_CONFIDENCE_THRESHOLD,
+                        root=tree.root,
+                    )
+
+                    # Phase 8: Align + merge + inject
+                    aligned = align_and_inject(
+                        ner_blocks, ner_spans,
+                        NER_ENTITY_TYPES, NER_CERT_THRESHOLDS,
+                    )
+
+                    # Phase 9: Resolve + CSV + header + @ref
+                    resolved = resolve_entities(
+                        tree.root, aligned, NER_ENTITY_TYPES,
+                        person_db, NER_OUTPUT_DIR,
+                    )
+
+                    if resolved:
+                        by_type = {}
+                        for ent in resolved:
+                            by_type[ent.entity_type] = by_type.get(ent.entity_type, 0) + 1
+                        total_mentions = sum(len(e.mentions) for e in resolved)
+                        type_str = ", ".join(
+                            f"{c} {t}" for t, c in sorted(by_type.items(), key=lambda x: -x[1])
+                        )
+                        console.print(
+                            f"  [dim]NER: {len(resolved)} entities ({type_str}), "
+                            f"{total_mentions} mentions[/dim]"
+                        )
+
+                except ImportError as e:
+                    console.print(
+                        f"[yellow]Warning: NER dependencies not installed ({e}) "
+                        f"— skipping NER.[/yellow]"
+                    )
+                except Exception as e:
+                    logging.getLogger(__name__).error("NER pipeline failed: %s", e, exc_info=True)
+                    console.print(f"[yellow]Warning: NER failed ({e}) — continuing.[/yellow]")
+
+                progress.update(task_ner, visible=False)
+
             # Override TEI header with CSV metadata
-            override_teiheader_from_csv(tree.root, row)
+            override_teiheader_from_csv(tree.root, row, doc_name)
 
             # Finalize langUsage with detected languages (after CSV override)
             tree.finalize_langusage()

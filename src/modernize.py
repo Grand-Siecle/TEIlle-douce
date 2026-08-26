@@ -16,6 +16,9 @@ original text is kept.
 
 import asyncio
 import logging
+import re
+import unicodedata
+from difflib import SequenceMatcher
 
 import httpx
 
@@ -28,12 +31,33 @@ logger = logging.getLogger(__name__)
 TOLERANCE_RATIO = 1.5
 TOLERANCE_ABS = 2
 
+# Minimum character-level similarity (after normalization) between
+# original and modernized text.  Below this threshold the API output
+# is considered hallucinated.  Legitimate old-French → modern-French
+# changes (cognoiſtre → connaître) stay above ~0.73 after normalization.
+SIMILARITY_MIN = 0.8
+
+# Lines matching this pattern have no real textual content to modernize.
+_SKIP_RE = re.compile(r'^[\s\W\d]*$')
+
+# Minimum number of alphabetic characters for a line to be worth modernizing.
+_MIN_ALPHA = 3
+
+
+def _normalize_for_comparison(text):
+    """Normalize text for similarity comparison: long-s, accents, case."""
+    text = text.replace("ſ", "s").replace("¬", "").lower()
+    nfkd = unicodedata.normalize("NFKD", text)
+    return "".join(c for c in nfkd if unicodedata.category(c) != "Mn")
+
 
 def _is_divergent(original, modernized):
     """
     Check if modernized text diverges too much from original.
 
-    Returns True if the word count difference exceeds tolerance.
+    Returns True if:
+    - the word count difference exceeds tolerance, OR
+    - the character-level similarity (after normalization) is too low.
     """
     if not original or not modernized:
         return False
@@ -41,7 +65,15 @@ def _is_divergent(original, modernized):
     mod_wc = len(modernized.split())
     if orig_wc == 0:
         return mod_wc > TOLERANCE_ABS
-    return mod_wc > orig_wc * TOLERANCE_RATIO + TOLERANCE_ABS
+    if mod_wc > orig_wc * TOLERANCE_RATIO + TOLERANCE_ABS:
+        return True
+    # Character-level similarity check (catches hallucinations with
+    # similar word count, e.g. Greek OCR artifacts → invented French).
+    n_orig = _normalize_for_comparison(original)
+    n_mod = _normalize_for_comparison(modernized)
+    if SequenceMatcher(None, n_orig, n_mod).ratio() < SIMILARITY_MIN:
+        return True
+    return False
 
 
 def check_api(lang="fra"):
@@ -88,7 +120,28 @@ def modernize_texts(texts, lang="fra", progress_callback=None):
     if not base_url:
         return None
 
-    return asyncio.run(_modernize_all(texts, base_url, progress_callback))
+    # Filter out lines with no real textual content (whitespace, digits,
+    # punctuation only) — sending them to the API wastes time and can
+    # produce hallucinated output.
+    sendable_idx = [
+        i for i, t in enumerate(texts)
+        if not _SKIP_RE.match(t) and sum(c.isalpha() for c in t) >= _MIN_ALPHA
+    ]
+    if not sendable_idx:
+        return None
+    sendable_texts = [texts[i] for i in sendable_idx]
+
+    modernized = asyncio.run(
+        _modernize_all(sendable_texts, base_url, progress_callback)
+    )
+    if modernized is None:
+        return None
+
+    # Re-expand to full list, keeping originals for skipped lines.
+    full = list(texts)
+    for j, idx in enumerate(sendable_idx):
+        full[idx] = modernized[j]
+    return full
 
 
 async def _modernize_all(texts, base_url, progress_callback=None):
@@ -122,7 +175,7 @@ async def _modernize_all(texts, base_url, progress_callback=None):
     any_success = False
     divergent = []  # list of (global_index, original_text)
 
-    for (start, batch_texts), response in zip(batches, responses):
+    for (start, _batch_texts), response in zip(batches, responses):
         if isinstance(response, Exception) or response is None:
             if DEBUG:
                 logger.debug(
@@ -193,6 +246,120 @@ async def _modernize_all(texts, base_url, progress_callback=None):
             )
 
     return results if any_success else None
+
+
+def dehyphenate_lines(texts, zone_types=None):
+    """
+    Join words split by ¬ or - across lines of the same zone type.
+
+    For each line ending with ¬ (or -), finds the next same-zone line and
+    merges the word fragment(s). A word can be split across MORE than two
+    lines (e.g. "ex¬" / "tra¬" / "ordinai¬" / "rement grand" — a page break
+    landing mid-word can do this). To handle that, the algorithm walks the
+    chain forward: as long as the candidate line is itself just a single
+    hyphenated fragment (one token, ending in ¬/-), it is absorbed into the
+    accumulating fragment and the walk continues to the next same-zone
+    line; the chain stops at the first line that actually carries more than
+    one fragment (i.e. the word's ending plus following text, or simply
+    isn't a lone fragment).
+
+    The full reconstructed word is written onto line i, onto every
+    intermediate chain line, and onto the terminal line — redundant on
+    purpose, to give the modernization API maximum context on every line
+    touched by the split:
+    - Line N:   "...le souv¬"        -> "...le souverain"
+    - Line N+1: "erain Arbitre:..."  -> "souverain Arbitre:..."
+    (and, for a 3+-line split, every line in between also gets the full
+    word on its own).
+
+    Lines of different zone types (e.g. MainZone vs RunningTitleZone)
+    are never merged, preventing cross-container corruption.
+
+    Args:
+        texts: List of line texts.
+        zone_types: Optional list of zone type strings (same length as texts).
+                    If None, joins with immediately next line (legacy behavior).
+
+    Returns:
+        list: Modified texts with hyphenated words rejoined.
+    """
+    joined = list(texts)
+
+    def next_same_zone(idx, zone):
+        for j in range(idx + 1, len(joined)):
+            if zone_types is None:
+                return j
+            if zone_types[j] == zone:
+                return j
+        return None
+
+    for i in range(len(joined) - 1):
+        line = joined[i]
+        if not line:
+            continue
+        stripped = line.rstrip()
+        if not stripped.endswith("¬") and not stripped.endswith("-"):
+            continue
+
+        # Find the word fragment before the hyphen
+        before_hyphen = stripped[:-1]
+        last_space = before_hyphen.rfind(" ")
+        if last_space == -1:
+            suffix = before_hyphen
+            prefix_line = ""
+        else:
+            suffix = before_hyphen[last_space + 1:]
+            prefix_line = before_hyphen[:last_space + 1]
+
+        my_zone = zone_types[i] if zone_types else None
+        j = next_same_zone(i, my_zone)
+        if j is None:
+            continue
+
+        # Walk the hyphen chain forward, absorbing every line that is
+        # itself nothing but a single dangling fragment, until we reach
+        # the line that actually terminates the word.
+        fragment = suffix
+        chain = []
+        while True:
+            cand = joined[j]
+            if not cand or not cand.strip():
+                j = None
+                break
+            cand_words = cand.split()
+            cand_stripped = cand.rstrip()
+            is_single_fragment = (
+                len(cand_words) == 1
+                and (cand_stripped.endswith("¬") or cand_stripped.endswith("-"))
+            )
+            if not is_single_fragment:
+                break
+            fragment += cand_words[0][:-1]
+            chain.append(j)
+            nxt = next_same_zone(j, my_zone)
+            if nxt is None:
+                j = None
+                break
+            j = nxt
+
+        if j is None:
+            # Chain never reached a resolving line; leave as-is.
+            # strip_residual_hyphens() is the final backstop for any ¬
+            # that survives to a modernized <reg>.
+            continue
+
+        next_line = joined[j]
+        next_words = next_line.split(None, 1)
+        next_first = next_words[0] if next_words else ""
+
+        full_word = fragment + next_first
+
+        joined[i] = prefix_line + full_word
+        for c in chain:
+            joined[c] = full_word
+        joined[j] = full_word + (" " + next_words[1] if len(next_words) > 1 else "")
+
+    return joined
 
 
 async def _send_batch(client, base_url, batch_texts, batch_size=None):

@@ -12,6 +12,8 @@ import logging
 import re
 from collections import namedtuple
 
+from .xml import xml_id_safe
+
 logger = logging.getLogger(__name__)
 
 
@@ -79,3 +81,31 @@ class Files:
             raise ValueError(f"No valid ALTO files found for {self.doc}")
 
         return sorted(numbered + others, key=lambda x: x.num)
+
+
+def parse_document_id(document_name):
+    """
+    Parse a document folder name into (internal_id, volume).
+
+    Handles both attached-letter volumes ("LIV0002a_reconciled" -> ("LIV0002", "a"))
+    and underscore markers ("LIV0031_t2_reconciled" -> ("LIV0031", "t2"),
+    "LIV0326_v2_altos" -> ("LIV0326", "v2"), "ABC999_b_x" -> ("ABC999", "b")).
+    """
+    match = re.match(r"([A-Za-z]+\d+)([a-z])?(?:_([vVtTbB]\d*))?", document_name)
+    if not match:
+        return document_name, None
+    return match.group(1), match.group(2) or match.group(3)
+
+
+def canonical_document_id(document_name):
+    """
+    Canonical short id for xml:id use: internal id + volume marker.
+
+    "LIV0008_reconciled" -> "LIV0008"; "LIV0002a_reconciled" -> "LIV0002a";
+    "LIV0031_t2_reconciled" -> "LIV0031_t2".
+    """
+    internal_id, volume = parse_document_id(document_name)
+    if not volume:
+        return xml_id_safe(internal_id)
+    sep = "" if len(volume) == 1 and volume.isalpha() else "_"
+    return xml_id_safe(f"{internal_id}{sep}{volume}")

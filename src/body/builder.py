@@ -9,7 +9,7 @@ This module constructs the <body> element of a TEI document by assembling
 text lines extracted from the sourceDoc. It handles different zone types
 (MainZone, NumberingZone, MarginTextZone, etc.) and wraps them appropriately.
 
-Enhanced with FastText language detection at the paragraph/container level
+Enhanced with Lingua language detection at the paragraph/container level
 with support for mixed-language detection using <foreign> tags.
 """
 
@@ -32,7 +32,8 @@ class _SentenceSegment:
     """A portion of a sentence that falls on one line."""
     s_elem: object          # original <s> element
     s_xml_id: str           # original xml:id
-    tokens: list = field(default_factory=list)  # <w>, <pc>, <hi> elements
+    tokens: list = field(default_factory=list)  # <w>/<pc> elements in order
+    token_langs: list = field(default_factory=list)  # parallel: <foreign> lang or None
     is_full: bool = True    # True if entire <s> is on this line
 
 
@@ -44,16 +45,48 @@ class _LineGroup:
     segments: list = field(default_factory=list)  # list of _SentenceSegment
 
 
+def _walk_sentence_children(parent, foreign_lang=None):
+    """
+    Yield (event, element, foreign_lang) in document order.
+
+    Recurses into <hi> and <foreign> wrappers so callers see a flat
+    sequence of ``"lb"`` / ``"token"`` events while still knowing the
+    nearest enclosing <foreign> (for ``foreign_lang``). The <hi>
+    wrapper is not tracked here — it is lost during modernization
+    rebuild as in the pre-existing behaviour.
+
+    Events:
+        ("lb", <lb>, foreign_lang_or_None)
+        ("token", <w|pc>, foreign_lang_or_None)
+    """
+    XML_LANG_KEY = f"{{{NS_XML}}}lang"
+    for child in parent:
+        if not isinstance(child.tag, str):
+            continue
+        ctag = child.tag
+        if ctag == "lb":
+            yield ("lb", child, foreign_lang)
+        elif ctag in ("w", "pc"):
+            yield ("token", child, foreign_lang)
+        elif ctag == "hi":
+            yield from _walk_sentence_children(child, foreign_lang)
+        elif ctag == "foreign":
+            lang = child.get(XML_LANG_KEY) or foreign_lang
+            yield from _walk_sentence_children(child, lang)
+
+
 def _parse_line_groups(container):
     """
     Parse an enriched container into line groups.
 
     Walks <s> children of the container. Inside each <s>, groups
-    tokens by <lb/> boundaries into LineGroup objects.
+    tokens by <lb/> boundaries into LineGroup objects. <foreign>
+    wrappers inside <s> contribute their ``xml:lang`` to each
+    contained token so the modernization rebuild can re-emit them.
 
     Args:
         container: An enriched lxml Element (<ab>, <note>, <fw>)
-                   containing <s>/<w>/<pc>/<lb> structure.
+                   containing <s>/<w>/<pc>/<lb>/<foreign> structure.
 
     Returns:
         list[_LineGroup]: Line groups in document order.
@@ -68,23 +101,17 @@ def _parse_line_groups(container):
         tag = s_elem.tag
         if tag == "s":
             s_id = s_elem.get(f"{{{NS_XML}}}id", "")
-            # Track whether this <s> has been split across lines
             segment_for_this_s = None
             s_has_multiple_lines = False
 
-            for child in s_elem:
-                if not isinstance(child.tag, str):
-                    continue
-                ctag = child.tag
-
-                if ctag == "lb":
-                    # Start a new line group
+            for event, elem, fgn in _walk_sentence_children(s_elem):
+                if event == "lb":
                     if segment_for_this_s is not None:
                         s_has_multiple_lines = True
                         segment_for_this_s.is_full = False
                     current_group = _LineGroup(
-                        lb_corresp=child.get("corresp"),
-                        lb_element=child,
+                        lb_corresp=elem.get("corresp"),
+                        lb_element=elem,
                     )
                     groups.append(current_group)
                     segment_for_this_s = _SentenceSegment(
@@ -92,9 +119,8 @@ def _parse_line_groups(container):
                     )
                     current_group.segments.append(segment_for_this_s)
 
-                elif ctag in ("w", "pc"):
+                else:  # "token"
                     if current_group is None:
-                        # Edge case: tokens before any <lb/>
                         current_group = _LineGroup(lb_corresp=None, lb_element=None)
                         groups.append(current_group)
                         segment_for_this_s = _SentenceSegment(
@@ -106,37 +132,9 @@ def _parse_line_groups(container):
                             s_elem=s_elem, s_xml_id=s_id
                         )
                         current_group.segments.append(segment_for_this_s)
-                    segment_for_this_s.tokens.append(child)
+                    segment_for_this_s.tokens.append(elem)
+                    segment_for_this_s.token_langs.append(fgn)
 
-                elif ctag == "hi":
-                    # <hi> contains <w>/<pc>/<lb> — recurse
-                    for hi_child in child:
-                        if not isinstance(hi_child.tag, str):
-                            continue
-                        hctag = hi_child.tag
-                        if hctag == "lb":
-                            if segment_for_this_s is not None:
-                                s_has_multiple_lines = True
-                                segment_for_this_s.is_full = False
-                            current_group = _LineGroup(
-                                lb_corresp=hi_child.get("corresp"),
-                                lb_element=hi_child,
-                            )
-                            groups.append(current_group)
-                            segment_for_this_s = _SentenceSegment(
-                                s_elem=s_elem, s_xml_id=s_id
-                            )
-                            current_group.segments.append(segment_for_this_s)
-                        elif hctag in ("w", "pc"):
-                            if segment_for_this_s is None:
-                                segment_for_this_s = _SentenceSegment(
-                                    s_elem=s_elem, s_xml_id=s_id
-                                )
-                                if current_group:
-                                    current_group.segments.append(segment_for_this_s)
-                            segment_for_this_s.tokens.append(hi_child)
-
-            # If this <s> was split, mark all its segments as not full
             if s_has_multiple_lines:
                 for g in groups:
                     for seg in g.segments:
@@ -144,7 +142,6 @@ def _parse_line_groups(container):
                             seg.is_full = False
 
         elif tag == "lb":
-            # Bare <lb> at container level
             current_group = _LineGroup(
                 lb_corresp=s_elem.get("corresp"),
                 lb_element=s_elem,
@@ -152,6 +149,28 @@ def _parse_line_groups(container):
             groups.append(current_group)
 
     return groups
+
+
+def _append_tokens_with_foreign(parent, tokens, token_langs):
+    """
+    Move ``tokens`` under ``parent`` re-wrapping foreign-lang runs.
+
+    Consecutive tokens sharing the same ``token_langs`` value (other
+    than None) are grouped inside a fresh ``<foreign xml:lang="…">``
+    child of ``parent``. ``None`` entries go directly under ``parent``.
+    """
+    current_foreign = None
+    current_lang = None
+    for token, lang in zip(tokens, token_langs):
+        if lang and lang != current_lang:
+            current_foreign = etree.SubElement(parent, "foreign")
+            current_foreign.set(f"{{{NS_XML}}}lang", lang)
+            current_lang = lang
+        elif not lang:
+            current_foreign = None
+            current_lang = None
+        target = current_foreign if current_foreign is not None else parent
+        target.append(token)
 
 
 def _rebuild_with_modernization(container, groups, corresp_to_mod):
@@ -190,7 +209,10 @@ def _rebuild_with_modernization(container, groups, corresp_to_mod):
             line_idx = occurrences[0][0]
             fragment_ids[(s_id, line_idx)] = s_id
 
-    # Phase 3: Clear container children
+    # Phase 3: Clear container children (any <foreign> that survived
+    # enrichment is a leftover — its content has already been collected
+    # into seg.tokens via the recursive walk, so we drop the wrappers
+    # and let _append_tokens_with_foreign recreate them).
     attribs = dict(container.attrib)
     container.text = None
     for child in list(container):
@@ -245,9 +267,7 @@ def _rebuild_with_modernization(container, groups, corresp_to_mod):
                         if prev_id:
                             s_new.set("prev", f"#{prev_id}")
 
-                # Copy tokens into new <s>
-                for token in seg.tokens:
-                    s_new.append(token)
+                _append_tokens_with_foreign(s_new, seg.tokens, seg.token_langs)
 
             reg = etree.SubElement(choice, "reg", type="modernized")
             reg.text = corresp_to_mod[group.lb_corresp]
@@ -283,8 +303,7 @@ def _rebuild_with_modernization(container, groups, corresp_to_mod):
                         if prev_id:
                             s_new.set("prev", f"#{prev_id}")
 
-                for token in seg.tokens:
-                    s_new.append(token)
+                _append_tokens_with_foreign(s_new, seg.tokens, seg.token_langs)
 
     return count
 
@@ -347,6 +366,8 @@ def build_body(root, data, detect_lang=True):
     # Track containers for language detection
     containers = []  # list of (element, list of line texts)
 
+    last_page_id = None
+
     for line in data:
         # Prepare zone attributes (without language for now)
         zone_atts = {"corresp": f"#{line.zone_id}", "type": line.zone_type}
@@ -355,10 +376,11 @@ def build_body(root, data, detect_lang=True):
         lb = etree.Element("lb", corresp=f"#{line.id}")
         lb.tail = f"{line.text}"
 
-        # Add page break at first line of each page
-        if int(line.n) == 1:
+        # Add page break when the page changes (not per zone)
+        if line.page_id != last_page_id:
             pb = etree.Element("pb", corresp=f"#{line.page_id}")
             div.append(pb)
+            last_page_id = line.page_id
 
         # Ensure div has at least one element
         if len(div) == 0:
@@ -423,8 +445,12 @@ def build_body(root, data, detect_lang=True):
             elif line.line_type and line.line_type.startswith("Default"):
                 last_element.append(lb)
 
-    # Now apply language detection to containers
+    # Apply language detection to containers (two-pass)
     if detector:
+        # Pass 1: establish document-level dominant language
+        all_texts = (t for _, texts in containers for t in texts if t)
+        detector.compute_document_prior(all_texts)
+        # Pass 2: detect per-container with document prior as bias
         _apply_language_detection(containers, detector)
         return detector.get_stats()
 
@@ -436,31 +462,34 @@ def _apply_language_detection(containers, detector):
     Apply language detection to container elements.
 
     Detects the primary language of each container and adds xml:lang.
-    For mixed-language containers, wraps foreign segments in <foreign> tags.
+    For mixed-language containers, splices <foreign> elements inline
+    around the corresponding portions of the <lb/> tails so that
+    downstream stages (enrichment, modernization) can re-tag each
+    language span with the appropriate model.
 
     Args:
         containers: List of (element, [line_texts]) tuples.
-        detector: LanguageDetector instance.
+        detector: LinguaDetector instance.
     """
     for element, line_texts in containers:
-        # Join all line texts for this container
+        # Join non-empty line texts. Offsets in this joined text align
+        # with the per-line tails via _build_offset_to_line below.
         full_text = " ".join(t for t in line_texts if t)
 
         if not full_text.strip():
             continue
 
-        # Detect language with segments
-        primary_lang, foreign_segments = detector.detect_with_segments(full_text)
-
-        # Set primary language on container
-        if primary_lang and primary_lang != detector.default_lang:
+        # Primary language (always set, even when equal to default).
+        primary_lang = detector.detect(full_text)
+        if primary_lang:
             element.attrib[XML_LANG] = primary_lang
 
-        # If there are foreign segments, we need to wrap them
-        # This is complex because we need to insert <foreign> tags
-        # into the existing structure without breaking the <lb/> references
-        if foreign_segments:
-            _insert_foreign_tags(element, full_text, foreign_segments, detector)
+        # Foreign segments with offsets aligned to the joined text.
+        segments = detector.detect_foreign_segments(
+            full_text, primary_lang=primary_lang
+        )
+        if segments:
+            _insert_foreign_inline(element, line_texts, segments)
 
 
 def apply_modernization(root, modernized_texts):
@@ -579,35 +608,134 @@ def _wrap_plain_lines(container, corresp_to_mod):
     return count
 
 
-def _insert_foreign_tags(element, full_text, foreign_segments, detector):
+def _insert_foreign_inline(element, line_texts, segments):
     """
-    Insert <foreign> tags for detected foreign language segments.
+    Splice <foreign> elements inline around foreign-language runs.
 
-    This is a simplified approach that adds <foreign> elements
-    at the end of the container with the detected foreign text.
-    A more sophisticated approach would splice them inline.
+    For each segment ``(start, end, lang)`` with offsets in the joined
+    ``" ".join(t for t in line_texts if t)`` text, this locates the
+    corresponding portion of the matching <lb/> tail and wraps it in
+    a ``<foreign xml:lang="...">`` sibling inserted right after the <lb/>.
+
+    Segments that cross a line boundary produce one <foreign> per
+    affected line (the intervening line break stays where it was).
 
     Args:
-        element: The container element (ab, note, fw).
-        full_text: The full text content of the container.
-        foreign_segments: List of LangSegment objects.
-        detector: LanguageDetector instance.
+        element: Container element (<ab>, <note>, <fw>).
+        line_texts: List of per-line texts in the same order as the
+            <lb/> children (including empty ones).
+        segments: Iterable of (start, end, lang) tuples returned by
+            :meth:`LinguaDetector.detect_foreign_segments`.
     """
-    # For each foreign segment, create a <foreign> element
-    # We add them as siblings after the container, or as notes
-    # This is a pragmatic approach since modifying inline is complex
+    if not segments:
+        return
 
-    for seg in foreign_segments:
-        if seg.lang and seg.lang != detector.default_lang:
-            # Create a comment noting the foreign passage
-            # A full implementation would insert inline, but that requires
-            # complex text node manipulation
-            foreign = etree.Element("foreign")
-            foreign.attrib[XML_LANG] = seg.lang
-            # We could add the text, but it's already in the container
-            # Just mark that foreign text was detected
-            foreign.attrib["corresp"] = element.get("corresp", "")
-            foreign.text = f"[{seg.text[:50]}...]" if len(seg.text) > 50 else seg.text
+    offset_to_line = _build_offset_to_line(line_texts)
 
-            # Add as child at the end
-            element.append(foreign)
+    # Group splice ops per line (a single segment may touch several).
+    splices_per_line = {}
+    for seg_start, seg_end, seg_lang in segments:
+        line_ranges = {}  # line_idx -> [min_j, max_j]
+        for pos in range(seg_start, min(seg_end, len(offset_to_line))):
+            line_idx, j = offset_to_line[pos]
+            if line_idx < 0:
+                continue
+            r = line_ranges.get(line_idx)
+            if r is None:
+                line_ranges[line_idx] = [j, j]
+            else:
+                if j < r[0]:
+                    r[0] = j
+                if j > r[1]:
+                    r[1] = j
+        for line_idx, (j_min, j_max) in line_ranges.items():
+            splices_per_line.setdefault(line_idx, []).append(
+                (j_min, j_max + 1, seg_lang)
+            )
+
+    if not splices_per_line:
+        return
+
+    lbs = list(element.iter("lb"))
+    for line_idx, ops in splices_per_line.items():
+        if line_idx >= len(lbs):
+            continue
+        _splice_lb_tail(lbs[line_idx], ops)
+
+
+def _build_offset_to_line(line_texts):
+    """
+    Build a position map for ``" ".join(t for t in line_texts if t)``.
+
+    Returns a list where ``offset_to_line[i] = (line_idx, j)`` means the
+    character at offset ``i`` in the joined string comes from
+    ``line_texts[line_idx][j]``. A marker ``(-1, -1)`` is used for the
+    separator spaces inserted by the join.
+    """
+    offset_to_line = []
+    non_empty_seen = False
+    for line_idx, t in enumerate(line_texts):
+        if not t:
+            continue
+        if non_empty_seen:
+            offset_to_line.append((-1, -1))
+        non_empty_seen = True
+        for j in range(len(t)):
+            offset_to_line.append((line_idx, j))
+    return offset_to_line
+
+
+def _splice_lb_tail(lb, splice_ops):
+    """
+    Splice a <lb/>'s tail with one or more <foreign> elements.
+
+    Args:
+        lb: The <lb/> lxml Element.
+        splice_ops: Iterable of ``(start, end, lang)`` in the tail's
+            character positions. Overlapping ops are dropped after the
+            first one is accepted (sorted by start).
+    """
+    tail = lb.tail or ""
+    if not tail:
+        return
+
+    # Sort, clamp, drop overlaps.
+    clean_ops = []
+    prev_end = 0
+    for s, e, lang in sorted(splice_ops, key=lambda x: x[0]):
+        s = max(0, min(s, len(tail)))
+        e = max(s, min(e, len(tail)))
+        if s < prev_end or s >= e:
+            continue
+        clean_ops.append((s, e, lang))
+        prev_end = e
+
+    if not clean_ops:
+        return
+
+    # Build alternating (text | foreign-element) items covering the tail.
+    items = []
+    cursor = 0
+    for s, e, lang in clean_ops:
+        if s > cursor:
+            items.append(("text", tail[cursor:s]))
+        f = etree.Element("foreign")
+        f.set(XML_LANG, lang)
+        f.text = tail[s:e]
+        items.append(("foreign", f))
+        cursor = e
+    if cursor < len(tail):
+        items.append(("text", tail[cursor:]))
+
+    # Apply: rewrite lb.tail as the first run of text (empty if items
+    # start with a foreign), insert each foreign as a sibling, and
+    # attach subsequent text runs as the tail of the previously
+    # inserted element.
+    lb.tail = None
+    prev = lb
+    for kind, payload in items:
+        if kind == "text":
+            prev.tail = payload
+        else:
+            prev.addnext(payload)
+            prev = payload

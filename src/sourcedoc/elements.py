@@ -9,12 +9,13 @@ This module provides the SurfaceTree class which creates TEI <surface>,
 <zone>, <path>, and <line> elements from ALTO data.
 """
 
-import re
 import uuid
 
 from lxml import etree
 
 from ..constants import NS_ALTO, XML_ID
+from ..utils.xml import xml_id_safe
+from .attributes import format_alto_points
 
 
 class SurfaceTree:
@@ -70,11 +71,12 @@ class SurfaceTree:
         Returns:
             etree.Element: The created <surface> element.
         """
+        folio_id = xml_id_safe(self.folio)
         surface = etree.Element(
             "surface",
-            {XML_ID: self.folio, **page_attributes},
+            {XML_ID: folio_id, **page_attributes},
         )
-        xml_id = surface.get(XML_ID, self.folio)
+        xml_id = surface.get(XML_ID, folio_id)
 
         # Add IIIF graphic element if mapping is available
         if self.iiif_mapping and self.iiif_mapping.has_mapping():
@@ -140,11 +142,7 @@ class SurfaceTree:
         textline = self.root.find(f'.//a:TextLine[@ID="{line_id}"]', namespaces=NS_ALTO)
         if textline is not None:
             baseline_str = textline.get("BASELINE", "")
-            # Convert "x y x y" format to "x,y x,y" format
-            points = " ".join(
-                [re.sub(r"\s", ",", x) for x in re.findall(r"(\d+ \d+)", baseline_str)]
-            )
-            baseline.attrib["points"] = points
+            baseline.attrib["points"] = format_alto_points(baseline_str)
 
         return zone
 

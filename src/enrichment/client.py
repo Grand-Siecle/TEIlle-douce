@@ -29,6 +29,7 @@ class NLPToken:
     is_punctuation: bool
     char_start: int = 0
     char_end: int = 0
+    origin_lang: str = ""  # TEI ident of the PyHellen model that tagged it
 
 
 def get_model(lang_ident):

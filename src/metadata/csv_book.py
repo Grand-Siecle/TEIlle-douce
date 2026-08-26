@@ -17,10 +17,17 @@ from collections import defaultdict
 
 import pandas as pd
 
-from config import CSV_DELIMITER, BDD_PREFIX_PATTERN, METADATA_PERSON_CSV
+from config import (
+    CSV_DELIMITER,
+    BDD_PREFIX_PATTERN,
+    METADATA_PERSON_CSV,
+    PLACEHOLDER_INFO_UNAVAILABLE,
+)
 
 logger = logging.getLogger(__name__)
 from .csv_person import load_person_database, get_person_database
+from ..utils.files import parse_document_id
+from ..constants import XML_ID
 
 
 def load_metadata(csv_path):
@@ -120,6 +127,56 @@ def _safe_value_list(row, key):
     return [v.strip() for v in raw.split("|") if v.strip()]
 
 
+def safe_person_id(pid):
+    """Role columns sometimes hold raw arks instead of PERS ids; arks are
+    not valid NCNames (':' '/') so derive a safe xml:id from the ark tail.
+
+    Note: distinct from the NER pipeline's "pers-<uuid>" ids (hyphen) —
+    "pers_<ark-tail>" (underscore) marks CSV-derived unresolved persons.
+    """
+    pid = str(pid).strip()
+    if pid.startswith("ark:"):
+        tail = pid.rstrip("/").rsplit("/", 1)[-1]
+        if not tail or ":" in tail:
+            # Malformed ark: sanitize the whole string instead of colliding
+            # on an empty/invalid tail.
+            tail = re.sub(r"[^A-Za-z0-9._\-]", "-", pid)
+        return "pers_" + tail
+    return pid
+
+
+def _volume_index(volume):
+    """'a'->0, 'b'->1, 't2'->1, 'v3'->2 ; None/unknown -> None."""
+    if not volume:
+        return None
+    v = volume.lower()
+    # Bare "t"/"v" are unnumbered tome/volume markers, not letter ranks.
+    if len(v) == 1 and v.isalpha() and v not in ("t", "v"):
+        return ord(v) - ord("a")
+    m = re.match(r"[vtb](\d+)$", v)
+    if m:
+        return int(m.group(1)) - 1
+    return None
+
+
+def select_manifest(manifests, volume):
+    """
+    Pick the IIIF manifest matching a document volume.
+
+    One manifest: always return it. Several: return the volume's manifest
+    (order of the CSV '|' list = volume order). Unknown/missing volume
+    with several manifests -> None, caller falls back to listing all.
+    """
+    if not manifests:
+        return None
+    if len(manifests) == 1:
+        return manifests[0]
+    idx = _volume_index(volume)
+    if idx is None or idx >= len(manifests):
+        return None
+    return manifests[idx]
+
+
 def build_metadata_dict(row):
     """
     Build a metadata dictionary from a CSV row.
@@ -164,7 +221,7 @@ def build_metadata_dict(row):
             })
         else:
             authors.append({
-                "xmlid": aid,
+                "xmlid": safe_person_id(aid),
                 "name": aid,
                 "secondary_name": None,
                 "namelink": None,
@@ -204,6 +261,7 @@ def build_metadata_dict(row):
     # Build IIIF-like metadata
     iiif_data = {
         "manifest": _safe_value(row, "manifest_iiif"),
+        "manifests": _safe_value_list(row, "manifest_iiif"),
         "ark": _safe_value(row, "ARK"),
         "Creator": _safe_value(row, "ID_auteur"),
         "Title": _safe_value(row, "Titre_long") or _safe_value(row, "Titre_abrege"),
@@ -219,7 +277,7 @@ def build_metadata_dict(row):
     }
 
 
-def override_teiheader_from_csv(root, row):
+def override_teiheader_from_csv(root, row, document_name=None):
     """
     Inject CSV metadata into an existing TEI header.
 
@@ -230,6 +288,9 @@ def override_teiheader_from_csv(root, row):
     Args:
         root (etree.Element): TEI root element.
         row (pd.Series): Metadata row from CSV.
+        document_name (str, optional): Document folder name, used to
+            determine the volume marker for selecting the matching
+            IIIF manifest when several are listed in the CSV.
 
     Returns:
         None: Modifies root in place.
@@ -311,11 +372,42 @@ def override_teiheader_from_csv(root, row):
         if person_db and person_id in person_db:
             person_data = person_db.enrich_author_data(person_id, role="author")
             author_el = etree.SubElement(parent, "author")
-            author_el.attrib["ref"] = f"#{person_id}"
+            author_el.attrib["ref"] = f"#{safe_person_id(person_id)}"
             create_persname_element(author_el, person_data)
+            if person_data.get("birth_date") or person_data.get("birth_place"):
+                birth = etree.SubElement(author_el, "birth")
+                if person_data.get("birth_date"):
+                    birth.attrib["when"] = str(person_data["birth_date"])
+                    date_el = etree.SubElement(birth, "date")
+                    date_el.text = str(person_data["birth_date"])
+                if person_data.get("birth_place"):
+                    place = etree.SubElement(birth, "placeName")
+                    place.text = str(person_data["birth_place"])
+                    if person_data.get("birth_place_id"):
+                        ptr = etree.SubElement(place, "ptr", type="geonames")
+                        ptr.attrib["target"] = f"https://www.geonames.org/{person_data['birth_place_id']}/"
+            if person_data.get("death_date") or person_data.get("death_place"):
+                death = etree.SubElement(author_el, "death")
+                if person_data.get("death_date"):
+                    death.attrib["when"] = str(person_data["death_date"])
+                    date_el = etree.SubElement(death, "date")
+                    date_el.text = str(person_data["death_date"])
+                if person_data.get("death_place"):
+                    place = etree.SubElement(death, "placeName")
+                    place.text = str(person_data["death_place"])
+                    if person_data.get("death_place_id"):
+                        ptr = etree.SubElement(place, "ptr", type="geonames")
+                        ptr.attrib["target"] = f"https://www.geonames.org/{person_data['death_place_id']}/"
         else:
             author_el = etree.SubElement(parent, "author")
-            author_el.text = person_id
+            if person_id.startswith("ark:"):
+                # Unknown name: don't show the raw ark as if it were the
+                # author's name. <idno> is a model.pPart.data element, valid
+                # directly inside <author> (macro.phraseSeq.limited content).
+                idno_el = etree.SubElement(author_el, "idno", type="ark")
+                idno_el.text = person_id
+            else:
+                author_el.text = person_id
         return author_el
 
     def create_editor_element(parent, person_id, role):
@@ -324,12 +416,19 @@ def override_teiheader_from_csv(root, row):
             person_data = person_db.enrich_author_data(person_id, role=role)
             editor_el = etree.SubElement(parent, "editor")
             editor_el.attrib["role"] = role
-            editor_el.attrib["ref"] = f"#{person_id}"
+            editor_el.attrib["ref"] = f"#{safe_person_id(person_id)}"
             create_persname_element(editor_el, person_data)
         else:
             editor_el = etree.SubElement(parent, "editor")
             editor_el.attrib["role"] = role
-            editor_el.text = person_id
+            if person_id.startswith("ark:"):
+                # Same rationale as create_author_element: idno is valid
+                # directly inside <editor> (same phraseSeq-limited content
+                # model family), so the ark doesn't pollute the name text.
+                idno_el = etree.SubElement(editor_el, "idno", type="ark")
+                idno_el.text = person_id
+            else:
+                editor_el.text = person_id
         return editor_el
 
     def create_bibl_respstmt(parent, person_id, resp_label):
@@ -340,7 +439,7 @@ def override_teiheader_from_csv(root, row):
         if person_db and person_id in person_db:
             person_data = person_db.enrich_author_data(person_id)
             persname = etree.SubElement(respstmt, "persName")
-            persname.attrib["ref"] = f"#{person_id}"
+            persname.attrib["ref"] = f"#{safe_person_id(person_id)}"
             if person_data.get("forename"):
                 forename = etree.SubElement(persname, "forename")
                 forename.text = person_data["forename"]
@@ -352,7 +451,18 @@ def override_teiheader_from_csv(root, row):
                 surname.text = person_data["surname"]
         else:
             persname = etree.SubElement(respstmt, "persName")
-            persname.text = person_id
+            if person_id.startswith("ark:"):
+                # respStmt's content model is strict: resp+, (name|orgName|
+                # persName)+ - no <idno> allowed as a direct child of
+                # respStmt itself (unlike <author>/<editor> above, or
+                # <person> in listPerson). So the ark can't be a sibling of
+                # persName here; nest it inside the otherwise-empty persName
+                # instead (idno is a valid model.pPart.data child of
+                # persName's macro.phraseSeq content model).
+                idno_el = etree.SubElement(persname, "idno", type="ark")
+                idno_el.text = person_id
+            else:
+                persname.text = person_id
         return respstmt
 
     # titleStmt: only authors and translators (intellectual contributors)
@@ -395,14 +505,44 @@ def override_teiheader_from_csv(root, row):
     # Date
     set_text(".//teiHeader/fileDesc/sourceDesc/bibl/date", row.get("Date_01") or row.get("Date_02"))
 
-    # Repository info - support multiple
+    # Repository info - support multiple.
+    # Localisation is stored as "Ville, Institution" (e.g. "Munich, Bayerische
+    # Staatsbibliothek"): the city goes to <settlement>, the institution to
+    # <repository>. Only the first value drives <settlement> (TEI allows a
+    # single settlement); additional pipe-separated values become extra
+    # <repository> siblings, kept as-is if they have no comma.
     localisations = _safe_value_list(row, "Localisation")
-    set_text_multi(
-        ".//teiHeader/fileDesc/sourceDesc/msDesc/msIdentifier/repository",
-        localisations,
-        ".//teiHeader/fileDesc/sourceDesc/msDesc/msIdentifier",
-        "repository"
-    )
+    if localisations:
+        first_loc = localisations[0]
+        if "," in first_loc:
+            settlement_txt, repo_txt = (p.strip() for p in first_loc.split(",", 1))
+        else:
+            settlement_txt, repo_txt = None, first_loc.strip()
+        repo_texts = [repo_txt] + [loc.strip() for loc in localisations[1:]]
+        set_text_multi(
+            ".//teiHeader/fileDesc/sourceDesc/msDesc/msIdentifier/repository",
+            repo_texts,
+            ".//teiHeader/fileDesc/sourceDesc/msDesc/msIdentifier",
+            "repository"
+        )
+        msid = root.find(".//teiHeader/fileDesc/sourceDesc/msDesc/msIdentifier")
+        if msid is not None:
+            settlement_el = msid.find("settlement")
+            if settlement_el is not None:
+                if settlement_txt:
+                    settlement_el.text = settlement_txt
+                elif settlement_el.text == PLACEHOLDER_INFO_UNAVAILABLE:
+                    # No city could be derived: drop the placeholder rather
+                    # than keep a misleading default.
+                    msid.remove(settlement_el)
+
+    # <country> has no CSV source; drop it if it's still the empty placeholder
+    # left by DefaultTree.
+    country_el = root.find(".//teiHeader/fileDesc/sourceDesc/msDesc/msIdentifier/country")
+    if country_el is not None and (country_el.text is None or not country_el.text.strip()):
+        country_parent = country_el.getparent()
+        if country_parent is not None:
+            country_parent.remove(country_el)
 
     # Cote/idno - support multiple
     cotes = _safe_value_list(row, "Cote")
@@ -442,17 +582,24 @@ def override_teiheader_from_csv(root, row):
                 term.text = sujet
 
     # ARK and IIIF manifest identifiers
-    ark = row.get("ARK")
-    manifest = row.get("manifest_iiif")
-    if ark or manifest:
+    ark = _safe_value(row, "ARK")
+    manifests = _safe_value_list(row, "manifest_iiif")
+    if ark or manifests:
         idno_parent = root.find(".//teiHeader/fileDesc/sourceDesc/msDesc/msIdentifier")
         if idno_parent is not None:
             if ark:
                 id_ark = etree.SubElement(idno_parent, "idno", type="ark")
                 id_ark.text = ark
-            if manifest:
+            volume = parse_document_id(document_name)[1] if document_name else None
+            selected = select_manifest(manifests, volume)
+            if selected:
                 id_manifest = etree.SubElement(idno_parent, "idno", type="iiif")
-                id_manifest.text = manifest
+                id_manifest.text = selected
+            else:
+                # Unknown volume: list every manifest, numbered
+                for i, m in enumerate(manifests, 1):
+                    id_manifest = etree.SubElement(idno_parent, "idno", type="iiif", n=str(i))
+                    id_manifest.text = m
 
     # Build listPerson in particDesc with all referenced persons
     all_person_ids = set(auteurs + traducteurs + imprimeurs + libraires + editeurs)
@@ -466,7 +613,7 @@ def override_teiheader_from_csv(root, row):
                 if pid in person_db:
                     person = person_db.get(pid)
                     person_el = etree.SubElement(listPerson, "person")
-                    person_el.attrib["{http://www.w3.org/XML/1998/namespace}id"] = pid
+                    person_el.attrib[XML_ID] = safe_person_id(pid)
 
                     # sex attribute
                     if person.get("sex"):
@@ -594,9 +741,14 @@ def override_teiheader_from_csv(root, row):
                 else:
                     # Person not in database - create minimal entry
                     person_el = etree.SubElement(listPerson, "person")
-                    person_el.attrib["{http://www.w3.org/XML/1998/namespace}id"] = pid
+                    person_el.attrib[XML_ID] = safe_person_id(pid)
                     persname = etree.SubElement(person_el, "persName")
-                    persname.text = pid
+                    if pid.startswith("ark:"):
+                        # Unknown name: the ark goes in an idno, not in persName.
+                        idno_el = etree.SubElement(person_el, "idno", type="ark")
+                        idno_el.text = pid
+                    else:
+                        persname.text = pid
 
 
 def _normalize_date(date_str):

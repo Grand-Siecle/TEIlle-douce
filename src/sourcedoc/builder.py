@@ -93,7 +93,14 @@ def _build_surface_fragment(args):
         surface_tree = SurfaceTree(document_name, file_stem, input_alto_root)
 
     # Create <surface> element
-    attributes = Attributes(document_name, file_stem, input_alto_root, tags, config)
+    # `num` is the page number parsed from the filename stem by
+    # Files.order_files() ("f1.xml" -> 1). Using it as the IIIF view number
+    # (f<N>) ASSUMES the corpus convention that ALTO files are named after
+    # their 1-based scan view; documents numbered from 0 yield view_number=0
+    # for their first page, which Attributes treats as untrustworthy (no
+    # @source emitted).
+    attributes = Attributes(document_name, file_stem, input_alto_root, tags,
+                            dict(config, view_number=num))
     surface = surface_tree.surface(attributes.surface())
 
     # Index ALTO elements by ID for fast lookup

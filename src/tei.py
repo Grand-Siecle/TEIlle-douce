@@ -15,6 +15,7 @@ from pathlib import Path
 from lxml import etree
 
 from .constants import NS_TEI, XML_ID
+from .utils.files import canonical_document_id
 
 logger = logging.getLogger(__name__)
 from .teiheader import build_header
@@ -23,6 +24,12 @@ from .body import build_body, apply_modernization, apply_modernization_enriched,
 from .metadata import IIIFMapping
 from .lang import build_langusage
 from .enrichment import enrich_body as _enrich_body
+
+
+def strip_residual_hyphens(modernized):
+    """A modernized reg must never contain the soft hyphen ¬: whatever the
+    API returned, joining the fragments is always the right repair."""
+    return [m.replace("¬", "") if m else m for m in modernized]
 
 
 class TEI:
@@ -77,7 +84,7 @@ class TEI:
         Initializes the XML tree with the TEI root element and proper
         namespace declarations.
         """
-        xml_id_att = {XML_ID: f"ark_12148_{self.d}"}
+        xml_id_att = {XML_ID: canonical_document_id(self.d)}
         nsmap = {None: NS_TEI}
         self.root = etree.Element("TEI", xml_id_att, nsmap=nsmap)
 
@@ -129,7 +136,7 @@ class TEI:
         the TEI body structure with appropriate elements (`<ab>`, `<note>`,
         `<fw>`, `<lb/>`, etc.).
 
-        When `detect_lang=True`, uses FastText to detect the language of
+        When `detect_lang=True`, uses Lingua to detect the language of
         each text container and adds `xml:lang` attributes. Language
         statistics are stored in `self.lang_stats` for later use.
 
@@ -138,7 +145,7 @@ class TEI:
             to update the `<langUsage>` element in the TEI header.
 
         Args:
-            detect_lang (bool): If True, detect languages with FastText
+            detect_lang (bool): If True, detect languages with Lingua
                                and add `xml:lang` attributes to containers.
                                Defaults to True.
 
@@ -152,20 +159,29 @@ class TEI:
 
     def extract_line_data(self):
         """
-        Extract line texts and corresp values from <lb> elements.
+        Extract line texts, corresp values, and zone types from <lb> elements.
 
         Must be called after build_body() and before enrich_body(),
         because enrichment replaces <lb> tails with <w>/<pc> elements.
 
         Returns:
-            list[tuple[str|None, str]]: List of (corresp, text) tuples,
-                one per <lb> element in document order.
+            list[tuple[str|None, str, str]]: List of (corresp, text, zone_type)
+                tuples, one per <lb> element in document order.
         """
         body = self.root.find(".//body")
         if body is None:
             return []
-        lbs = list(body.iter("lb"))
-        return [(lb.get("corresp"), lb.tail or "") for lb in lbs]
+        result = []
+        for lb in body.iter("lb"):
+            corresp = lb.get("corresp")
+            text = lb.tail or ""
+            # Walk up to the container (ab, note, fw) to get zone type
+            parent = lb.getparent()
+            while parent is not None and parent.tag not in ("ab", "note", "fw"):
+                parent = parent.getparent()
+            zone_type = parent.get("type", "") if parent is not None else ""
+            result.append((corresp, text, zone_type))
+        return result
 
     def modernize_body(self, line_data=None, enriched=False, progress_callback=None):
         """
@@ -184,21 +200,23 @@ class TEI:
         Returns:
             int: Number of lines modernized, or 0 on failure.
         """
-        from .modernize import modernize_texts
+        from .modernize import modernize_texts, dehyphenate_lines
 
         # Get line texts
         if line_data is None:
-            body = self.root.find(".//body")
-            if body is None:
-                return 0
-            lbs = list(body.iter("lb"))
-            line_data = [(lb.get("corresp"), lb.tail or "") for lb in lbs]
+            line_data = self.extract_line_data()
 
-        original_texts = [text for _, text in line_data]
+        original_texts = [text for _, text, *_ in line_data]
+        zone_types = [zt for _, _, zt, *_ in line_data] if line_data and len(line_data[0]) > 2 else None
+
+        # Dehyphenate before modernization: join words split by ¬/-
+        # across lines so the API sees complete words.
+        # Only joins within the same zone type to avoid cross-container merges.
+        joined_texts = dehyphenate_lines(original_texts, zone_types=zone_types)
 
         try:
             modernized = modernize_texts(
-                original_texts, lang="fra", progress_callback=progress_callback
+                joined_texts, lang="fra", progress_callback=progress_callback
             )
         except Exception as e:
             logger.error("Modernization failed: %s: %r", type(e).__name__, e)
@@ -207,10 +225,13 @@ class TEI:
         if modernized is None:
             return 0
 
+        modernized = strip_residual_hyphens(modernized)
+
         if enriched:
             # Build corresp -> modernized mapping for lines that changed
             corresp_to_mod = {}
-            for (corresp, orig), mod in zip(line_data, modernized):
+            for ld, mod in zip(line_data, modernized):
+                corresp, orig = ld[0], ld[1]
                 if mod and mod != orig and corresp:
                     corresp_to_mod[corresp] = mod
             return apply_modernization_enriched(self.root, corresp_to_mod)
