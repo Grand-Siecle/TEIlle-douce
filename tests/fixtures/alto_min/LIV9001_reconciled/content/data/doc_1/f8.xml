@@ -1,0 +1,56 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<alto xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns="http://www.loc.gov/standards/alto/ns-v4#" xsi:schemaLocation="http://www.loc.gov/standards/alto/ns-v4# http://www.loc.gov/standards/alto/v4/alto-4-2.xsd">
+  <Description>
+    <MeasurementUnit>pixel</MeasurementUnit>
+    <sourceImageInformation>
+      <fileName>f8.jpg</fileName>
+    </sourceImageInformation>
+  </Description>
+  <Tags>
+    <OtherTag ID="BT7" LABEL="CustomZone" DESCRIPTION="block type CustomZone"/><OtherTag ID="BT8" LABEL="DamageZone" DESCRIPTION="block type DamageZone"/><OtherTag ID="BT9" LABEL="DigitizationArtefactZone" DESCRIPTION="block type DigitizationArtefactZone"/><OtherTag ID="BT10" LABEL="DropCapitalZone" DESCRIPTION="block type DropCapitalZone"/><OtherTag ID="BT11" LABEL="GraphicZone" DESCRIPTION="block type GraphicZone"/><OtherTag ID="BT12" LABEL="MainZone" DESCRIPTION="block type MainZone"/><OtherTag ID="BT13" LABEL="MarginTextZone" DESCRIPTION="block type MarginTextZone"/><OtherTag ID="BT14" LABEL="MusicZone" DESCRIPTION="block type MusicZone"/><OtherTag ID="BT15" LABEL="NumberingZone" DESCRIPTION="block type NumberingZone"/><OtherTag ID="BT17" LABEL="QuireMarksZone" DESCRIPTION="block type QuireMarksZone"/><OtherTag ID="BT18" LABEL="RunningTitleZone" DESCRIPTION="block type RunningTitleZone"/><OtherTag ID="BT19" LABEL="SealZone" DESCRIPTION="block type SealZone"/><OtherTag ID="BT20" LABEL="StampZone" DESCRIPTION="block type StampZone"/><OtherTag ID="BT21" LABEL="TableZone" DESCRIPTION="block type TableZone"/><OtherTag ID="BT22" LABEL="TitlePageZone" DESCRIPTION="block type TitlePageZone"/>
+    <OtherTag ID="LT7" LABEL="CustomLine" DESCRIPTION="line type CustomLine"/><OtherTag ID="LT8" LABEL="DefaultLine" DESCRIPTION="line type DefaultLine"/><OtherTag ID="LT9" LABEL="DropCapitalLine" DESCRIPTION="line type DropCapitalLine"/><OtherTag ID="LT10" LABEL="HeadingLine" DESCRIPTION="line type HeadingLine"/><OtherTag ID="LT11" LABEL="InterlinearLine" DESCRIPTION="line type InterlinearLine"/><OtherTag ID="LT12" LABEL="MusicLine" DESCRIPTION="line type MusicLine"/><OtherTag ID="LT982" LABEL="default" DESCRIPTION="line type default"/>
+  </Tags>
+  <Layout>
+    <Page WIDTH="1316" HEIGHT="2372" PHYSICAL_IMG_NR="7" ID="eSc_dummypage_">
+      <PrintSpace HPOS="0" VPOS="0" WIDTH="1316" HEIGHT="2372">
+        <TextBlock HPOS="341" VPOS="174" WIDTH="100" HEIGHT="70" ID="eSc_textblock_ab1c0af7" TAGREFS="BT15">
+          <Shape><Polygon POINTS="341 174 341 244 441 244 441 174"/></Shape>
+          <TextLine ID="eSc_line_278e5925" TAGREFS="LT8" BASELINE="351 224 437 224" HPOS="350" VPOS="175" WIDTH="85" HEIGHT="81">
+            <Shape><Polygon POINTS="429 175 409 175 389 175 370 175"/></Shape>
+            <String CONTENT="552" HPOS="350" VPOS="175" WIDTH="85" HEIGHT="81"/>
+          </TextLine>
+        </TextBlock>
+        <TextBlock HPOS="316.3935852050781" VPOS="234.68753051757812" WIDTH="979.9997253417969" HEIGHT="1766.2485046386719" ID="block_1" TAGREFS="BT12">
+          <Shape><Polygon POINTS="316.394 234.688 1296.39 234.688 1296.39 2000.94 316.394 2000.94"/></Shape>
+          <TextLine ID="line_1" TAGREFS="LT8" BASELINE="340 281 1265 282" HPOS="338" VPOS="235" WIDTH="926" HEIGHT="65">
+            <Shape><Polygon POINTS="1189 235 1169 235 1149 235 1129 235"/></Shape>
+            <String CONTENT="à dire, qui est tellement en acte, qu’il n'a" HPOS="338" VPOS="235" WIDTH="926" HEIGHT="65"/>
+          </TextLine>
+          <TextLine ID="line_2" TAGREFS="LT8" BASELINE="336 337 1268 336" HPOS="334" VPOS="299" WIDTH="934" HEIGHT="62">
+            <Shape><Polygon POINTS="1257 309 1244 309 1231 309 1218 309"/></Shape>
+            <String CONTENT="rien en soy qui soit en puissance seulement" HPOS="334" VPOS="299" WIDTH="934" HEIGHT="62"/>
+          </TextLine>
+          <TextLine ID="line_6" TAGREFS="LT8" BASELINE="340 562 1268 560" HPOS="338" VPOS="516" WIDTH="930" HEIGHT="70">
+            <Shape><Polygon POINTS="340 562 340 586 395 574 545 574"/></Shape>
+            <String CONTENT="puisse estre &amp; luy arriuer à l’aduenir, cõ¬" HPOS="338" VPOS="516" WIDTH="930" HEIGHT="70" WC="0.988475"/>
+          </TextLine>
+          <TextLine ID="line_9" TAGREFS="LT10" BASELINE="685 790 957 790" HPOS="685" VPOS="739" WIDTH="272" HEIGHT="71">
+            <Shape><Polygon POINTS="685 790 685 809 803 802 822 805"/></Shape>
+            <String CONTENT="IDEE." HPOS="685" VPOS="739" WIDTH="272" HEIGHT="71" WC="0.9989"/>
+          </TextLine>
+          <TextLine ID="line_11" TAGREFS="LT8" BASELINE="340 959 1268 952" HPOS="338" VPOS="910" WIDTH="930" HEIGHT="71">
+            <Shape><Polygon POINTS="340 959 340 972 506 972 510 973"/></Shape>
+            <String CONTENT="modele, le tableau, l’original &amp; l’exem¬" HPOS="338" VPOS="910" WIDTH="930" HEIGHT="71" WC="0.9909"/>
+          </TextLine>
+          </TextBlock>
+        <TextBlock HPOS="722.1002197265625" VPOS="181.5970001220703" WIDTH="188.53167724609375" HEIGHT="57.410308837890625" ID="block_0" TAGREFS="BT18">
+          <Shape><Polygon POINTS="722.1 181.597 910.632 181.597 910.632 239.007 722.1 239.007"/></Shape>
+          <TextLine ID="line_0" TAGREFS="LT8" BASELINE="726 222 905 221" HPOS="725" VPOS="158" WIDTH="180" HEIGHT="84">
+            <Shape><Polygon POINTS="726 222 727 242 751 234 758 241"/></Shape>
+            <String CONTENT="Termes" HPOS="725" VPOS="158" WIDTH="180" HEIGHT="84" WC="0.9986"/>
+          </TextLine>
+        </TextBlock>
+      </PrintSpace>
+    </Page>
+  </Layout>
+</alto>

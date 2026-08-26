@@ -1,11 +1,15 @@
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
-addopts = "-q"
+addopts = "-q -m 'not e2e_full'"
+markers = [
+    "e2e: bout en bout, mode court (TEI de base, sans reseau, ~1 s)",
+    "e2e_full: bout en bout, mode complet (annotations linguistiques ; exige PyHellen et VieuxParler)",
+]
 
 [tool.coverage.run]
 source = ["src", "main", "config", "scripts"]
-omit = ["tests/*", "venv/*"]
+omit = ["tests/*", "venv/*", "scripts/build_test_fixture.py"]
 # sourcedoc/builder.py execute du code dans des workers multiprocessing :
 # sans ces deux options, coverage ne voit pas les lignes exercees dans les forks.
 # Consequence : lancer `coverage combine` avant `coverage report`.
@@ -17,5 +21,5 @@ sigterm = true
 show_missing = false
 skip_covered = false
 # Cliquet : relever ce seuil a chaque lot de tests livre.
-# Baseline mesuree le 2026-08-26 : 28 %. Lot 1 (teiheader, sourcedoc, metadata) : 44 %. Lot 2 (body, reconstructor) : 54 %.
-fail_under = 54
+# Baseline mesuree le 2026-08-26 : 28 %. Lot 1 (teiheader, sourcedoc, metadata) : 44 %. Lot 2 (body, reconstructor) : 54 %. Fixture E2E (main.py mesure) : 61 %.
+fail_under = 61
