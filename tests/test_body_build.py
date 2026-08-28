@@ -28,7 +28,7 @@ def qlocal(el):
     return etree.QName(el).localname
 
 
-def make_line(id, zone_type, zone_id, page_id, text="texte", line_type="DefaultLine", n=None):
+def make_line(id, zone_type, zone_id, page_id, text="texte", line_type="DefaultLine", n=None, page_n=None):
     """Construit un Line a la main, comme le ferait Text._extract_lines."""
     return Line(
         id=id,
@@ -38,6 +38,7 @@ def make_line(id, zone_type, zone_id, page_id, text="texte", line_type="DefaultL
         zone_type=zone_type,
         zone_id=zone_id,
         page_id=page_id,
+        page_n=page_n,
     )
 
 
@@ -392,16 +393,9 @@ def test_build_body_unknown_line_type_in_mainzone_is_not_dropped():
     assert [lb.tail for lb in ab.findall("lb")] == ["ligne normale", "ligne inconnue"]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "audit 1.6 -- body/builder.py:373-381, tout le lien body->sourceDoc "
-        "passe par @corresp ; @facs (attribut canonique cote viewers TEI/IIIF) "
-        "est absent, et <pb> n'a pas de @n alors que la surface le porte."
-    ),
-)
 def test_build_body_pb_and_lb_carry_n_and_facs_after_fix():
-    lines = [make_line("l1", "MainZone", "zone_a", "p1", text="texte", n="7")]
+    """Audit 1.6 : @facs (canonique cote viewers) sur pb/lb, @n de la surface sur pb."""
+    lines = [make_line("l1", "MainZone", "zone_a", "p1", text="texte", page_n="7")]
     root = etree.Element("TEI")
 
     build_body(root, lines, detect_lang=False)
@@ -410,6 +404,20 @@ def test_build_body_pb_and_lb_carry_n_and_facs_after_fix():
     pb = div.find("pb")
     lb = div.find(".//lb")
 
-    assert pb.get("n") is not None, "attendu : <pb n=...> reprenant le @n de la surface"
-    assert pb.get("facs") is not None, "attendu : <pb facs='#p1'> en plus de @corresp"
-    assert lb.get("facs") is not None, "attendu : <lb facs='#l1'> en plus de @corresp"
+    assert pb.get("n") == "7", "attendu : <pb n=...> reprenant le @n de la surface"
+    assert pb.get("facs") == "#p1", "attendu : <pb facs='#p1'> en plus de @corresp"
+    assert pb.get("corresp") == "#p1"
+    assert lb.get("facs") == "#l1", "attendu : <lb facs='#l1'> en plus de @corresp"
+    assert lb.get("corresp") == "#l1"
+
+
+def test_build_body_pb_without_page_n_omits_n():
+    """Surface sans @n : <pb> porte @facs/@corresp mais pas de @n invente."""
+    lines = [make_line("l1", "MainZone", "zone_a", "p1", text="texte")]
+    root = etree.Element("TEI")
+
+    build_body(root, lines, detect_lang=False)
+
+    pb = root.find(".//div/pb")
+    assert pb.get("facs") == "#p1"
+    assert pb.get("n") is None

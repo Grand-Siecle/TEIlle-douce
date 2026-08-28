@@ -127,6 +127,10 @@ def _insert_lb(parent, span, aligned_token, inserted_lbs):
     lb = etree.SubElement(parent, "lb")
     if span.lb_corresp:
         lb.set("corresp", span.lb_corresp)
+    if span.lb_element is not None:
+        facs = span.lb_element.get("facs")
+        if facs:
+            lb.set("facs", facs)
     inserted_lbs.add(id(span.lb_element))
 
 
@@ -222,4 +226,7 @@ def _create_cross_line_w(parent, at, inserted_lbs):
                 corresp = lb_orig.get("corresp")
                 if corresp:
                     lb.set("corresp", corresp)
+                facs = lb_orig.get("facs")
+                if facs:
+                    lb.set("facs", facs)
                 inserted_lbs.add(id(lb_orig))

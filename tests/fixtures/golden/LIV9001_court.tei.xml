@@ -438,35 +438,35 @@
   <text>
     <body>
       <div>
-        <pb corresp="#f1"/>
-        <fw corresp="#zone_0001" type="RunningTitleZone" xml:lang="fra"><lb corresp="#zoneLine_0002"/>DE LAMOVR, LIVRE VII.</fw>
-        <fw corresp="#zone_0005" type="NumberingZone" xml:lang="fra"><lb corresp="#zoneLine_0006"/>805</fw>
-        <ab corresp="#zone_0009" type="MainZone" xml:lang="fra"><lb corresp="#zoneLine_0010"/>CHAPTPKEPREMIER.<lb corresp="#zoneLine_0013"/>Des raisons qui nous obligent à sanctifier<lb corresp="#zoneLine_0016"/>que nostre soin principal doit estre de le pu¬<lb corresp="#zoneLine_0019"/>IVn Philosophe a donné sa male¬4imus<lb corresp="#zoneLine_0022"/><lb corresp="#zoneLine_0025"/>y</ab>
-        <note corresp="#zone_0028" type="MarginTextZone" xml:lang="lat"><lb corresp="#zoneLine_0029"/>diuinis<lb corresp="#zoneLine_0032"/>nom, c.4¬</note>
-        <ab corresp="#zone_0035" type="MainZone" xml:lang="fra"><lb corresp="#zoneLine_0036"/>CHAPTPKEPREMIER.<lb corresp="#zoneLine_0039"/>Des raisons qui nous obligent à sanctifier<lb corresp="#zoneLine_0042"/>que nostre soin principal doit estre de le pu¬<lb corresp="#zoneLine_0045"/>IVn Philosophe a donné sa male¬4imus<lb corresp="#zoneLine_0048"/><lb corresp="#zoneLine_0051"/>y</ab>
-        <fw corresp="#zone_0054" type="QuireMarksZone" xml:lang="fra"><lb corresp="#zoneLine_0055"/>1I111 iij</fw>
-        <pb corresp="#f2"/>
-        <ab corresp="#zone_0058" type="GraphicZone" xml:lang="fra"><lb corresp="#zoneLine_0059"/>3r Ruret Imueu et. ficit<lb corresp="#zoneLine_0062"/></ab>
-        <pb corresp="#f3"/>
-        <ab corresp="#zone_0065" type="TitlePageZone" xml:lang="fra"><lb corresp="#zoneLine_0066"/>Contraste insuffisart<lb corresp="#zoneLine_0069"/>NE Z43-120-14</ab>
-        <pb corresp="#f4"/>
-        <ab corresp="#zone_0072" type="MainZone" xml:lang="lat"><lb corresp="#zoneLine_0073"/><foreign xml:lang="fra">Censure de la</foreign><lb corresp="#zoneLine_0076"/>Fœtibus infamis semper damnosáque munde<lb corresp="#zoneLine_0079"/>Humani, quibus &amp; Diuúm contemnere cul¬<lb corresp="#zoneLine_0082"/>Greg. Mos fuit, &amp;* mactare suos sine vindice</ab>
-        <note corresp="#zone_0085" type="MarginTextZone" xml:lang="fra" target="#zoneLine_0082"><lb corresp="#zoneLine_0086"/>Tuton<lb corresp="#zoneLine_0089"/>.c<lb corresp="#zoneLine_0092"/>**e</note>
-        <pb corresp="#f5"/>
-        <ab corresp="#zone_0095" type="MainZone" xml:lang="fra"><lb corresp="#zoneLine_0096"/>Censure de la Doctrine Curieuse.<lb corresp="#zoneLine_0099"/>Quare age, dum Sorbona silet, dum Curia</ab>
-        <pb corresp="#f6"/>
-        <ab corresp="#zone_0102" type="CustomZone"><lb corresp="#zoneLine_0103"/></ab>
-        <fw corresp="#zone_0106" type="RunningTitleZone" xml:lang="fra"><lb corresp="#zoneLine_0107"/>DE LA NATVRE</fw>
-        <ab corresp="#zone_0110" type="MainZone" xml:lang="fra"><lb corresp="#zoneLine_0111"/>les conuersations particulieres; &amp; souffrira<lb corresp="#zoneLine_0114"/>miciilres adeeqee Patieiee ranenatioidetoee<lb corresp="#zoneLine_0117"/>nous lier d’amitié auecque les personnes ay¬<lb corresp="#zoneLine_0120"/>qu’elles n’en puisfent estre separées; &amp; com¬</ab>
-        <fw corresp="#zone_0123" type="QuireMarksZone" xml:lang="fra"><lb corresp="#zoneLine_0124"/>fort</fw>
-        <pb corresp="#f7"/>
-        <fw corresp="#zone_0127" type="NumberingZone" xml:lang="fra"><lb corresp="#zoneLine_0128"/>258</fw>
-        <fw corresp="#zone_0131" type="RunningTitleZone" xml:lang="fra"><lb corresp="#zoneLine_0132"/>DEL'ORIGINE</fw>
-        <ab corresp="#zone_0135" type="MainZone" xml:lang="fra"><lb corresp="#zoneLine_0136"/>uarice, nous serrerons auec soin, ce que nors<lb corresp="#zoneLine_0139"/>foulons à preient. os PImiees iiemiesie vou¬<lb corresp="#zoneLine_0142"/>dront enrichir de choses qui sont mainte-<lb corresp="#zoneLine_0145"/>ront des offices pour de vieux souliers: &amp; il</ab>
-        <pb corresp="#f8"/>
-        <fw corresp="#zone_0148" type="NumberingZone" xml:lang="fra"><lb corresp="#zoneLine_0149"/>552</fw>
-        <ab corresp="#zone_0152" type="MainZone" xml:lang="fra"><lb corresp="#zoneLine_0153"/>à dire, qui est tellement en acte, qu’il n'a<lb corresp="#zoneLine_0156"/>rien en soy qui soit en puissance seulement<lb corresp="#zoneLine_0159"/>puisse estre &amp; luy arriuer à l’aduenir, cõ¬<hi rend="HeadingLine"><lb corresp="#zoneLine_0162"/>IDEE.</hi><lb corresp="#zoneLine_0165"/>modele, le tableau, l’original &amp; l’exem¬</ab>
-        <fw corresp="#zone_0168" type="RunningTitleZone" xml:lang="fra"><lb corresp="#zoneLine_0169"/>Termes</fw>
+        <pb corresp="#f1" facs="#f1" n="1"/>
+        <fw corresp="#zone_0001" type="RunningTitleZone" xml:lang="fra"><lb corresp="#zoneLine_0002" facs="#zoneLine_0002"/>DE LAMOVR, LIVRE VII.</fw>
+        <fw corresp="#zone_0005" type="NumberingZone" xml:lang="fra"><lb corresp="#zoneLine_0006" facs="#zoneLine_0006"/>805</fw>
+        <ab corresp="#zone_0009" type="MainZone" xml:lang="fra"><lb corresp="#zoneLine_0010" facs="#zoneLine_0010"/>CHAPTPKEPREMIER.<lb corresp="#zoneLine_0013" facs="#zoneLine_0013"/>Des raisons qui nous obligent à sanctifier<lb corresp="#zoneLine_0016" facs="#zoneLine_0016"/>que nostre soin principal doit estre de le pu¬<lb corresp="#zoneLine_0019" facs="#zoneLine_0019"/>IVn Philosophe a donné sa male¬4imus<lb corresp="#zoneLine_0022" facs="#zoneLine_0022"/><lb corresp="#zoneLine_0025" facs="#zoneLine_0025"/>y</ab>
+        <note corresp="#zone_0028" type="MarginTextZone" xml:lang="lat"><lb corresp="#zoneLine_0029" facs="#zoneLine_0029"/>diuinis<lb corresp="#zoneLine_0032" facs="#zoneLine_0032"/>nom, c.4¬</note>
+        <ab corresp="#zone_0035" type="MainZone" xml:lang="fra"><lb corresp="#zoneLine_0036" facs="#zoneLine_0036"/>CHAPTPKEPREMIER.<lb corresp="#zoneLine_0039" facs="#zoneLine_0039"/>Des raisons qui nous obligent à sanctifier<lb corresp="#zoneLine_0042" facs="#zoneLine_0042"/>que nostre soin principal doit estre de le pu¬<lb corresp="#zoneLine_0045" facs="#zoneLine_0045"/>IVn Philosophe a donné sa male¬4imus<lb corresp="#zoneLine_0048" facs="#zoneLine_0048"/><lb corresp="#zoneLine_0051" facs="#zoneLine_0051"/>y</ab>
+        <fw corresp="#zone_0054" type="QuireMarksZone" xml:lang="fra"><lb corresp="#zoneLine_0055" facs="#zoneLine_0055"/>1I111 iij</fw>
+        <pb corresp="#f2" facs="#f2" n="2"/>
+        <ab corresp="#zone_0058" type="GraphicZone" xml:lang="fra"><lb corresp="#zoneLine_0059" facs="#zoneLine_0059"/>3r Ruret Imueu et. ficit<lb corresp="#zoneLine_0062" facs="#zoneLine_0062"/></ab>
+        <pb corresp="#f3" facs="#f3" n="3"/>
+        <ab corresp="#zone_0065" type="TitlePageZone" xml:lang="fra"><lb corresp="#zoneLine_0066" facs="#zoneLine_0066"/>Contraste insuffisart<lb corresp="#zoneLine_0069" facs="#zoneLine_0069"/>NE Z43-120-14</ab>
+        <pb corresp="#f4" facs="#f4" n="4"/>
+        <ab corresp="#zone_0072" type="MainZone" xml:lang="lat"><lb corresp="#zoneLine_0073" facs="#zoneLine_0073"/><foreign xml:lang="fra">Censure de la</foreign><lb corresp="#zoneLine_0076" facs="#zoneLine_0076"/>Fœtibus infamis semper damnosáque munde<lb corresp="#zoneLine_0079" facs="#zoneLine_0079"/>Humani, quibus &amp; Diuúm contemnere cul¬<lb corresp="#zoneLine_0082" facs="#zoneLine_0082"/>Greg. Mos fuit, &amp;* mactare suos sine vindice</ab>
+        <note corresp="#zone_0085" type="MarginTextZone" xml:lang="fra" target="#zoneLine_0082"><lb corresp="#zoneLine_0086" facs="#zoneLine_0086"/>Tuton<lb corresp="#zoneLine_0089" facs="#zoneLine_0089"/>.c<lb corresp="#zoneLine_0092" facs="#zoneLine_0092"/>**e</note>
+        <pb corresp="#f5" facs="#f5" n="5"/>
+        <ab corresp="#zone_0095" type="MainZone" xml:lang="fra"><lb corresp="#zoneLine_0096" facs="#zoneLine_0096"/>Censure de la Doctrine Curieuse.<lb corresp="#zoneLine_0099" facs="#zoneLine_0099"/>Quare age, dum Sorbona silet, dum Curia</ab>
+        <pb corresp="#f6" facs="#f6" n="6"/>
+        <ab corresp="#zone_0102" type="CustomZone"><lb corresp="#zoneLine_0103" facs="#zoneLine_0103"/></ab>
+        <fw corresp="#zone_0106" type="RunningTitleZone" xml:lang="fra"><lb corresp="#zoneLine_0107" facs="#zoneLine_0107"/>DE LA NATVRE</fw>
+        <ab corresp="#zone_0110" type="MainZone" xml:lang="fra"><lb corresp="#zoneLine_0111" facs="#zoneLine_0111"/>les conuersations particulieres; &amp; souffrira<lb corresp="#zoneLine_0114" facs="#zoneLine_0114"/>miciilres adeeqee Patieiee ranenatioidetoee<lb corresp="#zoneLine_0117" facs="#zoneLine_0117"/>nous lier d’amitié auecque les personnes ay¬<lb corresp="#zoneLine_0120" facs="#zoneLine_0120"/>qu’elles n’en puisfent estre separées; &amp; com¬</ab>
+        <fw corresp="#zone_0123" type="QuireMarksZone" xml:lang="fra"><lb corresp="#zoneLine_0124" facs="#zoneLine_0124"/>fort</fw>
+        <pb corresp="#f7" facs="#f7" n="7"/>
+        <fw corresp="#zone_0127" type="NumberingZone" xml:lang="fra"><lb corresp="#zoneLine_0128" facs="#zoneLine_0128"/>258</fw>
+        <fw corresp="#zone_0131" type="RunningTitleZone" xml:lang="fra"><lb corresp="#zoneLine_0132" facs="#zoneLine_0132"/>DEL'ORIGINE</fw>
+        <ab corresp="#zone_0135" type="MainZone" xml:lang="fra"><lb corresp="#zoneLine_0136" facs="#zoneLine_0136"/>uarice, nous serrerons auec soin, ce que nors<lb corresp="#zoneLine_0139" facs="#zoneLine_0139"/>foulons à preient. os PImiees iiemiesie vou¬<lb corresp="#zoneLine_0142" facs="#zoneLine_0142"/>dront enrichir de choses qui sont mainte-<lb corresp="#zoneLine_0145" facs="#zoneLine_0145"/>ront des offices pour de vieux souliers: &amp; il</ab>
+        <pb corresp="#f8" facs="#f8" n="8"/>
+        <fw corresp="#zone_0148" type="NumberingZone" xml:lang="fra"><lb corresp="#zoneLine_0149" facs="#zoneLine_0149"/>552</fw>
+        <ab corresp="#zone_0152" type="MainZone" xml:lang="fra"><lb corresp="#zoneLine_0153" facs="#zoneLine_0153"/>à dire, qui est tellement en acte, qu’il n'a<lb corresp="#zoneLine_0156" facs="#zoneLine_0156"/>rien en soy qui soit en puissance seulement<lb corresp="#zoneLine_0159" facs="#zoneLine_0159"/>puisse estre &amp; luy arriuer à l’aduenir, cõ¬<hi rend="HeadingLine"><lb corresp="#zoneLine_0162" facs="#zoneLine_0162"/>IDEE.</hi><lb corresp="#zoneLine_0165" facs="#zoneLine_0165"/>modele, le tableau, l’original &amp; l’exem¬</ab>
+        <fw corresp="#zone_0168" type="RunningTitleZone" xml:lang="fra"><lb corresp="#zoneLine_0169" facs="#zoneLine_0169"/>Termes</fw>
       </div>
     </body>
   </text>

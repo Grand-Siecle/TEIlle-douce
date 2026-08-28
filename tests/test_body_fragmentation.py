@@ -252,6 +252,20 @@ THREE_LINE_XML = (
 )
 
 
+def test_rebuild_keeps_facs_on_recreated_lb():
+    """Audit 1.6 : le rebuild recree les <lb> en recopiant @facs avec @corresp."""
+    xml = ('<ab><lb corresp="l1" facs="#zl1"/>'
+           '<s xml:id="s1"><w>Bonjour</w></s></ab>')
+    container = etree.fromstring(xml)
+    groups = _parse_line_groups(container)
+
+    _rebuild_with_modernization(container, groups, {"l1": "Bonjour reg"})
+
+    lb = next(c for c in container if qlocal(c) == "lb")
+    assert lb.get("corresp") == "l1"
+    assert lb.get("facs") == "#zl1"
+
+
 def test_rebuild_fragment_initial_and_final_two_lines():
     """2 lignes, toutes deux modernisees -> passe par le bloc l.246-268."""
     container = etree.fromstring(TWO_LINE_XML)

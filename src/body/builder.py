@@ -225,11 +225,14 @@ def _rebuild_with_modernization(container, groups, corresp_to_mod):
     count = 0
 
     for i, group in enumerate(groups):
-        # Add <lb/>
+        # Add <lb/>, carrying over the sourceDoc pointers (audit 1.6)
         if group.lb_element is not None:
             lb = etree.SubElement(container, "lb")
             if group.lb_corresp:
                 lb.set("corresp", group.lb_corresp)
+            facs = group.lb_element.get("facs")
+            if facs:
+                lb.set("facs", facs)
 
         # Check if this line is modernized
         is_modernized = group.lb_corresp and group.lb_corresp in corresp_to_mod
@@ -329,6 +332,15 @@ def _append_choice(parent, original, modernized):
     return choice
 
 
+def _make_pb(line):
+    """<pb> pointing at its surface via @corresp and @facs, with the
+    surface's number as @n when the sourceDoc carries one (audit 1.6)."""
+    atts = {"corresp": f"#{line.page_id}", "facs": f"#{line.page_id}"}
+    if line.page_n:
+        atts["n"] = line.page_n
+    return etree.Element("pb", atts)
+
+
 def build_body(root, data, detect_lang=True):
     """
     Build the TEI <body> element from extracted line data.
@@ -372,20 +384,19 @@ def build_body(root, data, detect_lang=True):
         # Prepare zone attributes (without language for now)
         zone_atts = {"corresp": f"#{line.zone_id}", "type": line.zone_type}
 
-        # Create <lb/> with reference to line's xml:id
-        lb = etree.Element("lb", corresp=f"#{line.id}")
+        # Create <lb/> with reference to line's xml:id: @corresp plus
+        # @facs, the canonical attribute for TEI/IIIF viewers (audit 1.6)
+        lb = etree.Element("lb", corresp=f"#{line.id}", facs=f"#{line.id}")
         lb.tail = f"{line.text}"
 
         # Add page break when the page changes (not per zone)
         if line.page_id != last_page_id:
-            pb = etree.Element("pb", corresp=f"#{line.page_id}")
-            div.append(pb)
+            div.append(_make_pb(line))
             last_page_id = line.page_id
 
         # Ensure div has at least one element
         if len(div) == 0:
-            pb = etree.Element("pb", corresp=f"#{line.page_id}")
-            div.append(pb)
+            div.append(_make_pb(line))
 
         last_element = div[-1]
 
