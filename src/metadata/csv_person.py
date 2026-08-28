@@ -67,7 +67,10 @@ class PersonDatabase:
             return False
 
         try:
-            df = pd.read_csv(csv_path, sep=CSV_DELIMITER)
+            # dtype=str: without it pandas infers int64 on all-numeric
+            # identifier columns and "0000000123456789" (a zero-padded
+            # ISNI) silently becomes 123456789 (audit 5.3).
+            df = pd.read_csv(csv_path, sep=CSV_DELIMITER, dtype=str)
             self._build_index(df)
             return True
         except Exception as e:
@@ -108,9 +111,6 @@ class PersonDatabase:
             s = str(val).strip()
             if s == "" or s.lower() == "nan":
                 return None
-            # Clean numeric strings that may have .0 suffix (e.g., ISNI)
-            if s.endswith(".0") and s[:-2].isdigit():
-                s = s[:-2]
             return s
 
         def safe_roles(key):

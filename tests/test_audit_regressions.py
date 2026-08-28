@@ -87,7 +87,6 @@ def test_empty_person_database_is_not_confused_with_a_missing_one(tmp_path):
 # 5.3 -- ISNI : zeros de tete manges par l'inference de type de pandas
 # =============================================================================
 
-@pytest.mark.xfail(strict=True, reason="audit 5.3 -- pd.read_csv sans dtype=str infere int64 sur la colonne ISNI")
 def test_isni_leading_zeros_are_preserved(tmp_path):
     """
     Quand la colonne ISNI est entierement numerique, pandas l'infere en int64 et
