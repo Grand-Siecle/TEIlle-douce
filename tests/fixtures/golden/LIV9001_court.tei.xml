@@ -103,7 +103,7 @@
     </fileDesc>
     <profileDesc>
       <langUsage>
-        <language ident="fra" usage="17">French</language>
+        <language ident="fra" usage="19">French</language>
         <language ident="lat" usage="2">Latin</language>
       </langUsage>
       <keywords>
@@ -438,13 +438,16 @@
         <ab corresp="#zone_0035" type="MainZone" xml:lang="fra"><lb corresp="#zoneLine_0036"/>CHAPTPKEPREMIER.<lb corresp="#zoneLine_0039"/>Des raisons qui nous obligent à sanctifier<lb corresp="#zoneLine_0042"/>que nostre soin principal doit estre de le pu¬<lb corresp="#zoneLine_0045"/>IVn Philosophe a donné sa male¬4imus<lb corresp="#zoneLine_0048"/><lb corresp="#zoneLine_0051"/>y</ab>
         <fw corresp="#zone_0054" type="QuireMarksZone" xml:lang="fra"><lb corresp="#zoneLine_0055"/>1I111 iij</fw>
         <pb corresp="#f2"/>
+        <ab corresp="#zone_0058" type="GraphicZone" xml:lang="fra"><lb corresp="#zoneLine_0059"/>3r Ruret Imueu et. ficit<lb corresp="#zoneLine_0062"/></ab>
         <pb corresp="#f3"/>
+        <ab corresp="#zone_0065" type="TitlePageZone" xml:lang="fra"><lb corresp="#zoneLine_0066"/>Contraste insuffisart<lb corresp="#zoneLine_0069"/>NE Z43-120-14</ab>
         <pb corresp="#f4"/>
         <ab corresp="#zone_0072" type="MainZone" xml:lang="lat"><lb corresp="#zoneLine_0073"/><foreign xml:lang="fra">Censure de la</foreign><lb corresp="#zoneLine_0076"/>Fœtibus infamis semper damnosáque munde<lb corresp="#zoneLine_0079"/>Humani, quibus &amp; Diuúm contemnere cul¬<lb corresp="#zoneLine_0082"/>Greg. Mos fuit, &amp;* mactare suos sine vindice</ab>
         <note corresp="#zone_0085" type="MarginTextZone" xml:lang="fra" target="#zoneLine_0082"><lb corresp="#zoneLine_0086"/>Tuton<lb corresp="#zoneLine_0089"/>.c<lb corresp="#zoneLine_0092"/>**e</note>
         <pb corresp="#f5"/>
         <ab corresp="#zone_0095" type="MainZone" xml:lang="fra"><lb corresp="#zoneLine_0096"/>Censure de la Doctrine Curieuse.<lb corresp="#zoneLine_0099"/>Quare age, dum Sorbona silet, dum Curia</ab>
         <pb corresp="#f6"/>
+        <ab corresp="#zone_0102" type="CustomZone"><lb corresp="#zoneLine_0103"/></ab>
         <fw corresp="#zone_0106" type="RunningTitleZone" xml:lang="fra"><lb corresp="#zoneLine_0107"/>DE LA NATVRE</fw>
         <ab corresp="#zone_0110" type="MainZone" xml:lang="fra"><lb corresp="#zoneLine_0111"/>les conuersations particulieres; &amp; souffrira<lb corresp="#zoneLine_0114"/>miciilres adeeqee Patieiee ranenatioidetoee<lb corresp="#zoneLine_0117"/>nous lier d’amitié auecque les personnes ay¬<lb corresp="#zoneLine_0120"/>qu’elles n’en puisfent estre separées; &amp; com¬</ab>
         <fw corresp="#zone_0123" type="QuireMarksZone" xml:lang="fra"><lb corresp="#zoneLine_0124"/>fort</fw>

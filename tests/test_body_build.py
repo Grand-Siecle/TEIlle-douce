@@ -329,16 +329,8 @@ def test_apply_language_detection_skips_xml_lang_when_detector_returns_none():
 # =============================================================================
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "audit 1.1 -- body/builder.py:393-446, chaine if/elif sans else : "
-        "les lignes TitlePageZone/GraphicZone/StampZone/TableZone sont "
-        "silencieusement absentes du body. Attendu apres correctif : fallback "
-        "<ab type=...> immediat."
-    ),
-)
 def test_build_body_titlepagezone_gets_fallback_ab_after_fix():
+    """Audit 1.1 : les zones sans branche dediee tombent dans un <ab> de repli."""
     lines = [make_line("l_title", "TitlePageZone", "zone_title", "p1", text="LE TITRE DU LIVRE")]
     root = etree.Element("TEI")
 
@@ -347,6 +339,53 @@ def test_build_body_titlepagezone_gets_fallback_ab_after_fix():
     div = root.find(".//div")
     fallback = [el for el in div if qlocal(el) == "ab" and el.get("type") == "TitlePageZone"]
     assert len(fallback) == 1, "attendu : <ab type='TitlePageZone'> en repli ; actuellement la ligne est perdue"
+    assert fallback[0].find("lb").tail == "LE TITRE DU LIVRE"
+
+
+def test_build_body_fallback_ab_groups_by_zone_without_absorbing_main_text():
+    """
+    Audit 1.1, non-regression du repli : deux lignes consecutives d'une meme
+    zone non geree partagent un seul <ab>, deux zones distinctes donnent deux
+    <ab>, et une ligne MainZone qui suit un <ab> de repli ouvre son propre
+    <ab> au lieu d'etre absorbee dedans (et reciproquement).
+    """
+    lines = [
+        make_line("l_main1", "MainZone", "zone_main", "p1", text="corps"),
+        make_line("l_stamp1", "StampZone", "zone_stamp", "p1", text="cachet ligne 1"),
+        make_line("l_stamp2", "StampZone", "zone_stamp", "p1", text="cachet ligne 2"),
+        make_line("l_custom", "CustomZone", "zone_custom", "p1", text="marginalia"),
+        make_line("l_main2", "MainZone", "zone_main2", "p1", text="suite du corps"),
+    ]
+    root = etree.Element("TEI")
+
+    build_body(root, lines, detect_lang=False)
+
+    div = root.find(".//div")
+    abs_ = [el for el in div if qlocal(el) == "ab"]
+    types = [el.get("type") for el in abs_]
+    assert types == ["MainZone", "StampZone", "CustomZone", "MainZone"], types
+    # les deux lignes StampZone sont regroupees dans le meme <ab>
+    stamp = abs_[1]
+    assert [lb.tail for lb in stamp.findall("lb")] == ["cachet ligne 1", "cachet ligne 2"]
+    # le texte Main n'a pas fui dans les <ab> de repli
+    assert [lb.tail for lb in abs_[3].findall("lb")] == ["suite du corps"]
+
+
+def test_build_body_unknown_line_type_in_mainzone_is_not_dropped():
+    """
+    Audit 1.1 (meme famille) : dans la branche Main, un type de ligne inconnu
+    (ni DropCapital/Heading ni Default*) ne doit pas perdre le texte.
+    """
+    lines = [
+        make_line("l1", "MainZone", "zone_a", "p1", text="ligne normale"),
+        make_line("l2", "MainZone", "zone_a", "p1", text="ligne inconnue", line_type="InterlinearLine"),
+    ]
+    root = etree.Element("TEI")
+
+    build_body(root, lines, detect_lang=False)
+
+    ab = root.find(".//div/ab")
+    assert [lb.tail for lb in ab.findall("lb")] == ["ligne normale", "ligne inconnue"]
 
 
 @pytest.mark.xfail(

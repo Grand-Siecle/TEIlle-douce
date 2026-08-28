@@ -414,8 +414,9 @@ def build_body(root, data, detect_lang=True):
                     containers[-1][1].append(line.text)
 
         elif line.zone_type and line.zone_type.startswith("Main"):
-            # Main text -> <ab>
-            if last_element.tag != "ab":
+            # Main text -> <ab>. The type check keeps Main text out of the
+            # fallback <ab> a preceding unhandled zone may have opened.
+            if last_element.tag != "ab" or not (last_element.get("type") or "").startswith("Main"):
                 ab = etree.Element("ab", zone_atts)
                 last_element.addnext(ab)
                 last_element = div[-1]
@@ -441,9 +442,31 @@ def build_body(root, data, detect_lang=True):
                 elif ab_children[-1].tag == "hi":
                     ab_children[-1].append(lb)
 
-            # Regular lines
-            elif line.line_type and line.line_type.startswith("Default"):
+            # Regular lines — and any other line type: an unknown label
+            # must not silently drop the line's text (audit 1.1).
+            else:
                 last_element.append(lb)
+
+        else:
+            # Fallback for zone types without a dedicated branch
+            # (TitlePageZone, GraphicZone, StampZone, TableZone,
+            # CustomZone, ...): a plain <ab type="..."> per zone, so no
+            # text is ever silently lost (audit 1.1). Consecutive lines
+            # of the same zone share one <ab>.
+            if last_element.tag == "ab" and last_element.get("corresp") == zone_atts["corresp"]:
+                last_element.append(lb)
+                if detector and containers and containers[-1][0] == last_element:
+                    containers[-1][1].append(line.text)
+            else:
+                logger.debug(
+                    "Zone type %r has no dedicated body element; falling back to <ab>",
+                    line.zone_type,
+                )
+                ab = etree.Element("ab", {k: v for k, v in zone_atts.items() if v})
+                last_element.addnext(ab)
+                ab.append(lb)
+                if detector:
+                    containers.append((ab, [line.text]))
 
     # Apply language detection to containers (two-pass)
     if detector:
