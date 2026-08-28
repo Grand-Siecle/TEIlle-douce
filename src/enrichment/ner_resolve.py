@@ -236,16 +236,25 @@ _CSV_COLUMNS = {
 }
 
 
-def write_entity_csvs(entities, entity_types_config, output_dir):
+def write_entity_csvs(entities, entity_types_config, output_dir, document_name):
     """
-    Write entity CSVs, one per type.
+    Write entity CSVs, one per type, inside a per-document subfolder.
+
+    The subfolder is mandatory: these files are opened in mode "w", and
+    resolve_entities() runs once per document against the same shared
+    output_dir. Writing them all side by side would make each document
+    truncate the previous one's CSVs, destroying every entity but the last
+    document's -- see docs/rapport_audit.md #2.4. The downstream entity
+    reconciliation work needs the entities of ALL documents.
 
     Args:
         entities: List of ResolvedEntity.
         entity_types_config: NER_ENTITY_TYPES from config.
-        output_dir: Path to output directory.
+        output_dir: Path to the root entities directory.
+        document_name: Document folder name; used as the subfolder name, so
+            that re-running a single document rewrites only its own files.
     """
-    output_dir = Path(output_dir)
+    output_dir = Path(output_dir) / document_name
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Group by type
@@ -558,6 +567,7 @@ def resolve_entities(
     entity_types_config,
     person_db,
     output_dir,
+    document_name,
 ):
     """
     Phase 9 orchestrator: group, link, CSV, header, @ref.
@@ -567,7 +577,9 @@ def resolve_entities(
         aligned_entities: List of AlignedEntity from Phase 8.
         entity_types_config: NER_ENTITY_TYPES from config.
         person_db: PersonDatabase instance or None.
-        output_dir: Path for entity CSV files.
+        output_dir: Root directory for entity CSV files.
+        document_name: Document folder name; entity CSVs go into a
+            subfolder of that name (see write_entity_csvs).
 
     Returns:
         list[ResolvedEntity]: All resolved entities.
@@ -591,7 +603,7 @@ def resolve_entities(
     link_local(entities, person_db)
 
     # Step 3: Write CSV files
-    write_entity_csvs(entities, entity_types_config, output_dir)
+    write_entity_csvs(entities, entity_types_config, output_dir, document_name)
 
     # Step 4: Inject editorial declaration
     inject_editorial_declaration(root)

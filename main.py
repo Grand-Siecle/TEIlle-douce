@@ -398,7 +398,7 @@ def main():
                     # Phase 9: Resolve + CSV + header + @ref
                     resolved = resolve_entities(
                         tree.root, aligned, NER_ENTITY_TYPES,
-                        person_db, NER_OUTPUT_DIR,
+                        person_db, NER_OUTPUT_DIR, doc_name,
                     )
 
                     if resolved:

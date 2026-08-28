@@ -269,10 +269,26 @@ def merge_model_results(camembert_aligned, gliner_aligned):
     """
     Merge CamemBERT and GLiNER results for the same French container.
 
+    Two entities are considered the same mention when their <w> sets have a
+    Jaccard ratio strictly above 0.5 -- not when the sets are identical.
+
     Rules:
-    - Same <w> set + same type → merge, boost confidence, model="both"
-    - Same <w> set + different types → keep both
-    - Partial overlap → keep the one with better confidence
+    - Overlapping + same type → merge, boost confidence, model="both"
+    - Overlapping + different types → keep both, on purpose (see below)
+    - Below the ratio → both are kept too
+
+    In the last two cases the arbitration is deliberately left to the two steps
+    that follow in align_and_inject(): filter_aligned_by_pos() then
+    resolve_overlaps(). That order matters. Several POS rules are
+    type-specific -- a "person" needs a proper noun, for instance -- so the
+    more confident of two competing annotations can be rejected while the other
+    survives. Keeping both here is what lets the surviving one through:
+    dropping the loser early would lose the mention entirely.
+
+    resolve_overlaps() then keeps at most one annotation per <w>, by
+    confidence, regardless of type. A span can therefore never carry two types
+    at once in the output; doing so would require standoff annotation, since
+    two XML elements cannot overlap on the same words (audit #1.9).
 
     Args:
         camembert_aligned: AlignedEntities from CamemBERT on <orig>.
@@ -332,7 +348,20 @@ def merge_model_results(camembert_aligned, gliner_aligned):
                     )
                 )
             elif overlap_ratio > 0.5 and cam_ent.entity_type != gli_ent.entity_type:
-                # Same words, different types → keep both
+                # Same words, different types → keep both, deliberately.
+                #
+                # Only one of them can reach the output: resolve_overlaps()
+                # keeps at most one annotation per <w>. But filter_aligned_by_pos()
+                # runs BEFORE it, and several of its rules are type-specific
+                # (a "person" must carry a proper noun, etc.). The more
+                # confident annotation can therefore be rejected while the
+                # other one passes. Keeping both here is what lets that other
+                # one survive -- e.g. "Apollon" tagged NOMcom: the "person"
+                # reading is rejected by the POS rules, and only because the
+                # "artwork" reading was kept alongside does the mention survive
+                # at all. Dropping the loser here loses such mentions entirely.
+                #
+                # Verified empirically; do not "simplify" this branch.
                 used_gliner.add(best_match)
                 merged.append(cam_ent)
                 merged.append(
@@ -346,7 +375,12 @@ def merge_model_results(camembert_aligned, gliner_aligned):
                     )
                 )
             else:
-                # Low overlap → keep CamemBERT's version
+                # Low overlap → probably two distinct mentions sharing a word.
+                # CamemBERT's is kept here; the GLiNER one is NOT marked as
+                # used, so it is re-added by the unmatched loop below. Both
+                # therefore reach resolve_overlaps(), which arbitrates by
+                # confidence. (The former comment claimed only CamemBERT's
+                # survived, which was never true.)
                 merged.append(cam_ent)
         else:
             merged.append(cam_ent)

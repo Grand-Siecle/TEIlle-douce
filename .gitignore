@@ -17,3 +17,11 @@ tei_test/
 tei_full/
 OCR_mini/
 tei_mini/
+
+# Tests / couverture
+.coverage
+.coverage.*
+htmlcov/
+.pytest_cache/
+# Les fixtures de test doivent etre versionnees malgre la regle *.csv ci-dessus
+!tests/fixtures/**/*.csv
