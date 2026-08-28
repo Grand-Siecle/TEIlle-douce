@@ -106,11 +106,13 @@
         <language ident="fra" usage="19">French</language>
         <language ident="lat" usage="2">Latin</language>
       </langUsage>
-      <keywords>
-        <term>Peinture</term>
-        <term>Theorie de l'art</term>
-        <term>Papier</term>
-      </keywords>
+      <textClass>
+        <keywords>
+          <term>Peinture</term>
+          <term>Theorie de l'art</term>
+          <term>Papier</term>
+        </keywords>
+      </textClass>
       <particDesc>
         <listPerson>
           <person xml:id="PERS9001" sex="M">

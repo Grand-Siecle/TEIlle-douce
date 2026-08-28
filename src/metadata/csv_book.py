@@ -576,7 +576,11 @@ def override_teiheader_from_csv(root, row, document_name=None):
     if all_sujets:
         prof = root.find(".//teiHeader/profileDesc")
         if prof is not None:
-            keywords = etree.SubElement(prof, "keywords")
+            # P5: <keywords> is only valid inside <textClass> (audit 1.2)
+            text_class = prof.find("textClass")
+            if text_class is None:
+                text_class = etree.SubElement(prof, "textClass")
+            keywords = etree.SubElement(text_class, "keywords")
             for sujet in all_sujets:
                 term = etree.SubElement(keywords, "term")
                 term.text = sujet

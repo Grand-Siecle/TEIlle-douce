@@ -598,10 +598,8 @@ def test_volume_index_numbered_markers():
 # 6/7. Known TEI P5 violations (audit §1.2) - xfail until the correctif lands
 # ---------------------------------------------------------------------------
 
-@pytest.mark.xfail(strict=True, reason="audit 1.2 - non corrige : keywords doit etre dans textClass")
 def test_keywords_must_be_wrapped_in_textclass():
-    """csv_book.py:575-582 currently attaches <keywords> directly under
-    <profileDesc>; TEI P5's profileDesc content model requires <keywords>
+    """Audit 1.2 : TEI P5's profileDesc content model requires <keywords>
     to live inside a <textClass>."""
     root = _build_default_root()
     row = {"Sujet": "Peinture|Sculpture"}
