@@ -160,6 +160,12 @@
       <classDecl>
         </classDecl>
     </encodingDesc>
+    <revisionDesc>
+      <change n="1" type="conversion">Conversion of the ALTO XML source (OCR/HTR output) into TEI P5 with sourceDoc and body by the alto2tei pipeline.</change>
+      <change n="2" type="enrichment">Linguistic enrichment: tokenization, part-of-speech tagging, lemmatization and sentence segmentation (PyHellen).</change>
+      <change n="3" type="modernization">Modernization of early modern French forms, encoded as orig/reg pairs inside choice elements (VieuxParler).</change>
+      <change n="4" type="ner">Named-entity recognition and resolution: persons, places, works, dates and techniques (CamemBERT, GLiNER).</change>
+    </revisionDesc>
   </teiHeader>
   <sourceDoc>
     <surface xml:id="f1" n="1" ulx="0" uly="0" lrx="1749" lry="2481">

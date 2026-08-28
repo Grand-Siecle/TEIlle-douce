@@ -459,8 +459,8 @@ def test_build_header_assembles_default_full_and_taxonomy(tmp_path):
 # 6. <revisionDesc> — audit §1.8, not implemented yet
 # =============================================================================
 
-@pytest.mark.xfail(strict=True, reason="audit 1.8 — non implemente")
 def test_revision_desc_has_one_change_per_pipeline_phase(tmp_path):
+    """Audit 1.8 : un <change> par phase du pipeline, en dernier enfant du header."""
     alto_path = write_alto(tmp_path, "page1.xml", [("BT1", "MainZone")])
     document = "LIV0100_reconciled"
     root = make_root(document)
