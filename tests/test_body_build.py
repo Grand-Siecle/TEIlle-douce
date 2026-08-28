@@ -205,7 +205,7 @@ def test_build_body_emits_one_lb_per_line_with_corresp_to_sourcedoc():
 
 TEI_SOURCE = """<TEI>
   <sourceDoc>
-    <surface xml:id="f1">
+    <surface xml:id="f1" n="3">
       <zone xml:id="zone_main" type="MainZone">
         <zone xml:id="zoneLine_a" type="DefaultLine"><line n="1">premiere ligne</line></zone>
         <zone xml:id="zoneLine_b" type="HeadingLine"><line n="2">titre</line></zone>
@@ -233,6 +233,8 @@ def test_text_extract_lines_walks_zone_zoneline_line():
     assert l_main.zone_type == "MainZone"
     assert l_main.zone_id == "zone_main"
     assert l_main.page_id == "f1"
+    # le @n de la surface remonte au niveau ligne (plumbing de l'audit 1.6)
+    assert l_main.page_n == "3"
 
     assert l_heading.id == "zoneLine_b"
     assert l_heading.line_type == "HeadingLine"
@@ -265,6 +267,8 @@ def test_text_extract_lines_defaults_missing_text_to_empty_string():
 
     assert len(text.data) == 1
     assert text.data[0].text == ""
+    # surface sans @n : page_n reste None
+    assert text.data[0].page_n is None
 
 
 # =============================================================================
