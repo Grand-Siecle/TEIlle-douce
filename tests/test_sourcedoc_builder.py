@@ -46,10 +46,11 @@ GOOD_ALTO_TMPL = """<alto xmlns="http://www.loc.gov/standards/alto/ns-v4#">
   </PrintSpace></Page></Layout>
 </alto>"""
 
-# Missing the closing </OtherTag> tag: lxml's recover=True parser (used by
-# the worker for the ALTO tree itself) silently repairs this, but the
-# strict etree.parse() used inside extract_labels() cannot -- exactly the
-# "two inconsistent parsers" gap described in audit SS2.3.
+# Missing the closing </OtherTag> tag. Historically the worker's
+# recover=True parser silently repaired this while extract_labels()'s
+# strict parse crashed on it (the "two inconsistent parsers" gap of audit
+# SS2.3). Since the fix there is one strict parser: this page is rejected,
+# reported and skipped -- never silently repaired.
 MALFORMED_ALTO = """<alto xmlns="http://www.loc.gov/standards/alto/ns-v4#">
   <Tags><OtherTag ID="BT1" LABEL="MainZone"></Tags>
   <Layout><Page WIDTH="1000" HEIGHT="1500"><PrintSpace>
@@ -231,13 +232,10 @@ def test_build_sourcedoc_orders_surfaces_by_page_despite_imap_unordered(tmp_path
 
 
 # =============================================================================
-# 5-6. audit SS2.3 -- inconsistent parsers / KeyError on unlabeled OtherTag.
-# xfail(strict=True): today these crash; they describe the behavior the
-# SS2.3 fix must produce. They will start failing (XPASS) the day that fix
-# lands -- that is the intended signal to update/remove them.
+# 5-6. audit SS2.3 -- une page malformee est signalee et sautee, jamais
+# reparee en silence ; OtherTag sans LABEL n'interrompt plus l'extraction.
 # =============================================================================
 
-@pytest.mark.xfail(strict=True, reason="audit 2.3 - non corrige : une page ALTO malformee tue tout le run")
 def test_malformed_alto_page_does_not_crash_the_run(tmp_path, monkeypatch):
     monkeypatch.setattr(builder, "MAX_WORKERS", 1)
 
@@ -253,7 +251,6 @@ def test_malformed_alto_page_does_not_crash_the_run(tmp_path, monkeypatch):
     assert [s.get(XML_ID) for s in surfaces] == ["f1"]
 
 
-@pytest.mark.xfail(strict=True, reason="audit 2.3 - non corrige : OtherTag sans LABEL leve KeyError")
 def test_extract_labels_othertag_without_label_no_keyerror(tmp_path):
     alto = write_alto(
         tmp_path,

@@ -25,26 +25,35 @@ from .attributes import Attributes
 from .elements import SurfaceTree
 
 
-# XML parser configured for large ALTO files
-XML_PARSER = etree.XMLParser(huge_tree=True, recover=True)
+# XML parser configured for large ALTO files. Strict on purpose
+# (audit 2.3): recover=True silently repaired malformed pages, losing
+# text with no trace. A page that does not parse is now reported and
+# skipped by the worker instead — one parser, one behavior.
+XML_PARSER = etree.XMLParser(huge_tree=True)
 
 
-def extract_labels(filepath):
+def extract_labels(source):
     """
     Extract SegmOnto labels from an ALTO file.
 
-    Reads the OtherTag elements from an ALTO file and creates a mapping
-    from element IDs to their labels.
+    Reads the OtherTag elements from an ALTO document and creates a
+    mapping from element IDs to their labels. OtherTag entries missing
+    ID or LABEL are skipped instead of raising KeyError (audit 2.3).
 
     Args:
-        filepath: Path to the ALTO XML file.
+        source: Path to the ALTO XML file, or an already-parsed ALTO
+            root element (spares the second parse in the workers,
+            audit 3.4).
 
     Returns:
         dict: Mapping of element IDs to their LABEL values.
     """
-    root = etree.parse(str(filepath)).getroot()
+    if isinstance(source, etree._Element):
+        root = source
+    else:
+        root = etree.parse(str(source), parser=XML_PARSER).getroot()
     elements = [t.attrib for t in root.findall(".//a:OtherTag", namespaces=NS_ALTO)]
-    return {d["ID"]: d["LABEL"] for d in elements}
+    return {d["ID"]: d["LABEL"] for d in elements if "ID" in d and "LABEL" in d}
 
 
 def _build_surface_fragment(args):
@@ -65,7 +74,11 @@ def _build_surface_fragment(args):
             - iiif_mapping_dict (dict): IIIF URL mapping or None
 
     Returns:
-        tuple: (num, xml_bytes) - page number and serialized surface XML
+        tuple: (num, xml_bytes, error) - page number, serialized surface
+        XML (None on failure) and an error message (None on success).
+        Errors travel as plain strings: lxml exceptions are not picklable
+        and used to come back as an opaque MaybeEncodingError that killed
+        the whole pool, losing the already-processed pages (audit 5.5).
     """
     (
         document_name,
@@ -77,12 +90,23 @@ def _build_surface_fragment(args):
         iiif_mapping_dict,
     ) = args
 
-    # Parse ALTO file
+    try:
+        return (*_build_surface_fragment_inner(
+            document_name, filepath, num, segmonto_zones, segmonto_lines,
+            config, iiif_mapping_dict,
+        ), None)
+    except Exception as e:  # audit 2.3: one bad page must not kill the run
+        return num, None, f"{type(e).__name__}: {e}"
+
+
+def _build_surface_fragment_inner(document_name, filepath, num, segmonto_zones,
+                                  segmonto_lines, config, iiif_mapping_dict):
+    # Parse ALTO file (single strict parse, reused for the labels below)
     input_alto_root = etree.parse(str(filepath), parser=XML_PARSER).getroot()
     file_stem = Path(filepath).stem
 
-    # Extract zone/line type mappings
-    tags = extract_labels(filepath)
+    # Extract zone/line type mappings from the already-parsed root (audit 3.4)
+    tags = extract_labels(input_alto_root)
 
     # Create surface tree builder (with or without IIIF mapping)
     if iiif_mapping_dict:
@@ -209,9 +233,15 @@ def build_sourcedoc(
 
     # Process pages in parallel
     with Pool(workers) as pool:
-        for idx, (num, xml_bytes) in enumerate(
+        for idx, (num, xml_bytes, error) in enumerate(
             pool.imap_unordered(_build_surface_fragment, jobs), start=1
         ):
+            if error is not None:
+                # Audit 2.3: report and skip the page, keep the document
+                logger.error(
+                    "%s: page %s skipped, ALTO unusable (%s)",
+                    document_name, num, error,
+                )
             results[num] = xml_bytes
 
             # Update progress bar if provided
