@@ -306,7 +306,10 @@ def test_court_un_document_casse_ne_tue_pas_le_run(tmp_path):
     shutil.copytree(ALTO_MIN, ocr)
     casse = ocr / "LIV9000_reconciled" / "content" / "data" / "doc_1"
     casse.mkdir(parents=True)
-    (casse / "f1.xml").write_text("<alto><Layout><Page broken", encoding="utf-8")
+    # Irrecuperable meme par le mode recovery de libxml2 : la page unique du
+    # document est sautee, donc "toutes les pages inutilisables" -> echec du
+    # document (un XML simplement malforme serait recupere avec warning).
+    (casse / "f1.xml").write_text("\x00\x01pas du xml\x02", encoding="utf-8")
 
     res, sortie = _executer_main(tmp_path, ocr, **MODE_COURT)
 
@@ -326,22 +329,31 @@ def test_court_un_document_casse_ne_tue_pas_le_run(tmp_path):
 
 
 @pytest.mark.e2e
-def test_court_skip_existing_ne_reecrit_pas_la_sortie(tmp_path):
+def test_court_skip_existing_saute_le_converti_et_traite_le_reste(tmp_path):
     """
-    Audit 2.5 : avec --skip-existing, un document dont le TEI existe deja
-    n'est pas retraite. Sentinelle : un fichier de sortie preexistant doit
-    ressortir intact (le pipeline l'aurait ecrase sinon).
+    Audit 2.5 : avec --skip-existing et deux documents dont un deja
+    converti, le converti est saute (sa sentinelle ressort intacte) et
+    l'autre est reellement traite dans le meme run — le vrai chemin de
+    reprise, pas seulement le retour anticipe "rien a faire".
     """
+    ocr = tmp_path / "ocr"
+    shutil.copytree(ALTO_MIN, ocr)
+    # Second document : copie du premier sous un autre nom
+    shutil.copytree(ocr / DOCUMENT, ocr / "LIV9002_reconciled")
+
     sortie = tmp_path / "out"
     sortie.mkdir()
     sentinelle = sortie / f"{DOCUMENT}.tei.xml"
     sentinelle.write_text("<sentinelle/>", encoding="utf-8")
 
-    res, _ = _executer_main(tmp_path, ALTO_MIN, args=("--skip-existing",), **MODE_COURT)
+    res, _ = _executer_main(tmp_path, ocr, args=("--skip-existing",), **MODE_COURT)
 
     assert res.returncode == 0, res.stdout[-2000:] + res.stderr[-2000:]
+    # le document deja converti n'a pas ete retraite
     assert sentinelle.read_text(encoding="utf-8") == "<sentinelle/>"
     assert "skip-existing" in res.stdout
+    # l'autre document, lui, a ete converti dans ce meme run
+    assert (sortie / "LIV9002_reconciled.tei.xml").exists(), res.stdout[-2000:]
 
 
 # =============================================================================

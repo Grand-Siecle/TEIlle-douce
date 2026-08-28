@@ -50,7 +50,7 @@ def test_expand_archives_corrupt_zip_is_skipped_and_reported(tmp_path):
 
     # le ZIP sain est extrait malgre le corrompu
     assert ready == [tmp_path / "DOC0001"]
-    assert len(failed) == 1 and failed[0].startswith("CASSE.zip")
+    assert len(failed) == 1 and failed[0][0] == "CASSE.zip"
     # aucun dossier partiel laisse derriere
     assert not (tmp_path / "CASSE").exists()
     assert not (tmp_path / "CASSE.extracting").exists()
@@ -67,8 +67,9 @@ def test_expand_archives_truncated_zip_leaves_no_partial_dir(tmp_path):
     ready, failed = expand_archives(tmp_path)
 
     assert ready == []
-    assert len(failed) == 1 and failed[0].startswith("TRONQUE.zip")
+    assert len(failed) == 1 and failed[0][0] == "TRONQUE.zip"
     assert not (tmp_path / "TRONQUE").exists()
+    assert not (tmp_path / "TRONQUE.extracting").exists()
 
 
 def test_expand_archives_cleans_leftover_extracting_dir(tmp_path):
@@ -100,6 +101,65 @@ def test_expand_archives_existing_dir_not_reextracted(tmp_path):
     assert ready == [tmp_path / "DOC0001"]
     # le contenu existant n'a pas ete ecrase par l'archive
     assert (tmp_path / "DOC0001" / "content" / "present.xml").exists()
+    # et l'archive n'a PAS ete re-extraite par-dessus (assertion
+    # discriminante : une re-extraction ajouterait f1.xml sans toucher
+    # au fichier sentinelle ci-dessus)
+    assert not (tmp_path / "DOC0001" / "content" / "data" / "doc_1" / "f1.xml").exists()
+
+
+def test_expand_archives_empty_zip_is_not_reported_corrupt(tmp_path):
+    """Une archive structurellement valide mais vide n'est pas une archive
+    corrompue : pas d'echec signale, pas de code retour non nul a la cle."""
+    with ZipFile(tmp_path / "VIDE.zip", "w"):
+        pass
+
+    ready, failed = expand_archives(tmp_path)
+
+    assert failed == []
+    # le dossier extrait existe (vide), mais sans XML il n'est pas un document
+    assert (tmp_path / "VIDE").is_dir()
+    assert not (tmp_path / "VIDE.extracting").exists()
+
+
+def test_expand_archives_zlib_corruption_mid_stream_is_skipped(tmp_path):
+    """La corruption au milieu du flux compresse (repertoire central intact)
+    sort de zipfile en zlib.error, pas en BadZipFile : elle doit etre
+    rattrapee comme les autres."""
+    import zipfile as zf_mod
+    payload = ("lorem ipsum " * 2000).encode()
+    with ZipFile(tmp_path / "ROT.zip", "w", compression=zf_mod.ZIP_DEFLATED) as zf:
+        zf.writestr("content/data/doc_1/f1.xml", payload)
+    donnees = bytearray((tmp_path / "ROT.zip").read_bytes())
+    # ecrase 64 octets au milieu du membre compresse, loin du repertoire central
+    milieu = len(donnees) // 3
+    donnees[milieu:milieu + 64] = b"\x00" * 64
+    (tmp_path / "ROT.zip").write_bytes(bytes(donnees))
+
+    ready, failed = expand_archives(tmp_path)
+
+    assert ready == []
+    assert len(failed) == 1 and failed[0][0] == "ROT.zip"
+    assert not (tmp_path / "ROT").exists()
+    assert not (tmp_path / "ROT.extracting").exists()
+
+
+def test_extract_archive_cleans_tmp_dir_when_extraction_fails(tmp_path, monkeypatch):
+    """Un echec en pleine extraction (disque plein, interruption) ne laisse
+    pas de dossier .extracting orphelin derriere lui."""
+    from zipfile import ZipFile as RealZipFile
+    _zip_valide(tmp_path / "DOC0001.zip")
+
+    def extractall_explose(self, path=None, *a, **k):
+        (Path(path) / "partiel.xml").write_text("<alto/>")
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(RealZipFile, "extractall", extractall_explose)
+
+    ready, failed = expand_archives(tmp_path)
+
+    assert len(failed) == 1 and failed[0][0] == "DOC0001.zip"
+    assert not (tmp_path / "DOC0001").exists()
+    assert not (tmp_path / "DOC0001.extracting").exists()
 
 
 # =============================================================================

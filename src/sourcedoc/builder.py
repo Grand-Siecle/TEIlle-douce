@@ -14,6 +14,7 @@ from pathlib import Path
 from multiprocessing import Pool, cpu_count
 
 from lxml import etree
+from rich.markup import escape as markup_escape
 
 from config import MAX_WORKERS
 
@@ -25,10 +26,9 @@ from .attributes import Attributes
 from .elements import SurfaceTree
 
 
-# XML parser configured for large ALTO files. Strict on purpose
-# (audit 2.3): recover=True silently repaired malformed pages, losing
-# text with no trace. A page that does not parse is now reported and
-# skipped by the worker instead — one parser, one behavior.
+# XML parser configured for large ALTO files. Strict: recovery is a
+# separate, explicit second chance in _parse_alto, always reported
+# (audit 2.3 — no more silent repairs).
 XML_PARSER = etree.XMLParser(huge_tree=True)
 
 
@@ -74,8 +74,9 @@ def _build_surface_fragment(args):
             - iiif_mapping_dict (dict): IIIF URL mapping or None
 
     Returns:
-        tuple: (num, xml_bytes, error) - page number, serialized surface
-        XML (None on failure) and an error message (None on success).
+        tuple: (num, xml_bytes, error, warning) - page number, serialized
+        surface XML (None on failure), an error message (None on success)
+        and a warning (e.g. "recovered malformed XML", None when clean).
         Errors travel as plain strings: lxml exceptions are not picklable
         and used to come back as an opaque MaybeEncodingError that killed
         the whole pool, losing the already-processed pages (audit 5.5).
@@ -91,18 +92,45 @@ def _build_surface_fragment(args):
     ) = args
 
     try:
-        return (*_build_surface_fragment_inner(
+        num_out, xml_bytes, warning = _build_surface_fragment_inner(
             document_name, filepath, num, segmonto_zones, segmonto_lines,
             config, iiif_mapping_dict,
-        ), None)
+        )
+        return num_out, xml_bytes, None, warning
     except Exception as e:  # audit 2.3: one bad page must not kill the run
-        return num, None, f"{type(e).__name__}: {e}"
+        return num, None, f"{type(e).__name__}: {e}", None
+
+
+def _parse_alto(filepath):
+    """
+    Parse an ALTO file: strict first, libxml2 recovery as a second chance.
+
+    Audit 2.3 asked for one parser and no *silent* repairs. Recovery is
+    still valuable for HTR exports with small quirks (unescaped ampersands,
+    stray control characters): losing a whole page is worse than keeping a
+    mostly-correct one — as long as it is reported. Returns (root, warning)
+    where warning is None for a clean parse; raises when even recovery
+    cannot produce a tree.
+    """
+    try:
+        return etree.parse(str(filepath), parser=XML_PARSER).getroot(), None
+    except etree.XMLSyntaxError as strict_error:
+        recovery_parser = etree.XMLParser(huge_tree=True, recover=True)
+        try:
+            root = etree.parse(str(filepath), parser=recovery_parser).getroot()
+        except etree.XMLSyntaxError:
+            root = None
+        if root is None:
+            raise strict_error
+        n_err = len(recovery_parser.error_log)
+        first = recovery_parser.error_log[0] if n_err else strict_error
+        return root, f"malformed XML recovered ({n_err} parse error(s); first: {first})"
 
 
 def _build_surface_fragment_inner(document_name, filepath, num, segmonto_zones,
                                   segmonto_lines, config, iiif_mapping_dict):
-    # Parse ALTO file (single strict parse, reused for the labels below)
-    input_alto_root = etree.parse(str(filepath), parser=XML_PARSER).getroot()
+    # Parse ALTO file (single parse, reused for the labels below)
+    input_alto_root, warning = _parse_alto(filepath)
     file_stem = Path(filepath).stem
 
     # Extract zone/line type mappings from the already-parsed root (audit 3.4)
@@ -166,7 +194,7 @@ def _build_surface_fragment_inner(document_name, filepath, num, segmonto_zones,
             line_count += 1
             surface_tree.line(textline, tb.id, tl.id, line_count, "".join(words_parts).strip())
 
-    return num, etree.tostring(surface, encoding="utf-8")
+    return num, etree.tostring(surface, encoding="utf-8"), warning
 
 
 def build_sourcedoc(
@@ -200,7 +228,9 @@ def build_sourcedoc(
         iiif_mapping (IIIFMapping): Optional IIIF URL mapping instance.
 
     Returns:
-        etree.Element: The updated TEI root element.
+        tuple: (root, skipped_pages)
+            - root: the updated TEI root element
+            - skipped_pages: sorted page numbers whose ALTO was unusable
     """
     # Order files by page number
     ordered_files = Files(document_name, filepath_list).order_files()
@@ -231,33 +261,37 @@ def build_sourcedoc(
 
     results = {}
 
+    skipped_pages = []
+
     # Process pages in parallel
     with Pool(workers) as pool:
-        for idx, (num, xml_bytes, error) in enumerate(
+        for idx, (num, xml_bytes, error, warning) in enumerate(
             pool.imap_unordered(_build_surface_fragment, jobs), start=1
         ):
+            if warning:
+                logger.warning("%s: page %s %s", document_name, num, warning)
             if error is not None:
                 # Audit 2.3: report and skip the page, keep the document
                 logger.error(
                     "%s: page %s skipped, ALTO unusable (%s)",
                     document_name, num, error,
                 )
+                skipped_pages.append(num)
             results[num] = xml_bytes
 
             # Update progress bar if provided
             if progress and parent_task_pages is not None:
                 progress.update(
                     parent_task_pages,
-                    description=f"[cyan]{document_name}[/cyan] page {idx}/{total_pages}",
+                    description=f"[cyan]{markup_escape(document_name)}[/cyan] page {idx}/{total_pages}",
                     advance=1,
                 )
 
-    # Assemble surfaces in correct order
+    # Assemble surfaces in correct order (skipped pages were already
+    # reported above, one ERROR line each)
     for f in sorted(ordered_files, key=lambda x: x.num):
         frag = results.get(f.num)
         if frag:
             sourceDoc.append(etree.fromstring(frag))
-        else:
-            logger.warning("No result for page %d (%s)", f.num, f.filepath.name)
 
-    return output_tei_root
+    return output_tei_root, sorted(skipped_pages)

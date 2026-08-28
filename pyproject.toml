@@ -20,6 +20,10 @@ sigterm = true
 [tool.coverage.report]
 show_missing = false
 skip_covered = false
+# precision = 1 rend le cliquet reellement contraignant : avec la precision
+# par defaut (0), coverage arrondit le total AVANT de le comparer a
+# fail_under, et 80.51 % passerait une barre a "80.7".
+precision = 1
 # Cliquet : relever ce seuil a chaque lot de tests livre.
-# Baseline mesuree le 2026-08-26 : 28 %. Lot 1 (teiheader, sourcedoc, metadata) : 44 %. Lot 2 (body, reconstructor) : 54 %. Fixture E2E (main.py mesure) : 61 %. Lot 3 (pile NER) : 80 %. PR fiabilite des runs (expand_archives, --skip-existing, isolation) : 80.7 %.
-fail_under = 80.7
+# Baseline mesuree le 2026-08-26 : 28 %. Lot 1 (teiheader, sourcedoc, metadata) : 44 %. Lot 2 (body, reconstructor) : 54 %. Fixture E2E (main.py mesure) : 61 %. Lot 3 (pile NER) : 80 %. PR fiabilite des runs + correctifs de review : 81 %.
+fail_under = 81

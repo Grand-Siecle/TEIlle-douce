@@ -24,6 +24,7 @@ from zipfile import BadZipFile, ZipFile
 
 from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TimeElapsedColumn
 from rich.console import Console
+from rich.markup import escape
 
 # Import configuration
 from config import (
@@ -136,19 +137,25 @@ def _extract_archive(zip_path, target):
 
     Extracting straight into `target` meant an interrupted run left a
     partial directory that the `target.exists()` guard treated as fully
-    extracted on the next run — a silently truncated document. testzip()
-    rejects archives with corrupt members before extraction starts.
+    extracted on the next run — a silently truncated document. A corrupt
+    member makes extractall raise (BadZipFile/zlib.error), and the partial
+    temporary directory is removed before the error propagates, so no
+    second testzip() pass over the whole archive is needed.
     """
     tmp_target = target.with_name(target.name + ".extracting")
     if tmp_target.exists():
         # Leftover of a previously interrupted extraction
         shutil.rmtree(tmp_target)
-    with ZipFile(zip_path) as zf:
-        bad_member = zf.testzip()
-        if bad_member is not None:
-            raise BadZipFile(f"corrupt member: {bad_member}")
-        zf.extractall(tmp_target)
-    tmp_target.rename(target)
+    try:
+        # mkdir up front: extractall on an empty archive creates nothing,
+        # and the rename below must find a directory even in that case.
+        tmp_target.mkdir(parents=True)
+        with ZipFile(zip_path) as zf:
+            zf.extractall(tmp_target)
+        tmp_target.rename(target)
+    except BaseException:
+        shutil.rmtree(tmp_target, ignore_errors=True)
+        raise
 
 
 def expand_archives(ocr_dir):
@@ -166,8 +173,8 @@ def expand_archives(ocr_dir):
     Returns:
         tuple: (ready_dirs, failed_archives)
             - ready_dirs: sorted list of directories ready for processing
-            - failed_archives: list of "name (reason)" strings for archives
-              that could not be extracted
+            - failed_archives: list of (archive_name, reason) tuples for
+              archives that could not be extracted
     """
     ready_dirs = set()
     failed_archives = []
@@ -176,17 +183,20 @@ def expand_archives(ocr_dir):
     for zip_path in sorted(ocr_dir.glob("*.zip")):
         target = ocr_dir / zip_path.stem
         if not target.exists():
-            console.print(f"[dim]Extracting: {zip_path.name} -> {target.name}/[/dim]")
+            console.print(f"[dim]Extracting: {escape(zip_path.name)} -> {escape(target.name)}/[/dim]")
+            # Broad on purpose: zipfile surfaces corruption as BadZipFile,
+            # zlib.error, RuntimeError or NotImplementedError depending on
+            # where it hits; whatever the reason, the run must go on.
             try:
                 _extract_archive(zip_path, target)
-            except (BadZipFile, OSError) as e:
+            except Exception as e:
                 logging.getLogger(__name__).error(
                     "Cannot extract archive %s: %s", zip_path.name, e
                 )
                 console.print(
-                    f"[bold red]Corrupt archive skipped:[/bold red] {zip_path.name} ({e})"
+                    f"[bold red]Archive skipped:[/bold red] {escape(f'{zip_path.name} ({e})')}"
                 )
-                failed_archives.append(f"{zip_path.name} ({e})")
+                failed_archives.append((zip_path.name, str(e)))
                 continue
         ready_dirs.add(target)
 
@@ -238,6 +248,12 @@ def _gallica_image_base(manifest_url):
     return m.group(1) if m else None
 
 
+def _out_path(doc_name):
+    """Final TEI output path of a document — single spelling for the writer,
+    the --skip-existing filter and the failure cleanup."""
+    return OUTPUT_DIR / f"{doc_name}.tei.xml"
+
+
 # =============================================================================
 # MAIN WORKFLOW
 # =============================================================================
@@ -251,7 +267,7 @@ def _process_document(doc_name, filepaths, doc_dir, df_meta, config,
     so one broken document cannot kill a multi-hour run.
     """
     t0 = perf_counter()
-    console.print(f"\n[bold cyan]-> {doc_name}[/bold cyan]")
+    console.print(f"\n[bold cyan]-> {escape(doc_name)}[/bold cyan]")
 
     # Initialize TEI tree
     tree = TEI(doc_name, filepaths, doc_dir)
@@ -259,7 +275,7 @@ def _process_document(doc_name, filepaths, doc_dir, df_meta, config,
 
     # Progress bar for pages
     task_pages = progress.add_task(
-        f"{doc_name}: pages", total=len(filepaths), visible=True
+        f"{escape(doc_name)}: pages", total=len(filepaths), visible=True
     )
 
     # Load metadata for this document
@@ -292,9 +308,21 @@ def _process_document(doc_name, filepaths, doc_dir, df_meta, config,
         parent_task_pages=task_pages,
     )
 
+    # Unusable pages must be loud: a document with no page at all is a
+    # failure, a partial one is flagged in the console and the summary.
+    if tree.skipped_pages:
+        if len(tree.skipped_pages) == len(filepaths):
+            raise RuntimeError(
+                f"all {len(filepaths)} pages unusable (see log for details)"
+            )
+        console.print(
+            f"  [yellow]Warning: {len(tree.skipped_pages)}/{len(filepaths)} "
+            f"pages skipped (unusable ALTO) — see log[/yellow]"
+        )
+
     # Step 1: Build body + language detection
     task_lang = progress.add_task(
-        f"[cyan]{doc_name}: Detection des langues[/cyan]", total=None, visible=True
+        f"[cyan]{escape(doc_name)}: Detection des langues[/cyan]", total=None, visible=True
     )
     tree.build_body(detect_lang=True)
     link_notes_to_lines(tree.root)
@@ -312,7 +340,7 @@ def _process_document(doc_name, filepaths, doc_dir, df_meta, config,
     # Step 3: Linguistic enrichment (must run before modernization is applied)
     if do_enrich:
         task_enrich = progress.add_task(
-            f"[cyan]{doc_name}: Annotation linguistique[/cyan]", total=None, visible=True
+            f"[cyan]{escape(doc_name)}: Annotation linguistique[/cyan]", total=None, visible=True
         )
 
         def _enrich_progress(current, total):
@@ -331,7 +359,7 @@ def _process_document(doc_name, filepaths, doc_dir, df_meta, config,
     # Step 4: Text modernization (applied after enrichment)
     if do_modernize:
         task_mod = progress.add_task(
-            f"[cyan]{doc_name}: Modernisation du texte[/cyan]", total=None, visible=True
+            f"[cyan]{escape(doc_name)}: Modernisation du texte[/cyan]", total=None, visible=True
         )
 
         def _mod_progress(current, total):
@@ -350,7 +378,7 @@ def _process_document(doc_name, filepaths, doc_dir, df_meta, config,
     # Step 5: Named Entity Recognition (after enrichment + modernization)
     if NER_ENABLED:
         task_ner = progress.add_task(
-            f"[cyan]{doc_name}: Reconnaissance d'entites nommees[/cyan]",
+            f"[cyan]{escape(doc_name)}: Reconnaissance d'entites nommees[/cyan]",
             total=None,
             visible=True,
         )
@@ -419,7 +447,7 @@ def _process_document(doc_name, filepaths, doc_dir, df_meta, config,
     tree.finalize_langusage()
 
     # Write output file
-    out_path = OUTPUT_DIR / f"{doc_name}.tei.xml"
+    out_path = _out_path(doc_name)
     write_xml(tree.root, out_path)
 
     dt = perf_counter() - t0
@@ -481,14 +509,16 @@ def main(argv=None):
         sys.exit(1)
 
     # Audit 2.5: minimal resume after a crash — skip already-converted docs
+    skipped_existing = 0
     if args.skip_existing:
-        already = [d for d in docs if (OUTPUT_DIR / f"{d[0]}.tei.xml").exists()]
-        if already:
+        pending = [d for d in docs if not _out_path(d[0]).exists()]
+        skipped_existing = len(docs) - len(pending)
+        if skipped_existing:
             console.print(
-                f"[dim]--skip-existing: {len(already)} document(s) "
+                f"[dim]--skip-existing: {skipped_existing} document(s) "
                 f"already converted, skipped[/dim]"
             )
-            docs = [d for d in docs if (OUTPUT_DIR / f"{d[0]}.tei.xml").exists() is False]
+        docs = pending
         if not docs and not failed_archives:
             console.print("[bold green]Nothing to do:[/bold green] every document already has a TEI output.")
             return
@@ -546,30 +576,39 @@ def main(argv=None):
                 )
             except Exception as e:
                 # Audit 2.1: one broken document must not kill the run.
+                # escape(): a doc name or error text containing [tag]-like
+                # substrings would corrupt or crash the Rich rendering.
                 logging.getLogger(__name__).error(
                     "Document %s failed: %s", doc_name, e, exc_info=True
                 )
-                console.print(f"[bold red]FAILED[/bold red] {doc_name}: {e}")
-                failed_docs.append(doc_name)
+                console.print(f"[bold red]FAILED[/bold red] {escape(f'{doc_name}: {e}')}")
+                failed_docs.append((doc_name, str(e)))
+                # No orphan side effects: entity CSVs written before the
+                # failure would reference a TEI that was never produced
+                if not _out_path(doc_name).exists():
+                    shutil.rmtree(NER_OUTPUT_DIR / doc_name, ignore_errors=True)
+                # And no zombie progress rows left spinning forever
+                for tid in progress.task_ids:
+                    if tid != task_docs:
+                        progress.update(tid, visible=False)
             else:
                 ok_docs.append(doc_name)
             progress.advance(task_docs)
 
     # Audit 2.10: end-of-run summary + non-zero exit code on failures
     total = len(docs) + len(failed_archives)
+    converted = f"{len(ok_docs)}/{total} documents converted"
+    if skipped_existing:
+        converted += f" ({skipped_existing} more skipped, already converted)"
     if failed_docs:
-        console.print(
-            f"\n[bold yellow]Completed with errors:[/bold yellow] "
-            f"{len(ok_docs)}/{total} documents converted"
-        )
-        for name in failed_docs:
-            console.print(f"  [red]FAILED[/red] {name}")
-        console.print(f"[dim]Tracebacks in {RUN_LOG_FILE}[/dim]")
+        console.print(f"\n[bold yellow]Completed with errors:[/bold yellow] {converted}")
+        for name, reason in failed_docs:
+            console.print(f"  [red]FAILED[/red] {escape(f'{name}: {reason}')}")
+        if RUN_LOG_FILE:
+            console.print(f"[dim]Tracebacks in {RUN_LOG_FILE}[/dim]")
         sys.exit(1)
 
-    console.print(
-        f"\n[bold green]Done.[/bold green] {len(ok_docs)}/{total} documents converted"
-    )
+    console.print(f"\n[bold green]Done.[/bold green] {converted}")
 
 
 if __name__ == "__main__":
