@@ -613,12 +613,9 @@ def test_keywords_must_be_wrapped_in_textclass():
     assert [t.text for t in keywords.findall("term")] == ["Peinture", "Sculpture"]
 
 
-@pytest.mark.xfail(strict=True, reason="audit 1.2 - non corrige : idno ark/iiif doit precede altIdentifier")
 def test_ark_and_iiif_idno_must_precede_altidentifier():
-    """csv_book.py:584-599 appends the ark/iiif <idno> elements at the end
-    of <msIdentifier>, i.e. after the pre-existing <altIdentifier> sibling;
-    TEI P5's msIdentifier content model requires idno elements before
-    altIdentifier."""
+    """Audit 1.2 : TEI P5's msIdentifier content model requires idno
+    elements before altIdentifier."""
     root = _build_default_root()
     row = {
         "ARK": "ark:/12148/xyz",
@@ -634,3 +631,28 @@ def test_ark_and_iiif_idno_must_precede_altidentifier():
         if localname(c) == "idno" and c.get("type") == "ark"
     )
     assert ark_index < alt_index
+
+
+def test_extra_repository_and_cote_siblings_precede_altidentifier():
+    """Audit 1.2, meme famille : les valeurs multiples de Localisation et de
+    Cote deviennent des freres inseres a la suite de l'element existant, pas
+    des appends en fin de msIdentifier (donc apres altIdentifier)."""
+    root = _build_default_root()
+    row = {
+        "Localisation": "Munich, Bayerische Staatsbibliothek|Bibliothèque nationale",
+        "Cote": "Shelfmark1|Shelfmark2",
+    }
+    override_teiheader_from_csv(root, row, "TESTDOC0001")
+
+    msIdentifier = root.find(".//teiHeader/fileDesc/sourceDesc/msDesc/msIdentifier")
+    children = list(msIdentifier)
+    alt_index = next(i for i, c in enumerate(children) if localname(c) == "altIdentifier")
+    for tag, texte in [
+        ("repository", "Bibliothèque nationale"),
+        ("idno", "Shelfmark2"),
+    ]:
+        idx = next(
+            i for i, c in enumerate(children)
+            if localname(c) == tag and c.text == texte
+        )
+        assert idx < alt_index, f"<{tag}> '{texte}' doit preceder altIdentifier"

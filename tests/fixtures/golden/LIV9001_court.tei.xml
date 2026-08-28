@@ -87,11 +87,11 @@
             <settlement>Paris</settlement>
             <repository>Bibliotheque nationale de France</repository>
             <idno>RES-V-1234</idno>
+            <idno type="ark">ark:/12148/bpt6k9001</idno>
+            <idno type="iiif">https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/manifest.json</idno>
             <altIdentifier>
               <idno type="internal">LIV9001</idno>
             </altIdentifier>
-            <idno type="ark">ark:/12148/bpt6k9001</idno>
-            <idno type="iiif">https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/manifest.json</idno>
           </msIdentifier>
           <physDesc>
             <objectDesc>
