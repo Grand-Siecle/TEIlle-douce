@@ -10,6 +10,7 @@
 #
 # Run: venv/bin/python -m pytest tests/test_sourcedoc_builder.py -q
 # -----------------------------------------------------------
+import logging
 from pathlib import Path
 
 import pytest
@@ -46,10 +47,13 @@ GOOD_ALTO_TMPL = """<alto xmlns="http://www.loc.gov/standards/alto/ns-v4#">
   </PrintSpace></Page></Layout>
 </alto>"""
 
-# Missing the closing </OtherTag> tag: lxml's recover=True parser (used by
-# the worker for the ALTO tree itself) silently repairs this, but the
-# strict etree.parse() used inside extract_labels() cannot -- exactly the
-# "two inconsistent parsers" gap described in audit SS2.3.
+# Missing the closing </OtherTag> tag. Historically the worker's
+# recover=True parser silently repaired this while extract_labels()'s
+# strict parse crashed on it (the "two inconsistent parsers" gap of audit
+# SS2.3). Since the fix: strict parse first, then one explicit recovery
+# attempt -- the page is kept but the recovery is REPORTED (warning),
+# never silent. Only a page that not even libxml2 recovery can read is
+# skipped (see UNRECOVERABLE_ALTO below).
 MALFORMED_ALTO = """<alto xmlns="http://www.loc.gov/standards/alto/ns-v4#">
   <Tags><OtherTag ID="BT1" LABEL="MainZone"></Tags>
   <Layout><Page WIDTH="1000" HEIGHT="1500"><PrintSpace>
@@ -215,9 +219,10 @@ def test_build_sourcedoc_orders_surfaces_by_page_despite_imap_unordered(tmp_path
     f2 = write_alto(tmp_path, "f2.xml", GOOD_ALTO_TMPL.format(word="pagetwo"))
 
     output_root = etree.Element("TEI")
-    result = build_sourcedoc("DOC1", output_root, [f2, f1], {}, [], [], {})
+    result, skipped = build_sourcedoc("DOC1", output_root, [f2, f1], {}, [], [], {})
 
     assert result is output_root
+    assert skipped == []
     source_doc = result.find("sourceDoc")
     assert source_doc is not None
 
@@ -231,29 +236,41 @@ def test_build_sourcedoc_orders_surfaces_by_page_despite_imap_unordered(tmp_path
 
 
 # =============================================================================
-# 5-6. audit SS2.3 -- inconsistent parsers / KeyError on unlabeled OtherTag.
-# xfail(strict=True): today these crash; they describe the behavior the
-# SS2.3 fix must produce. They will start failing (XPASS) the day that fix
-# lands -- that is the intended signal to update/remove them.
+# 5-6. audit SS2.3 -- page malformee : recuperee avec warning quand libxml2
+# le peut, signalee et sautee sinon ; jamais reparee en silence, jamais
+# fatale au document. OtherTag sans LABEL n'interrompt plus l'extraction.
 # =============================================================================
 
-@pytest.mark.xfail(strict=True, reason="audit 2.3 - non corrige : une page ALTO malformee tue tout le run")
-def test_malformed_alto_page_does_not_crash_the_run(tmp_path, monkeypatch):
+# Not even libxml2 recovery can build a tree out of this.
+UNRECOVERABLE_ALTO = "\x00\x01ceci n'est pas du XML\x02"
+
+
+def test_malformed_alto_page_does_not_crash_the_run(tmp_path, monkeypatch, caplog):
     monkeypatch.setattr(builder, "MAX_WORKERS", 1)
 
     good = write_alto(tmp_path, "f1.xml", GOOD_ALTO_TMPL.format(word="hello"))
     write_alto(tmp_path, "f2.xml", MALFORMED_ALTO)
+    (tmp_path / "f3.xml").write_text(UNRECOVERABLE_ALTO, encoding="utf-8")
 
     output_root = etree.Element("TEI")
-    build_sourcedoc("DOC1", output_root, [good, tmp_path / "f2.xml"], {}, [], [], {})
+    with caplog.at_level(logging.WARNING, logger="src.sourcedoc.builder"):
+        _, skipped = build_sourcedoc(
+            "DOC1", output_root,
+            [good, tmp_path / "f2.xml", tmp_path / "f3.xml"],
+            {}, [], [], {},
+        )
 
     surfaces = output_root.findall(".//surface")
-    # The good page is still produced; the malformed one is reported and
-    # skipped rather than aborting the whole document.
-    assert [s.get(XML_ID) for s in surfaces] == ["f1"]
+    # The clean page and the RECOVERABLE malformed page are both produced;
+    # only the unrecoverable one is skipped -- and both anomalies are
+    # reported (warning for the recovery, error for the skip).
+    assert [s.get(XML_ID) for s in surfaces] == ["f1", "f2"]
+    assert skipped == [3]
+    messages = [r.message for r in caplog.records]
+    assert any("recovered" in m for m in messages), messages
+    assert any("page 3 skipped" in m for m in messages), messages
 
 
-@pytest.mark.xfail(strict=True, reason="audit 2.3 - non corrige : OtherTag sans LABEL leve KeyError")
 def test_extract_labels_othertag_without_label_no_keyerror(tmp_path):
     alto = write_alto(
         tmp_path,

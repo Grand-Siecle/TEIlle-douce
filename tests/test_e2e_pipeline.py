@@ -44,16 +44,14 @@ UUID_RE = re.compile(r"(?<![0-9a-zA-Z])[0-9a-f]{32}(?![0-9a-zA-Z])")
 # Execution du pipeline
 # =============================================================================
 
-def lancer_pipeline(tmp_path, **flags):
+def _executer_main(tmp_path, ocr_dir, args=(), **flags):
     """
-    Execute main.py sur la fixture, dans un repertoire de travail jetable.
+    Execute main.py dans un repertoire de travail jetable, sans presumer du
+    resultat. Renvoie (CompletedProcess, repertoire de sortie).
 
     Les chemins des CSV de metadonnees ne sont pas surchargeables par variable
     d'environnement (ils sont relatifs au repertoire courant), d'ou l'execution
     dans un tmp_path ou l'on a copie les CSV de fixture.
-
-    Returns:
-        Path: le fichier TEI produit.
     """
     for csv in ("metadata_livre.csv", "metadata_personne.csv"):
         shutil.copy(FIXTURES / csv, tmp_path / csv)
@@ -61,15 +59,26 @@ def lancer_pipeline(tmp_path, **flags):
     sortie = tmp_path / "out"
     env = {
         **os.environ,
-        "ALTO2TEI_OCR_DIR": str(ALTO_MIN),
+        "ALTO2TEI_OCR_DIR": str(ocr_dir),
         "ALTO2TEI_OUTPUT_DIR": str(sortie),
         **{k: v for k, v in flags.items()},
     }
     env.update(_env_couverture_sous_processus())
     res = subprocess.run(
-        [sys.executable, str(RACINE / "main.py")],
+        [sys.executable, str(RACINE / "main.py"), *args],
         cwd=tmp_path, env=env, capture_output=True, text=True, timeout=900,
     )
+    return res, sortie
+
+
+def lancer_pipeline(tmp_path, **flags):
+    """
+    Execute main.py sur la fixture et exige un succes.
+
+    Returns:
+        Path: le fichier TEI produit.
+    """
+    res, sortie = _executer_main(tmp_path, ALTO_MIN, **flags)
     produit = sortie / f"{DOCUMENT}.tei.xml"
     assert produit.exists(), (
         f"aucune sortie produite (code {res.returncode})\n"
@@ -282,6 +291,69 @@ def test_court_correspond_au_golden(tei_court):
     assert normaliser(tei_court, sans_taxonomie=True) == GOLDEN.read_text(
         encoding="utf-8"
     )
+
+
+@pytest.mark.e2e
+def test_court_un_document_casse_ne_tue_pas_le_run(tmp_path):
+    """
+    Audit 2.1/2.10 : un document corrompu est signale, compte dans le bilan et
+    fait sortir avec un code non nul — mais les documents suivants sont
+    convertis normalement. Le document casse est nomme pour passer AVANT le
+    document sain dans l'ordre de traitement : la reussite du sain prouve que
+    la boucle a continue apres l'echec.
+    """
+    ocr = tmp_path / "ocr"
+    shutil.copytree(ALTO_MIN, ocr)
+    casse = ocr / "LIV9000_reconciled" / "content" / "data" / "doc_1"
+    casse.mkdir(parents=True)
+    # Irrecuperable meme par le mode recovery de libxml2 : la page unique du
+    # document est sautee, donc "toutes les pages inutilisables" -> echec du
+    # document (un XML simplement malforme serait recupere avec warning).
+    (casse / "f1.xml").write_text("\x00\x01pas du xml\x02", encoding="utf-8")
+
+    res, sortie = _executer_main(tmp_path, ocr, **MODE_COURT)
+
+    # le document sain, traite apres le casse, est bien produit
+    assert (sortie / f"{DOCUMENT}.tei.xml").exists(), (
+        f"--- stdout ---\n{res.stdout[-3000:]}\n--- stderr ---\n{res.stderr[-3000:]}"
+    )
+    # le document casse n'a pas de sortie
+    assert not (sortie / "LIV9000_reconciled.tei.xml").exists()
+    # bilan : echec signale nominalement, code retour non nul
+    assert res.returncode != 0
+    assert "LIV9000_reconciled" in res.stdout
+    assert "1/2" in res.stdout
+    # audit 2.10 : le log du run est horodate (pipeline_YYYYMMDD_HHMMSS.log),
+    # un prochain run n'ecrasera donc pas la trace de cet echec
+    assert list(tmp_path.glob("pipeline_*.log")), sorted(tmp_path.iterdir())
+
+
+@pytest.mark.e2e
+def test_court_skip_existing_saute_le_converti_et_traite_le_reste(tmp_path):
+    """
+    Audit 2.5 : avec --skip-existing et deux documents dont un deja
+    converti, le converti est saute (sa sentinelle ressort intacte) et
+    l'autre est reellement traite dans le meme run — le vrai chemin de
+    reprise, pas seulement le retour anticipe "rien a faire".
+    """
+    ocr = tmp_path / "ocr"
+    shutil.copytree(ALTO_MIN, ocr)
+    # Second document : copie du premier sous un autre nom
+    shutil.copytree(ocr / DOCUMENT, ocr / "LIV9002_reconciled")
+
+    sortie = tmp_path / "out"
+    sortie.mkdir()
+    sentinelle = sortie / f"{DOCUMENT}.tei.xml"
+    sentinelle.write_text("<sentinelle/>", encoding="utf-8")
+
+    res, _ = _executer_main(tmp_path, ocr, args=("--skip-existing",), **MODE_COURT)
+
+    assert res.returncode == 0, res.stdout[-2000:] + res.stderr[-2000:]
+    # le document deja converti n'a pas ete retraite
+    assert sentinelle.read_text(encoding="utf-8") == "<sentinelle/>"
+    assert "skip-existing" in res.stdout
+    # l'autre document, lui, a ete converti dans ce meme run
+    assert (sortie / "LIV9002_reconciled.tei.xml").exists(), res.stdout[-2000:]
 
 
 # =============================================================================

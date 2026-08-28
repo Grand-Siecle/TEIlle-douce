@@ -9,6 +9,7 @@ This module provides utilities for writing TEI XML files to disk.
 """
 
 import logging
+import os
 from pathlib import Path
 
 from lxml import etree
@@ -41,7 +42,12 @@ def xml_id_safe(value):
 
 def write_xml(root, output_path, pretty_print=True):
     """
-    Write an XML tree to a file.
+    Write an XML tree to a file, atomically.
+
+    The tree is serialized to a temporary sibling file then moved into
+    place with os.replace: an interrupted run can never leave a truncated
+    file at the final path — which matters doubly since --skip-existing
+    treats the file's existence as "already converted".
 
     Args:
         root (etree.Element): XML root element to write.
@@ -53,14 +59,17 @@ def write_xml(root, output_path, pretty_print=True):
     """
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = output_path.with_name(output_path.name + ".part")
 
     try:
         etree.ElementTree(root).write(
-            str(output_path),
+            str(tmp_path),
             encoding="utf-8",
             xml_declaration=True,
             pretty_print=pretty_print,
         )
+        os.replace(tmp_path, output_path)
     except Exception as e:
         logger.error("Failed to write XML to %s: %s", output_path, e)
+        tmp_path.unlink(missing_ok=True)
         raise

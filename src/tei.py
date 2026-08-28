@@ -75,6 +75,7 @@ class TEI:
         self.segmonto_zones = None
         self.segmonto_lines = None
         self.lang_stats = None
+        self.skipped_pages = []
         self._iiif_mapping = None
 
     def build_tree(self):
@@ -109,13 +110,15 @@ class TEI:
         Build the <sourceDoc> element from ALTO files.
 
         Uses parallel processing for performance on large documents.
+        Pages whose ALTO could not be used are collected in
+        ``self.skipped_pages`` (list of page numbers).
 
         Args:
             config (dict): Pipeline configuration with IIIF settings.
             progress: Optional Rich progress bar instance.
             parent_task_pages: Optional task ID for progress updates.
         """
-        build_sourcedoc(
+        _, self.skipped_pages = build_sourcedoc(
             self.d,
             self.root,
             self.fp,
