@@ -225,11 +225,14 @@ def _rebuild_with_modernization(container, groups, corresp_to_mod):
     count = 0
 
     for i, group in enumerate(groups):
-        # Add <lb/>
+        # Add <lb/>, carrying over the sourceDoc pointers (audit 1.6)
         if group.lb_element is not None:
             lb = etree.SubElement(container, "lb")
             if group.lb_corresp:
                 lb.set("corresp", group.lb_corresp)
+            facs = group.lb_element.get("facs")
+            if facs:
+                lb.set("facs", facs)
 
         # Check if this line is modernized
         is_modernized = group.lb_corresp and group.lb_corresp in corresp_to_mod
@@ -329,6 +332,15 @@ def _append_choice(parent, original, modernized):
     return choice
 
 
+def _make_pb(line):
+    """<pb> pointing at its surface via @corresp and @facs, with the
+    surface's number as @n when the sourceDoc carries one (audit 1.6)."""
+    atts = {"corresp": f"#{line.page_id}", "facs": f"#{line.page_id}"}
+    if line.page_n:
+        atts["n"] = line.page_n
+    return etree.Element("pb", atts)
+
+
 def build_body(root, data, detect_lang=True):
     """
     Build the TEI <body> element from extracted line data.
@@ -372,20 +384,19 @@ def build_body(root, data, detect_lang=True):
         # Prepare zone attributes (without language for now)
         zone_atts = {"corresp": f"#{line.zone_id}", "type": line.zone_type}
 
-        # Create <lb/> with reference to line's xml:id
-        lb = etree.Element("lb", corresp=f"#{line.id}")
+        # Create <lb/> with reference to line's xml:id: @corresp plus
+        # @facs, the canonical attribute for TEI/IIIF viewers (audit 1.6)
+        lb = etree.Element("lb", corresp=f"#{line.id}", facs=f"#{line.id}")
         lb.tail = f"{line.text}"
 
         # Add page break when the page changes (not per zone)
         if line.page_id != last_page_id:
-            pb = etree.Element("pb", corresp=f"#{line.page_id}")
-            div.append(pb)
+            div.append(_make_pb(line))
             last_page_id = line.page_id
 
         # Ensure div has at least one element
         if len(div) == 0:
-            pb = etree.Element("pb", corresp=f"#{line.page_id}")
-            div.append(pb)
+            div.append(_make_pb(line))
 
         last_element = div[-1]
 
@@ -414,8 +425,9 @@ def build_body(root, data, detect_lang=True):
                     containers[-1][1].append(line.text)
 
         elif line.zone_type and line.zone_type.startswith("Main"):
-            # Main text -> <ab>
-            if last_element.tag != "ab":
+            # Main text -> <ab>. The type check keeps Main text out of the
+            # fallback <ab> a preceding unhandled zone may have opened.
+            if last_element.tag != "ab" or not (last_element.get("type") or "").startswith("Main"):
                 ab = etree.Element("ab", zone_atts)
                 last_element.addnext(ab)
                 last_element = div[-1]
@@ -441,9 +453,31 @@ def build_body(root, data, detect_lang=True):
                 elif ab_children[-1].tag == "hi":
                     ab_children[-1].append(lb)
 
-            # Regular lines
-            elif line.line_type and line.line_type.startswith("Default"):
+            # Regular lines — and any other line type: an unknown label
+            # must not silently drop the line's text (audit 1.1).
+            else:
                 last_element.append(lb)
+
+        else:
+            # Fallback for zone types without a dedicated branch
+            # (TitlePageZone, GraphicZone, StampZone, TableZone,
+            # CustomZone, ...): a plain <ab type="..."> per zone, so no
+            # text is ever silently lost (audit 1.1). Consecutive lines
+            # of the same zone share one <ab>.
+            if last_element.tag == "ab" and last_element.get("corresp") == zone_atts["corresp"]:
+                last_element.append(lb)
+                if detector and containers and containers[-1][0] == last_element:
+                    containers[-1][1].append(line.text)
+            else:
+                logger.debug(
+                    "Zone type %r has no dedicated body element; falling back to <ab>",
+                    line.zone_type,
+                )
+                ab = etree.Element("ab", {k: v for k, v in zone_atts.items() if v})
+                last_element.addnext(ab)
+                ab.append(lb)
+                if detector:
+                    containers.append((ab, [line.text]))
 
     # Apply language detection to containers (two-pass)
     if detector:

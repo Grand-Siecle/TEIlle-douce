@@ -78,7 +78,7 @@ class DefaultTree:
         # Build main header structure
         teiHeader = etree.SubElement(self.root, "teiHeader")
 
-        # Three main children of <teiHeader>
+        # Four main children of <teiHeader> (revisionDesc must come last, P5)
         fileDesc = etree.SubElement(teiHeader, "fileDesc")
         profileDesc = etree.SubElement(teiHeader, "profileDesc")
         encodingDesc = etree.SubElement(teiHeader, "encodingDesc")
@@ -91,6 +91,37 @@ class DefaultTree:
 
         # Build <encodingDesc>
         self._build_encoding_desc(encodingDesc)
+
+        # Build <revisionDesc>
+        self._build_revision_desc(teiHeader)
+
+    def _build_revision_desc(self, teiHeader):
+        """
+        Build the <revisionDesc> section: one <change> per pipeline phase
+        (audit 1.8).
+
+        No @when attribute: no meaningful event date is known at build time,
+        and a run date would make two runs on the same input differ (the
+        golden-file comparison relies on deterministic output).
+        """
+        revisionDesc = etree.SubElement(teiHeader, "revisionDesc")
+        phases = [
+            ("conversion",
+             "Conversion of the ALTO XML source (OCR/HTR output) into "
+             "TEI P5 with sourceDoc and body by the alto2tei pipeline."),
+            ("enrichment",
+             "Linguistic enrichment: tokenization, part-of-speech tagging, "
+             "lemmatization and sentence segmentation (PyHellen)."),
+            ("modernization",
+             "Modernization of early modern French forms, encoded as "
+             "orig/reg pairs inside choice elements (VieuxParler)."),
+            ("ner",
+             "Named-entity recognition and resolution: persons, places, "
+             "works, dates and techniques (CamemBERT, GLiNER)."),
+        ]
+        for n, (phase, description) in enumerate(phases, 1):
+            change = etree.SubElement(revisionDesc, "change", n=str(n), type=phase)
+            change.text = description
 
     def _build_file_desc(self, fileDesc, default_text, num_authors):
         """Build the <fileDesc> section with title, publication, and source info."""

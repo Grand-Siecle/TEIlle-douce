@@ -290,7 +290,7 @@ def test_rebuild_container_same_lb_never_reinserted():
 
 
 def test_insert_lb_directly_sets_corresp_and_tracks_inserted_id():
-    lb_orig = etree.Element("lb")
+    lb_orig = etree.Element("lb", facs="#zoneLine_9")
     span = mk_span(lb_element=lb_orig, lb_corresp="#zoneLine_9")
     parent = etree.Element("s")
     inserted = set()
@@ -299,6 +299,8 @@ def test_insert_lb_directly_sets_corresp_and_tracks_inserted_id():
 
     assert qlocal(parent[0]) == "lb"
     assert parent[0].get("corresp") == "#zoneLine_9"
+    # audit 1.6 : @facs du <lb> d'origine recopie sur le <lb> reconstruit
+    assert parent[0].get("facs") == "#zoneLine_9"
     assert id(lb_orig) in inserted
 
 
@@ -309,6 +311,7 @@ def test_insert_lb_directly_sets_corresp_and_tracks_inserted_id():
 def test_create_cross_line_w_two_fragments_part_and_links():
     lb1 = etree.Element("lb")
     lb1.set("corresp", "#zoneLine_5")
+    lb1.set("facs", "#zoneLine_5")
 
     token = mk_token(
         "protection", lemma="protection", pos="NOUN",
@@ -332,6 +335,9 @@ def test_create_cross_line_w_two_fragments_part_and_links():
     w0, lb, w1 = list(parent)
     assert w0.text == "Pro"
     assert w1.text == "tection"
+    # audit 1.6 : le <lb> intercalaire recopie @corresp et @facs de l'original
+    assert lb.get("corresp") == "#zoneLine_5"
+    assert lb.get("facs") == "#zoneLine_5"
 
     id0, id1 = w0.get(XML_ID), w1.get(XML_ID)
     assert id0 and id1 and id0 != id1

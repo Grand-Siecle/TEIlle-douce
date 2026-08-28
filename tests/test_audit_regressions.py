@@ -42,8 +42,8 @@ ZONES_PRODUITES_PAR_LE_PIPELINE = {
 }
 
 
-@pytest.mark.xfail(strict=True, reason="audit 5.1 -- MarginTextZone et GraphicZone absents de SEGMONTO_ZONES")
 def test_every_zone_type_produced_by_the_pipeline_is_declared_in_segmonto_zones():
+    """Audit 5.1 : chaque zone produite doit avoir sa cible dans la taxonomie."""
     non_declares = sorted(ZONES_PRODUITES_PAR_LE_PIPELINE - set(SEGMONTO_ZONES))
     assert non_declares == [], (
         f"zones produites mais jamais declarees dans la taxonomie : {non_declares} "

@@ -14,8 +14,13 @@ from collections import namedtuple
 from ..constants import XML_ID
 
 
-# Named tuple for line data
-Line = namedtuple("Line", ["id", "n", "text", "line_type", "zone_type", "zone_id", "page_id"])
+# Named tuple for line data. page_n defaults to None so hand-built Line
+# objects (tests, external callers) stay valid without it.
+Line = namedtuple(
+    "Line",
+    ["id", "n", "text", "line_type", "zone_type", "zone_id", "page_id", "page_n"],
+    defaults=(None,),
+)
 
 
 class Text:
@@ -53,6 +58,7 @@ class Text:
         - zone_type: Type of the parent zone (MainZone, NumberingZone, etc.)
         - zone_id: The parent zone's xml:id
         - page_id: The page surface's xml:id
+        - page_n: The page surface's number (@n), for <pb n="..."> (audit 1.6)
 
         Returns:
             list: List of Line namedtuples for each text line.
@@ -75,6 +81,7 @@ class Text:
                     zone_type=text_block.get("type") if text_block is not None else None,
                     zone_id=text_block.get(XML_ID) if text_block is not None else None,
                     page_id=surface.get(XML_ID) if surface is not None else None,
+                    page_n=surface.get("n") if surface is not None else None,
                 )
             )
 

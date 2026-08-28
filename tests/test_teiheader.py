@@ -368,7 +368,7 @@ def test_segmonto_taxonomy_extracts_labels_and_always_adds_defaultline(tmp_path)
         ("BT1", "MainZone"),
         ("BT2", "NumberingZone"),
         ("BT3", "HeadingLine"),
-        ("BT4", "MarginTextZone"),  # zone-like label, not in SEGMONTO_ZONES
+        ("BT4", "FantasyZone"),  # zone-like label, not in SEGMONTO_ZONES
     ])
     root, default = make_default_tree()
     full = FullTree(default.children, {"sru": None, "iiif": None})
@@ -376,7 +376,7 @@ def test_segmonto_taxonomy_extracts_labels_and_always_adds_defaultline(tmp_path)
 
     # The raw label lists include *every* "Zone"/"Line"-shaped label found,
     # even labels unknown to the SegmOnto taxonomy dicts.
-    assert set(zones) == {"MainZone", "NumberingZone", "MarginTextZone"}
+    assert set(zones) == {"MainZone", "NumberingZone", "FantasyZone"}
     assert set(lines) == {"HeadingLine"}
 
     taxonomy = default.children["taxonomy"]
@@ -386,7 +386,7 @@ def test_segmonto_taxonomy_extracts_labels_and_always_adds_defaultline(tmp_path)
 
     zone_ids = {c.get(XML_ID) for c in zone_cat if ln(c) == "catDesc"}
     # Only labels recognized by SEGMONTO_ZONES get a taxonomy entry:
-    # "MarginTextZone" is silently excluded even though it was returned above.
+    # "FantasyZone" is silently excluded even though it was returned above.
     assert zone_ids == {"MainZone", "NumberingZone"}
 
     line_ids = {c.get(XML_ID) for c in line_cat if ln(c) == "catDesc"}
@@ -459,8 +459,8 @@ def test_build_header_assembles_default_full_and_taxonomy(tmp_path):
 # 6. <revisionDesc> — audit §1.8, not implemented yet
 # =============================================================================
 
-@pytest.mark.xfail(strict=True, reason="audit 1.8 — non implemente")
 def test_revision_desc_has_one_change_per_pipeline_phase(tmp_path):
+    """Audit 1.8 : un <change> par phase du pipeline, en dernier enfant du header."""
     alto_path = write_alto(tmp_path, "page1.xml", [("BT1", "MainZone")])
     document = "LIV0100_reconciled"
     root = make_root(document)

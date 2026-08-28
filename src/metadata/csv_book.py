@@ -308,25 +308,26 @@ def override_teiheader_from_csv(root, row, document_name=None):
         if el is not None:
             el.text = str(value)
 
-    def set_text_multi(xpath, values, parent_xpath=None, tag_name=None):
+    def set_text_multi(xpath, values):
         """
         Set element text for multiple values.
 
-        First value goes in existing element, additional values create new siblings.
+        First value goes in the existing element; additional values become
+        siblings of the same tag inserted right after it, so the P5 element
+        order of the parent (e.g. idno before altIdentifier in msIdentifier,
+        audit 1.2) is preserved.
         """
         if not values:
             return
-        # Set first value in existing element
         el = root.find(xpath)
         if el is not None:
             el.text = values[0]
-            # Add siblings for additional values
-            if len(values) > 1 and parent_xpath and tag_name:
-                parent = root.find(parent_xpath)
-                if parent is not None:
-                    for val in values[1:]:
-                        new_el = etree.SubElement(parent, tag_name)
-                        new_el.text = val
+            anchor = el
+            for val in values[1:]:
+                new_el = etree.Element(el.tag)
+                new_el.text = val
+                anchor.addnext(new_el)
+                anchor = new_el
 
     # Title
     titre = row.get("Titre_long") or row.get("Titre_abrege")
@@ -481,12 +482,7 @@ def override_teiheader_from_csv(root, row, document_name=None):
 
     # Publication places - support multiple
     lieux = _safe_value_list(row, "Lieu_publication")
-    set_text_multi(
-        ".//teiHeader/fileDesc/sourceDesc/bibl/pubPlace",
-        lieux,
-        ".//teiHeader/fileDesc/sourceDesc/bibl",
-        "pubPlace"
-    )
+    set_text_multi(".//teiHeader/fileDesc/sourceDesc/bibl/pubPlace", lieux)
 
     # sourceDesc/bibl: imprimeurs, libraires, éditeurs as <respStmt>
     bibl = root.find(".//teiHeader/fileDesc/sourceDesc/bibl")
@@ -522,8 +518,6 @@ def override_teiheader_from_csv(root, row, document_name=None):
         set_text_multi(
             ".//teiHeader/fileDesc/sourceDesc/msDesc/msIdentifier/repository",
             repo_texts,
-            ".//teiHeader/fileDesc/sourceDesc/msDesc/msIdentifier",
-            "repository"
         )
         msid = root.find(".//teiHeader/fileDesc/sourceDesc/msDesc/msIdentifier")
         if msid is not None:
@@ -546,12 +540,7 @@ def override_teiheader_from_csv(root, row, document_name=None):
 
     # Cote/idno - support multiple
     cotes = _safe_value_list(row, "Cote")
-    set_text_multi(
-        ".//teiHeader/fileDesc/sourceDesc/msDesc/msIdentifier/idno",
-        cotes,
-        ".//teiHeader/fileDesc/sourceDesc/msDesc/msIdentifier",
-        "idno"
-    )
+    set_text_multi(".//teiHeader/fileDesc/sourceDesc/msDesc/msIdentifier/idno", cotes)
 
     # Languages - support multiple
     langues = _safe_value_list(row, "langues")
@@ -576,7 +565,11 @@ def override_teiheader_from_csv(root, row, document_name=None):
     if all_sujets:
         prof = root.find(".//teiHeader/profileDesc")
         if prof is not None:
-            keywords = etree.SubElement(prof, "keywords")
+            # P5: <keywords> is only valid inside <textClass> (audit 1.2)
+            text_class = prof.find("textClass")
+            if text_class is None:
+                text_class = etree.SubElement(prof, "textClass")
+            keywords = etree.SubElement(text_class, "keywords")
             for sujet in all_sujets:
                 term = etree.SubElement(keywords, "term")
                 term.text = sujet
@@ -587,19 +580,27 @@ def override_teiheader_from_csv(root, row, document_name=None):
     if ark or manifests:
         idno_parent = root.find(".//teiHeader/fileDesc/sourceDesc/msDesc/msIdentifier")
         if idno_parent is not None:
+            # P5: idno must precede altIdentifier in msIdentifier (audit 1.2)
+            alt_identifier = idno_parent.find("altIdentifier")
+
+            def add_idno(text, **atts):
+                idno = etree.Element("idno", **atts)
+                idno.text = text
+                if alt_identifier is not None:
+                    alt_identifier.addprevious(idno)
+                else:
+                    idno_parent.append(idno)
+
             if ark:
-                id_ark = etree.SubElement(idno_parent, "idno", type="ark")
-                id_ark.text = ark
+                add_idno(ark, type="ark")
             volume = parse_document_id(document_name)[1] if document_name else None
             selected = select_manifest(manifests, volume)
             if selected:
-                id_manifest = etree.SubElement(idno_parent, "idno", type="iiif")
-                id_manifest.text = selected
+                add_idno(selected, type="iiif")
             else:
                 # Unknown volume: list every manifest, numbered
                 for i, m in enumerate(manifests, 1):
-                    id_manifest = etree.SubElement(idno_parent, "idno", type="iiif", n=str(i))
-                    id_manifest.text = m
+                    add_idno(m, type="iiif", n=str(i))
 
     # Build listPerson in particDesc with all referenced persons
     all_person_ids = set(auteurs + traducteurs + imprimeurs + libraires + editeurs)
