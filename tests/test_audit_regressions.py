@@ -65,7 +65,6 @@ def _ecrire_csv_personne(chemin, lignes):
     return chemin
 
 
-@pytest.mark.xfail(strict=True, reason="audit 5.2 -- PersonDatabase n'a pas de __bool__, une base vide est falsy")
 def test_empty_person_database_is_not_confused_with_a_missing_one(tmp_path):
     """
     `override_teiheader_from_csv` garde la construction du <listPerson> derriere

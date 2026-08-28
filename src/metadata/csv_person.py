@@ -237,6 +237,18 @@ class PersonDatabase:
             "note": person.get("note"),
         }
 
+    def __bool__(self):
+        """
+        A loaded database is truthy even when it contains zero persons.
+
+        Without this, Python falls back to __len__ and an empty-but-present
+        database is falsy: guards like ``if ids and person_db:`` then skip
+        the whole listPerson construction, including for persons that do
+        not come from this database (audit 5.2). Only an ABSENT database
+        (None) should be falsy.
+        """
+        return True
+
     def __contains__(self, person_id):
         """Check if a person ID exists in the database."""
         return person_id in self._persons
