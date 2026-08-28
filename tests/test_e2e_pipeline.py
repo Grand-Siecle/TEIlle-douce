@@ -44,7 +44,7 @@ UUID_RE = re.compile(r"(?<![0-9a-zA-Z])[0-9a-f]{32}(?![0-9a-zA-Z])")
 # Execution du pipeline
 # =============================================================================
 
-def _executer_main(tmp_path, ocr_dir, **flags):
+def _executer_main(tmp_path, ocr_dir, args=(), **flags):
     """
     Execute main.py dans un repertoire de travail jetable, sans presumer du
     resultat. Renvoie (CompletedProcess, repertoire de sortie).
@@ -65,7 +65,7 @@ def _executer_main(tmp_path, ocr_dir, **flags):
     }
     env.update(_env_couverture_sous_processus())
     res = subprocess.run(
-        [sys.executable, str(RACINE / "main.py")],
+        [sys.executable, str(RACINE / "main.py"), *args],
         cwd=tmp_path, env=env, capture_output=True, text=True, timeout=900,
     )
     return res, sortie
@@ -323,6 +323,25 @@ def test_court_un_document_casse_ne_tue_pas_le_run(tmp_path):
     # audit 2.10 : le log du run est horodate (pipeline_YYYYMMDD_HHMMSS.log),
     # un prochain run n'ecrasera donc pas la trace de cet echec
     assert list(tmp_path.glob("pipeline_*.log")), sorted(tmp_path.iterdir())
+
+
+@pytest.mark.e2e
+def test_court_skip_existing_ne_reecrit_pas_la_sortie(tmp_path):
+    """
+    Audit 2.5 : avec --skip-existing, un document dont le TEI existe deja
+    n'est pas retraite. Sentinelle : un fichier de sortie preexistant doit
+    ressortir intact (le pipeline l'aurait ecrase sinon).
+    """
+    sortie = tmp_path / "out"
+    sortie.mkdir()
+    sentinelle = sortie / f"{DOCUMENT}.tei.xml"
+    sentinelle.write_text("<sentinelle/>", encoding="utf-8")
+
+    res, _ = _executer_main(tmp_path, ALTO_MIN, args=("--skip-existing",), **MODE_COURT)
+
+    assert res.returncode == 0, res.stdout[-2000:] + res.stderr[-2000:]
+    assert sentinelle.read_text(encoding="utf-8") == "<sentinelle/>"
+    assert "skip-existing" in res.stdout
 
 
 # =============================================================================

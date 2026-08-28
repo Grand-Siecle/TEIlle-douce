@@ -7,7 +7,16 @@ from datetime import datetime
 from pathlib import Path
 from zipfile import ZipFile
 
-from main import _run_log_path, expand_archives
+from main import _parse_args, _run_log_path, expand_archives
+
+
+# =============================================================================
+# _parse_args -- audit 2.5 : --skip-existing
+# =============================================================================
+
+def test_parse_args_skip_existing_flag():
+    assert _parse_args(["--skip-existing"]).skip_existing is True
+    assert _parse_args([]).skip_existing is False
 
 
 def _zip_valide(chemin):

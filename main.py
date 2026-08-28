@@ -12,6 +12,7 @@ Usage:
     python3 main.py
 """
 
+import argparse
 import logging
 import re
 import shutil
@@ -427,7 +428,21 @@ def _process_document(doc_name, filepaths, doc_dir, df_meta, config,
     progress.update(task_pages, visible=False)
 
 
-def main():
+def _parse_args(argv=None):
+    """Command-line interface of the pipeline."""
+    parser = argparse.ArgumentParser(
+        description="Convert ALTO XML documents to TEI with SegmOnto taxonomy."
+    )
+    parser.add_argument(
+        "--skip-existing",
+        action="store_true",
+        help="skip documents whose TEI output already exists "
+             "(minimal resume after an interrupted run, audit 2.5)",
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv=None):
     """
     Main workflow for ALTO to TEI conversion.
 
@@ -441,6 +456,8 @@ def main():
        - Builds body from extracted text
        - Writes output TEI XML file
     """
+    args = _parse_args(argv)
+
     # Verify OCR directory exists
     if not OCR_DIR.exists():
         console.print(f"[red]Directory not found: {OCR_DIR}[/red]")
@@ -462,6 +479,19 @@ def main():
     if not docs:
         console.print("[red]No ALTO documents found in OCR/.[/red]")
         sys.exit(1)
+
+    # Audit 2.5: minimal resume after a crash — skip already-converted docs
+    if args.skip_existing:
+        already = [d for d in docs if (OUTPUT_DIR / f"{d[0]}.tei.xml").exists()]
+        if already:
+            console.print(
+                f"[dim]--skip-existing: {len(already)} document(s) "
+                f"already converted, skipped[/dim]"
+            )
+            docs = [d for d in docs if (OUTPUT_DIR / f"{d[0]}.tei.xml").exists() is False]
+        if not docs and not failed_archives:
+            console.print("[bold green]Nothing to do:[/bold green] every document already has a TEI output.")
+            return
 
     # Load global metadata CSV
     df_meta = load_metadata(METADATA_CSV)
