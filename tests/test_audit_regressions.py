@@ -126,7 +126,6 @@ ALTO_GLYPHE = """<?xml version="1.0" encoding="UTF-8"?>
 """
 
 
-@pytest.mark.xfail(strict=True, reason="audit 5.4 -- zone4 lit GC, car lit WC sur le meme <Glyph>")
 def test_glyph_zone_and_char_report_the_same_certainty():
     """
     Pour un meme <Glyph>, `zone4` prend l'attribut GC et `car` prend WC : la
