@@ -15,6 +15,8 @@ Usage:
 import logging
 import re
 import sys
+from datetime import datetime
+from pathlib import Path
 from time import perf_counter
 from zipfile import ZipFile
 
@@ -49,8 +51,26 @@ _log_datefmt = "%Y-%m-%d %H:%M:%S"
 _handlers = []
 
 # File handler: always write DEBUG+ to log file
-if LOG_FILE:
-    _file_handler = logging.FileHandler(str(LOG_FILE), mode="w", encoding="utf-8")
+def _run_log_path(base_path, now):
+    """
+    Per-run, timestamped log file derived from LOG_FILE (audit 2.10).
+
+    mode="w" on a fixed name destroyed the previous run's log: a failed
+    nightly run relaunched in the morning became undiagnosable. Each run
+    now writes its own file (e.g. pipeline_20260828_093000.log).
+    """
+    return base_path.with_name(f"{base_path.stem}_{now:%Y%m%d_%H%M%S}{base_path.suffix}")
+
+
+# Actual log file of this run (None when file logging is disabled)
+RUN_LOG_FILE = _run_log_path(Path(LOG_FILE), datetime.now()) if LOG_FILE else None
+
+if RUN_LOG_FILE:
+    # delay=True: the file is only created at the first record, so importing
+    # this module (tests) does not litter the working directory with logs.
+    _file_handler = logging.FileHandler(
+        str(RUN_LOG_FILE), mode="w", encoding="utf-8", delay=True
+    )
     _file_handler.setLevel(logging.DEBUG)
     _file_handler.setFormatter(logging.Formatter(_log_format, datefmt=_log_datefmt))
     _handlers.append(_file_handler)
@@ -475,7 +495,7 @@ def main():
         )
         for name in failed_docs:
             console.print(f"  [red]FAILED[/red] {name}")
-        console.print(f"[dim]Tracebacks in {LOG_FILE}[/dim]")
+        console.print(f"[dim]Tracebacks in {RUN_LOG_FILE}[/dim]")
         sys.exit(1)
 
     console.print(

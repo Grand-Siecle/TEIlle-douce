@@ -320,6 +320,9 @@ def test_court_un_document_casse_ne_tue_pas_le_run(tmp_path):
     assert res.returncode != 0
     assert "LIV9000_reconciled" in res.stdout
     assert "1/2" in res.stdout
+    # audit 2.10 : le log du run est horodate (pipeline_YYYYMMDD_HHMMSS.log),
+    # un prochain run n'ecrasera donc pas la trace de cet echec
+    assert list(tmp_path.glob("pipeline_*.log")), sorted(tmp_path.iterdir())
 
 
 # =============================================================================
