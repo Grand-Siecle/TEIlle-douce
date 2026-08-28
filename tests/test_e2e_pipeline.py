@@ -44,16 +44,14 @@ UUID_RE = re.compile(r"(?<![0-9a-zA-Z])[0-9a-f]{32}(?![0-9a-zA-Z])")
 # Execution du pipeline
 # =============================================================================
 
-def lancer_pipeline(tmp_path, **flags):
+def _executer_main(tmp_path, ocr_dir, **flags):
     """
-    Execute main.py sur la fixture, dans un repertoire de travail jetable.
+    Execute main.py dans un repertoire de travail jetable, sans presumer du
+    resultat. Renvoie (CompletedProcess, repertoire de sortie).
 
     Les chemins des CSV de metadonnees ne sont pas surchargeables par variable
     d'environnement (ils sont relatifs au repertoire courant), d'ou l'execution
     dans un tmp_path ou l'on a copie les CSV de fixture.
-
-    Returns:
-        Path: le fichier TEI produit.
     """
     for csv in ("metadata_livre.csv", "metadata_personne.csv"):
         shutil.copy(FIXTURES / csv, tmp_path / csv)
@@ -61,7 +59,7 @@ def lancer_pipeline(tmp_path, **flags):
     sortie = tmp_path / "out"
     env = {
         **os.environ,
-        "ALTO2TEI_OCR_DIR": str(ALTO_MIN),
+        "ALTO2TEI_OCR_DIR": str(ocr_dir),
         "ALTO2TEI_OUTPUT_DIR": str(sortie),
         **{k: v for k, v in flags.items()},
     }
@@ -70,6 +68,17 @@ def lancer_pipeline(tmp_path, **flags):
         [sys.executable, str(RACINE / "main.py")],
         cwd=tmp_path, env=env, capture_output=True, text=True, timeout=900,
     )
+    return res, sortie
+
+
+def lancer_pipeline(tmp_path, **flags):
+    """
+    Execute main.py sur la fixture et exige un succes.
+
+    Returns:
+        Path: le fichier TEI produit.
+    """
+    res, sortie = _executer_main(tmp_path, ALTO_MIN, **flags)
     produit = sortie / f"{DOCUMENT}.tei.xml"
     assert produit.exists(), (
         f"aucune sortie produite (code {res.returncode})\n"
@@ -282,6 +291,35 @@ def test_court_correspond_au_golden(tei_court):
     assert normaliser(tei_court, sans_taxonomie=True) == GOLDEN.read_text(
         encoding="utf-8"
     )
+
+
+@pytest.mark.e2e
+def test_court_un_document_casse_ne_tue_pas_le_run(tmp_path):
+    """
+    Audit 2.1/2.10 : un document corrompu est signale, compte dans le bilan et
+    fait sortir avec un code non nul — mais les documents suivants sont
+    convertis normalement. Le document casse est nomme pour passer AVANT le
+    document sain dans l'ordre de traitement : la reussite du sain prouve que
+    la boucle a continue apres l'echec.
+    """
+    ocr = tmp_path / "ocr"
+    shutil.copytree(ALTO_MIN, ocr)
+    casse = ocr / "LIV9000_reconciled" / "content" / "data" / "doc_1"
+    casse.mkdir(parents=True)
+    (casse / "f1.xml").write_text("<alto><Layout><Page broken", encoding="utf-8")
+
+    res, sortie = _executer_main(tmp_path, ocr, **MODE_COURT)
+
+    # le document sain, traite apres le casse, est bien produit
+    assert (sortie / f"{DOCUMENT}.tei.xml").exists(), (
+        f"--- stdout ---\n{res.stdout[-3000:]}\n--- stderr ---\n{res.stderr[-3000:]}"
+    )
+    # le document casse n'a pas de sortie
+    assert not (sortie / "LIV9000_reconciled.tei.xml").exists()
+    # bilan : echec signale nominalement, code retour non nul
+    assert res.returncode != 0
+    assert "LIV9000_reconciled" in res.stdout
+    assert "1/2" in res.stdout
 
 
 # =============================================================================
