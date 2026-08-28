@@ -14,8 +14,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+import pytest
 from lxml import etree
 
+import src.metadata.csv_person as csv_person_module
+from src.metadata.csv_person import load_person_database
 from src.metadata.csv_book import (
     safe_person_id,
     build_metadata_dict,
@@ -23,6 +26,23 @@ from src.metadata.csv_book import (
 )
 
 ARK = "ark:/12148/cb17834575c"
+
+# Le listPerson de particDesc n'est construit que si un PersonDatabase non
+# vide est charge (csv_book.py : `if all_person_ids and person_db:`). Le
+# metadata_personne.csv de la racine est gitignore et absent d'un clone
+# frais (CI) : on charge la fixture versionnee a la place.
+FIXTURE_PERSON_CSV = Path(__file__).resolve().parent / "fixtures" / "metadata_personne.csv"
+
+
+@pytest.fixture(autouse=True)
+def reset_person_db_singleton():
+    """src.metadata.csv_person._person_db est un singleton de module.
+    Reset avant ET apres chaque test pour ne pas dependre du
+    metadata_personne.csv reel (gitignore) ni polluer les autres modules
+    de test - meme motif que tests/test_metadata_sources.py."""
+    csv_person_module._person_db = None
+    yield
+    csv_person_module._person_db = None
 
 
 def test_pers_id_unchanged():
@@ -60,6 +80,7 @@ def test_ark_role_id_sanitized_in_listperson_and_respstmt():
         "ID_Editeur": "",
         "ID_Traducteurs": "",
     }
+    load_person_database(FIXTURE_PERSON_CSV)
     root = _minimal_root()
     override_teiheader_from_csv(root, row, "TESTDOC")
     xml = etree.tostring(root, encoding="unicode")
