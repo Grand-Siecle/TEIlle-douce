@@ -1,0 +1,9 @@
+# Optional: NER pipeline (required when NER_ENABLED=True).
+# Kept out of requirements.txt on purpose: several GB of models/wheels,
+# and the default test suite runs without them (lazy imports in
+# src/enrichment/ner_models.py, guarded import in ner_detect.py).
+-r requirements.txt
+transformers
+torch
+gliner
+flair
