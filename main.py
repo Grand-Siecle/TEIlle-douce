@@ -14,11 +14,12 @@ Usage:
 
 import logging
 import re
+import shutil
 import sys
 from datetime import datetime
 from pathlib import Path
 from time import perf_counter
-from zipfile import ZipFile
+from zipfile import BadZipFile, ZipFile
 
 from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TimeElapsedColumn
 from rich.console import Console
@@ -127,38 +128,75 @@ def build_config():
     }
 
 
+def _extract_archive(zip_path, target):
+    """
+    Extract an archive into a temporary sibling directory, then rename it
+    atomically to `target` (audit 2.2).
+
+    Extracting straight into `target` meant an interrupted run left a
+    partial directory that the `target.exists()` guard treated as fully
+    extracted on the next run — a silently truncated document. testzip()
+    rejects archives with corrupt members before extraction starts.
+    """
+    tmp_target = target.with_name(target.name + ".extracting")
+    if tmp_target.exists():
+        # Leftover of a previously interrupted extraction
+        shutil.rmtree(tmp_target)
+    with ZipFile(zip_path) as zf:
+        bad_member = zf.testzip()
+        if bad_member is not None:
+            raise BadZipFile(f"corrupt member: {bad_member}")
+        zf.extractall(tmp_target)
+    tmp_target.rename(target)
+
+
 def expand_archives(ocr_dir):
     """
     Extract ZIP archives in the OCR directory.
 
     Automatically extracts any ZIP files found in the OCR directory
-    into subdirectories with the same name as the archive.
+    into subdirectories with the same name as the archive. A corrupt
+    archive is skipped and reported instead of killing the run
+    (audit 2.2).
 
     Args:
         ocr_dir (Path): Path to the OCR directory.
 
     Returns:
-        list: List of directories ready for processing.
+        tuple: (ready_dirs, failed_archives)
+            - ready_dirs: sorted list of directories ready for processing
+            - failed_archives: list of "name (reason)" strings for archives
+              that could not be extracted
     """
     ready_dirs = set()
+    failed_archives = []
 
     # Extract ZIP files that haven't been extracted yet
-    for zip_path in ocr_dir.glob("*.zip"):
+    for zip_path in sorted(ocr_dir.glob("*.zip")):
         target = ocr_dir / zip_path.stem
         if not target.exists():
             console.print(f"[dim]Extracting: {zip_path.name} -> {target.name}/[/dim]")
-            target.mkdir(parents=True, exist_ok=True)
-            with ZipFile(zip_path) as zf:
-                zf.extractall(target)
+            try:
+                _extract_archive(zip_path, target)
+            except (BadZipFile, OSError) as e:
+                logging.getLogger(__name__).error(
+                    "Cannot extract archive %s: %s", zip_path.name, e
+                )
+                console.print(
+                    f"[bold red]Corrupt archive skipped:[/bold red] {zip_path.name} ({e})"
+                )
+                failed_archives.append(f"{zip_path.name} ({e})")
+                continue
         ready_dirs.add(target)
 
-    # Include existing directories with XML files
+    # Include existing directories with XML files (never the temporary
+    # ".extracting" directories of an interrupted run)
     for d in ocr_dir.iterdir():
-        if d.is_dir():
+        if d.is_dir() and not d.name.endswith(".extracting"):
             if any(d.rglob("*.xml")):
                 ready_dirs.add(d)
 
-    return sorted(ready_dirs)
+    return sorted(ready_dirs), failed_archives
 
 
 def _extract_bdd_prefix(doc_folder_name):
@@ -411,8 +449,8 @@ def main():
     # Create output directory
     OUTPUT_DIR.mkdir(exist_ok=True)
 
-    # Extract ZIP archives
-    ready_dirs = expand_archives(OCR_DIR)
+    # Extract ZIP archives (corrupt ones are skipped and reported)
+    ready_dirs, failed_archives = expand_archives(OCR_DIR)
 
     # Collect documents to process
     docs = []
@@ -469,7 +507,7 @@ def main():
         task_docs = progress.add_task("Processing documents", total=len(docs))
 
         ok_docs = []
-        failed_docs = []
+        failed_docs = list(failed_archives)  # corrupt archives count as failures
         for doc_name, filepaths, doc_dir in docs:
             try:
                 _process_document(
@@ -488,10 +526,11 @@ def main():
             progress.advance(task_docs)
 
     # Audit 2.10: end-of-run summary + non-zero exit code on failures
+    total = len(docs) + len(failed_archives)
     if failed_docs:
         console.print(
             f"\n[bold yellow]Completed with errors:[/bold yellow] "
-            f"{len(ok_docs)}/{len(docs)} documents converted"
+            f"{len(ok_docs)}/{total} documents converted"
         )
         for name in failed_docs:
             console.print(f"  [red]FAILED[/red] {name}")
@@ -499,7 +538,7 @@ def main():
         sys.exit(1)
 
     console.print(
-        f"\n[bold green]Done.[/bold green] {len(ok_docs)}/{len(docs)} documents converted"
+        f"\n[bold green]Done.[/bold green] {len(ok_docs)}/{total} documents converted"
     )
 
 
