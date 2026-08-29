@@ -27,9 +27,10 @@ from src.metadata.csv_book import (
 
 ARK = "ark:/12148/cb17834575c"
 
-# Le listPerson de particDesc n'est construit que si un PersonDatabase non
-# vide est charge (csv_book.py : `if all_person_ids and person_db:`). Le
-# metadata_personne.csv de la racine est gitignore et absent d'un clone
+# Le listPerson de particDesc n'est construit que si un PersonDatabase
+# charge avec succes est present (csv_book.py : `if all_person_ids and
+# person_db:` ; la verite suit le chargement depuis le correctif __bool__).
+# Le metadata_personne.csv de la racine est gitignore et absent d'un clone
 # frais (CI) : on charge la fixture versionnee a la place.
 FIXTURE_PERSON_CSV = Path(__file__).resolve().parent / "fixtures" / "metadata_personne.csv"
 

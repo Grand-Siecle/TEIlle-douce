@@ -528,8 +528,13 @@ def main(argv=None):
 
     # Load person metadata database
     person_db = load_person_database(METADATA_PERSON_CSV)
-    if person_db and len(person_db) > 0:
+    if person_db:
         console.print(f"[dim]Loaded {len(person_db)} persons from {METADATA_PERSON_CSV}[/dim]")
+    else:
+        console.print(
+            f"[yellow]Warning: person metadata not loaded ({METADATA_PERSON_CSV}) "
+            f"— headers will keep placeholder person entries.[/yellow]"
+        )
 
     # Check modernization API availability
     do_modernize = False

@@ -1,13 +1,15 @@
 """
-Tests de non-regression des constats du rapport d'audit (docs/rapport_audit.md, section 5).
+Tests de non-regression des constats du rapport d'audit
+(docs/superpowers/rapport_audit.md, section 5).
 
-Chaque test decrit le comportement attendu APRES correctif et porte
-`xfail(strict=True)` : il est compte `xfailed` tant que le bug est present, et
-devient un ECHEC le jour ou le correctif est applique -- ce qui force a retirer
-le marqueur. Un test qui passe ici sans marqueur = constat traite.
+Chaque test decrivait le comportement attendu APRES correctif, epingle par
+`xfail(strict=True)` jusqu'a ce que le correctif soit applique. Les quatre
+constats de la section 5 sont aujourd'hui corriges : tous les tests tournent
+sans marqueur et servent de non-regression. Nota : zone3/zone4/car (5.4) ne
+sont pas encore appeles par build_sourcedoc en production -- le correctif et
+son test couvrent la brique en vue de son cablage.
 """
 
-import pytest
 from lxml import etree
 
 from src.constants import NS_ALTO, SEGMONTO_ZONES, XML_ID
@@ -65,22 +67,35 @@ def _ecrire_csv_personne(chemin, lignes):
     return chemin
 
 
-@pytest.mark.xfail(strict=True, reason="audit 5.2 -- PersonDatabase n'a pas de __bool__, une base vide est falsy")
 def test_empty_person_database_is_not_confused_with_a_missing_one(tmp_path):
     """
     `override_teiheader_from_csv` garde la construction du <listPerson> derriere
-    `if all_person_ids and person_db:`. Faute de `__bool__`, Python retombe sur
-    `__len__` : une base chargee mais vide est fausse, et tout le <listPerson>
-    saute -- y compris pour des personnes qui ne viennent pas de cette base.
-    Consequence mesuree : tests/test_person_ids.py echoue sur un clone frais,
-    ou metadata_personne.csv (gitignore) est absent.
+    `if all_person_ids and person_db:`. Faute de `__bool__`, Python retombait
+    sur `__len__` : une base chargee mais vide etait fausse, et tout le
+    <listPerson> sautait -- y compris pour des personnes qui ne viennent pas de
+    cette base. La verite doit suivre le SUCCES DU CHARGEMENT, pas le nombre
+    d'entrees : un `__bool__` constant a True serait tout aussi faux (une base
+    au CSV manquant publierait des identifiants bruts comme noms de personnes).
     """
     db_vide = PersonDatabase(_ecrire_csv_personne(tmp_path / "personnes.csv", []))
-
     assert len(db_vide) == 0, "prerequis du test : la base doit bien etre vide"
     assert bool(db_vide) is True, (
-        "une base chargee mais vide doit rester vraie : seule une base ABSENTE "
-        "devrait etre fausse"
+        "une base chargee mais vide doit rester vraie : seule une base non "
+        "chargee devrait etre fausse"
+    )
+
+    db_absente = PersonDatabase(tmp_path / "inexistante.csv")
+    assert bool(db_absente) is False, (
+        "une base dont le CSV est manquant doit rester fausse, sinon le header "
+        "se remplit de stubs silencieux au lieu de sauter le listPerson"
+    )
+
+    csv_virgules = tmp_path / "virgules.csv"
+    csv_virgules.write_text("BDD,Nom,ISNI\nP1,X,Y\n", encoding="utf-8")
+    db_illisible = PersonDatabase(csv_virgules)
+    assert bool(db_illisible) is False, (
+        "un CSV sans colonne BDD (mauvais delimiteur, en-tetes renommes) doit "
+        "etre traite comme non charge, pas comme une base vide valide"
     )
 
 
@@ -88,7 +103,6 @@ def test_empty_person_database_is_not_confused_with_a_missing_one(tmp_path):
 # 5.3 -- ISNI : zeros de tete manges par l'inference de type de pandas
 # =============================================================================
 
-@pytest.mark.xfail(strict=True, reason="audit 5.3 -- pd.read_csv sans dtype=str infere int64 sur la colonne ISNI")
 def test_isni_leading_zeros_are_preserved(tmp_path):
     """
     Quand la colonne ISNI est entierement numerique, pandas l'infere en int64 et
@@ -128,7 +142,6 @@ ALTO_GLYPHE = """<?xml version="1.0" encoding="UTF-8"?>
 """
 
 
-@pytest.mark.xfail(strict=True, reason="audit 5.4 -- zone4 lit GC, car lit WC sur le meme <Glyph>")
 def test_glyph_zone_and_char_report_the_same_certainty():
     """
     Pour un meme <Glyph>, `zone4` prend l'attribut GC et `car` prend WC : la
@@ -144,6 +157,9 @@ def test_glyph_zone_and_char_report_the_same_certainty():
     degre_zone = [c for c in glyph_zone if qlocal(c) == "certainty"][0].get("degree")
     degre_car = [c for c in c_el if qlocal(c) == "certainty"][0].get("degree")
 
-    assert degre_zone == degre_car, (
-        f"le meme glyphe porte deux certitudes : zone={degre_zone} (GC), c={degre_car} (WC)"
+    # Valeurs exactes, pas seulement l'egalite : la fixture porte WC="0.66"
+    # comme leurre, un retour simultane des deux lectures vers WC garderait
+    # l'egalite mais serait faux.
+    assert degre_zone == degre_car == "0.5", (
+        f"attendu GC=0.5 des deux cotes : zone={degre_zone}, c={degre_car}"
     )

@@ -255,21 +255,17 @@ def test_build_metadata_dict_known_author_and_multivalued_fields(tmp_path):
     assert iiif["Place"] == "Paris"
 
 
-def test_build_metadata_dict_isni_leading_zeros_truncated_by_pandas(tmp_path):
-    """Surprising: an all-digit ISNI with leading zeros silently loses them.
-    PersonDatabase.load() calls pd.read_csv() with no dtype override, so a
-    column that is all-digits across every row is inferred as int64 and
-    "0000000123456789" becomes 123456789. Real ISNIs are 16-digit and often
-    zero-padded, so this can corrupt production data whenever the check
-    digit isn't 'X' (see test above, which sidesteps the bug on purpose by
-    using an ISNI ending in 'X')."""
+def test_build_metadata_dict_isni_leading_zeros_preserved(tmp_path):
+    """Audit 5.3 : PersonDatabase.load() lit desormais avec dtype=str, un
+    ISNI entierement numerique garde ses zeros de tete (les ISNI reels font
+    16 chiffres, frequemment zero-pades)."""
     person_csv = _write_person_csv(tmp_path, [{
         "BDD": "PERS0009", "Prenoms": "Ada", "Nom": "Lovelace",
         "ISNI": "0000000123456789",
     }])
     load_person_database(person_csv)
     metadata = build_metadata_dict({"ID_auteur": "PERS0009"})
-    assert metadata["sru"]["authors"][0]["isni"] == "123456789"
+    assert metadata["sru"]["authors"][0]["isni"] == "0000000123456789"
 
 
 # ---------------------------------------------------------------------------
@@ -490,9 +486,8 @@ def test_override_unknown_non_ark_person_gets_bare_persname_text(tmp_path):
     a minimal <person> entry: xml:id only, and - since it isn't an ark -
     the id itself as the persName text (no nested <idno>, unlike the ark
     case already covered by tests/test_person_ids.py)."""
-    # Any unrelated entry is enough to make the db non-empty/truthy: an
-    # *empty* PersonDatabase is falsy (via __len__), which would otherwise
-    # skip listPerson construction entirely - see final report.
+    # Une entree quelconque suffit a rendre la base chargee (et donc vraie
+    # depuis le correctif __bool__ base sur le succes du chargement).
     person_csv = _write_person_csv(tmp_path, [{"BDD": "PERS9999", "Nom": "Unrelated"}])
     load_person_database(person_csv)
 

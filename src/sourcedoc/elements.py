@@ -286,11 +286,15 @@ class SurfaceTree:
 
         car_el = etree.SubElement(zone, "c", {XML_ID: car_uuid})
 
-        # Add confidence data if available
-        alto_glyph = self.root.find(f'.//a:Glyph[@ID="{glyph_id}"]', namespaces=NS_ALTO)
-        if alto_glyph is not None:
-            wc = alto_glyph.get("WC")
-            if wc:
+        # Add confidence data if available. GC (glyph confidence), the same
+        # source as the glyph's <zone>: reading WC here gave the same glyph
+        # two different certainty degrees (audit 5.4). Read straight off
+        # the `glyph` element already passed in (also used for CONTENT
+        # below) — a second full-tree lookup by ID was one more way for
+        # the two readings to diverge.
+        if glyph is not None:
+            gc = glyph.get("GC")
+            if gc:
                 cert_uuid = self._uuid("cert_")
                 etree.SubElement(
                     car_el,
@@ -298,7 +302,7 @@ class SurfaceTree:
                     {
                         XML_ID: cert_uuid,
                         "locus": "value",
-                        "degree": wc,
+                        "degree": gc,
                         "target": f"#{car_uuid}",
                     },
                 )

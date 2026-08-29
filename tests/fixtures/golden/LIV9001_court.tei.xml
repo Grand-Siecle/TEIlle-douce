@@ -38,7 +38,7 @@
           <persName>
             <forename>Jean</forename>
             <surname>Dupont</surname>
-            <ptr type="isni" target="https://isni.org/isni/123456789"/>
+            <ptr type="isni" target="https://isni.org/isni/0000000123456789"/>
             <ptr type="ark" target="ark:/12148/cb9001"/>
           </persName>
           <birth when="1610/05/22">
@@ -68,7 +68,7 @@
             <persName>
               <forename>Jean</forename>
               <surname>Dupont</surname>
-              <ptr type="isni" target="123456789"/>
+              <ptr type="isni" target="0000000123456789"/>
             </persName>
           </author>
           <title>Traite de la peinture et de ses principes, fixture de test</title>
@@ -126,7 +126,7 @@
             <death when="1678"/>
             <faith>Catholique</faith>
             <occupation>Peintre|Theoricien</occupation>
-            <idno type="isni">123456789</idno>
+            <idno type="isni">0000000123456789</idno>
             <idno type="ark">ark:/12148/cb9001</idno>
           </person>
           <person xml:id="PERS9002" sex="F">
@@ -137,7 +137,7 @@
             <birth when="1615">
               <placeName>Paris</placeName>
             </birth>
-            <idno type="isni">987654321</idno>
+            <idno type="isni">0000000987654321</idno>
           </person>
         </listPerson>
       </particDesc>
