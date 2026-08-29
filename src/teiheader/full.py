@@ -20,16 +20,23 @@ from ..constants import NS_ALTO, XML_ID, SEGMONTO_ZONES, SEGMONTO_LINES
 logger = logging.getLogger(__name__)
 
 
-_LABEL_PARSER = etree.XMLParser(huge_tree=True)
+_ALTO_URI = NS_ALTO["a"]
+_TAG_OTHERTAG = f"{{{_ALTO_URI}}}OtherTag"
+_TAG_TAGS = f"{{{_ALTO_URI}}}Tags"
 
 
 def _extract_labels(filepath):
     """
     Extract SegmOnto labels from an ALTO file.
 
-    A file that does not parse contributes no labels instead of killing
-    the whole document: its fate is decided page by page in the sourcedoc
-    workers, not here. OtherTag entries without ID or LABEL are skipped.
+    iterparse with an early stop after </Tags> (audit 3.2): the labels
+    sit in the first kilobyte of files that weigh megabytes — a full
+    parse of every page cost seconds per document just to read them.
+
+    A file that does not parse before its <Tags> contributes no labels
+    instead of killing the whole document: its fate is decided page by
+    page in the sourcedoc workers, not here. OtherTag entries without
+    ID or LABEL are skipped.
 
     Args:
         filepath: Path to the ALTO XML file.
@@ -37,13 +44,22 @@ def _extract_labels(filepath):
     Returns:
         dict: Mapping of element IDs to their labels.
     """
+    labels = {}
     try:
-        root = etree.parse(str(filepath), parser=_LABEL_PARSER).getroot()
+        for _, elem in etree.iterparse(
+            str(filepath), events=("end",),
+            tag=(_TAG_OTHERTAG, _TAG_TAGS), huge_tree=True,
+        ):
+            if elem.tag == _TAG_OTHERTAG:
+                tag_id, label = elem.get("ID"), elem.get("LABEL")
+                if tag_id and label:
+                    labels[tag_id] = label
+            else:  # </Tags> reached: labels only live there, stop reading
+                break
     except etree.XMLSyntaxError as e:
         logger.warning("No labels read from %s (unparseable: %s)", filepath, e)
         return {}
-    elements = [t.attrib for t in root.findall(".//a:OtherTag", namespaces=NS_ALTO)]
-    return {d["ID"]: d["LABEL"] for d in elements if "ID" in d and "LABEL" in d}
+    return labels
 
 
 class FullTree:

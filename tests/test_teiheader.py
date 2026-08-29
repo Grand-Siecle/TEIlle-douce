@@ -363,6 +363,28 @@ def test_extract_labels_returns_id_to_label_dict(tmp_path):
     assert labels == {"BT1": "MainZone", "BT2": "DefaultLine"}
 
 
+def test_extract_labels_stops_reading_after_tags(tmp_path):
+    """Audit 3.2 : les labels vivent dans <Tags>, en tete de fichier — la
+    lecture s'arrete la. Preuve : un fichier tronque APRES </Tags> (donc
+    invalide pour un parse complet) livre quand meme ses labels."""
+    p = tmp_path / "tronque.xml"
+    p.write_text(
+        '<alto xmlns="http://www.loc.gov/standards/alto/ns-v4#">'
+        '<Tags><OtherTag ID="BT1" LABEL="MainZone"/></Tags>'
+        "<Layout><Page WIDTH=",  # tronque net apres les Tags
+        encoding="utf-8",
+    )
+    assert _extract_labels(p) == {"BT1": "MainZone"}
+
+
+def test_extract_labels_unparseable_file_contributes_no_labels(tmp_path):
+    """Un fichier illisible avant ses <Tags> ne tue pas le document : il ne
+    contribue simplement aucun label (son sort se joue dans les workers)."""
+    p = tmp_path / "casse.xml"
+    p.write_text("\x00\x01pas du xml", encoding="utf-8")
+    assert _extract_labels(p) == {}
+
+
 def test_segmonto_taxonomy_extracts_labels_and_always_adds_defaultline(tmp_path):
     alto_path = write_alto(tmp_path, "page1.xml", [
         ("BT1", "MainZone"),
