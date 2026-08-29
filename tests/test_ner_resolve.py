@@ -24,6 +24,7 @@ from lxml import etree
 from config import NER_ENTITY_TYPES
 from src.constants import XML_ID
 from src.enrichment.ner_align import AlignedEntity, inject_entities
+from src.enrichment.ner_resolve import _make_xml_id
 from src.enrichment.ner_resolve import (
     ResolvedEntity,
     group_mentions,
@@ -590,3 +591,17 @@ def test_write_entity_csvs_preserves_entities_across_documents(tmp_path):
     assert names == {"Nicolas Poussin", "Charles Le Brun"}, (
         f"entities from both documents must survive; got {names}"
     )
+
+
+# =============================================================================
+# Identifiants deterministes (audit 2.8)
+# =============================================================================
+
+def test_make_xml_id_is_deterministic_and_scoped():
+    """Audit 2.8 : la meme entite (type + nom normalise) recoit le meme
+    xml:id a chaque run — et deux entites distinctes des ids distincts."""
+    a = _make_xml_id("person", "jean dupont")
+    assert a == _make_xml_id("person", "jean dupont")
+    assert a.startswith("pers-")
+    assert a != _make_xml_id("place", "jean dupont")
+    assert a != _make_xml_id("person", "jeanne dupont")

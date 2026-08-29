@@ -12,7 +12,7 @@ import uuid
 
 from lxml import etree
 
-from ..constants import NS_XML, XML_ID
+from ..constants import NS_XML, UUID_NAMESPACE, XML_ID
 from .segmenter import Sentence
 from .aligner import AlignedToken
 
@@ -178,8 +178,12 @@ def _create_cross_line_w(parent, at, inserted_lbs):
         _create_w(parent, at)
         return
 
-    # Generate unique IDs for linking
-    base_id = uuid.uuid4().hex[:12]
+    # Deterministic linking ids (audit 2.8): anchored on the enclosing
+    # sentence id, the insertion position and the token form.
+    anchor = parent.get(XML_ID) or ""
+    base_id = uuid.uuid5(
+        UUID_NAMESPACE, f"{anchor}\x1f{len(parent)}\x1f{at.token.form}"
+    ).hex[:12]
     w_ids = [f"w_{base_id}_{i}" for i in range(len(parts))]
 
     # Shared attributes (applied to all fragments)

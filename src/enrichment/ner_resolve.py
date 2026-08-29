@@ -18,7 +18,7 @@ from pathlib import Path
 
 from lxml import etree
 
-from ..constants import NS_TEI, XML_ID
+from ..constants import NS_TEI, UUID_NAMESPACE, XML_ID
 from ..utils.xml import local_tag as _local
 from .ner_filter import (
     _normalize,
@@ -65,10 +65,18 @@ _TYPE_PREFIX = {
 }
 
 
-def _make_xml_id(entity_type):
-    """Generate an NCName-compliant xml:id."""
+def _make_xml_id(entity_type, normalized_name):
+    """
+    NCName-compliant, deterministic xml:id (audit 2.8).
+
+    uuid5 over (type, normalized canonical name): the same entity gets
+    the same id on every run — and in every document, which is exactly
+    what the external reconciliation step needs to link entities across
+    the corpus. Uniqueness within a document holds because entities are
+    grouped by this very key beforehand.
+    """
     prefix = _TYPE_PREFIX.get(entity_type, "ent")
-    uid = str(uuid.uuid4())
+    uid = uuid.uuid5(UUID_NAMESPACE, f"{entity_type}\x1f{normalized_name}")
     return f"{prefix}-{uid}"
 
 
@@ -126,13 +134,12 @@ def group_mentions(aligned_entities):
             groups[key]["canonical"] = canonical  # use highest-confidence form
 
     resolved = []
-    for grp in groups.values():
-        etype = grp["type"]
+    for (etype, norm), grp in groups.items():
         resolved.append(
             ResolvedEntity(
                 entity_type=etype,
                 canonical_name=grp["canonical"],
-                xml_id=_make_xml_id(etype),
+                xml_id=_make_xml_id(etype, norm),
                 mentions=grp["mentions"],
             )
         )

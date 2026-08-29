@@ -21,7 +21,7 @@ from config import (
     ENRICHMENT_CONTAINERS,
     ENRICHMENT_MIN_TEXT_LENGTH,
 )
-from ..constants import NS_XML
+from ..constants import NS_XML, XML_ID
 from ..utils.xml import local_tag as _local
 from .extractor import extract_spans
 from .dehyphenation import dehyphenate
@@ -159,8 +159,11 @@ def _process_container(container, stats):
     # Phase 4: Align tokens to XML positions.
     aligned = align_tokens(tokens, spans, offset_map, hyphen_joins)
 
-    # Phase 5: Segment into sentences.
-    sentences = segment_sentences(aligned)
+    # Phase 5: Segment into sentences. The container's @corresp scopes
+    # the deterministic sentence ids (audit 2.8).
+    sentences = segment_sentences(
+        aligned, id_scope=container.get("corresp") or container.get(XML_ID) or ""
+    )
 
     # Phase 6: Rebuild XML.
     rebuild_container(container, sentences, spans, primary_lang=primary_lang)
