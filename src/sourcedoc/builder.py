@@ -10,8 +10,9 @@ ALTO XML files. Uses multiprocessing for parallel page processing.
 """
 
 import logging
+import multiprocessing
 from pathlib import Path
-from multiprocessing import Pool, cpu_count
+from multiprocessing import cpu_count
 
 from lxml import etree
 from rich.markup import escape as markup_escape
@@ -19,6 +20,18 @@ from rich.markup import escape as markup_escape
 from config import MAX_WORKERS
 
 logger = logging.getLogger(__name__)
+
+# fork() in a multi-threaded parent (rich's progress refresh thread,
+# coverage's tracing) deadlocks intermittently — observed locally and in
+# CI, and warned about by Python itself. The forkserver context forks
+# workers from a clean single-threaded server instead; preloading this
+# module there keeps worker startup fork-fast (no per-worker re-import
+# of lxml/pandas). spawn is the fallback where forkserver is missing.
+if "forkserver" in multiprocessing.get_all_start_methods():
+    _MP_CONTEXT = multiprocessing.get_context("forkserver")
+    _MP_CONTEXT.set_forkserver_preload(["src.sourcedoc.builder"])
+else:  # pragma: no cover - non-POSIX platforms
+    _MP_CONTEXT = multiprocessing.get_context("spawn")
 from ..constants import NS_ALTO
 from ..utils.files import Files
 from ..metadata.iiif import IIIFMapping
@@ -264,7 +277,7 @@ def build_sourcedoc(
     skipped_pages = []
 
     # Process pages in parallel
-    with Pool(workers) as pool:
+    with _MP_CONTEXT.Pool(workers) as pool:
         for idx, (num, xml_bytes, error, warning) in enumerate(
             pool.imap_unordered(_build_surface_fragment, jobs), start=1
         ):
