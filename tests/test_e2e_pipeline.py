@@ -109,7 +109,7 @@ def _env_couverture_sous_processus():
     }
 
 
-def normaliser(chemin, sans_taxonomie=False):
+def normaliser(chemin):
     """
     Rend la sortie comparable d'un run a l'autre.
 
@@ -117,19 +117,11 @@ def normaliser(chemin, sans_taxonomie=False):
     document (les references `#uuid` suivent, la substitution etant textuelle
     et les uuid uniques), et neutralise la date de generation.
 
-    `sans_taxonomie` retire en plus le bloc <taxonomy>, dont l'ordre varie d'un
-    processus a l'autre (audit 6.9) : cela permet de verifier la stabilite de
-    tout le reste du document sans que ce defaut connu ne masque les autres. Le
-    defaut lui-meme est epingle par un test dedie, et le contenu de la taxonomie
-    est couvert par les tests unitaires de src/teiheader/.
+    (Historique : un parametre `sans_taxonomie` retirait le bloc <taxonomy>
+    tant que son ordre dependait de PYTHONHASHSEED — corrige, audit 6.9 :
+    la taxonomie fait desormais partie de la comparaison.)
     """
-    if sans_taxonomie:
-        arbre = etree.parse(str(chemin))
-        for tax in list(arbre.iter("{*}taxonomy")):
-            tax.getparent().remove(tax)
-        texte = etree.tostring(arbre, encoding="utf-8").decode("utf-8")
-    else:
-        texte = Path(chemin).read_text(encoding="utf-8")
+    texte = Path(chemin).read_text(encoding="utf-8")
 
     correspondance = {}
     for uuid in UUID_RE.findall(texte):
@@ -256,16 +248,10 @@ def test_court_est_stable_entre_deux_executions(tei_court, tei_court_bis):
     La taxonomie est retiree avant comparaison : son ordre est instable pour
     une raison distincte, epinglee par le test suivant.
     """
-    assert normaliser(tei_court_bis, sans_taxonomie=True) == normaliser(
-        tei_court, sans_taxonomie=True
-    )
+    assert normaliser(tei_court_bis) == normaliser(tei_court)
 
 
 @pytest.mark.e2e
-@pytest.mark.xfail(
-    strict=True,
-    reason="audit 6.9 -- full.py:224/230 iterent sur un set, l'ordre depend de PYTHONHASHSEED",
-)
 def test_court_ordre_de_la_taxonomie_stable(tei_court, tei_court_bis):
     """
     L'ordre des <catDesc> de la taxonomie SegmOnto doit etre reproductible.
@@ -288,9 +274,7 @@ def test_court_correspond_au_golden(tei_court):
         pytest.skip(f"golden absent : {GOLDEN.relative_to(RACINE)}")
     # Taxonomie neutralisee ici aussi : sans cela le golden serait instable
     # tant que l'audit 6.9 n'est pas corrige.
-    assert normaliser(tei_court, sans_taxonomie=True) == GOLDEN.read_text(
-        encoding="utf-8"
-    )
+    assert normaliser(tei_court) == GOLDEN.read_text(encoding="utf-8")
 
 
 @pytest.mark.e2e

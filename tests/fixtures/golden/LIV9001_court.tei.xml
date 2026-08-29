@@ -1,3 +1,4 @@
+<?xml version='1.0' encoding='UTF-8'?>
 <TEI xmlns="http://www.tei-c.org/ns/1.0" xml:id="LIV9001">
   <teiHeader>
     <fileDesc>
@@ -158,7 +159,97 @@
         </application>
       </appInfo>
       <classDecl>
-        </classDecl>
+        <taxonomy xml:id="SegmOnto">
+          <bibl>
+            <title>SegmOnto</title>
+            <ptr target="https://github.com/segmonto"/>
+          </bibl>
+          <category xml:id="SegmOntoZones">
+            <catDesc xml:id="CustomZone">
+              <title>CustomZone</title>
+              <ptr target="https://segmonto.github.io/gd/gdZ/CustomZone/"/>
+            </catDesc>
+            <catDesc xml:id="DamageZone">
+              <title>DamageZone</title>
+              <ptr target="https://segmonto.github.io/gd/gdZ/DamageZone"/>
+            </catDesc>
+            <catDesc xml:id="DropCapitalZone">
+              <title>DropCapitalZone</title>
+              <ptr target="https://segmonto.github.io/gd/gdZ/DropCapitalZone"/>
+            </catDesc>
+            <catDesc xml:id="GraphicZone">
+              <title>GraphicZone</title>
+              <ptr target="https://segmonto.github.io/gd/gdZ/GraphicZone"/>
+            </catDesc>
+            <catDesc xml:id="MainZone">
+              <title>MainZone</title>
+              <ptr target="https://segmonto.github.io/gd/gdZ/MainZone"/>
+            </catDesc>
+            <catDesc xml:id="MarginTextZone">
+              <title>MarginTextZone</title>
+              <ptr target="https://segmonto.github.io/gd/gdZ/MarginTextZone"/>
+            </catDesc>
+            <catDesc xml:id="MusicZone">
+              <title>MusicZone</title>
+              <ptr target="https://segmonto.github.io/gd/gdZ/MusicZone"/>
+            </catDesc>
+            <catDesc xml:id="NumberingZone">
+              <title>NumberingZone</title>
+              <ptr target="https://segmonto.github.io/gd/gdZ/NumberingZone"/>
+            </catDesc>
+            <catDesc xml:id="QuireMarksZone">
+              <title>QuireMarksZone</title>
+              <ptr target="https://segmonto.github.io/gd/gdZ/QuireMarksZone"/>
+            </catDesc>
+            <catDesc xml:id="RunningTitleZone">
+              <title>RunningTitleZone</title>
+              <ptr target="https://segmonto.github.io/gd/gdZ/RunningTitleZone"/>
+            </catDesc>
+            <catDesc xml:id="SealZone">
+              <title>SealZone</title>
+              <ptr target="https://segmonto.github.io/gd/gdZ/SealZone"/>
+            </catDesc>
+            <catDesc xml:id="StampZone">
+              <title>StampZone</title>
+              <ptr target="https://segmonto.github.io/gd/gdZ/StampZone"/>
+            </catDesc>
+            <catDesc xml:id="TableZone">
+              <title>TableZone</title>
+              <ptr target="https://segmonto.github.io/gd/gdZ/TableZone"/>
+            </catDesc>
+            <catDesc xml:id="TitlePageZone">
+              <title>TitlePageZone</title>
+              <ptr target="https://segmonto.github.io/gd/gdZ/TitlePageZone"/>
+            </catDesc>
+          </category>
+          <category xml:id="SegmOntoLines">
+            <catDesc xml:id="CustomLine">
+              <title>CustomLine</title>
+              <ptr target="https://segmonto.github.io/gd/gdL/CustomLine/"/>
+            </catDesc>
+            <catDesc xml:id="DefaultLine">
+              <title>DefaultLine</title>
+              <ptr target="https://segmonto.github.io/gd/gdL/DefaultLine"/>
+            </catDesc>
+            <catDesc xml:id="DropCapitalLine">
+              <title>DropCapitalLine</title>
+              <ptr target="https://segmonto.github.io/gd/gdL/DropCapitalLine"/>
+            </catDesc>
+            <catDesc xml:id="HeadingLine">
+              <title>HeadingLine</title>
+              <ptr target="https://segmonto.github.io/gd/gdL/HeadingLine"/>
+            </catDesc>
+            <catDesc xml:id="InterlinearLine">
+              <title>InterlinearLine</title>
+              <ptr target="https://segmonto.github.io/gd/gdL/InterlinearLine"/>
+            </catDesc>
+            <catDesc xml:id="MusicLine">
+              <title>MusicLine</title>
+              <ptr target="https://segmonto.github.io/gd/gdL/MusicLine"/>
+            </catDesc>
+          </category>
+        </taxonomy>
+      </classDecl>
     </encodingDesc>
     <revisionDesc>
       <change n="1" type="conversion">Conversion of the ALTO XML source (OCR/HTR output) into TEI P5 with sourceDoc and body by the alto2tei pipeline.</change>
