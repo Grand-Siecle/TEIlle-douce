@@ -49,6 +49,14 @@ class SurfaceTree:
         self.iiif_mapping = iiif_mapping
         self.ids = {}
         self._seen_keys = {}
+        # First-wins ID index (audit 3.5): find() scanned the whole ALTO
+        # tree once per line/string/glyph — 26 % of worker time. find()
+        # returns the first match, so the index keeps the first too.
+        self._by_id = {}
+        for el in alto_root.iter():
+            el_id = el.get("ID")
+            if el_id is not None:
+                self._by_id.setdefault(el_id, el)
 
     def _uuid(self, prefix, *parts):
         """
@@ -159,8 +167,10 @@ class SurfaceTree:
         path_uuid = self._uuid("path_", block_parent, line_id)
         baseline = etree.SubElement(zone, "path", {XML_ID: path_uuid})
 
-        # Get baseline points from ALTO
-        textline = self.root.find(f'.//a:TextLine[@ID="{line_id}"]', namespaces=NS_ALTO)
+        # Get baseline points from ALTO (indexed lookup, audit 3.5)
+        textline = self._by_id.get(line_id)
+        if textline is not None and etree.QName(textline).localname != "TextLine":
+            textline = None
         if textline is not None:
             baseline_str = textline.get("BASELINE", "")
             baseline.attrib["points"] = format_alto_points(baseline_str)
@@ -191,8 +201,10 @@ class SurfaceTree:
         if extracted_words:
             line_el.text = extracted_words
         else:
-            string_el = self.root.find(
-                f'.//a:TextLine[@ID="{line_parent}"]/a:String', namespaces=NS_ALTO
+            parent_line = self._by_id.get(line_parent)
+            string_el = (
+                parent_line.find("a:String", namespaces=NS_ALTO)
+                if parent_line is not None else None
             )
             if string_el is not None:
                 line_el.text = string_el.get("CONTENT", "")
@@ -221,8 +233,10 @@ class SurfaceTree:
         for key, value in attributes.items():
             zone.attrib[key] = value
 
-        # Add confidence data if available
-        alto_string = self.root.find(f'.//a:String[@ID="{seg_id}"]', namespaces=NS_ALTO)
+        # Add confidence data if available (indexed lookup, audit 3.5)
+        alto_string = self._by_id.get(seg_id)
+        if alto_string is not None and etree.QName(alto_string).localname != "String":
+            alto_string = None
         if alto_string is not None:
             wc = alto_string.get("WC")
             if wc:
@@ -268,7 +282,9 @@ class SurfaceTree:
             zone.attrib[key] = value
 
         # Add confidence data if available
-        alto_glyph = self.root.find(f'.//a:Glyph[@ID="{glyph_id}"]', namespaces=NS_ALTO)
+        alto_glyph = self._by_id.get(glyph_id)
+        if alto_glyph is not None and etree.QName(alto_glyph).localname != "Glyph":
+            alto_glyph = None
         if alto_glyph is not None:
             gc = alto_glyph.get("GC")
             if gc:

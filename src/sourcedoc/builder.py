@@ -171,6 +171,16 @@ def _build_surface_fragment_inner(document_name, filepath, num, segmonto_zones,
     # Index ALTO elements by ID for fast lookup
     by_id = {el.get("ID"): el for el in input_alto_root.xpath("//*[@ID]")}
 
+    # Pre-group TextLines by their block's ID in one pass (audit 3.5).
+    # NB: duplicated block IDs exist in real exports; the old per-block
+    # XPath returned the UNION of all same-ID blocks' lines, so the
+    # grouping reproduces exactly that.
+    alto_ns = NS_ALTO["a"]
+    lines_by_block = {}
+    for block in input_alto_root.iter(f"{{{alto_ns}}}TextBlock"):
+        block_lines = lines_by_block.setdefault(block.get("ID"), [])
+        block_lines.extend(block.findall(f"{{{alto_ns}}}TextLine"))
+
     # Process TextBlocks
     textblocks = attributes.zones("PrintSpace", "TextBlock", segmonto_zones)
 
@@ -179,7 +189,10 @@ def _build_surface_fragment_inner(document_name, filepath, num, segmonto_zones,
             continue
 
         textblock = surface_tree.zone1(surface, tb.attributes, tb.id, num)
-        textlines = attributes.zones(f'TextBlock[@ID="{tb.id}"]', "TextLine", segmonto_lines)
+        textlines = attributes.zones(
+            f'TextBlock[@ID="{tb.id}"]', "TextLine", segmonto_lines,
+            elements=lines_by_block.get(tb.id, []),
+        )
         line_count = 0
 
         for tl in textlines:

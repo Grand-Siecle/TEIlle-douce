@@ -111,7 +111,7 @@ class Attributes:
             "lry": att_list.get("HEIGHT", "0"),
         }
 
-    def zones(self, parent, target, segmonto_labels):
+    def zones(self, parent, target, segmonto_labels, elements=None):
         """
         Extract zone data from ALTO TextBlock or TextLine elements.
 
@@ -119,15 +119,19 @@ class Attributes:
             parent (str): Parent element XPath (e.g., 'PrintSpace' or 'TextBlock[@ID="..."]').
             target (str): Target element name ('TextBlock' or 'TextLine').
             segmonto_labels (list): Valid SegmOnto labels for corresp linking.
+            elements (list): Pre-collected target elements — skips the
+                full-tree XPath scan (audit 3.5: one scan per TextBlock
+                dominated worker time).
 
         Returns:
             list: List of ZoneData namedtuples with attributes and IDs.
         """
         output = []
 
-        # Find all target elements under the parent
-        xpath = f".//a:{parent}/a:{target}"
-        elements = self.root.findall(xpath, namespaces=NS_ALTO)
+        if elements is None:
+            # Find all target elements under the parent
+            xpath = f".//a:{parent}/a:{target}"
+            elements = self.root.findall(xpath, namespaces=NS_ALTO)
 
         for element in elements:
             # Skip elements without ID
