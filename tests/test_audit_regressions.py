@@ -1,13 +1,15 @@
 """
-Tests de non-regression des constats du rapport d'audit (docs/rapport_audit.md, section 5).
+Tests de non-regression des constats du rapport d'audit
+(docs/superpowers/rapport_audit.md, section 5).
 
-Chaque test decrit le comportement attendu APRES correctif et porte
-`xfail(strict=True)` : il est compte `xfailed` tant que le bug est present, et
-devient un ECHEC le jour ou le correctif est applique -- ce qui force a retirer
-le marqueur. Un test qui passe ici sans marqueur = constat traite.
+Chaque test decrivait le comportement attendu APRES correctif, epingle par
+`xfail(strict=True)` jusqu'a ce que le correctif soit applique. Les quatre
+constats de la section 5 sont aujourd'hui corriges : tous les tests tournent
+sans marqueur et servent de non-regression. Nota : zone3/zone4/car (5.4) ne
+sont pas encore appeles par build_sourcedoc en production -- le correctif et
+son test couvrent la brique en vue de son cablage.
 """
 
-import pytest
 from lxml import etree
 
 from src.constants import NS_ALTO, SEGMONTO_ZONES, XML_ID
@@ -155,6 +157,9 @@ def test_glyph_zone_and_char_report_the_same_certainty():
     degre_zone = [c for c in glyph_zone if qlocal(c) == "certainty"][0].get("degree")
     degre_car = [c for c in c_el if qlocal(c) == "certainty"][0].get("degree")
 
-    assert degre_zone == degre_car, (
-        f"le meme glyphe porte deux certitudes : zone={degre_zone} (GC), c={degre_car} (WC)"
+    # Valeurs exactes, pas seulement l'egalite : la fixture porte WC="0.66"
+    # comme leurre, un retour simultane des deux lectures vers WC garderait
+    # l'egalite mais serait faux.
+    assert degre_zone == degre_car == "0.5", (
+        f"attendu GC=0.5 des deux cotes : zone={degre_zone}, c={degre_car}"
     )

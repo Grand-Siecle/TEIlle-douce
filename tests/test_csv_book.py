@@ -486,9 +486,8 @@ def test_override_unknown_non_ark_person_gets_bare_persname_text(tmp_path):
     a minimal <person> entry: xml:id only, and - since it isn't an ark -
     the id itself as the persName text (no nested <idno>, unlike the ark
     case already covered by tests/test_person_ids.py)."""
-    # Any unrelated entry is enough to make the db non-empty/truthy: an
-    # *empty* PersonDatabase is falsy (via __len__), which would otherwise
-    # skip listPerson construction entirely - see final report.
+    # Une entree quelconque suffit a rendre la base chargee (et donc vraie
+    # depuis le correctif __bool__ base sur le succes du chargement).
     person_csv = _write_person_csv(tmp_path, [{"BDD": "PERS9999", "Nom": "Unrelated"}])
     load_person_database(person_csv)
 
