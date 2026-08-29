@@ -20,6 +20,7 @@ from lxml import etree
 from config import (
     ENRICHMENT_CONTAINERS,
     ENRICHMENT_MIN_TEXT_LENGTH,
+    ENRICHMENT_MAX_MISALIGNED_RATIO,
 )
 from ..constants import NS_XML, XML_ID
 from ..utils.xml import local_tag as _local
@@ -142,7 +143,9 @@ def _process_container(container, stats, container_index=0):
     # Phase 3: NLP tagging — one PyHellen call per block, with the
     # appropriate model. Token offsets are rebased to the dehyph text.
     try:
-        tokens = _tag_blocks(blocks, dehyphenated_text, primary_model, primary_lang)
+        tokens, misaligned = _tag_blocks(
+            blocks, dehyphenated_text, primary_model, primary_lang
+        )
     except ConnectionError as e:
         logger.warning(f"PyHellen connection error: {e}")
         stats["containers_failed"] += 1
@@ -155,6 +158,26 @@ def _process_container(container, stats, container_index=0):
     if not tokens:
         stats["containers_skipped"] += 1
         return None
+
+    # Audit 2.12: unfindable tokens are anchored at the cursor and drag
+    # every following token with them. A few are tolerable OCR noise;
+    # past the threshold the annotations would attach to the wrong
+    # characters — better an unenriched container than a wrong one.
+    if misaligned:
+        ratio = misaligned / len(tokens)
+        if ratio > ENRICHMENT_MAX_MISALIGNED_RATIO:
+            logger.error(
+                "Container %s: %d/%d tokens could not be anchored "
+                "(%.0f%% > %.0f%%) — left unenriched",
+                container.get("corresp") or "?", misaligned, len(tokens),
+                100 * ratio, 100 * ENRICHMENT_MAX_MISALIGNED_RATIO,
+            )
+            stats["containers_failed"] += 1
+            return None
+        logger.warning(
+            "Container %s: %d/%d tokens anchored by cursor fallback",
+            container.get("corresp") or "?", misaligned, len(tokens),
+        )
 
     # Phase 4: Align tokens to XML positions.
     aligned = align_tokens(tokens, spans, offset_map, hyphen_joins)
@@ -227,6 +250,7 @@ def _tag_blocks(blocks, dehyphenated_text, primary_model, primary_lang):
     SUPPORTED_LANGUAGES and PYHELLEN_MODELS is visible.
     """
     all_tokens = []
+    misaligned = 0
     for b_start, b_end, b_lang in blocks:
         block_text = dehyphenated_text[b_start:b_end]
         if not block_text.strip():
@@ -251,7 +275,8 @@ def _tag_blocks(blocks, dehyphenated_text, primary_model, primary_lang):
         # chars were dropped so we can rebase token offsets correctly.
         stripped_block = block_text.strip()
         leading_ws = len(block_text) - len(block_text.lstrip())
-        block_tokens = tag_text(stripped_block, model)
+        block_tokens, block_misaligned = tag_text(stripped_block, model)
+        misaligned += block_misaligned
 
         base = b_start + leading_ws
         for t in block_tokens:
@@ -260,4 +285,4 @@ def _tag_blocks(blocks, dehyphenated_text, primary_model, primary_lang):
             t.origin_lang = effective_lang
         all_tokens.extend(block_tokens)
 
-    return all_tokens
+    return all_tokens, misaligned

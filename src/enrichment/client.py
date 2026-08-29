@@ -88,6 +88,15 @@ def tag_text(text, model):
     except (URLError, OSError) as e:
         raise ConnectionError(f"PyHellen unreachable: {e}")
 
+    return _process_response(data, text)
+
+
+def _process_response(data, text):
+    """Parse a PyHellen response and anchor its tokens in *text*.
+
+    Returns:
+        tuple: (tokens, misaligned) — see _align_tokens.
+    """
     raw_tokens = _parse_token_list(data.get("result", []))
     return _align_tokens(raw_tokens, text)
 
@@ -129,9 +138,16 @@ def _align_tokens(raw_tokens, text):
     Scans through the text to find each token's form, assigning
     char_start and char_end. Falls back to case-insensitive matching
     if exact match fails.
+
+    Returns:
+        tuple: (tokens, misaligned) — misaligned counts the tokens that
+        could not be found at all and were placed at the cursor
+        (audit 2.12: this repli was silent and each occurrence degrades
+        the alignment of every following token).
     """
     result = []
     cursor = 0
+    misaligned = 0
 
     for t in raw_tokens:
         form = t["form"]
@@ -148,8 +164,10 @@ def _align_tokens(raw_tokens, text):
             idx = text.lower().find(form.lower(), max(0, cursor - 2), window)
 
         if idx == -1:
-            # Last resort: place at cursor position
+            # Last resort: place at cursor position — counted, because
+            # the error then propagates to every following token.
             idx = cursor
+            misaligned += 1
 
         char_end = idx + len(form)
 
@@ -166,4 +184,4 @@ def _align_tokens(raw_tokens, text):
 
         cursor = char_end
 
-    return result
+    return result, misaligned

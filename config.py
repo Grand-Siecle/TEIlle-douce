@@ -205,6 +205,11 @@ PYHELLEN_URL = "http://localhost:8000"
 # Request timeout in seconds (higher for first request / model loading)
 PYHELLEN_TIMEOUT = 120
 
+# Fail a container when more than this share of its tokens could not be
+# anchored in the text (audit 2.12): past this, annotations would attach
+# to the wrong characters.
+ENRICHMENT_MAX_MISALIGNED_RATIO = 0.2
+
 # Mapping from TEI language ident to PyHellen model name
 PYHELLEN_MODELS = {"fra": "freem", "lat": "lasla", "grc": "grc"}
 
