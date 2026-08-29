@@ -11,15 +11,13 @@ Configuration (in config.py):
     - LANG_DEFAULT: default when detection fails (see config.py)
 """
 
-from .detector import LinguaDetector, LinguaSegment, get_detector, detect_language
+from .detector import LinguaDetector, get_detector
 from .header import LangUsageBuilder, build_langusage
 from .heuristics import LanguageHeuristics, get_heuristics
 
 __all__ = [
     "LinguaDetector",
-    "LinguaSegment",
     "get_detector",
-    "detect_language",
     "LanguageHeuristics",
     "get_heuristics",
     "LangUsageBuilder",
