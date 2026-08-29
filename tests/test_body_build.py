@@ -293,6 +293,13 @@ class _StubDetector:
         self.foreign_calls.append((text, primary_lang))
         return []  # _insert_foreign_inline est hors perimetre de ce fichier
 
+    def detect_primary_and_segments(self, text):
+        """API combinee utilisee par _apply_language_detection : le stub
+        journalise dans les deux listes historiques."""
+        self.detect_calls.append(text)
+        self.foreign_calls.append((text, self.lang))
+        return self.lang, []
+
 
 def test_apply_language_detection_sets_xml_lang_from_stub_detector():
     ab = etree.Element("ab")

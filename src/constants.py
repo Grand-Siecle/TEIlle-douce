@@ -20,7 +20,8 @@ UUID_NAMESPACE = uuid.uuid5(uuid.NAMESPACE_DNS, "alto2tei")
 # =============================================================================
 
 # ALTO v4 namespace (input format)
-NS_ALTO = {"a": "http://www.loc.gov/standards/alto/ns-v4#"}
+NS_ALTO_URI = "http://www.loc.gov/standards/alto/ns-v4#"
+NS_ALTO = {"a": NS_ALTO_URI}
 
 # TEI namespace (output format)
 NS_TEI = "http://www.tei-c.org/ns/1.0"

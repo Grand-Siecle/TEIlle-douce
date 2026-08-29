@@ -32,11 +32,11 @@ if "forkserver" in multiprocessing.get_all_start_methods():
     _MP_CONTEXT.set_forkserver_preload(["src.sourcedoc.builder"])
 else:  # pragma: no cover - non-POSIX platforms
     _MP_CONTEXT = multiprocessing.get_context("spawn")
-from ..constants import NS_ALTO
+from ..constants import NS_ALTO, NS_ALTO_URI
 from ..utils.files import Files
 from ..metadata.iiif import IIIFMapping
 from .attributes import Attributes
-from .elements import SurfaceTree
+from .elements import SurfaceTree, build_alto_id_index
 
 
 # XML parser configured for large ALTO files. Strict: recovery is a
@@ -45,28 +45,49 @@ from .elements import SurfaceTree
 XML_PARSER = etree.XMLParser(huge_tree=True)
 
 
+_TAG_OTHERTAG = f"{{{NS_ALTO_URI}}}OtherTag"
+_TAG_TAGS = f"{{{NS_ALTO_URI}}}Tags"
+
+
 def extract_labels(source):
     """
     Extract SegmOnto labels from an ALTO file.
 
-    Reads the OtherTag elements from an ALTO document and creates a
-    mapping from element IDs to their labels. OtherTag entries missing
-    ID or LABEL are skipped instead of raising KeyError (audit 2.3).
+    The single label extractor of the pipeline (header and workers).
+    OtherTag entries missing ID or LABEL are skipped instead of raising
+    KeyError (audit 2.3).
 
     Args:
-        source: Path to the ALTO XML file, or an already-parsed ALTO
-            root element (spares the second parse in the workers,
-            audit 3.4).
+        source: An already-parsed ALTO root element (the workers' case:
+            no second parse, audit 3.4), or a path — then read with
+            iterparse and an early stop after </Tags> (audit 3.2: the
+            labels sit in the first kilobyte of megabyte files). A file
+            that does not parse before its Tags contributes no labels;
+            its fate is decided page by page in the workers.
 
     Returns:
         dict: Mapping of element IDs to their LABEL values.
     """
     if isinstance(source, etree._Element):
-        root = source
-    else:
-        root = etree.parse(str(source), parser=XML_PARSER).getroot()
-    elements = [t.attrib for t in root.findall(".//a:OtherTag", namespaces=NS_ALTO)]
-    return {d["ID"]: d["LABEL"] for d in elements if "ID" in d and "LABEL" in d}
+        elements = [t.attrib for t in source.findall(".//a:OtherTag", namespaces=NS_ALTO)]
+        return {d["ID"]: d["LABEL"] for d in elements if "ID" in d and "LABEL" in d}
+
+    labels = {}
+    try:
+        for _, elem in etree.iterparse(
+            str(source), events=("end",),
+            tag=(_TAG_OTHERTAG, _TAG_TAGS), huge_tree=True,
+        ):
+            if elem.tag == _TAG_OTHERTAG:
+                tag_id, label = elem.get("ID"), elem.get("LABEL")
+                if tag_id and label:
+                    labels[tag_id] = label
+            else:  # </Tags> reached: labels only live there, stop reading
+                break
+    except etree.XMLSyntaxError as e:
+        logger.warning("No labels read from %s (unparseable: %s)", source, e)
+        return {}
+    return labels
 
 
 def _build_surface_fragment(args):
@@ -149,13 +170,22 @@ def _build_surface_fragment_inner(document_name, filepath, num, segmonto_zones,
     # Extract zone/line type mappings from the already-parsed root (audit 3.4)
     tags = extract_labels(input_alto_root)
 
+    # One first-wins ID index per page, shared with SurfaceTree
+    # (audit 3.5 — review follow-up: the worker used to build a second,
+    # last-wins index over the same tree; on the corpus pages carrying
+    # duplicated ALTO ids both indexes point at identical duplicated
+    # blocks, so first-wins is a safe single semantics).
+    by_id = build_alto_id_index(input_alto_root)
+
     # Create surface tree builder (with or without IIIF mapping)
     if iiif_mapping_dict:
         iiif_mapping = IIIFMapping()
         iiif_mapping.mapping = iiif_mapping_dict
-        surface_tree = SurfaceTree(document_name, file_stem, input_alto_root, iiif_mapping)
+        surface_tree = SurfaceTree(document_name, file_stem, input_alto_root,
+                                   iiif_mapping, by_id=by_id)
     else:
-        surface_tree = SurfaceTree(document_name, file_stem, input_alto_root)
+        surface_tree = SurfaceTree(document_name, file_stem, input_alto_root,
+                                   by_id=by_id)
 
     # Create <surface> element
     # `num` is the page number parsed from the filename stem by
@@ -168,8 +198,15 @@ def _build_surface_fragment_inner(document_name, filepath, num, segmonto_zones,
                             dict(config, view_number=num))
     surface = surface_tree.surface(attributes.surface())
 
-    # Index ALTO elements by ID for fast lookup
-    by_id = {el.get("ID"): el for el in input_alto_root.xpath("//*[@ID]")}
+    # Pre-group TextLines by their block's ID in one pass (audit 3.5).
+    # NB: duplicated block IDs exist in real exports; the old per-block
+    # XPath returned the UNION of all same-ID blocks' lines, so the
+    # grouping reproduces exactly that.
+    alto_ns = NS_ALTO["a"]
+    lines_by_block = {}
+    for block in input_alto_root.iter(f"{{{alto_ns}}}TextBlock"):
+        block_lines = lines_by_block.setdefault(block.get("ID"), [])
+        block_lines.extend(block.findall(f"{{{alto_ns}}}TextLine"))
 
     # Process TextBlocks
     textblocks = attributes.zones("PrintSpace", "TextBlock", segmonto_zones)
@@ -179,7 +216,10 @@ def _build_surface_fragment_inner(document_name, filepath, num, segmonto_zones,
             continue
 
         textblock = surface_tree.zone1(surface, tb.attributes, tb.id, num)
-        textlines = attributes.zones(f'TextBlock[@ID="{tb.id}"]', "TextLine", segmonto_lines)
+        textlines = attributes.zones(
+            f'TextBlock[@ID="{tb.id}"]', "TextLine", segmonto_lines,
+            elements=lines_by_block.get(tb.id, []),
+        )
         line_count = 0
 
         for tl in textlines:

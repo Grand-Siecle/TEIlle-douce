@@ -13,7 +13,6 @@ import logging
 import re
 import unicodedata
 from collections import Counter
-from dataclasses import dataclass
 
 
 # Character-level substitutions applied during cleaning (1→1 or 1→2).
@@ -55,15 +54,6 @@ def _get_heuristics():
         from .heuristics import get_heuristics
         _heuristics = get_heuristics()
     return _heuristics
-
-
-@dataclass
-class LinguaSegment:
-    """A segment of text with its detected language."""
-    text: str
-    lang: str
-    start: int
-    end: int
 
 
 # ISO 639-1 -> lingua Language enum name
@@ -425,6 +415,36 @@ class LinguaDetector:
         self.stats[lang] += 1
         return lang
 
+    def detect_primary_and_segments(self, text):
+        """
+        Primary language + foreign segments in one cleaning pass.
+
+        detect() then detect_foreign_segments() each re-cleaned the same
+        text (audit 3.6); this entry point cleans once and reuses the
+        result for both detections.
+
+        NB — audit 3.1 proposed skipping the multi-language scan when the
+        primary confidence is >= ~0.9. Measured on the corpus sample
+        (2 545 containers, 240 with foreign segments): the MEDIAN primary
+        confidence of the multilingual containers is 1.000, so any
+        confidence threshold discards most real foreign segments (205/240
+        lost even at a 1.0 gate). For a corpus whose multilingualism is a
+        research object, the scan must always run; the gate was rejected.
+
+        Returns:
+            tuple: (primary_lang, segments) — the same values the
+            detect() / detect_foreign_segments() pair produces.
+        """
+        cleaned, idx_map = self._clean_with_map(text)
+        if len(cleaned) < self.min_text_length:
+            primary = self.default_lang
+        else:
+            self._ensure_detector()
+            primary, _confidence = self._detect_single(cleaned)
+        self.stats[primary] += 1
+
+        return primary, self._foreign_segments_cleaned(cleaned, idx_map, primary)
+
     def detect_foreign_segments(self, text, primary_lang=None):
         """
         Detect foreign-language segments with offsets in the input text.
@@ -438,7 +458,7 @@ class LinguaDetector:
 
         Segments whose language is the primary one are discarded, as
         are segments shorter than ``MIN_SEGMENT_WORDS`` or rejected by
-        rule-based heuristics (see ``detect_with_segments``).
+        rule-based heuristics (see ``_foreign_segments_cleaned``).
 
         Args:
             text: Input text (as extracted from the TEI container).
@@ -450,6 +470,15 @@ class LinguaDetector:
             offsets in the *input* text, ready to slice ``.tail`` data.
         """
         cleaned, idx_map = self._clean_with_map(text)
+        if primary_lang is None and len(cleaned) >= self.min_text_length:
+            self._ensure_detector()
+            primary_lang, _ = self._detect_single(cleaned)
+        return self._foreign_segments_cleaned(cleaned, idx_map, primary_lang)
+
+    def _foreign_segments_cleaned(self, cleaned, idx_map, primary_lang):
+        """Core of detect_foreign_segments, operating on already-cleaned
+        text (audit 3.6: one cleaning pass shared with primary detection
+        via detect_primary_and_segments)."""
         if len(cleaned) < self.min_text_length:
             return []
 
@@ -459,9 +488,6 @@ class LinguaDetector:
         word_count = sum(1 for _ in re.finditer(r"\S+", cleaned))
         if word_count < self.MIN_SEGMENT_WORDS * 2:
             return []
-
-        if primary_lang is None:
-            primary_lang, _ = self._detect_single(cleaned)
 
         multi_results = self.detector.detect_multiple_languages_of(cleaned)
         if len(multi_results) <= 1:
@@ -510,76 +536,6 @@ class LinguaDetector:
 
         return segments
 
-    def detect_with_segments(self, text):
-        """
-        Detect primary language and foreign segments.
-
-        Returns (primary_lang, list[LinguaSegment]) where segments
-        are foreign-language portions of the text.
-        """
-        cleaned = self.clean_text(text)
-
-        if len(cleaned) < self.min_text_length:
-            self.stats[self.default_lang] += 1
-            return (self.default_lang, [])
-
-        primary_lang, _ = self._detect_single(cleaned)
-
-        # Need enough words for multi-language detection
-        self._ensure_detector()
-        words = cleaned.split()
-        if len(words) < self.MIN_SEGMENT_WORDS * 2:
-            self.stats[primary_lang] += 1
-            return (primary_lang, [])
-
-        multi_results = self.detector.detect_multiple_languages_of(cleaned)
-
-        if len(multi_results) <= 1:
-            self.stats[primary_lang] += 1
-            return (primary_lang, [])
-
-        # Collect foreign segments, validated by heuristics
-        heuristics = _get_heuristics()
-        foreign_segments = []
-        for r in multi_results:
-            tei_lang = self._lang_to_tei(r.language)
-            if tei_lang != primary_lang:
-                if r.word_count >= self.MIN_SEGMENT_WORDS:
-                    seg_text = cleaned[r.start_index:r.end_index]
-                    # Validate with heuristics (two checks):
-                    # 1) Reject if heuristics positively say primary lang (≥2).
-                    # 2) Reject if heuristics find NO signal for the detected
-                    #    foreign lang either — ambiguous segments are not tagged.
-                    heur_lang, heur_score = heuristics.detect(seg_text)
-                    if heur_lang == primary_lang and heur_score >= 2:
-                        logger.debug(
-                            "Rejected foreign segment '%s' — heuristics say %s",
-                            seg_text[:50], primary_lang,
-                        )
-                        continue
-                    # Check the detected foreign lang has some heuristic backing
-                    foreign_heur_lang, foreign_heur_score = heuristics.detect_lang(
-                        seg_text, tei_lang,
-                    )
-                    if foreign_heur_score == 0:
-                        logger.debug(
-                            "Rejected foreign segment '%s' — no %s signal",
-                            seg_text[:50], tei_lang,
-                        )
-                        continue
-                    foreign_segments.append(LinguaSegment(
-                        text=seg_text,
-                        lang=tei_lang,
-                        start=r.start_index,
-                        end=r.end_index,
-                    ))
-
-        self.stats[primary_lang] += 1
-        for seg in foreign_segments:
-            self.stats[seg.lang] += 1
-
-        return (primary_lang, foreign_segments)
-
     def get_stats(self):
         """Return language usage counts, sorted by frequency."""
         if not self.stats:
@@ -591,23 +547,6 @@ class LinguaDetector:
         self._document_prior = None
 
 
-def _tokenize_words(text):
-    """Return list of (start, end) for whitespace-separated tokens in *text*."""
-    words = []
-    i = 0
-    n = len(text)
-    while i < n:
-        while i < n and text[i].isspace():
-            i += 1
-        if i >= n:
-            break
-        start = i
-        while i < n and not text[i].isspace():
-            i += 1
-        words.append((start, i))
-    return words
-
-
 # Global singleton
 _instance = None
 
@@ -617,7 +556,3 @@ def get_detector():
     if _instance is None:
         _instance = LinguaDetector()
     return _instance
-
-def detect_language(text):
-    """Convenience function: detect language of text."""
-    return get_detector().detect(text)

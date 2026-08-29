@@ -25,5 +25,5 @@ skip_covered = false
 # fail_under, et 80.51 % passerait une barre a "80.7".
 precision = 1
 # Cliquet : relever ce seuil a chaque lot de tests livre.
-# Baseline mesuree le 2026-08-26 : 28 %. Lot 1 (teiheader, sourcedoc, metadata) : 44 %. Lot 2 (body, reconstructor) : 54 %. Fixture E2E (main.py mesure) : 61 %. Lot 3 (pile NER) : 80 %. PR fiabilite des runs + correctifs de review : 81 %. PR ids deterministes (golden strict, pipeline.py entre en mesure) : 82.7 %. PR validateur (validate_tei.py couvert) : 83.9 %.
-fail_under = 83.9
+# Baseline mesuree le 2026-08-26 : 28 %. Lot 1 (teiheader, sourcedoc, metadata) : 44 %. Lot 2 (body, reconstructor) : 54 %. Fixture E2E (main.py mesure) : 61 %. Lot 3 (pile NER) : 80 %. PR fiabilite des runs + correctifs de review : 81 %. PR ids deterministes (golden strict, pipeline.py entre en mesure) : 82.7 %. PR validateur (validate_tei.py couvert) : 83.9 %. PR perf + suppressions de code mort : 84.7 %.
+fail_under = 84.7

@@ -16,34 +16,9 @@ from lxml import etree
 
 from config import SEGMONTO
 from ..constants import NS_ALTO, XML_ID, SEGMONTO_ZONES, SEGMONTO_LINES
+from ..sourcedoc.builder import extract_labels as _extract_labels
 
 logger = logging.getLogger(__name__)
-
-
-_LABEL_PARSER = etree.XMLParser(huge_tree=True)
-
-
-def _extract_labels(filepath):
-    """
-    Extract SegmOnto labels from an ALTO file.
-
-    A file that does not parse contributes no labels instead of killing
-    the whole document: its fate is decided page by page in the sourcedoc
-    workers, not here. OtherTag entries without ID or LABEL are skipped.
-
-    Args:
-        filepath: Path to the ALTO XML file.
-
-    Returns:
-        dict: Mapping of element IDs to their labels.
-    """
-    try:
-        root = etree.parse(str(filepath), parser=_LABEL_PARSER).getroot()
-    except etree.XMLSyntaxError as e:
-        logger.warning("No labels read from %s (unparseable: %s)", filepath, e)
-        return {}
-    elements = [t.attrib for t in root.findall(".//a:OtherTag", namespaces=NS_ALTO)]
-    return {d["ID"]: d["LABEL"] for d in elements if "ID" in d and "LABEL" in d}
 
 
 class FullTree:

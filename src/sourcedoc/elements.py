@@ -9,16 +9,27 @@ This module provides the SurfaceTree class which creates TEI <surface>,
 <zone>, <path>, and <line> elements from ALTO data.
 """
 
-import logging
 import uuid
 
 from lxml import etree
 
-logger = logging.getLogger(__name__)
-
-from ..constants import NS_ALTO, UUID_NAMESPACE, XML_ID
+from ..constants import NS_ALTO, NS_ALTO_URI, UUID_NAMESPACE, XML_ID
 from ..utils.xml import xml_id_safe
 from .attributes import format_alto_points
+
+
+def build_alto_id_index(alto_root):
+    """First-wins ID -> element index of an ALTO tree (audit 3.5).
+
+    First-wins mirrors find()'s first-match semantics, which matters on
+    the real corpus pages that duplicate element IDs.
+    """
+    by_id = {}
+    for el in alto_root.iter():
+        el_id = el.get("ID")
+        if el_id is not None:
+            by_id.setdefault(el_id, el)
+    return by_id
 
 
 class SurfaceTree:
@@ -36,7 +47,7 @@ class SurfaceTree:
         ids (dict): Mapping of element keys to generated UUIDs.
     """
 
-    def __init__(self, doc, folio, alto_root, iiif_mapping=None):
+    def __init__(self, doc, folio, alto_root, iiif_mapping=None, by_id=None):
         """
         Initialize the SurfaceTree builder.
 
@@ -45,6 +56,9 @@ class SurfaceTree:
             folio (str): Page/folio identifier (usually the file stem).
             alto_root (etree.Element): Parsed ALTO XML root element.
             iiif_mapping (IIIFMapping): Optional IIIF URL mapping instance.
+            by_id (dict): Optional prebuilt first-wins ID index of
+                alto_root (see build_alto_id_index) — spares a second
+                full-tree traversal when the caller already has one.
         """
         self.doc = doc
         self.folio = folio
@@ -52,6 +66,22 @@ class SurfaceTree:
         self.iiif_mapping = iiif_mapping
         self.ids = {}
         self._seen_keys = {}
+        # First-wins ID index (audit 3.5): find() scanned the whole ALTO
+        # tree once per line/string/glyph — 26 % of worker time. find()
+        # returns the first match, so the index keeps the first too.
+        self._by_id = build_alto_id_index(alto_root) if by_id is None else by_id
+
+    def _find_by_id(self, el_id, localname):
+        """Indexed equivalent of find(f'.//a:{localname}[@ID=...]'):
+        first element carrying el_id, or None when absent or when it is
+        not the expected ALTO element type."""
+        el = self._by_id.get(el_id)
+        if el is None:
+            return None
+        qname = etree.QName(el)
+        if qname.localname != localname or qname.namespace != NS_ALTO_URI:
+            return None
+        return el
 
     def _uuid(self, prefix, *parts):
         """
@@ -74,15 +104,13 @@ class SurfaceTree:
         occurrence = self._seen_keys.get(key, 0)
         self._seen_keys[key] = occurrence + 1
         if occurrence:
-            # Real ALTO exports occasionally duplicate an element ID on a
-            # page. uuid4 silently papered over it; a deterministic id
-            # must disambiguate (document order, so still reproducible)
-            # and say so.
-            logger.warning(
-                "%s/%s: duplicate ALTO id %s (occurrence %d) — "
-                "disambiguated in the TEI output",
-                self.doc, self.folio, "/".join(map(str, parts)), occurrence + 1,
-            )
+            # Real ALTO exports do duplicate element IDs (whole duplicated
+            # blocks — hundreds of hits on some corpus pages). uuid4
+            # silently papered over it; the deterministic id disambiguates
+            # by document-order occurrence, so it stays reproducible. No
+            # per-occurrence log here: the worker reports one aggregated
+            # warning per page (a logger call in a forkserver worker
+            # would not reach the parent's log anyway).
             parts = (*parts, f"dup{occurrence}")
         name = "\x1f".join((self.doc, self.folio, prefix, *map(str, parts)))
         return prefix + uuid.uuid5(UUID_NAMESPACE, name).hex
@@ -164,8 +192,8 @@ class SurfaceTree:
         path_uuid = self._uuid("path_", block_parent, line_id)
         baseline = etree.SubElement(zone, "path", {XML_ID: path_uuid})
 
-        # Get baseline points from ALTO
-        textline = self.root.find(f'.//a:TextLine[@ID="{line_id}"]', namespaces=NS_ALTO)
+        # Get baseline points from ALTO (indexed lookup, audit 3.5)
+        textline = self._find_by_id(line_id, "TextLine")
         if textline is not None:
             baseline_str = textline.get("BASELINE", "")
             baseline.attrib["points"] = format_alto_points(baseline_str)
@@ -196,8 +224,10 @@ class SurfaceTree:
         if extracted_words:
             line_el.text = extracted_words
         else:
-            string_el = self.root.find(
-                f'.//a:TextLine[@ID="{line_parent}"]/a:String', namespaces=NS_ALTO
+            parent_line = self._find_by_id(line_parent, "TextLine")
+            string_el = (
+                parent_line.find("a:String", namespaces=NS_ALTO)
+                if parent_line is not None else None
             )
             if string_el is not None:
                 line_el.text = string_el.get("CONTENT", "")
@@ -226,8 +256,8 @@ class SurfaceTree:
         for key, value in attributes.items():
             zone.attrib[key] = value
 
-        # Add confidence data if available
-        alto_string = self.root.find(f'.//a:String[@ID="{seg_id}"]', namespaces=NS_ALTO)
+        # Add confidence data if available (indexed lookup, audit 3.5)
+        alto_string = self._find_by_id(seg_id, "String")
         if alto_string is not None:
             wc = alto_string.get("WC")
             if wc:
@@ -273,7 +303,7 @@ class SurfaceTree:
             zone.attrib[key] = value
 
         # Add confidence data if available
-        alto_glyph = self.root.find(f'.//a:Glyph[@ID="{glyph_id}"]', namespaces=NS_ALTO)
+        alto_glyph = self._find_by_id(glyph_id, "Glyph")
         if alto_glyph is not None:
             gc = alto_glyph.get("GC")
             if gc:
