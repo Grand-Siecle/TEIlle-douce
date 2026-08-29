@@ -205,6 +205,15 @@ PYHELLEN_URL = "http://localhost:8000"
 # Request timeout in seconds (higher for first request / model loading)
 PYHELLEN_TIMEOUT = 120
 
+# Maximum concurrent PyHellen requests (audit 3.3 — same model as
+# MODERNIZE_MAX_CONCURRENT).
+PYHELLEN_MAX_CONCURRENT = 8
+
+# Circuit breaker (audit 2.7): stop calling PyHellen after this many
+# consecutive failures — a frozen server must not turn into hours of
+# sequential timeouts.
+PYHELLEN_MAX_CONSECUTIVE_FAILURES = 10
+
 # Fail a container when more than this share of its tokens could not be
 # anchored in the text (audit 2.12): past this, annotations would attach
 # to the wrong characters.
