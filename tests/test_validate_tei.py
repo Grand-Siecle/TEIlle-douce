@@ -80,3 +80,42 @@ def test_main_exit_zero_quand_tout_est_sain(tmp_path):
     with pytest.raises(SystemExit) as exc:
         main([sain])
     assert exc.value.code == 0
+
+
+# Mini-schema RelaxNG : n'accepte qu'un <TEI> (ns TEI) ne contenant que
+# des <teiHeader> vides — suffisant pour tester le branchement --schema
+# sans versionner le tei_all.rng de 1 Mo.
+MINI_RNG = """<grammar xmlns="http://relaxng.org/ns/structure/1.0"
+         ns="http://www.tei-c.org/ns/1.0">
+  <start>
+    <element name="TEI">
+      <zeroOrMore><element name="teiHeader"><empty/></element></zeroOrMore>
+    </element>
+  </start>
+</grammar>"""
+
+TEI_MINI_VALIDE = '<TEI xmlns="http://www.tei-c.org/ns/1.0"><teiHeader/></TEI>'
+TEI_MINI_INVALIDE = '<TEI xmlns="http://www.tei-c.org/ns/1.0"><intrus/></TEI>'
+
+
+def test_schema_relaxng_violations_sont_des_erreurs(tmp_path, capsys):
+    """Audit 2.6 : --schema ajoute la validation RelaxNG, et une violation
+    du schema est une ERROR qui fait sortir en code 1."""
+    rng = _ecrire(tmp_path, MINI_RNG, nom="mini.rng")
+    invalide = _ecrire(tmp_path, TEI_MINI_INVALIDE, nom="invalide.xml")
+
+    with pytest.raises(SystemExit) as exc:
+        main(["--schema", rng, invalide])
+
+    assert exc.value.code == 1
+    assert "RelaxNG" in capsys.readouterr().out
+
+
+def test_schema_relaxng_document_conforme_passe(tmp_path):
+    rng = _ecrire(tmp_path, MINI_RNG, nom="mini.rng")
+    valide = _ecrire(tmp_path, TEI_MINI_VALIDE, nom="valide.xml")
+
+    with pytest.raises(SystemExit) as exc:
+        main(["--schema", rng, valide])
+
+    assert exc.value.code == 0

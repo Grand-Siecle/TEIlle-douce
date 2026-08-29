@@ -1,6 +1,12 @@
 # -----------------------------------------------------------
 # Validates TEI outputs against the known failure modes of this
 # pipeline. Usage: venv/bin/python scripts/validate_tei.py tei_test/*.xml
+# Optional: --schema chemin/vers/tei_all.rng ajoute la validation RelaxNG
+# complete (les violations sont des ERROR). Le schema n'est pas versionne
+# ici (~1 Mo, https://tei-c.org/release/xml/tei/custom/schema/relaxng/) ;
+# etat des lieux 2026-08-29 : il reste deux classes de violations connues
+# (birth/death dans l'author du titleStmt — audit 5.6 ; @version "4.3.x"
+# non conforme dans <application> — donnees de config.APP_VERSIONS).
 # Exit 1 if any ERROR.
 # -----------------------------------------------------------
 import re
@@ -21,9 +27,15 @@ POINTS_PAIR = re.compile(r"^-?\d+,-?\d+$")
 PARSER = etree.XMLParser(collect_ids=False, huge_tree=True)
 
 
-def validate(path):
+def validate(path, relaxng=None):
     errors, warnings = [], []
-    root = etree.parse(path, parser=PARSER).getroot()
+    tree = etree.parse(path, parser=PARSER)
+    root = tree.getroot()
+
+    # Validation de schema complete, si un tei_all.rng est fourni
+    if relaxng is not None and not relaxng.validate(tree):
+        for err in relaxng.error_log[:20]:
+            errors.append(f"RelaxNG L{err.line}: {err.message}")
 
     def local(el):
         return etree.QName(el).localname if isinstance(el.tag, str) else ""
@@ -115,12 +127,21 @@ def validate(path):
 
 
 def main(paths=None):
+    args = list(sys.argv[1:] if paths is None else paths)
+
+    relaxng = None
+    if "--schema" in args:
+        i = args.index("--schema")
+        schema_path = args[i + 1]
+        del args[i:i + 2]
+        relaxng = etree.RelaxNG(etree.parse(schema_path))
+
     total_err = 0
-    for path in (sys.argv[1:] if paths is None else paths):
+    for path in args:
         # Un fichier illisible est un échec de CE fichier, pas du script :
         # les suivants sont quand même contrôlés.
         try:
-            errors, warnings = validate(path)
+            errors, warnings = validate(path, relaxng=relaxng)
         except (etree.XMLSyntaxError, OSError) as e:
             errors, warnings = [f"fichier invalide: {e}"], []
         status = "FAIL" if errors else "ok"
