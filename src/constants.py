@@ -3,6 +3,18 @@
 # XML namespaces and internal constants used across modules
 # -----------------------------------------------------------
 
+import uuid
+
+# =============================================================================
+# IDENTIFIERS
+# =============================================================================
+
+# Namespace for the pipeline's deterministic uuid5 identifiers (audit 2.8):
+# the same ALTO input must yield byte-identical TEI ids on every run, so
+# outputs can be diffed and the external entity-reconciliation step can
+# rely on stable ids.
+UUID_NAMESPACE = uuid.uuid5(uuid.NAMESPACE_DNS, "alto2tei")
+
 # =============================================================================
 # XML NAMESPACES
 # =============================================================================

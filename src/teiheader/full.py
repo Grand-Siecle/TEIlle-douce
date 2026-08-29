@@ -228,20 +228,22 @@ class FullTree:
                 if match:
                     unique_labels.add(match.group(1))
 
-        # Separate zones and lines
-        document_zones = [label for label in unique_labels if "Zone" in label]
-        document_lines = [label for label in unique_labels if "Line" in label]
+        # Separate zones and lines. sorted(): unique_labels is a set whose
+        # iteration order depends on PYTHONHASHSEED — without a stable
+        # order, two runs produce their <catDesc> differently (audit 6.9).
+        document_zones = sorted(label for label in unique_labels if "Zone" in label)
+        document_lines = sorted(label for label in unique_labels if "Line" in label)
 
         # Add zone categories to taxonomy
         cat_id = {XML_ID: SEGMONTO["zones_category_id"]}
         category = etree.SubElement(self.children["taxonomy"], "category", cat_id)
-        for zone in set(SEGMONTO_ZONES).intersection(set(document_zones)):
+        for zone in sorted(set(SEGMONTO_ZONES).intersection(document_zones)):
             self._add_taxonomy_category(category, zone, SEGMONTO_ZONES[zone])
 
         # Add line categories to taxonomy
         cat_id = {XML_ID: SEGMONTO["lines_category_id"]}
         category = etree.SubElement(self.children["taxonomy"], "category", cat_id)
-        common_lines = set(SEGMONTO_LINES).intersection(set(document_lines))
+        common_lines = sorted(set(SEGMONTO_LINES).intersection(document_lines))
         for line in common_lines:
             self._add_taxonomy_category(category, line, SEGMONTO_LINES[line])
 

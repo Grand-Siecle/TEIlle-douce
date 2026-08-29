@@ -11,6 +11,7 @@ Handles abbreviations, cross-container linking with @next/@prev.
 import uuid
 from dataclasses import dataclass, field
 
+from ..constants import UUID_NAMESPACE
 from .aligner import AlignedToken
 
 
@@ -37,7 +38,7 @@ class Sentence:
     prev_id: str | None = None
 
 
-def segment_sentences(aligned_tokens):
+def segment_sentences(aligned_tokens, id_scope=""):
     """
     Segment aligned tokens into sentences.
 
@@ -48,6 +49,9 @@ def segment_sentences(aligned_tokens):
 
     Args:
         aligned_tokens: List of AlignedToken objects.
+        id_scope (str): Deterministic scope for sentence xml:ids, typically
+            the container's @corresp (audit 2.8) — sentence ids are derived
+            from (scope, index) so the same input yields the same ids.
 
     Returns:
         list[Sentence]: Segmented sentences.
@@ -70,18 +74,18 @@ def segment_sentences(aligned_tokens):
             # Check if next word-token starts with uppercase
             next_word = _find_next_word(aligned_tokens, i + 1)
             if next_word and next_word.token.form[0:1].isupper():
-                sentences.append(_make_sentence(current_tokens))
+                sentences.append(_make_sentence(current_tokens, id_scope, len(sentences)))
                 current_tokens = []
 
         elif at.token.is_punctuation and at.token.form in CONDITIONAL_PUNCT:
             next_word = _find_next_word(aligned_tokens, i + 1)
             if next_word and next_word.token.form[0:1].isupper():
-                sentences.append(_make_sentence(current_tokens))
+                sentences.append(_make_sentence(current_tokens, id_scope, len(sentences)))
                 current_tokens = []
 
     # Remaining tokens form the last sentence
     if current_tokens:
-        sentences.append(_make_sentence(current_tokens))
+        sentences.append(_make_sentence(current_tokens, id_scope, len(sentences)))
 
     return sentences
 
@@ -115,9 +119,11 @@ def chain_cross_container(all_container_sentences):
             first_next.prev_id = f"#{last_sent.xml_id}"
 
 
-def _make_sentence(tokens):
-    """Create a Sentence with a unique ID."""
-    sid = f"s_{uuid.uuid4().hex[:12]}"
+def _make_sentence(tokens, id_scope, index):
+    """Create a Sentence with a deterministic ID (audit 2.8): uuid5 over
+    (container scope, sentence index) — same input, same ids, every run."""
+    name = f"{id_scope}\x1f{index}"
+    sid = f"s_{uuid.uuid5(UUID_NAMESPACE, name).hex[:12]}"
     return Sentence(xml_id=sid, tokens=list(tokens))
 
 

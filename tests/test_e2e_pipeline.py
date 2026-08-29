@@ -12,10 +12,9 @@ Deux modes, correspondant aux deux marqueurs pytest :
 La fixture est `tests/fixtures/alto_min/` (8 pages, 175 Ko) — voir
 `scripts/build_test_fixture.py` pour sa provenance et son mode de regeneration.
 
-Le pipeline produit aujourd'hui des `uuid4` differents a chaque execution
-(rapport d'audit 2.8), ce qui interdit toute comparaison directe. Les tests
-normalisent donc les identifiants avant comparaison : la meme suite deviendra
-un vrai golden-file, sans reecriture, le jour ou les `uuid5` seront en place.
+Depuis le passage aux `uuid5` (audit 2.8) et au tri de la taxonomie (6.9),
+la sortie est entierement deterministe : la comparaison au golden est un
+vrai diff a l'identifiant pres — seule la date de generation est neutralisee.
 """
 
 import os
@@ -35,9 +34,6 @@ GOLDEN = FIXTURES / "golden" / "LIV9001_court.tei.xml"
 DOCUMENT = "LIV9001_reconciled"
 
 XML_ID = "{http://www.w3.org/XML/1998/namespace}id"
-# Les prefixes sont a casse mixte (zone_, zoneLine_, line_, cert_...) : on ne
-# normalise que la partie hexadecimale, le prefixe reste en place et reste lisible.
-UUID_RE = re.compile(r"(?<![0-9a-zA-Z])[0-9a-f]{32}(?![0-9a-zA-Z])")
 
 
 # =============================================================================
@@ -109,35 +105,20 @@ def _env_couverture_sous_processus():
     }
 
 
-def normaliser(chemin, sans_taxonomie=False):
+def normaliser(chemin):
     """
     Rend la sortie comparable d'un run a l'autre.
 
-    Remplace chaque uuid par un jeton sequentiel attribue dans l'ordre du
-    document (les references `#uuid` suivent, la substitution etant textuelle
-    et les uuid uniques), et neutralise la date de generation.
+    Seule la date de generation du fichier est neutralisee (les dates
+    historiques sont conservees) : depuis le passage aux uuid5 (audit 2.8)
+    et au tri de la taxonomie (audit 6.9), les identifiants et l'ordre des
+    elements sont deterministes — la comparaison est un vrai golden-file,
+    identifiants compris.
 
-    `sans_taxonomie` retire en plus le bloc <taxonomy>, dont l'ordre varie d'un
-    processus a l'autre (audit 6.9) : cela permet de verifier la stabilite de
-    tout le reste du document sans que ce defaut connu ne masque les autres. Le
-    defaut lui-meme est epingle par un test dedie, et le contenu de la taxonomie
-    est couvert par les tests unitaires de src/teiheader/.
+    (Historique : les uuid4 etaient remplaces par des jetons sequentiels,
+    et un parametre `sans_taxonomie` retirait le bloc <taxonomy> instable.)
     """
-    if sans_taxonomie:
-        arbre = etree.parse(str(chemin))
-        for tax in list(arbre.iter("{*}taxonomy")):
-            tax.getparent().remove(tax)
-        texte = etree.tostring(arbre, encoding="utf-8").decode("utf-8")
-    else:
-        texte = Path(chemin).read_text(encoding="utf-8")
-
-    correspondance = {}
-    for uuid in UUID_RE.findall(texte):
-        correspondance.setdefault(uuid, f"{len(correspondance) + 1:04d}")
-    for uuid, jeton in correspondance.items():
-        texte = texte.replace(uuid, jeton)
-
-    # Date de generation du fichier (les dates historiques sont conservees).
+    texte = Path(chemin).read_text(encoding="utf-8")
     texte = re.sub(r'when="20\d\d-\d\d-\d\d"', 'when="DATE-GENERATION"', texte)
     return texte
 
@@ -249,28 +230,18 @@ def tei_court_bis(tmp_path_factory):
 @pytest.mark.e2e
 def test_court_est_stable_entre_deux_executions(tei_court, tei_court_bis):
     """
-    Non-regression : deux executions doivent produire le meme TEI une fois les
-    identifiants normalises. C'est ce test qui deviendra un golden-file exact
-    quand les uuid5 remplaceront les uuid4 (audit 2.8).
-
-    La taxonomie est retiree avant comparaison : son ordre est instable pour
-    une raison distincte, epinglee par le test suivant.
+    Non-regression : deux executions (deux processus, deux PYTHONHASHSEED)
+    doivent produire le meme TEI a l'octet pres, identifiants et taxonomie
+    compris — seule la date de generation est neutralisee (audit 2.8, 6.9).
     """
-    assert normaliser(tei_court_bis, sans_taxonomie=True) == normaliser(
-        tei_court, sans_taxonomie=True
-    )
+    assert normaliser(tei_court_bis) == normaliser(tei_court)
 
 
 @pytest.mark.e2e
-@pytest.mark.xfail(
-    strict=True,
-    reason="audit 6.9 -- full.py:224/230 iterent sur un set, l'ordre depend de PYTHONHASHSEED",
-)
 def test_court_ordre_de_la_taxonomie_stable(tei_court, tei_court_bis):
     """
-    L'ordre des <catDesc> de la taxonomie SegmOnto doit etre reproductible.
-    Aujourd'hui il varie d'un processus a l'autre, ce qui bruiterait tout diff
-    entre deux sorties meme apres le passage aux uuid5.
+    L'ordre des <catDesc> de la taxonomie SegmOnto doit etre reproductible
+    d'un processus a l'autre (audit 6.9, corrige par un tri explicite).
     """
     ordre = lambda f: [
         c.get(XML_ID) for c in etree.parse(str(f)).iter("{*}catDesc")
@@ -286,11 +257,7 @@ def test_court_correspond_au_golden(tei_court):
     """
     if not GOLDEN.exists():
         pytest.skip(f"golden absent : {GOLDEN.relative_to(RACINE)}")
-    # Taxonomie neutralisee ici aussi : sans cela le golden serait instable
-    # tant que l'audit 6.9 n'est pas corrige.
-    assert normaliser(tei_court, sans_taxonomie=True) == GOLDEN.read_text(
-        encoding="utf-8"
-    )
+    assert normaliser(tei_court) == GOLDEN.read_text(encoding="utf-8")
 
 
 @pytest.mark.e2e

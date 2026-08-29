@@ -12,7 +12,7 @@ import uuid
 
 from lxml import etree
 
-from ..constants import NS_XML, XML_ID
+from ..constants import NS_XML, UUID_NAMESPACE, XML_ID
 from .segmenter import Sentence
 from .aligner import AlignedToken
 
@@ -178,8 +178,19 @@ def _create_cross_line_w(parent, at, inserted_lbs):
         _create_w(parent, at)
         return
 
-    # Generate unique IDs for linking
-    base_id = uuid.uuid4().hex[:12]
+    # Deterministic linking ids (audit 2.8). `parent` may be a <hi> or
+    # <foreign> wrapper without xml:id: anchor on the nearest ancestor
+    # that carries one (the sentence), and take the position from the
+    # anchor's whole subtree so two same-form words in two wrappers of
+    # one sentence still get distinct ids.
+    anchor_el = parent
+    while anchor_el is not None and not anchor_el.get(XML_ID):
+        anchor_el = anchor_el.getparent()
+    anchor = anchor_el.get(XML_ID) if anchor_el is not None else ""
+    position = sum(1 for _ in anchor_el.iter()) if anchor_el is not None else len(parent)
+    base_id = uuid.uuid5(
+        UUID_NAMESPACE, f"{anchor}\x1f{position}\x1f{at.token.form}"
+    ).hex[:12]
     w_ids = [f"w_{base_id}_{i}" for i in range(len(parts))]
 
     # Shared attributes (applied to all fragments)

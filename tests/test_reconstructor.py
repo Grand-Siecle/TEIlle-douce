@@ -305,6 +305,68 @@ def test_insert_lb_directly_sets_corresp_and_tracks_inserted_id():
 
 
 # =============================================================================
+# 3bis. Identifiants deterministes (audit 2.8)
+# =============================================================================
+
+def test_cross_line_w_and_sentence_ids_are_deterministic():
+    """Audit 2.8 : memes entrees -> memes xml:id, pour les fragments de mots
+    cesures comme pour les phrases du segmenteur."""
+    from src.enrichment.segmenter import segment_sentences
+
+    def ids_fragments():
+        lb1 = etree.Element("lb")
+        at = mk_aligned(
+            mk_token("protection"),
+            spans=[mk_span(line_index=0), mk_span(line_index=1)],
+            lb_elements=[lb1], is_cross_line=True,
+            original_parts=["Pro", "tection"],
+        )
+        parent = etree.Element("s")
+        parent.set(XML_ID, "s_ancre")
+        _create_cross_line_w(parent, at, set())
+        return [w.get(XML_ID) for w in parent if qlocal(w) == "w"]
+
+    assert ids_fragments() == ids_fragments()
+
+    def ids_phrases(scope):
+        aligned = [mk_aligned(mk_token("Bonjour")), mk_aligned(mk_token("monde"))]
+        return [s.xml_id for s in segment_sentences(aligned, id_scope=scope)]
+
+    assert ids_phrases("#zone_1") == ids_phrases("#zone_1")
+    assert ids_phrases("#zone_1") != ids_phrases("#zone_2"), (
+        "deux conteneurs distincts ne doivent pas partager leurs ids de phrase"
+    )
+
+
+def test_cross_line_w_ids_anchor_on_sentence_when_parent_is_wrapper():
+    """Le parent direct d'un mot cesure peut etre un wrapper <hi>/<foreign>
+    sans xml:id : l'ancre doit remonter a la phrase englobante, et la
+    position couvrir tout son sous-arbre — sinon deux mots identiques dans
+    deux wrappers d'une meme phrase recevraient les memes ids."""
+    s = etree.Element("s")
+    s.set(XML_ID, "s_ancre")
+    hi1 = etree.SubElement(s, "hi")
+    hi2 = etree.SubElement(s, "hi")
+
+    def at_cesure():
+        return mk_aligned(
+            mk_token("protection"),
+            spans=[mk_span(line_index=0), mk_span(line_index=1)],
+            lb_elements=[etree.Element("lb")], is_cross_line=True,
+            original_parts=["Pro", "tection"],
+        )
+
+    _create_cross_line_w(hi1, at_cesure(), set())
+    _create_cross_line_w(hi2, at_cesure(), set())
+
+    ids = [w.get(XML_ID) for w in s.iter() if qlocal(w) == "w"]
+    assert len(ids) == 4
+    assert len(ids) == len(set(ids)), (
+        f"collision d'ids entre wrappers de la meme phrase : {ids}"
+    )
+
+
+# =============================================================================
 # 4. _create_cross_line_w
 # =============================================================================
 

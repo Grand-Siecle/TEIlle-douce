@@ -236,6 +236,89 @@ def test_build_sourcedoc_orders_surfaces_by_page_despite_imap_unordered(tmp_path
 
 
 # =============================================================================
+# 4bis. Identifiants deterministes (audit 2.8)
+# =============================================================================
+
+def test_build_sourcedoc_ids_are_deterministic_across_runs(tmp_path, monkeypatch):
+    """Audit 2.8 : memes ALTO en entree -> memes xml:id en sortie (uuid5),
+    et un document different produit des ids differents."""
+    monkeypatch.setattr(builder, "MAX_WORKERS", 1)
+    f1 = write_alto(tmp_path, "f1.xml", GOOD_ALTO_TMPL.format(word="hello"))
+
+    def ids_pour(document):
+        root = etree.Element("TEI")
+        build_sourcedoc(document, root, [f1], {}, [], [], {})
+        return [el.get(XML_ID) for el in root.iter() if el.get(XML_ID)]
+
+    run1, run2 = ids_pour("DOC1"), ids_pour("DOC1")
+    assert run1 == run2, "deux executions sur le meme document divergent"
+    assert len(run1) == len(set(run1)), "xml:id dupliques dans une meme sortie"
+    assert ids_pour("DOC2") != run1, (
+        "deux documents distincts ne doivent pas partager leurs ids"
+    )
+
+
+DUPLICATE_BLOCK_ALTO = """<alto xmlns="http://www.loc.gov/standards/alto/ns-v4#">
+  <Tags>
+    <OtherTag ID="BT1" LABEL="MainZone"/>
+    <OtherTag ID="LT1" LABEL="DefaultLine"/>
+  </Tags>
+  <Layout><Page WIDTH="1000" HEIGHT="1500"><PrintSpace>
+    <TextBlock ID="tb1" TAGREFS="BT1" HPOS="100" VPOS="200" WIDTH="300" HEIGHT="400">
+      <TextLine ID="tl1" TAGREFS="LT1" HPOS="100" VPOS="200" WIDTH="300" HEIGHT="40" BASELINE="100 240 400 240">
+        <String ID="s1" CONTENT="premier" HPOS="100" VPOS="200" WIDTH="140" HEIGHT="40"/>
+      </TextLine>
+    </TextBlock>
+    <TextBlock ID="tb1" TAGREFS="BT1" HPOS="100" VPOS="700" WIDTH="300" HEIGHT="400">
+      <TextLine ID="tl2" TAGREFS="LT1" HPOS="100" VPOS="700" WIDTH="300" HEIGHT="40" BASELINE="100 740 400 740">
+        <String ID="s2" CONTENT="second" HPOS="100" VPOS="700" WIDTH="140" HEIGHT="40"/>
+      </TextLine>
+    </TextBlock>
+  </PrintSpace></Page></Layout>
+</alto>"""
+
+
+def test_build_sourcedoc_reports_duplicate_alto_ids_from_workers(tmp_path, monkeypatch, caplog):
+    """La desambiguisation des ID ALTO dupliques a lieu dans un worker
+    forkserver : un logger appele la-bas n'atteint jamais le log du parent.
+    Le signalement doit donc voyager par le tuple de retour du worker et
+    ressortir en warning cote parent."""
+    monkeypatch.setattr(builder, "MAX_WORKERS", 1)
+    f = write_alto(tmp_path, "f1.xml", DUPLICATE_BLOCK_ALTO)
+
+    output_root = etree.Element("TEI")
+    with caplog.at_level(logging.WARNING, logger="src.sourcedoc.builder"):
+        _, skipped = build_sourcedoc("DOC1", output_root, [f], {}, [], [], {})
+
+    assert skipped == []
+    ids = [el.get(XML_ID) for el in output_root.iter() if el.get(XML_ID)]
+    assert len(ids) == len(set(ids)), "xml:id dupliques malgre la desambiguisation"
+    assert any("duplicate ALTO id" in r.message for r in caplog.records), (
+        [r.message for r in caplog.records]
+    )
+
+
+def test_surfacetree_disambiguates_duplicate_alto_ids_deterministically():
+    """Les exports ALTO reels dupliquent parfois un ID sur une page (cas
+    present dans la fixture e2e : deux TextBlock ID='block_2'). uuid4
+    masquait le doublon ; uuid5 doit desambiguiser sans collision xml:id,
+    et de facon reproductible d'un run a l'autre."""
+    from src.sourcedoc.elements import SurfaceTree
+
+    def deux_zones():
+        tree = SurfaceTree("DOC1", "f1", etree.Element("alto"))
+        surface = etree.Element("surface")
+        z1 = tree.zone1(surface, {}, "block_2", 1)
+        z2 = tree.zone1(surface, {}, "block_2", 1)
+        return z1.get(XML_ID), z2.get(XML_ID)
+
+    a1, a2 = deux_zones()
+    b1, b2 = deux_zones()
+    assert a1 != a2, "deux blocs au meme ID ALTO doivent avoir des xml:id distincts"
+    assert (a1, a2) == (b1, b2), "la desambiguisation doit rester deterministe"
+
+
+# =============================================================================
 # 5-6. audit SS2.3 -- page malformee : recuperee avec warning quand libxml2
 # le peut, signalee et sautee sinon ; jamais reparee en silence, jamais
 # fatale au document. OtherTag sans LABEL n'interrompt plus l'extraction.

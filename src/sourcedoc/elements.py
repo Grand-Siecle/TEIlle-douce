@@ -9,11 +9,14 @@ This module provides the SurfaceTree class which creates TEI <surface>,
 <zone>, <path>, and <line> elements from ALTO data.
 """
 
+import logging
 import uuid
 
 from lxml import etree
 
-from ..constants import NS_ALTO, XML_ID
+logger = logging.getLogger(__name__)
+
+from ..constants import NS_ALTO, UUID_NAMESPACE, XML_ID
 from ..utils.xml import xml_id_safe
 from .attributes import format_alto_points
 
@@ -48,18 +51,41 @@ class SurfaceTree:
         self.root = alto_root
         self.iiif_mapping = iiif_mapping
         self.ids = {}
+        self._seen_keys = {}
 
-    def _uuid(self, prefix):
+    def _uuid(self, prefix, *parts):
         """
-        Generate a UUID with a type-specific prefix.
+        Deterministic identifier for one sourceDoc element.
+
+        uuid5 over (document, folio, prefix, ALTO ids...): the same input
+        yields the same TEI ids on every run (audit 2.8), which is what
+        makes golden-file diffs and stable external references possible.
+        The joined key mirrors what self.ids uses as registry key.
 
         Args:
-            prefix (str): Prefix for the UUID (e.g., "zone_", "line_").
+            prefix (str): Type prefix (e.g., "zone_", "line_").
+            *parts: ALTO identifiers (and role tokens) that make this
+                element unique within the page.
 
         Returns:
-            str: Prefixed UUID string.
+            str: Prefixed, deterministic identifier.
         """
-        return prefix + uuid.uuid4().hex
+        key = (prefix, parts)
+        occurrence = self._seen_keys.get(key, 0)
+        self._seen_keys[key] = occurrence + 1
+        if occurrence:
+            # Real ALTO exports occasionally duplicate an element ID on a
+            # page. uuid4 silently papered over it; a deterministic id
+            # must disambiguate (document order, so still reproducible)
+            # and say so.
+            logger.warning(
+                "%s/%s: duplicate ALTO id %s (occurrence %d) — "
+                "disambiguated in the TEI output",
+                self.doc, self.folio, "/".join(map(str, parts)), occurrence + 1,
+            )
+            parts = (*parts, f"dup{occurrence}")
+        name = "\x1f".join((self.doc, self.folio, prefix, *map(str, parts)))
+        return prefix + uuid.uuid5(UUID_NAMESPACE, name).hex
 
     def surface(self, page_attributes):
         """
@@ -99,7 +125,7 @@ class SurfaceTree:
         Returns:
             etree.Element: The created <zone> element.
         """
-        zone_uuid = self._uuid("zone_")
+        zone_uuid = self._uuid("zone_", block_id)
         self.ids[("block", self.folio, block_id)] = zone_uuid
 
         zone = etree.SubElement(surface, "zone", {XML_ID: zone_uuid})
@@ -123,7 +149,7 @@ class SurfaceTree:
         Returns:
             etree.Element: The created <zone> element.
         """
-        zone_uuid = self._uuid("zoneLine_")
+        zone_uuid = self._uuid("zoneLine_", block_parent, line_id)
         self.ids[("linezone", self.folio, block_parent, line_id)] = zone_uuid
 
         zone = etree.SubElement(textblock, "zone", {XML_ID: zone_uuid})
@@ -135,7 +161,7 @@ class SurfaceTree:
             zone.attrib[key] = value
 
         # Add baseline <path> element
-        path_uuid = self._uuid("path_")
+        path_uuid = self._uuid("path_", block_parent, line_id)
         baseline = etree.SubElement(zone, "path", {XML_ID: path_uuid})
 
         # Get baseline points from ALTO
@@ -160,7 +186,7 @@ class SurfaceTree:
         Returns:
             etree.Element: The created <line> element.
         """
-        line_uuid = self._uuid("line_")
+        line_uuid = self._uuid("line_", block_parent, line_parent)
         self.ids[("line", self.folio, block_parent, line_parent)] = line_uuid
 
         line_el = etree.SubElement(textline, "line", {XML_ID: line_uuid})
@@ -193,7 +219,7 @@ class SurfaceTree:
         Returns:
             etree.Element: The created <zone> element.
         """
-        string_uuid = self._uuid("string_")
+        string_uuid = self._uuid("string_", block_parent, line_parent, seg_id)
         self.ids[("string", self.folio, block_parent, line_parent, seg_id)] = string_uuid
 
         zone = etree.SubElement(textline, "zone", {XML_ID: string_uuid})
@@ -205,7 +231,7 @@ class SurfaceTree:
         if alto_string is not None:
             wc = alto_string.get("WC")
             if wc:
-                cert_uuid = self._uuid("cert_")
+                cert_uuid = self._uuid("cert_", block_parent, line_parent, seg_id)
                 etree.SubElement(
                     zone,
                     "certainty",
@@ -237,7 +263,7 @@ class SurfaceTree:
         Returns:
             etree.Element: The created <zone> element.
         """
-        glyph_uuid = self._uuid("glyph_")
+        glyph_uuid = self._uuid("glyph_", block_parent, line_parent, seg_parent, glyph_id)
         self.ids[("glyphzone", self.folio, block_parent, line_parent, seg_parent, glyph_id)] = (
             glyph_uuid
         )
@@ -251,7 +277,9 @@ class SurfaceTree:
         if alto_glyph is not None:
             gc = alto_glyph.get("GC")
             if gc:
-                cert_uuid = self._uuid("cert_")
+                cert_uuid = self._uuid(
+                    "cert_", block_parent, line_parent, seg_parent, glyph_id, "zone"
+                )
                 etree.SubElement(
                     zone,
                     "certainty",
@@ -281,7 +309,7 @@ class SurfaceTree:
         Returns:
             etree.Element: The created <c> element.
         """
-        car_uuid = self._uuid("car_")
+        car_uuid = self._uuid("car_", block_parent, line_parent, seg_parent, glyph_id)
         self.ids[("car", self.folio, block_parent, line_parent, seg_parent, glyph_id)] = car_uuid
 
         car_el = etree.SubElement(zone, "c", {XML_ID: car_uuid})
@@ -295,7 +323,9 @@ class SurfaceTree:
         if glyph is not None:
             gc = glyph.get("GC")
             if gc:
-                cert_uuid = self._uuid("cert_")
+                cert_uuid = self._uuid(
+                    "cert_", block_parent, line_parent, seg_parent, glyph_id, "c"
+                )
                 etree.SubElement(
                     car_el,
                     "certainty",

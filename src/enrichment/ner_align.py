@@ -27,7 +27,7 @@ from dataclasses import dataclass, field
 
 from lxml import etree
 
-from ..constants import NS_TEI, XML_ID
+from ..constants import UUID_NAMESPACE, NS_TEI, XML_ID
 from ..utils.xml import local_tag as _local
 from .ner_filter import filter_aligned_by_pos
 
@@ -562,14 +562,21 @@ def _inject_reg_entities(entities, cert_thresholds, entity_types_config):
     # Step 1: per-entity fragment xml:ids (assign upfront so injection can
     # cross-reference even though wrappers are written in <reg> order).
     ent_fragment_ids = {}  # id(ent) → list[str] (one xml:id per fragment)
-    for ent in entities:
+    for ent_index, ent in enumerate(entities):
         if not ent.reg_fragments:
             continue
         n = len(ent.reg_fragments)
         if n == 1:
             ent_fragment_ids[id(ent)] = [None]  # no xml:id needed
         else:
-            base = uuid.uuid4().hex[:8]
+            # Deterministic fragment ids (audit 2.8): ent_index follows the
+            # processing order of `entities` (confidence-ranked upstream by
+            # resolve_overlaps, not document order) — deterministic for a
+            # given input, though a changed confidence renumbers later ids.
+            base = uuid.uuid5(
+                UUID_NAMESPACE,
+                f"{ent.entity_type}\x1f{ent.text}\x1f{ent_index}",
+            ).hex[:8]
             ent_fragment_ids[id(ent)] = [f"ent-{base}-{i}" for i in range(n)]
 
     # Step 2: group injection tasks by <reg>. Each task carries the entity,

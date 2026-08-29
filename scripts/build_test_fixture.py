@@ -167,7 +167,7 @@ def regenerer_golden():
 
     tei = lancer_pipeline(Path(tempfile.mkdtemp()), **MODE_COURT)
     GOLDEN.parent.mkdir(parents=True, exist_ok=True)
-    GOLDEN.write_text(normaliser(tei, sans_taxonomie=True), encoding="utf-8")
+    GOLDEN.write_text(normaliser(tei), encoding="utf-8")
     print(f"golden ecrit : {GOLDEN.relative_to(RACINE)} "
           f"({GOLDEN.stat().st_size / 1024:.1f} Ko)")
 

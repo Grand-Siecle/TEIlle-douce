@@ -21,7 +21,7 @@ from config import (
     ENRICHMENT_CONTAINERS,
     ENRICHMENT_MIN_TEXT_LENGTH,
 )
-from ..constants import NS_XML
+from ..constants import NS_XML, XML_ID
 from ..utils.xml import local_tag as _local
 from .extractor import extract_spans
 from .dehyphenation import dehyphenate
@@ -84,7 +84,7 @@ def enrich_body(root, progress_callback=None):
             logger.debug("Progress: %d/%d containers processed", i, len(containers))
 
         try:
-            sentences = _process_container(container, stats)
+            sentences = _process_container(container, stats, container_index=i)
             all_sentences.append(sentences if sentences else [])
         except Exception as e:
             logger.error(f"Failed to enrich container {i}: {e}", exc_info=True)
@@ -105,7 +105,7 @@ def enrich_body(root, progress_callback=None):
     return stats
 
 
-def _process_container(container, stats):
+def _process_container(container, stats, container_index=0):
     """
     Process a single container through the 6-phase pipeline.
 
@@ -159,8 +159,15 @@ def _process_container(container, stats):
     # Phase 4: Align tokens to XML positions.
     aligned = align_tokens(tokens, spans, offset_map, hyphen_joins)
 
-    # Phase 5: Segment into sentences.
-    sentences = segment_sentences(aligned)
+    # Phase 5: Segment into sentences. The scope of the deterministic
+    # sentence ids (audit 2.8) pairs the container's @corresp with its
+    # document-order index: @corresp alone is NOT unique (consecutive
+    # <fw> lines of one zone each get their own container with the same
+    # @corresp), and identical scopes would mean duplicate sentence ids.
+    scope_ref = container.get("corresp") or container.get(XML_ID) or ""
+    sentences = segment_sentences(
+        aligned, id_scope=f"{container_index}\x1f{scope_ref}"
+    )
 
     # Phase 6: Rebuild XML.
     rebuild_container(container, sentences, spans, primary_lang=primary_lang)
