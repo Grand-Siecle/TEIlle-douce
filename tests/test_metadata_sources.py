@@ -301,17 +301,38 @@ def test_load_unreadable_path_returns_false_via_exception(tmp_path):
 
 
 def test_load_parses_isni_dot_zero_and_pipe_separated_roles(tmp_path):
-    csv_path = _write_person_csv(tmp_path)
+    """Un artefact float LITTERAL dans le fichier ("123456789.0", trace d'un
+    aller-retour tableur) est rogne. Pandas n'en cree plus lui-meme depuis
+    dtype=str -- la ligne PERS0099 le stocke donc explicitement."""
+    csv_path = _write_person_csv(
+        tmp_path,
+        rows=PERSON_CSV_ROWS + ["PERS0099;Tableur;Excel;123456789.0;AUT"],
+    )
     db = PersonDatabase()
     assert db.load(csv_path) is True
 
-    person = db.get("PERS0001")
+    person = db.get("PERS0099")
     assert person is not None
-    # pandas reads the ISNI column as float64 (mixed with NaN elsewhere),
-    # so the raw cell comes back as "123456789.0" - must be trimmed to
-    # a plain digit string, not left with the trailing ".0".
     assert person["isni"] == "123456789"
-    assert person["roles"] == ["author", "editor"]
+
+    assert db.get("PERS0001")["roles"] == ["author", "editor"]
+
+
+def test_load_keeps_literal_na_cells(tmp_path):
+    """dtype=str seul ne suffit pas : sans keep_default_na=False, une cellule
+    contenant litteralement 'NA' ou 'None' devient NaN et la valeur (voire la
+    personne entiere quand c'est la colonne BDD) disparait en silence."""
+    csv_path = _write_person_csv(
+        tmp_path,
+        rows=["PERS0010;NA;Jean;0000000123456789;AUT"],
+    )
+    db = PersonDatabase()
+    assert db.load(csv_path) is True
+
+    person = db.get("PERS0010")
+    assert person is not None
+    assert person["surname"] == "NA"
+    assert person["isni"] == "0000000123456789"
 
 
 def test_load_skips_blank_bdd_row(tmp_path):

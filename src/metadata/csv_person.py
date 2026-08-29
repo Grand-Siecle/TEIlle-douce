@@ -75,7 +75,11 @@ class PersonDatabase:
             # dtype=str: without it pandas infers int64 on all-numeric
             # identifier columns and "0000000123456789" (a zero-padded
             # ISNI) silently becomes 123456789 (audit 5.3).
-            df = pd.read_csv(csv_path, sep=CSV_DELIMITER, dtype=str)
+            # keep_default_na=False: dtype=str alone still turns literal
+            # 'NA'/'None'/'nan' cells into float NaN, dropping the value.
+            df = pd.read_csv(
+                csv_path, sep=CSV_DELIMITER, dtype=str, keep_default_na=False
+            )
         except Exception as e:
             logger.warning("Failed to read person metadata %s: %s", csv_path, e)
             return False
@@ -127,6 +131,12 @@ class PersonDatabase:
             s = str(val).strip()
             if s == "" or s.lower() == "nan":
                 return None
+            # Spreadsheet round-trips leave literal float artifacts in
+            # identifier/year cells ("1610.0", "123456789.0"): trim them.
+            # (Pandas no longer creates them — dtype=str — this is for
+            # values already stored that way in the file.)
+            if s.endswith(".0") and s[:-2].isdigit():
+                s = s[:-2]
             return s
 
         def safe_roles(key):

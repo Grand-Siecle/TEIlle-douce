@@ -59,7 +59,10 @@ class IIIFMapping:
             return False
 
         try:
-            df = pd.read_csv(csv_path, header=None)
+            # dtype=str: an all-digit ALTO-name column ("0001") would be
+            # inferred as int64 and str(row[2]) would yield "1", missing
+            # every real file stem (audit 5.3, same class).
+            df = pd.read_csv(csv_path, header=None, dtype=str, keep_default_na=False)
 
             if df.shape[1] < 3:
                 logger.warning("Invalid CSV (< 3 columns): %s", csv_path.name)
@@ -158,7 +161,10 @@ class IIIFMapping:
                 continue
 
             try:
-                df = pd.read_csv(csv_path, header=None, nrows=IIIF_CSV_SAMPLE_ROWS)
+                df = pd.read_csv(
+                    csv_path, header=None, nrows=IIIF_CSV_SAMPLE_ROWS,
+                    dtype=str, keep_default_na=False,
+                )
 
                 if df.shape[1] < 3 or df.empty:
                     continue

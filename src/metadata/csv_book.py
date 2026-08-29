@@ -45,7 +45,12 @@ def load_metadata(csv_path):
         return None
 
     try:
-        return pd.read_csv(csv_path, sep=CSV_DELIMITER)
+        # Same protections as PersonDatabase.load (audit 5.3): no int64/
+        # float64 inference eating leading zeros or appending ".0" to
+        # dates and shelfmarks, no literal 'NA' cells turned into NaN.
+        return pd.read_csv(
+            csv_path, sep=CSV_DELIMITER, dtype=str, keep_default_na=False
+        )
     except Exception as e:
         logger.warning("Failed to read %s: %s", csv_path, e)
         return None
