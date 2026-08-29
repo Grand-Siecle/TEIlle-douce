@@ -285,7 +285,14 @@ def build_sourcedoc(
     skipped_pages = []
 
     # Process pages in parallel
-    with _MP_CONTEXT.Pool(workers) as pool:
+    # No `with Pool(...)`: Pool.__exit__ calls terminate(), which SIGTERMs
+    # idle workers — and under `coverage run` (sigterm=true) a worker
+    # killed mid-write can hang in its signal handler, blocking join()
+    # forever (observed as intermittent 15-minute CI timeouts). Results
+    # are fully consumed first, then close()+join() lets workers exit
+    # cleanly; terminate() only on an actual error.
+    pool = _MP_CONTEXT.Pool(workers)
+    try:
         for idx, (num, xml_bytes, error, warning) in enumerate(
             pool.imap_unordered(_build_surface_fragment, jobs), start=1
         ):
@@ -307,6 +314,12 @@ def build_sourcedoc(
                     description=f"[cyan]{markup_escape(document_name)}[/cyan] page {idx}/{total_pages}",
                     advance=1,
                 )
+        pool.close()
+    except BaseException:
+        pool.terminate()
+        raise
+    finally:
+        pool.join()
 
     # Assemble surfaces in correct order (skipped pages were already
     # reported above, one ERROR line each)

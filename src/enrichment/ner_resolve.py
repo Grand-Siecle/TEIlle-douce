@@ -364,6 +364,14 @@ def inject_header_entities(root, entities, entity_types_config):
         else:
             parent = profile_desc
 
+        # Replace-not-append (audit 6.13, same re-entry class as the
+        # editorial declaration): a second pass over the same tree must
+        # regenerate the auto-built list, not add a sibling whose items
+        # carry the same xml:ids — that would be an invalid TEI.
+        for old_list in list(parent):
+            if _local(old_list.tag) == list_tag and old_list.get("source") == "#ner-auto":
+                parent.remove(old_list)
+
         # Create the list element with source="#ner-auto"
         list_elem = _sub(parent, list_tag, source="#ner-auto")
 
@@ -554,6 +562,13 @@ def inject_editorial_declaration(root):
             edition.text = "Édition enrichie avec annotations d'entités nommées automatiques"
             insert_idx = (title_stmt_idx + 1) if title_stmt_idx is not None else 0
             file_desc.insert(insert_idx, edition_stmt)
+
+        # Idempotence (audit 6.13): a second pass over the same tree
+        # (resume, partial reprocessing, library use) must not duplicate
+        # the xml:id="ner-auto" respStmt — that would be an invalid TEI.
+        for child in edition_stmt:
+            if _local(child.tag) == "respStmt" and child.get(XML_ID) == "ner-auto":
+                return
 
         resp_stmt = _sub(edition_stmt, "respStmt")
         resp_stmt.set(XML_ID, "ner-auto")
