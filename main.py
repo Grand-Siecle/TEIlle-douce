@@ -355,6 +355,13 @@ def _process_document(doc_name, filepaths, doc_dir, df_meta, config,
                 f"{enrich_stats['tokens_total']} tokens, "
                 f"{enrich_stats['sentences_total']} sentences[/dim]"
             )
+        # containers_failed was never displayed: a document with hundreds
+        # of unannotated containers looked like a success in the console.
+        if enrich_stats and enrich_stats.get("containers_failed", 0) > 0:
+            console.print(
+                f"  [yellow]Warning: {enrich_stats['containers_failed']} "
+                f"container(s) failed enrichment — see log[/yellow]"
+            )
 
     # Step 4: Text modernization (applied after enrichment)
     if do_modernize:
