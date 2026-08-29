@@ -7,6 +7,9 @@ __pycache__/
 OCR/
 tei_output/
 *.csv
+# Sauvegardes de ces memes CSV (donnees nominatives) : la regle *.csv ne
+# couvre pas un suffixe .bak, un `git add -A` les publierait.
+*.bak
 *.log
 plans/
 superpowers/
