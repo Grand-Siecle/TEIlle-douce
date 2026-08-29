@@ -425,6 +425,36 @@ class LinguaDetector:
         self.stats[lang] += 1
         return lang
 
+    def detect_primary_and_segments(self, text):
+        """
+        Primary language + foreign segments in one cleaning pass.
+
+        detect() then detect_foreign_segments() each re-cleaned the same
+        text (audit 3.6); this entry point cleans once and reuses the
+        result for both detections.
+
+        NB — audit 3.1 proposed skipping the multi-language scan when the
+        primary confidence is >= ~0.9. Measured on the corpus sample
+        (2 545 containers, 240 with foreign segments): the MEDIAN primary
+        confidence of the multilingual containers is 1.000, so any
+        confidence threshold discards most real foreign segments (205/240
+        lost even at a 1.0 gate). For a corpus whose multilingualism is a
+        research object, the scan must always run; the gate was rejected.
+
+        Returns:
+            tuple: (primary_lang, segments) — the same values the
+            detect() / detect_foreign_segments() pair produces.
+        """
+        cleaned, idx_map = self._clean_with_map(text)
+        if len(cleaned) < self.min_text_length:
+            primary = self.default_lang
+        else:
+            self._ensure_detector()
+            primary, _confidence = self._detect_single(cleaned)
+        self.stats[primary] += 1
+
+        return primary, self._foreign_segments_cleaned(cleaned, idx_map, primary)
+
     def detect_foreign_segments(self, text, primary_lang=None):
         """
         Detect foreign-language segments with offsets in the input text.
@@ -450,6 +480,15 @@ class LinguaDetector:
             offsets in the *input* text, ready to slice ``.tail`` data.
         """
         cleaned, idx_map = self._clean_with_map(text)
+        if primary_lang is None and len(cleaned) >= self.min_text_length:
+            self._ensure_detector()
+            primary_lang, _ = self._detect_single(cleaned)
+        return self._foreign_segments_cleaned(cleaned, idx_map, primary_lang)
+
+    def _foreign_segments_cleaned(self, cleaned, idx_map, primary_lang):
+        """Core of detect_foreign_segments, operating on already-cleaned
+        text (audit 3.6: one cleaning pass shared with primary detection
+        via detect_primary_and_segments)."""
         if len(cleaned) < self.min_text_length:
             return []
 
@@ -459,9 +498,6 @@ class LinguaDetector:
         word_count = sum(1 for _ in re.finditer(r"\S+", cleaned))
         if word_count < self.MIN_SEGMENT_WORDS * 2:
             return []
-
-        if primary_lang is None:
-            primary_lang, _ = self._detect_single(cleaned)
 
         multi_results = self.detector.detect_multiple_languages_of(cleaned)
         if len(multi_results) <= 1:

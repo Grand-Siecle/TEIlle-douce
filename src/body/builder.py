@@ -513,15 +513,12 @@ def _apply_language_detection(containers, detector):
         if not full_text.strip():
             continue
 
-        # Primary language (always set, even when equal to default).
-        primary_lang = detector.detect(full_text)
+        # Primary language + foreign segments in one pass (audit 3.1/3.6:
+        # single cleaning, multi-language scan gated on confidence).
+        primary_lang, segments = detector.detect_primary_and_segments(full_text)
         if primary_lang:
             element.attrib[XML_LANG] = primary_lang
 
-        # Foreign segments with offsets aligned to the joined text.
-        segments = detector.detect_foreign_segments(
-            full_text, primary_lang=primary_lang
-        )
         if segments:
             _insert_foreign_inline(element, line_texts, segments)
 
