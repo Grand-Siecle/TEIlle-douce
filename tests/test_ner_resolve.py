@@ -308,6 +308,29 @@ def test_inject_header_entities_routes_particdesc_and_settingdesc():
     assert place_name.text == "Rome"
 
 
+def test_inject_header_entities_second_pass_replaces_not_appends():
+    """Audit 6.13, meme classe de reentree que la declaration editoriale :
+    un second passage sur le meme arbre doit REMPLACER la liste auto
+    (source='#ner-auto'), pas en ajouter une soeur dont les items
+    reporteraient les memes xml:id — TEI invalide."""
+    root, header = _header_root()
+    person = ResolvedEntity(
+        entity_type="person", canonical_name="Nicolas Poussin", xml_id="pers-j",
+        mentions=[_mention("person", "Poussin", 0.9)],
+    )
+
+    inject_header_entities(root, [person], NER_ENTITY_TYPES)
+    inject_header_entities(root, [person], NER_ENTITY_TYPES)
+
+    profile_desc = next(c for c in header if qlocal(c) == "profileDesc")
+    partic_desc = next(c for c in profile_desc if qlocal(c) == "particDesc")
+    lists = [c for c in partic_desc if qlocal(c) == "listPerson"]
+    assert len(lists) == 1, f"attendu une seule listPerson auto, obtenu {len(lists)}"
+
+    ids = [el.get(XML_ID) for el in root.iter() if el.get(XML_ID)]
+    assert len(ids) == len(set(ids)), "xml:id dupliques apres double passage"
+
+
 def test_inject_header_entities_routes_standoff():
     root, header = _header_root()
     artwork = ResolvedEntity(

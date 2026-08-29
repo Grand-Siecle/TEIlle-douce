@@ -364,6 +364,14 @@ def inject_header_entities(root, entities, entity_types_config):
         else:
             parent = profile_desc
 
+        # Replace-not-append (audit 6.13, same re-entry class as the
+        # editorial declaration): a second pass over the same tree must
+        # regenerate the auto-built list, not add a sibling whose items
+        # carry the same xml:ids — that would be an invalid TEI.
+        for old_list in list(parent):
+            if _local(old_list.tag) == list_tag and old_list.get("source") == "#ner-auto":
+                parent.remove(old_list)
+
         # Create the list element with source="#ner-auto"
         list_elem = _sub(parent, list_tag, source="#ner-auto")
 

@@ -9,6 +9,7 @@
 # non conforme dans <application> — donnees de config.APP_VERSIONS).
 # Exit 1 if any ERROR.
 # -----------------------------------------------------------
+import argparse
 import re
 import sys
 
@@ -127,17 +128,20 @@ def validate(path, relaxng=None):
 
 
 def main(paths=None):
-    args = list(sys.argv[1:] if paths is None else paths)
+    parser = argparse.ArgumentParser(
+        description="Contrôle les sorties TEI du pipeline (modes d'échec connus)."
+    )
+    parser.add_argument("fichiers", nargs="+", help="fichiers TEI à contrôler")
+    parser.add_argument(
+        "--schema", metavar="RNG",
+        help="chemin d'un tei_all.rng : ajoute la validation RelaxNG complète",
+    )
+    args = parser.parse_args(sys.argv[1:] if paths is None else list(paths))
 
-    relaxng = None
-    if "--schema" in args:
-        i = args.index("--schema")
-        schema_path = args[i + 1]
-        del args[i:i + 2]
-        relaxng = etree.RelaxNG(etree.parse(schema_path))
+    relaxng = etree.RelaxNG(etree.parse(args.schema)) if args.schema else None
 
     total_err = 0
-    for path in args:
+    for path in args.fichiers:
         # Un fichier illisible est un échec de CE fichier, pas du script :
         # les suivants sont quand même contrôlés.
         try:
