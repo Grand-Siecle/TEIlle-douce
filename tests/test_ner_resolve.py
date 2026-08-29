@@ -412,13 +412,9 @@ def test_inject_editorial_declaration_reuses_existing_edition_stmt_container():
     assert len(editions) == 1
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="inject_editorial_declaration n'est pas idempotent : le respStmt "
-    "xml:id='ner-auto' (avec resp+name) est reinjecte sans verification a "
-    "chaque appel, produisant un xml:id duplique au 2e appel",
-)
 def test_inject_editorial_declaration_no_duplicate_resp_stmt_on_second_call():
+    """Audit 6.13 : un second passage sur le meme arbre (reprise,
+    retraitement partiel) ne doit pas dupliquer le respStmt ner-auto."""
     root, file_desc = _header_with_filedesc()
 
     inject_editorial_declaration(root)

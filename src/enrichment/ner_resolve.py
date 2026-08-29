@@ -555,6 +555,13 @@ def inject_editorial_declaration(root):
             insert_idx = (title_stmt_idx + 1) if title_stmt_idx is not None else 0
             file_desc.insert(insert_idx, edition_stmt)
 
+        # Idempotence (audit 6.13): a second pass over the same tree
+        # (resume, partial reprocessing, library use) must not duplicate
+        # the xml:id="ner-auto" respStmt — that would be an invalid TEI.
+        for child in edition_stmt:
+            if _local(child.tag) == "respStmt" and child.get(XML_ID) == "ner-auto":
+                return
+
         resp_stmt = _sub(edition_stmt, "respStmt")
         resp_stmt.set(XML_ID, "ner-auto")
         resp = _sub(resp_stmt, "resp")
