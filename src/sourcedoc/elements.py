@@ -9,12 +9,9 @@ This module provides the SurfaceTree class which creates TEI <surface>,
 <zone>, <path>, and <line> elements from ALTO data.
 """
 
-import logging
 import uuid
 
 from lxml import etree
-
-logger = logging.getLogger(__name__)
 
 from ..constants import NS_ALTO, UUID_NAMESPACE, XML_ID
 from ..utils.xml import xml_id_safe
@@ -74,15 +71,13 @@ class SurfaceTree:
         occurrence = self._seen_keys.get(key, 0)
         self._seen_keys[key] = occurrence + 1
         if occurrence:
-            # Real ALTO exports occasionally duplicate an element ID on a
-            # page. uuid4 silently papered over it; a deterministic id
-            # must disambiguate (document order, so still reproducible)
-            # and say so.
-            logger.warning(
-                "%s/%s: duplicate ALTO id %s (occurrence %d) — "
-                "disambiguated in the TEI output",
-                self.doc, self.folio, "/".join(map(str, parts)), occurrence + 1,
-            )
+            # Real ALTO exports do duplicate element IDs (whole duplicated
+            # blocks — hundreds of hits on some corpus pages). uuid4
+            # silently papered over it; the deterministic id disambiguates
+            # by document-order occurrence, so it stays reproducible. No
+            # per-occurrence log here: the worker reports one aggregated
+            # warning per page (a logger call in a forkserver worker
+            # would not reach the parent's log anyway).
             parts = (*parts, f"dup{occurrence}")
         name = "\x1f".join((self.doc, self.folio, prefix, *map(str, parts)))
         return prefix + uuid.uuid5(UUID_NAMESPACE, name).hex
