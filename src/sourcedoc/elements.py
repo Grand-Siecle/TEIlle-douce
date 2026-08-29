@@ -13,9 +13,23 @@ import uuid
 
 from lxml import etree
 
-from ..constants import NS_ALTO, UUID_NAMESPACE, XML_ID
+from ..constants import NS_ALTO, NS_ALTO_URI, UUID_NAMESPACE, XML_ID
 from ..utils.xml import xml_id_safe
 from .attributes import format_alto_points
+
+
+def build_alto_id_index(alto_root):
+    """First-wins ID -> element index of an ALTO tree (audit 3.5).
+
+    First-wins mirrors find()'s first-match semantics, which matters on
+    the real corpus pages that duplicate element IDs.
+    """
+    by_id = {}
+    for el in alto_root.iter():
+        el_id = el.get("ID")
+        if el_id is not None:
+            by_id.setdefault(el_id, el)
+    return by_id
 
 
 class SurfaceTree:
@@ -33,7 +47,7 @@ class SurfaceTree:
         ids (dict): Mapping of element keys to generated UUIDs.
     """
 
-    def __init__(self, doc, folio, alto_root, iiif_mapping=None):
+    def __init__(self, doc, folio, alto_root, iiif_mapping=None, by_id=None):
         """
         Initialize the SurfaceTree builder.
 
@@ -42,6 +56,9 @@ class SurfaceTree:
             folio (str): Page/folio identifier (usually the file stem).
             alto_root (etree.Element): Parsed ALTO XML root element.
             iiif_mapping (IIIFMapping): Optional IIIF URL mapping instance.
+            by_id (dict): Optional prebuilt first-wins ID index of
+                alto_root (see build_alto_id_index) — spares a second
+                full-tree traversal when the caller already has one.
         """
         self.doc = doc
         self.folio = folio
@@ -52,11 +69,19 @@ class SurfaceTree:
         # First-wins ID index (audit 3.5): find() scanned the whole ALTO
         # tree once per line/string/glyph — 26 % of worker time. find()
         # returns the first match, so the index keeps the first too.
-        self._by_id = {}
-        for el in alto_root.iter():
-            el_id = el.get("ID")
-            if el_id is not None:
-                self._by_id.setdefault(el_id, el)
+        self._by_id = build_alto_id_index(alto_root) if by_id is None else by_id
+
+    def _find_by_id(self, el_id, localname):
+        """Indexed equivalent of find(f'.//a:{localname}[@ID=...]'):
+        first element carrying el_id, or None when absent or when it is
+        not the expected ALTO element type."""
+        el = self._by_id.get(el_id)
+        if el is None:
+            return None
+        qname = etree.QName(el)
+        if qname.localname != localname or qname.namespace != NS_ALTO_URI:
+            return None
+        return el
 
     def _uuid(self, prefix, *parts):
         """
@@ -168,9 +193,7 @@ class SurfaceTree:
         baseline = etree.SubElement(zone, "path", {XML_ID: path_uuid})
 
         # Get baseline points from ALTO (indexed lookup, audit 3.5)
-        textline = self._by_id.get(line_id)
-        if textline is not None and etree.QName(textline).localname != "TextLine":
-            textline = None
+        textline = self._find_by_id(line_id, "TextLine")
         if textline is not None:
             baseline_str = textline.get("BASELINE", "")
             baseline.attrib["points"] = format_alto_points(baseline_str)
@@ -201,7 +224,7 @@ class SurfaceTree:
         if extracted_words:
             line_el.text = extracted_words
         else:
-            parent_line = self._by_id.get(line_parent)
+            parent_line = self._find_by_id(line_parent, "TextLine")
             string_el = (
                 parent_line.find("a:String", namespaces=NS_ALTO)
                 if parent_line is not None else None
@@ -234,9 +257,7 @@ class SurfaceTree:
             zone.attrib[key] = value
 
         # Add confidence data if available (indexed lookup, audit 3.5)
-        alto_string = self._by_id.get(seg_id)
-        if alto_string is not None and etree.QName(alto_string).localname != "String":
-            alto_string = None
+        alto_string = self._find_by_id(seg_id, "String")
         if alto_string is not None:
             wc = alto_string.get("WC")
             if wc:
@@ -282,9 +303,7 @@ class SurfaceTree:
             zone.attrib[key] = value
 
         # Add confidence data if available
-        alto_glyph = self._by_id.get(glyph_id)
-        if alto_glyph is not None and etree.QName(alto_glyph).localname != "Glyph":
-            alto_glyph = None
+        alto_glyph = self._find_by_id(glyph_id, "Glyph")
         if alto_glyph is not None:
             gc = alto_glyph.get("GC")
             if gc:
