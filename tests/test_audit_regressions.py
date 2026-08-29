@@ -68,18 +68,32 @@ def _ecrire_csv_personne(chemin, lignes):
 def test_empty_person_database_is_not_confused_with_a_missing_one(tmp_path):
     """
     `override_teiheader_from_csv` garde la construction du <listPerson> derriere
-    `if all_person_ids and person_db:`. Faute de `__bool__`, Python retombe sur
-    `__len__` : une base chargee mais vide est fausse, et tout le <listPerson>
-    saute -- y compris pour des personnes qui ne viennent pas de cette base.
-    Consequence mesuree : tests/test_person_ids.py echoue sur un clone frais,
-    ou metadata_personne.csv (gitignore) est absent.
+    `if all_person_ids and person_db:`. Faute de `__bool__`, Python retombait
+    sur `__len__` : une base chargee mais vide etait fausse, et tout le
+    <listPerson> sautait -- y compris pour des personnes qui ne viennent pas de
+    cette base. La verite doit suivre le SUCCES DU CHARGEMENT, pas le nombre
+    d'entrees : un `__bool__` constant a True serait tout aussi faux (une base
+    au CSV manquant publierait des identifiants bruts comme noms de personnes).
     """
     db_vide = PersonDatabase(_ecrire_csv_personne(tmp_path / "personnes.csv", []))
-
     assert len(db_vide) == 0, "prerequis du test : la base doit bien etre vide"
     assert bool(db_vide) is True, (
-        "une base chargee mais vide doit rester vraie : seule une base ABSENTE "
-        "devrait etre fausse"
+        "une base chargee mais vide doit rester vraie : seule une base non "
+        "chargee devrait etre fausse"
+    )
+
+    db_absente = PersonDatabase(tmp_path / "inexistante.csv")
+    assert bool(db_absente) is False, (
+        "une base dont le CSV est manquant doit rester fausse, sinon le header "
+        "se remplit de stubs silencieux au lieu de sauter le listPerson"
+    )
+
+    csv_virgules = tmp_path / "virgules.csv"
+    csv_virgules.write_text("BDD,Nom,ISNI\nP1,X,Y\n", encoding="utf-8")
+    db_illisible = PersonDatabase(csv_virgules)
+    assert bool(db_illisible) is False, (
+        "un CSV sans colonne BDD (mauvais delimiteur, en-tetes renommes) doit "
+        "etre traite comme non charge, pas comme une base vide valide"
     )
 
 

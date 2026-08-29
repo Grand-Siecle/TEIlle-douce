@@ -49,6 +49,7 @@ class PersonDatabase:
             csv_path (Path or str, optional): Path to the person CSV file.
         """
         self._persons = {}
+        self._loaded = False
         if csv_path:
             self.load(csv_path)
 
@@ -63,6 +64,10 @@ class PersonDatabase:
             bool: True if loading succeeded, False otherwise.
         """
         csv_path = Path(csv_path)
+        # A reload replaces the previous index, it never merges with it;
+        # and a failed load leaves a clean, falsy database behind.
+        self._persons = {}
+        self._loaded = False
         if not csv_path.exists():
             return False
 
@@ -71,11 +76,22 @@ class PersonDatabase:
             # identifier columns and "0000000123456789" (a zero-padded
             # ISNI) silently becomes 123456789 (audit 5.3).
             df = pd.read_csv(csv_path, sep=CSV_DELIMITER, dtype=str)
-            self._build_index(df)
-            return True
         except Exception as e:
             logger.warning("Failed to read person metadata %s: %s", csv_path, e)
             return False
+
+        if "BDD" not in df.columns:
+            # Typical of a wrong delimiter or renamed headers: report it
+            # instead of silently serving an empty database.
+            logger.warning(
+                "Person metadata %s has no 'BDD' column "
+                "(wrong delimiter or renamed headers?) — ignored", csv_path,
+            )
+            return False
+
+        self._build_index(df)
+        self._loaded = True
+        return True
 
     def _build_index(self, df):
         """
@@ -239,15 +255,17 @@ class PersonDatabase:
 
     def __bool__(self):
         """
-        A loaded database is truthy even when it contains zero persons.
+        Truthy iff a CSV was successfully loaded — even with zero persons.
 
         Without this, Python falls back to __len__ and an empty-but-present
         database is falsy: guards like ``if ids and person_db:`` then skip
         the whole listPerson construction, including for persons that do
-        not come from this database (audit 5.2). Only an ABSENT database
-        (None) should be falsy.
+        not come from this database (audit 5.2). Conversely a database
+        whose CSV is missing or unreadable must stay falsy — a constant
+        True would silently publish raw ids as person names instead of
+        skipping listPerson.
         """
-        return True
+        return self._loaded
 
     def __contains__(self, person_id):
         """Check if a person ID exists in the database."""

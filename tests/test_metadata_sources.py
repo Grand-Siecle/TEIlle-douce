@@ -342,12 +342,16 @@ def test_load_blank_field_after_strip_and_blank_roles_return_none_and_empty_list
     assert person["roles"] == []
 
 
-def test_load_returns_true_but_indexes_nothing_when_bdd_column_missing(tmp_path):
+def test_load_fails_loudly_when_bdd_column_missing(tmp_path):
+    """Un CSV sans colonne BDD (mauvais delimiteur, en-tetes renommes) est
+    traite comme un echec de chargement, pas comme une base vide valide :
+    load() renvoyait True en silence et l'operateur ne voyait rien."""
     path = tmp_path / "no_bdd.csv"
     path.write_text("Nom;Prenoms\nDupont;Jean\n", encoding="utf-8")
     db = PersonDatabase()
-    assert db.load(path) is True
+    assert db.load(path) is False
     assert len(db) == 0
+    assert bool(db) is False
 
 
 def test_contains_and_len(tmp_path):
