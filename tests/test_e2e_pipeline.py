@@ -12,10 +12,9 @@ Deux modes, correspondant aux deux marqueurs pytest :
 La fixture est `tests/fixtures/alto_min/` (8 pages, 175 Ko) — voir
 `scripts/build_test_fixture.py` pour sa provenance et son mode de regeneration.
 
-Le pipeline produit aujourd'hui des `uuid4` differents a chaque execution
-(rapport d'audit 2.8), ce qui interdit toute comparaison directe. Les tests
-normalisent donc les identifiants avant comparaison : la meme suite deviendra
-un vrai golden-file, sans reecriture, le jour ou les `uuid5` seront en place.
+Depuis le passage aux `uuid5` (audit 2.8) et au tri de la taxonomie (6.9),
+la sortie est entierement deterministe : la comparaison au golden est un
+vrai diff a l'identifiant pres — seule la date de generation est neutralisee.
 """
 
 import os
@@ -35,9 +34,6 @@ GOLDEN = FIXTURES / "golden" / "LIV9001_court.tei.xml"
 DOCUMENT = "LIV9001_reconciled"
 
 XML_ID = "{http://www.w3.org/XML/1998/namespace}id"
-# Les prefixes sont a casse mixte (zone_, zoneLine_, line_, cert_...) : on ne
-# normalise que la partie hexadecimale, le prefixe reste en place et reste lisible.
-UUID_RE = re.compile(r"(?<![0-9a-zA-Z])[0-9a-f]{32}(?![0-9a-zA-Z])")
 
 
 # =============================================================================
@@ -113,23 +109,16 @@ def normaliser(chemin):
     """
     Rend la sortie comparable d'un run a l'autre.
 
-    Remplace chaque uuid par un jeton sequentiel attribue dans l'ordre du
-    document (les references `#uuid` suivent, la substitution etant textuelle
-    et les uuid uniques), et neutralise la date de generation.
+    Seule la date de generation du fichier est neutralisee (les dates
+    historiques sont conservees) : depuis le passage aux uuid5 (audit 2.8)
+    et au tri de la taxonomie (audit 6.9), les identifiants et l'ordre des
+    elements sont deterministes — la comparaison est un vrai golden-file,
+    identifiants compris.
 
-    (Historique : un parametre `sans_taxonomie` retirait le bloc <taxonomy>
-    tant que son ordre dependait de PYTHONHASHSEED — corrige, audit 6.9 :
-    la taxonomie fait desormais partie de la comparaison.)
+    (Historique : les uuid4 etaient remplaces par des jetons sequentiels,
+    et un parametre `sans_taxonomie` retirait le bloc <taxonomy> instable.)
     """
     texte = Path(chemin).read_text(encoding="utf-8")
-
-    correspondance = {}
-    for uuid in UUID_RE.findall(texte):
-        correspondance.setdefault(uuid, f"{len(correspondance) + 1:04d}")
-    for uuid, jeton in correspondance.items():
-        texte = texte.replace(uuid, jeton)
-
-    # Date de generation du fichier (les dates historiques sont conservees).
     texte = re.sub(r'when="20\d\d-\d\d-\d\d"', 'when="DATE-GENERATION"', texte)
     return texte
 

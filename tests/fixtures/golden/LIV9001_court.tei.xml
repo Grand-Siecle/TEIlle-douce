@@ -261,267 +261,267 @@
   <sourceDoc>
     <surface xml:id="f1" n="1" ulx="0" uly="0" lrx="1749" lry="2481">
       <graphic url="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f1/full/full/0/native.jpg"/>
-      <zone xml:id="zone_0001" type="RunningTitleZone" corresp="#RunningTitleZone" subtype="none" n="none" ulx="243" uly="84" lrx="1178" lry="175" points="243,84 1178,84 1178,175 243,175" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f1/243,84,935,91/full/0/native.jpg">
-        <zone xml:id="zoneLine_0002" type="DefaultLine" subtype="none" n="none" ulx="256.0" uly="106.0" lrx="1158" lry="172" points="1126,117 1113,117 1099,117 1085,117" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f1/256.0,106.0,902.0,66.0/full/0/native.jpg">
-          <path xml:id="path_0003" points="257,150 616,147 1158,157"/>
-          <line xml:id="line_0004" n="1">DE LAMOVR, LIVRE VII.</line>
+      <zone xml:id="zone_c038da228e4d56989463de66524294d4" type="RunningTitleZone" corresp="#RunningTitleZone" subtype="none" n="none" ulx="243" uly="84" lrx="1178" lry="175" points="243,84 1178,84 1178,175 243,175" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f1/243,84,935,91/full/0/native.jpg">
+        <zone xml:id="zoneLine_d36ddedd21b852009cfe7b94b068f880" type="DefaultLine" subtype="none" n="none" ulx="256.0" uly="106.0" lrx="1158" lry="172" points="1126,117 1113,117 1099,117 1085,117" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f1/256.0,106.0,902.0,66.0/full/0/native.jpg">
+          <path xml:id="path_8c14ea82e8e8562b9d88ff5a49578e3b" points="257,150 616,147 1158,157"/>
+          <line xml:id="line_1e47a7795e7f5c2eaeed5a65dd2e553a" n="1">DE LAMOVR, LIVRE VII.</line>
         </zone>
       </zone>
-      <zone xml:id="zone_0005" type="NumberingZone" corresp="#NumberingZone" subtype="none" n="none" ulx="1302" uly="103" lrx="1428" lry="193" points="1302,103 1428,103 1428,193 1302,193" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f1/1302,103,126,90/full/0/native.jpg">
-        <zone xml:id="zoneLine_0006" type="DefaultLine" subtype="none" n="none" ulx="1311.0" uly="117.0" lrx="1411" lry="194" points="1339,117 1326,117 1311,118 1311,166" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f1/1311.0,117.0,100.0,77.0/full/0/native.jpg">
-          <path xml:id="path_0007" points="1311,166 1411,166"/>
-          <line xml:id="line_0008" n="1">805</line>
+      <zone xml:id="zone_5d9211258488547f9391ef6d8c5c139c" type="NumberingZone" corresp="#NumberingZone" subtype="none" n="none" ulx="1302" uly="103" lrx="1428" lry="193" points="1302,103 1428,103 1428,193 1302,193" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f1/1302,103,126,90/full/0/native.jpg">
+        <zone xml:id="zoneLine_8441d075d7285fc0bc906a63d306ef8b" type="DefaultLine" subtype="none" n="none" ulx="1311.0" uly="117.0" lrx="1411" lry="194" points="1339,117 1326,117 1311,118 1311,166" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f1/1311.0,117.0,100.0,77.0/full/0/native.jpg">
+          <path xml:id="path_973ac2c3327954619a12b6b3f25f2bc3" points="1311,166 1411,166"/>
+          <line xml:id="line_69c765d5d25254a18e48d77b52f4b12a" n="1">805</line>
         </zone>
       </zone>
-      <zone xml:id="zone_0009" type="MainZone" corresp="#MainZone" subtype="none" n="none" ulx="67" uly="213" lrx="1432" lry="2293" points="67,213 1432,213 1432,2293 67,2293" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f1/67,213,1365,2080/full/0/native.jpg">
-        <zone xml:id="zoneLine_0010" type="DefaultLine" subtype="none" n="none" ulx="245.0" uly="294.0" lrx="1270" lry="365" points="1157,294 1143,294 1129,294 1115,294" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f1/245.0,294.0,1025.0,71.0/full/0/native.jpg">
-          <path xml:id="path_0011" points="246,339 1270,351"/>
-          <line xml:id="line_0012" n="1">CHAPTPKEPREMIER.</line>
+      <zone xml:id="zone_46be43d8544b51c3bd9b5457048772fd" type="MainZone" corresp="#MainZone" subtype="none" n="none" ulx="67" uly="213" lrx="1432" lry="2293" points="67,213 1432,213 1432,2293 67,2293" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f1/67,213,1365,2080/full/0/native.jpg">
+        <zone xml:id="zoneLine_2b4f6dfa7e7a594db469aaa0e99a32be" type="DefaultLine" subtype="none" n="none" ulx="245.0" uly="294.0" lrx="1270" lry="365" points="1157,294 1143,294 1129,294 1115,294" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f1/245.0,294.0,1025.0,71.0/full/0/native.jpg">
+          <path xml:id="path_e6febdf550815335a14b561c459c4024" points="246,339 1270,351"/>
+          <line xml:id="line_788a4c024b435363a4677cf3bc7dbefd" n="1">CHAPTPKEPREMIER.</line>
         </zone>
-        <zone xml:id="zoneLine_0013" type="DefaultLine" subtype="none" n="none" ulx="168.0" uly="398.0" lrx="1340" lry="493" points="169,456 168,465 206,474 208,474" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f1/168.0,398.0,1172.0,95.0/full/0/native.jpg">
-          <path xml:id="path_0014" points="169,456 1340,467"/>
-          <line xml:id="line_0015" n="2">Des raisons qui nous obligent à sanctifier</line>
+        <zone xml:id="zoneLine_b317012829e95282a4b8965fcbe8981b" type="DefaultLine" subtype="none" n="none" ulx="168.0" uly="398.0" lrx="1340" lry="493" points="169,456 168,465 206,474 208,474" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f1/168.0,398.0,1172.0,95.0/full/0/native.jpg">
+          <path xml:id="path_1d722a14b5525aa984699de26c7493be" points="169,456 1340,467"/>
+          <line xml:id="line_0aeeb87afd7357ceb5ab0b071a9c3bef" n="2">Des raisons qui nous obligent à sanctifier</line>
         </zone>
-        <zone xml:id="zoneLine_0016" type="DefaultLine" subtype="none" n="none" ulx="182.0" uly="795.0" lrx="1321" lry="882" points="183,847 182,871 231,875 233,875" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f1/182.0,795.0,1139.0,87.0/full/0/native.jpg">
-          <path xml:id="path_0017" points="183,847 1321,854"/>
-          <line xml:id="line_0018" n="3">que nostre soin principal doit estre de le pu¬</line>
+        <zone xml:id="zoneLine_10bfa7ad330350c6bbc52da58a3aaeff" type="DefaultLine" subtype="none" n="none" ulx="182.0" uly="795.0" lrx="1321" lry="882" points="183,847 182,871 231,875 233,875" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f1/182.0,795.0,1139.0,87.0/full/0/native.jpg">
+          <path xml:id="path_873becbf19d35498b3fc55e9c107f703" points="183,847 1321,854"/>
+          <line xml:id="line_5b8596b316f65b6495ca5b398fac9d07" n="3">que nostre soin principal doit estre de le pu¬</line>
         </zone>
-        <zone xml:id="zoneLine_0019" type="DefaultLine" subtype="none" n="none" ulx="326.0" uly="1029.0" lrx="1612" lry="1120" points="326,1086 326,1102 453,1098 466,1104" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f1/326.0,1029.0,1286.0,91.0/full/0/native.jpg">
-          <path xml:id="path_0020" points="326,1086 1343,1095 1435,1105 1612,1105"/>
-          <line xml:id="line_0021" n="4">IVn Philosophe a donné sa male¬4imus</line>
+        <zone xml:id="zoneLine_5c52a7bf858056758aa38e4f677e6bbf" type="DefaultLine" subtype="none" n="none" ulx="326.0" uly="1029.0" lrx="1612" lry="1120" points="326,1086 326,1102 453,1098 466,1104" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f1/326.0,1029.0,1286.0,91.0/full/0/native.jpg">
+          <path xml:id="path_e7af033e1fab501f85dab47d4d9072c1" points="326,1086 1343,1095 1435,1105 1612,1105"/>
+          <line xml:id="line_ecb03c2f4dc4597a8069dde97cbee7af" n="4">IVn Philosophe a donné sa male¬4imus</line>
         </zone>
-        <zone xml:id="zoneLine_0022" type="DefaultLine" subtype="none" n="none" ulx="117.0" uly="1036.0" lrx="151" lry="1097" points="118,1088 117,1093 147,1097 150,1090" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f1/117.0,1036.0,34.0,61.0/full/0/native.jpg">
-          <path xml:id="path_0023" points="118,1088 150,1090"/>
-          <line xml:id="line_0024" n="5"/>
+        <zone xml:id="zoneLine_20869192b9b556db85fce59217bfe383" type="DefaultLine" subtype="none" n="none" ulx="117.0" uly="1036.0" lrx="151" lry="1097" points="118,1088 117,1093 147,1097 150,1090" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f1/117.0,1036.0,34.0,61.0/full/0/native.jpg">
+          <path xml:id="path_4bcc1fbfb5d750db8f447da4cab3b3dd" points="118,1088 150,1090"/>
+          <line xml:id="line_aee75042869b54449091bc33f6bba73f" n="5"/>
         </zone>
-        <zone xml:id="zoneLine_0025" type="DefaultLine" subtype="none" n="none" ulx="304.0" uly="1195.0" lrx="328" lry="1284" points="304,1281 326,1284 328,1251 328,1206" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f1/304.0,1195.0,24.0,89.0/full/0/native.jpg">
-          <path xml:id="path_0026" points="304,1251 328,1251"/>
-          <line xml:id="line_0027" n="6">y</line>
-        </zone>
-      </zone>
-      <zone xml:id="zone_0028" type="MarginTextZone" corresp="#MarginTextZone" subtype="none" n="none" ulx="1416" uly="1517" lrx="1651" lry="1675" points="1416,1517 1651,1517 1651,1675 1416,1675" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f1/1416,1517,235,158/full/0/native.jpg">
-        <zone xml:id="zoneLine_0029" type="DefaultLine" subtype="none" n="none" ulx="1417.0" uly="1565.0" lrx="1553" lry="1620" points="1419,1609 1419,1620 1553,1616 1553,1607" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f1/1417.0,1565.0,136.0,55.0/full/0/native.jpg">
-          <path xml:id="path_0030" points="1419,1609 1553,1607"/>
-          <line xml:id="line_0031" n="1">diuinis</line>
-        </zone>
-        <zone xml:id="zoneLine_0032" type="DefaultLine" subtype="none" n="none" ulx="1416.0" uly="1627.0" lrx="1575" lry="1671" points="1417,1658 1417,1671 1573,1669 1575,1655" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f1/1416.0,1627.0,159.0,44.0/full/0/native.jpg">
-          <path xml:id="path_0033" points="1417,1658 1575,1655"/>
-          <line xml:id="line_0034" n="2">nom, c.4¬</line>
+        <zone xml:id="zoneLine_0ec5392d192e531dac38859c79c53bcc" type="DefaultLine" subtype="none" n="none" ulx="304.0" uly="1195.0" lrx="328" lry="1284" points="304,1281 326,1284 328,1251 328,1206" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f1/304.0,1195.0,24.0,89.0/full/0/native.jpg">
+          <path xml:id="path_bfc0a3803232542e9c68a9feaab7c405" points="304,1251 328,1251"/>
+          <line xml:id="line_f36775993e2653dbb69e93287036bf6b" n="6">y</line>
         </zone>
       </zone>
-      <zone xml:id="zone_0035" type="MainZone" corresp="#MainZone" subtype="none" n="none" ulx="67" uly="213" lrx="1432" lry="2293" points="67,213 1432,213 1432,2293 67,2293" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f1/67,213,1365,2080/full/0/native.jpg">
-        <zone xml:id="zoneLine_0036" type="DefaultLine" subtype="none" n="none" ulx="245.0" uly="294.0" lrx="1270" lry="365" points="1157,294 1143,294 1129,294 1115,294" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f1/245.0,294.0,1025.0,71.0/full/0/native.jpg">
-          <path xml:id="path_0037" points="246,339 1270,351"/>
-          <line xml:id="line_0038" n="1">CHAPTPKEPREMIER.</line>
+      <zone xml:id="zone_b9348f2492f153999022f05507143e85" type="MarginTextZone" corresp="#MarginTextZone" subtype="none" n="none" ulx="1416" uly="1517" lrx="1651" lry="1675" points="1416,1517 1651,1517 1651,1675 1416,1675" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f1/1416,1517,235,158/full/0/native.jpg">
+        <zone xml:id="zoneLine_bf7767d1b0c05ad481e91da7109bd9d7" type="DefaultLine" subtype="none" n="none" ulx="1417.0" uly="1565.0" lrx="1553" lry="1620" points="1419,1609 1419,1620 1553,1616 1553,1607" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f1/1417.0,1565.0,136.0,55.0/full/0/native.jpg">
+          <path xml:id="path_37dcda3553815dd2ad8d94201d515d6c" points="1419,1609 1553,1607"/>
+          <line xml:id="line_e544aa78a3e950709fcbd7c8dd82edf5" n="1">diuinis</line>
         </zone>
-        <zone xml:id="zoneLine_0039" type="DefaultLine" subtype="none" n="none" ulx="168.0" uly="398.0" lrx="1340" lry="493" points="169,456 168,465 206,474 208,474" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f1/168.0,398.0,1172.0,95.0/full/0/native.jpg">
-          <path xml:id="path_0040" points="169,456 1340,467"/>
-          <line xml:id="line_0041" n="2">Des raisons qui nous obligent à sanctifier</line>
-        </zone>
-        <zone xml:id="zoneLine_0042" type="DefaultLine" subtype="none" n="none" ulx="182.0" uly="795.0" lrx="1321" lry="882" points="183,847 182,871 231,875 233,875" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f1/182.0,795.0,1139.0,87.0/full/0/native.jpg">
-          <path xml:id="path_0043" points="183,847 1321,854"/>
-          <line xml:id="line_0044" n="3">que nostre soin principal doit estre de le pu¬</line>
-        </zone>
-        <zone xml:id="zoneLine_0045" type="DefaultLine" subtype="none" n="none" ulx="326.0" uly="1029.0" lrx="1612" lry="1120" points="326,1086 326,1102 453,1098 466,1104" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f1/326.0,1029.0,1286.0,91.0/full/0/native.jpg">
-          <path xml:id="path_0046" points="326,1086 1343,1095 1435,1105 1612,1105"/>
-          <line xml:id="line_0047" n="4">IVn Philosophe a donné sa male¬4imus</line>
-        </zone>
-        <zone xml:id="zoneLine_0048" type="DefaultLine" subtype="none" n="none" ulx="117.0" uly="1036.0" lrx="151" lry="1097" points="118,1088 117,1093 147,1097 150,1090" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f1/117.0,1036.0,34.0,61.0/full/0/native.jpg">
-          <path xml:id="path_0049" points="118,1088 150,1090"/>
-          <line xml:id="line_0050" n="5"/>
-        </zone>
-        <zone xml:id="zoneLine_0051" type="DefaultLine" subtype="none" n="none" ulx="304.0" uly="1195.0" lrx="328" lry="1284" points="304,1281 326,1284 328,1251 328,1206" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f1/304.0,1195.0,24.0,89.0/full/0/native.jpg">
-          <path xml:id="path_0052" points="304,1251 328,1251"/>
-          <line xml:id="line_0053" n="6">y</line>
+        <zone xml:id="zoneLine_36d1d022a39f5f1a88dd403885510216" type="DefaultLine" subtype="none" n="none" ulx="1416.0" uly="1627.0" lrx="1575" lry="1671" points="1417,1658 1417,1671 1573,1669 1575,1655" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f1/1416.0,1627.0,159.0,44.0/full/0/native.jpg">
+          <path xml:id="path_b28e23f7b72c55b7b720f19e6a588c7e" points="1417,1658 1575,1655"/>
+          <line xml:id="line_d0e7d692991c59b9afeb19fc7482c819" n="2">nom, c.4¬</line>
         </zone>
       </zone>
-      <zone xml:id="zone_0054" type="QuireMarksZone" corresp="#QuireMarksZone" subtype="none" n="none" ulx="996" uly="2273" lrx="1277" lry="2360" points="996,2273 1277,2273 1277,2360 996,2360" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f1/996,2273,281,87/full/0/native.jpg">
-        <zone xml:id="zoneLine_0055" type="DefaultLine" subtype="none" n="none" ulx="1009.0" uly="2274.0" lrx="1251" lry="2350" points="1011,2329 1011,2339 1176,2339 1249,2350" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f1/1009.0,2274.0,242.0,76.0/full/0/native.jpg">
-          <path xml:id="path_0056" points="1011,2329 1251,2328"/>
-          <line xml:id="line_0057" n="1">1I111 iij</line>
+      <zone xml:id="zone_a7472911c26e5c7e9370dd304a6a7380" type="MainZone" corresp="#MainZone" subtype="none" n="none" ulx="67" uly="213" lrx="1432" lry="2293" points="67,213 1432,213 1432,2293 67,2293" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f1/67,213,1365,2080/full/0/native.jpg">
+        <zone xml:id="zoneLine_0c2a9214822f51d199a82ffdb0a975a6" type="DefaultLine" subtype="none" n="none" ulx="245.0" uly="294.0" lrx="1270" lry="365" points="1157,294 1143,294 1129,294 1115,294" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f1/245.0,294.0,1025.0,71.0/full/0/native.jpg">
+          <path xml:id="path_d89268f9279650aca4f7517aeb82a043" points="246,339 1270,351"/>
+          <line xml:id="line_a8a91c3f3cb9531aa6ab4c0b7996bcff" n="1">CHAPTPKEPREMIER.</line>
+        </zone>
+        <zone xml:id="zoneLine_9a4bb5e6105e5954b3964106ea691fcd" type="DefaultLine" subtype="none" n="none" ulx="168.0" uly="398.0" lrx="1340" lry="493" points="169,456 168,465 206,474 208,474" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f1/168.0,398.0,1172.0,95.0/full/0/native.jpg">
+          <path xml:id="path_2c40d4d93aba588d974689f48d1c81ae" points="169,456 1340,467"/>
+          <line xml:id="line_a792eb4ae8e8528b914d7b99ff1529d9" n="2">Des raisons qui nous obligent à sanctifier</line>
+        </zone>
+        <zone xml:id="zoneLine_43b243165fa25c7399e13a182d5ea935" type="DefaultLine" subtype="none" n="none" ulx="182.0" uly="795.0" lrx="1321" lry="882" points="183,847 182,871 231,875 233,875" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f1/182.0,795.0,1139.0,87.0/full/0/native.jpg">
+          <path xml:id="path_98d65f923693521ca217912e048ecc36" points="183,847 1321,854"/>
+          <line xml:id="line_9c7ff446371852f4993bdfb4f5faf7be" n="3">que nostre soin principal doit estre de le pu¬</line>
+        </zone>
+        <zone xml:id="zoneLine_ec785f8207f95e4b948f4edded86d867" type="DefaultLine" subtype="none" n="none" ulx="326.0" uly="1029.0" lrx="1612" lry="1120" points="326,1086 326,1102 453,1098 466,1104" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f1/326.0,1029.0,1286.0,91.0/full/0/native.jpg">
+          <path xml:id="path_abe6a766822e537f91acdf6bf867b963" points="326,1086 1343,1095 1435,1105 1612,1105"/>
+          <line xml:id="line_5365198ebd8d57f7b7a08efd1c2e8445" n="4">IVn Philosophe a donné sa male¬4imus</line>
+        </zone>
+        <zone xml:id="zoneLine_8b2654e8f2c5504dae9b69849dd35383" type="DefaultLine" subtype="none" n="none" ulx="117.0" uly="1036.0" lrx="151" lry="1097" points="118,1088 117,1093 147,1097 150,1090" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f1/117.0,1036.0,34.0,61.0/full/0/native.jpg">
+          <path xml:id="path_d9036c95c1eb5f5d9b43196cd800d674" points="118,1088 150,1090"/>
+          <line xml:id="line_c2d912ecc860548186310846c80c3772" n="5"/>
+        </zone>
+        <zone xml:id="zoneLine_7c73f186d71759bbafc3352f4033c1a5" type="DefaultLine" subtype="none" n="none" ulx="304.0" uly="1195.0" lrx="328" lry="1284" points="304,1281 326,1284 328,1251 328,1206" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f1/304.0,1195.0,24.0,89.0/full/0/native.jpg">
+          <path xml:id="path_b4dfbb813ea451319c244fc14361cad3" points="304,1251 328,1251"/>
+          <line xml:id="line_c5c6d575e780532882d2d45f41f184ba" n="6">y</line>
+        </zone>
+      </zone>
+      <zone xml:id="zone_4a24a152034357058dfd8e64d425ae78" type="QuireMarksZone" corresp="#QuireMarksZone" subtype="none" n="none" ulx="996" uly="2273" lrx="1277" lry="2360" points="996,2273 1277,2273 1277,2360 996,2360" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f1/996,2273,281,87/full/0/native.jpg">
+        <zone xml:id="zoneLine_0c7fbbafb4775e02a8d32c0e3cc0993f" type="DefaultLine" subtype="none" n="none" ulx="1009.0" uly="2274.0" lrx="1251" lry="2350" points="1011,2329 1011,2339 1176,2339 1249,2350" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f1/1009.0,2274.0,242.0,76.0/full/0/native.jpg">
+          <path xml:id="path_35f9f12c584e598f968fa39271eefb09" points="1011,2329 1251,2328"/>
+          <line xml:id="line_23326e3665bb540e8df962397c215dfa" n="1">1I111 iij</line>
         </zone>
       </zone>
     </surface>
     <surface xml:id="f2" n="2" ulx="0" uly="0" lrx="1749" lry="2481">
       <graphic url="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f2/full/full/0/native.jpg"/>
-      <zone xml:id="zone_0058" type="GraphicZone" corresp="#GraphicZone" subtype="none" n="none" ulx="163" uly="183" lrx="1649" lry="2153" points="163,183 1649,183 1649,2153 163,2153" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f2/163,183,1486,1970/full/0/native.jpg">
-        <zone xml:id="zoneLine_0059" type="DefaultLine" subtype="none" n="none" ulx="208.0" uly="2077.0" lrx="507" lry="2144" points="209,2099 209,2129 244,2137 245,2137" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f2/208.0,2077.0,299.0,67.0/full/0/native.jpg">
-          <path xml:id="path_0060" points="209,2099 507,2096"/>
-          <line xml:id="line_0061" n="1">3r Ruret Imueu et. ficit</line>
+      <zone xml:id="zone_b59c3c31855a5663a39bbc784012353e" type="GraphicZone" corresp="#GraphicZone" subtype="none" n="none" ulx="163" uly="183" lrx="1649" lry="2153" points="163,183 1649,183 1649,2153 163,2153" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f2/163,183,1486,1970/full/0/native.jpg">
+        <zone xml:id="zoneLine_55ecdc50fc9d58e58c0308a427ba371a" type="DefaultLine" subtype="none" n="none" ulx="208.0" uly="2077.0" lrx="507" lry="2144" points="209,2099 209,2129 244,2137 245,2137" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f2/208.0,2077.0,299.0,67.0/full/0/native.jpg">
+          <path xml:id="path_3dfbddc5b01257bfa0ef5cd0670f20bf" points="209,2099 507,2096"/>
+          <line xml:id="line_6b3b6c09ea9f5b8899c188acfddba222" n="1">3r Ruret Imueu et. ficit</line>
         </zone>
-        <zone xml:id="zoneLine_0062" type="DefaultLine" subtype="none" n="none" ulx="1216.0" uly="1204.0" lrx="1248" lry="1379" points="1226,1338 1228,1379 1248,1379 1246,1336" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f2/1216.0,1204.0,32.0,175.0/full/0/native.jpg">
-          <path xml:id="path_0063" points="1226,1338 1246,1336"/>
-          <line xml:id="line_0064" n="2"/>
+        <zone xml:id="zoneLine_e9c0a12dba4f5af5874ab8d3e5133f48" type="DefaultLine" subtype="none" n="none" ulx="1216.0" uly="1204.0" lrx="1248" lry="1379" points="1226,1338 1228,1379 1248,1379 1246,1336" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f2/1216.0,1204.0,32.0,175.0/full/0/native.jpg">
+          <path xml:id="path_46267c4e16fe5bbb927aa5d036cfa72c" points="1226,1338 1246,1336"/>
+          <line xml:id="line_b8075a48cedc5fae83406756fb757bbe" n="2"/>
         </zone>
       </zone>
     </surface>
     <surface xml:id="f3" n="3" ulx="0" uly="0" lrx="1749" lry="2481">
       <graphic url="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f3/full/full/0/native.jpg"/>
-      <zone xml:id="zone_0065" type="TitlePageZone" corresp="#TitlePageZone" subtype="none" n="none" ulx="301" uly="466" lrx="1284" lry="1666" points="301,466 1284,466 1284,1666 301,1666" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f3/301,466,983,1200/full/0/native.jpg">
-        <zone xml:id="zoneLine_0066" type="DefaultLine" subtype="none" n="none" ulx="706.0" uly="1524.0" lrx="1017" lry="1564" points="707,1553 707,1564 1017,1563 1017,1549" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f3/706.0,1524.0,311.0,40.0/full/0/native.jpg">
-          <path xml:id="path_0067" points="707,1553 1017,1549"/>
-          <line xml:id="line_0068" n="1">Contraste insuffisart</line>
+      <zone xml:id="zone_e3644cf7a4845f5385d4055cbeb8f5e8" type="TitlePageZone" corresp="#TitlePageZone" subtype="none" n="none" ulx="301" uly="466" lrx="1284" lry="1666" points="301,466 1284,466 1284,1666 301,1666" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f3/301,466,983,1200/full/0/native.jpg">
+        <zone xml:id="zoneLine_fece132d403157e682a5b2b1aff0ed23" type="DefaultLine" subtype="none" n="none" ulx="706.0" uly="1524.0" lrx="1017" lry="1564" points="707,1553 707,1564 1017,1563 1017,1549" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f3/706.0,1524.0,311.0,40.0/full/0/native.jpg">
+          <path xml:id="path_7948763e0da65d6094ba2a248162043b" points="707,1553 1017,1549"/>
+          <line xml:id="line_5715d3c3782654e0a878b22fe07f5267" n="1">Contraste insuffisart</line>
         </zone>
-        <zone xml:id="zoneLine_0069" type="DefaultLine" subtype="none" n="none" ulx="735.0" uly="1576.0" lrx="994" lry="1619" points="736,1608 736,1619 994,1619 994,1605" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f3/735.0,1576.0,259.0,43.0/full/0/native.jpg">
-          <path xml:id="path_0070" points="736,1608 994,1605"/>
-          <line xml:id="line_0071" n="2">NE Z43-120-14</line>
+        <zone xml:id="zoneLine_2940e155afb0541d8d5454501b9a3579" type="DefaultLine" subtype="none" n="none" ulx="735.0" uly="1576.0" lrx="994" lry="1619" points="736,1608 736,1619 994,1619 994,1605" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f3/735.0,1576.0,259.0,43.0/full/0/native.jpg">
+          <path xml:id="path_e26caa54298d539d8fd97aacf03c4fd9" points="736,1608 994,1605"/>
+          <line xml:id="line_dcf084f977e25e228b1467fd19b40f24" n="2">NE Z43-120-14</line>
         </zone>
       </zone>
     </surface>
     <surface xml:id="f4" n="4" ulx="0" uly="0" lrx="1749" lry="2481">
       <graphic url="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f4/full/full/0/native.jpg"/>
-      <zone xml:id="zone_0072" type="MainZone" corresp="#MainZone" subtype="none" n="none" ulx="432" uly="234" lrx="1487" lry="2249" points="432,234 1487,234 1487,2249 432,2249" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f4/432,234,1055,2015/full/0/native.jpg">
-        <zone xml:id="zoneLine_0073" type="DefaultLine" subtype="none" n="none" ulx="766.0" uly="228.0" lrx="1135" lry="325" points="768,299 766,308 889,323 891,323" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f4/766.0,228.0,369.0,97.0/full/0/native.jpg">
-          <path xml:id="path_0074" points="768,299 1135,303"/>
-          <line xml:id="line_0075" n="1">Censure de la</line>
+      <zone xml:id="zone_e0923738fb305aed9ab2e434cae69686" type="MainZone" corresp="#MainZone" subtype="none" n="none" ulx="432" uly="234" lrx="1487" lry="2249" points="432,234 1487,234 1487,2249 432,2249" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f4/432,234,1055,2015/full/0/native.jpg">
+        <zone xml:id="zoneLine_566a769b0f4c5ed5be1b96e9417f921b" type="DefaultLine" subtype="none" n="none" ulx="766.0" uly="228.0" lrx="1135" lry="325" points="768,299 766,308 889,323 891,323" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f4/766.0,228.0,369.0,97.0/full/0/native.jpg">
+          <path xml:id="path_b6dde9dd60f25b4f837d31ec2fe7f981" points="768,299 1135,303"/>
+          <line xml:id="line_e3f65fbaff79525db23b2f3f4359458f" n="1">Censure de la</line>
         </zone>
-        <zone xml:id="zoneLine_0076" type="DefaultLine" subtype="none" n="none" ulx="453.0" uly="321.0" lrx="1453" lry="407" points="731,323 726,323 702,340 677,323" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f4/453.0,321.0,1000.0,86.0/full/0/native.jpg">
-          <path xml:id="path_0077" points="455,380 788,377 1453,385"/>
-          <line xml:id="line_0078" n="2">Fœtibus infamis semper damnosáque munde</line>
+        <zone xml:id="zoneLine_dadbbc04cc165e149f1668215ce31e45" type="DefaultLine" subtype="none" n="none" ulx="453.0" uly="321.0" lrx="1453" lry="407" points="731,323 726,323 702,340 677,323" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f4/453.0,321.0,1000.0,86.0/full/0/native.jpg">
+          <path xml:id="path_0f2f2bd5e5635767b715953c4467ca3b" points="455,380 788,377 1453,385"/>
+          <line xml:id="line_2ce86bbf2dd1500382ce6b545b0da019" n="2">Fœtibus infamis semper damnosáque munde</line>
         </zone>
-        <zone xml:id="zoneLine_0079" type="DefaultLine" subtype="none" n="none" ulx="456.0" uly="609.0" lrx="1449" lry="686" points="457,656 456,667 588,669 657,682" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f4/456.0,609.0,993.0,77.0/full/0/native.jpg">
-          <path xml:id="path_0080" points="457,656 1449,662"/>
-          <line xml:id="line_0081" n="3">Humani, quibus &amp; Diuúm contemnere cul¬</line>
+        <zone xml:id="zoneLine_1a6a80341e39553f8ea3975ec29528af" type="DefaultLine" subtype="none" n="none" ulx="456.0" uly="609.0" lrx="1449" lry="686" points="457,656 456,667 588,669 657,682" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f4/456.0,609.0,993.0,77.0/full/0/native.jpg">
+          <path xml:id="path_1aab7b61f10c58b4bf3d7198a3b46fa4" points="457,656 1449,662"/>
+          <line xml:id="line_afe43315fb0c5c2a9531d18307fdc14c" n="3">Humani, quibus &amp; Diuúm contemnere cul¬</line>
         </zone>
-        <zone xml:id="zoneLine_0082" type="DefaultLine" subtype="none" n="none" ulx="317.0" uly="745.0" lrx="1449" lry="827" points="318,800 317,809 337,818 339,818" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f4/317.0,745.0,1132.0,82.0/full/0/native.jpg">
-          <path xml:id="path_0083" points="318,800 1449,804"/>
-          <line xml:id="line_0084" n="4">Greg. Mos fuit, &amp;* mactare suos sine vindice</line>
+        <zone xml:id="zoneLine_69a57439265558e0916264e64f310232" type="DefaultLine" subtype="none" n="none" ulx="317.0" uly="745.0" lrx="1449" lry="827" points="318,800 317,809 337,818 339,818" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f4/317.0,745.0,1132.0,82.0/full/0/native.jpg">
+          <path xml:id="path_438ce605c9535db784c251226e18bd63" points="318,800 1449,804"/>
+          <line xml:id="line_d0511140338159409229a1cb7edd5b8d" n="4">Greg. Mos fuit, &amp;* mactare suos sine vindice</line>
         </zone>
       </zone>
-      <zone xml:id="zone_0085" type="MarginTextZone" corresp="#MarginTextZone" subtype="none" n="none" ulx="264" uly="755" lrx="455" lry="1142" points="264,755 455,755 455,1142 264,1142" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f4/264,755,191,387/full/0/native.jpg">
-        <zone xml:id="zoneLine_0086" type="DefaultLine" subtype="none" n="none" ulx="282.0" uly="807.0" lrx="412" lry="861" points="284,849 284,861 411,860 412,846" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f4/282.0,807.0,130.0,54.0/full/0/native.jpg">
-          <path xml:id="path_0087" points="284,849 412,846"/>
-          <line xml:id="line_0088" n="1">Tuton</line>
+      <zone xml:id="zone_7da06e45b1255fedbfe252e6e056a59f" type="MarginTextZone" corresp="#MarginTextZone" subtype="none" n="none" ulx="264" uly="755" lrx="455" lry="1142" points="264,755 455,755 455,1142 264,1142" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f4/264,755,191,387/full/0/native.jpg">
+        <zone xml:id="zoneLine_167c80f0062c57358856eaab8a8d6a9d" type="DefaultLine" subtype="none" n="none" ulx="282.0" uly="807.0" lrx="412" lry="861" points="284,849 284,861 411,860 412,846" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f4/282.0,807.0,130.0,54.0/full/0/native.jpg">
+          <path xml:id="path_00e85cc9869255a8be4b160545ba90fb" points="284,849 412,846"/>
+          <line xml:id="line_c6c375dbb928522b88cb01d1451d1dae" n="1">Tuton</line>
         </zone>
-        <zone xml:id="zoneLine_0089" type="DefaultLine" subtype="none" n="none" ulx="377.0" uly="869.0" lrx="438" lry="919" points="434,871 390,877 379,869 377,902" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f4/377.0,869.0,61.0,50.0/full/0/native.jpg">
-          <path xml:id="path_0090" points="377,902 438,901"/>
-          <line xml:id="line_0091" n="2">.c</line>
+        <zone xml:id="zoneLine_9289764d84005e6886b72ff58fd4b8be" type="DefaultLine" subtype="none" n="none" ulx="377.0" uly="869.0" lrx="438" lry="919" points="434,871 390,877 379,869 377,902" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f4/377.0,869.0,61.0,50.0/full/0/native.jpg">
+          <path xml:id="path_0885fb5f16f55a8e8d5da837330b09ba" points="377,902 438,901"/>
+          <line xml:id="line_0251c9fd40ff5b238d46ebaa6471e21d" n="2">.c</line>
         </zone>
-        <zone xml:id="zoneLine_0092" type="DefaultLine" subtype="none" n="none" ulx="366.0" uly="1042.0" lrx="440" lry="1065" points="437,1042 423,1042 409,1042 395,1042" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f4/366.0,1042.0,74.0,23.0/full/0/native.jpg">
-          <path xml:id="path_0093" points="368,1046 440,1048"/>
-          <line xml:id="line_0094" n="3">**e</line>
+        <zone xml:id="zoneLine_b16da6eb4c525d79aa784f00e44c1c37" type="DefaultLine" subtype="none" n="none" ulx="366.0" uly="1042.0" lrx="440" lry="1065" points="437,1042 423,1042 409,1042 395,1042" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f4/366.0,1042.0,74.0,23.0/full/0/native.jpg">
+          <path xml:id="path_0fe6a1308279555692af31d07910361d" points="368,1046 440,1048"/>
+          <line xml:id="line_3bd71c3515c1550ca8cfeb2a1198c3e9" n="3">**e</line>
         </zone>
       </zone>
     </surface>
     <surface xml:id="f5" n="5" ulx="0" uly="0" lrx="1749" lry="2481">
       <graphic url="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f5/full/full/0/native.jpg"/>
-      <zone xml:id="zone_0095" type="MainZone" corresp="#MainZone" subtype="none" n="none" ulx="330" uly="263" lrx="1440" lry="1349" points="330,263 1440,263 1440,1349 330,1349" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f5/330,263,1110,1086/full/0/native.jpg">
-        <zone xml:id="zoneLine_0096" type="DefaultLine" subtype="none" n="none" ulx="402.0" uly="267.0" lrx="1300" lry="372" points="404,348 404,361 703,372 704,372" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f5/402.0,267.0,898.0,105.0/full/0/native.jpg">
-          <path xml:id="path_0097" points="404,348 1300,347"/>
-          <line xml:id="line_0098" n="1">Censure de la Doctrine Curieuse.</line>
+      <zone xml:id="zone_f0e7c506a6a756ec82c9f83d7a9cddb1" type="MainZone" corresp="#MainZone" subtype="none" n="none" ulx="330" uly="263" lrx="1440" lry="1349" points="330,263 1440,263 1440,1349 330,1349" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f5/330,263,1110,1086/full/0/native.jpg">
+        <zone xml:id="zoneLine_a8394bb8d6b857c88857290580eccf79" type="DefaultLine" subtype="none" n="none" ulx="402.0" uly="267.0" lrx="1300" lry="372" points="404,348 404,361 703,372 704,372" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f5/402.0,267.0,898.0,105.0/full/0/native.jpg">
+          <path xml:id="path_acdc50c558d057bd9b3a72b339686c3e" points="404,348 1300,347"/>
+          <line xml:id="line_69d30bea3de0521db0d32365b74eafd0" n="1">Censure de la Doctrine Curieuse.</line>
         </zone>
-        <zone xml:id="zoneLine_0099" type="DefaultLine" subtype="none" n="none" ulx="377.0" uly="370.0" lrx="1376" lry="461" points="379,425 377,457 482,458 484,458" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f5/377.0,370.0,999.0,91.0/full/0/native.jpg">
-          <path xml:id="path_0100" points="379,425 1376,428"/>
-          <line xml:id="line_0101" n="2">Quare age, dum Sorbona silet, dum Curia</line>
+        <zone xml:id="zoneLine_5d496e4909a05c14b77f64f4b7ad9e57" type="DefaultLine" subtype="none" n="none" ulx="377.0" uly="370.0" lrx="1376" lry="461" points="379,425 377,457 482,458 484,458" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f5/377.0,370.0,999.0,91.0/full/0/native.jpg">
+          <path xml:id="path_1b407b9afb1f58aa961be3982fa26872" points="379,425 1376,428"/>
+          <line xml:id="line_82b08bfe4651558383a45ba83af26e84" n="2">Quare age, dum Sorbona silet, dum Curia</line>
         </zone>
       </zone>
     </surface>
     <surface xml:id="f6" n="6" ulx="0" uly="0" lrx="1749" lry="2481">
       <graphic url="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f6/full/full/0/native.jpg"/>
-      <zone xml:id="zone_0102" type="CustomZone" corresp="#CustomZone" subtype="none" n="none" ulx="82" uly="1" lrx="285" lry="158" points="82,1 285,1 285,158 82,158" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f6/82,1,203,157/full/0/native.jpg">
-        <zone xml:id="zoneLine_0103" type="DefaultLine" subtype="none" n="none" ulx="133.0" uly="2.0" lrx="153" lry="144" points="147,2 133,2 133,48 133,144" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f6/133.0,2.0,20.0,142.0/full/0/native.jpg">
-          <path xml:id="path_0104" points="133,48 153,48"/>
-          <line xml:id="line_0105" n="1"/>
+      <zone xml:id="zone_5a5bb78981a956c9bbeb4bb0845b77e4" type="CustomZone" corresp="#CustomZone" subtype="none" n="none" ulx="82" uly="1" lrx="285" lry="158" points="82,1 285,1 285,158 82,158" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f6/82,1,203,157/full/0/native.jpg">
+        <zone xml:id="zoneLine_4dfb39e8bd2058fc8a737cc89bb0d3c3" type="DefaultLine" subtype="none" n="none" ulx="133.0" uly="2.0" lrx="153" lry="144" points="147,2 133,2 133,48 133,144" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f6/133.0,2.0,20.0,142.0/full/0/native.jpg">
+          <path xml:id="path_6681f88f907a53289cf858a514b44312" points="133,48 153,48"/>
+          <line xml:id="line_9457f452cbc95977857a88e691b72488" n="1"/>
         </zone>
       </zone>
-      <zone xml:id="zone_0106" type="RunningTitleZone" corresp="#RunningTitleZone" subtype="none" n="none" ulx="774" uly="192" lrx="1339" lry="269" points="774,192 1339,192 1339,269 774,269" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f6/774,192,565,77/full/0/native.jpg">
-        <zone xml:id="zoneLine_0107" type="DefaultLine" subtype="none" n="none" ulx="787.0" uly="198.0" lrx="1317" lry="257" points="788,249 788,257 1315,257 1317,246" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f6/787.0,198.0,530.0,59.0/full/0/native.jpg">
-          <path xml:id="path_0108" points="788,249 1317,246"/>
-          <line xml:id="line_0109" n="1">DE LA NATVRE</line>
+      <zone xml:id="zone_9ce0ba41bb4e564ab22b694516d73abc" type="RunningTitleZone" corresp="#RunningTitleZone" subtype="none" n="none" ulx="774" uly="192" lrx="1339" lry="269" points="774,192 1339,192 1339,269 774,269" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f6/774,192,565,77/full/0/native.jpg">
+        <zone xml:id="zoneLine_fde284a9968a5891a3dd513794c2df27" type="DefaultLine" subtype="none" n="none" ulx="787.0" uly="198.0" lrx="1317" lry="257" points="788,249 788,257 1315,257 1317,246" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f6/787.0,198.0,530.0,59.0/full/0/native.jpg">
+          <path xml:id="path_c72196d616cd5a2eb6cfe6f60daace52" points="788,249 1317,246"/>
+          <line xml:id="line_9c0269b45fe65b3fa309ae05d5a1ff16" n="1">DE LA NATVRE</line>
         </zone>
       </zone>
-      <zone xml:id="zone_0110" type="MainZone" corresp="#MainZone" subtype="none" n="none" ulx="442" uly="267" lrx="1615" lry="2016" points="442,267 1615,267 1615,2016 442,2016" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f6/442,267,1173,1749/full/0/native.jpg">
-        <zone xml:id="zoneLine_0111" type="DefaultLine" subtype="none" n="none" ulx="496.0" uly="260.0" lrx="1590" lry="336" points="497,312 497,336 548,334 550,334" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f6/496.0,260.0,1094.0,76.0/full/0/native.jpg">
-          <path xml:id="path_0112" points="497,312 1590,308"/>
-          <line xml:id="line_0113" n="1">les conuersations particulieres; &amp; souffrira</line>
+      <zone xml:id="zone_7e20a732602658e088b3a2d4671e5098" type="MainZone" corresp="#MainZone" subtype="none" n="none" ulx="442" uly="267" lrx="1615" lry="2016" points="442,267 1615,267 1615,2016 442,2016" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f6/442,267,1173,1749/full/0/native.jpg">
+        <zone xml:id="zoneLine_917340e81f825bc2950861ffb4b8f340" type="DefaultLine" subtype="none" n="none" ulx="496.0" uly="260.0" lrx="1590" lry="336" points="497,312 497,336 548,334 550,334" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f6/496.0,260.0,1094.0,76.0/full/0/native.jpg">
+          <path xml:id="path_99435ea6cbe45cb197704b23936c24af" points="497,312 1590,308"/>
+          <line xml:id="line_c67adb00832e5a6aa0cc28640e2b99c2" n="1">les conuersations particulieres; &amp; souffrira</line>
         </zone>
-        <zone xml:id="zoneLine_0114" type="DefaultLine" subtype="none" n="none" ulx="496.0" uly="352.0" lrx="1588" lry="391" points="1586,369 1572,369 1558,369 1544,369" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f6/496.0,352.0,1092.0,39.0/full/0/native.jpg">
-          <path xml:id="path_0115" points="497,379 1588,373"/>
-          <line xml:id="line_0116" n="2">miciilres adeeqee Patieiee ranenatioidetoee</line>
+        <zone xml:id="zoneLine_bde406a0a3d7555ba14720564a72f9d1" type="DefaultLine" subtype="none" n="none" ulx="496.0" uly="352.0" lrx="1588" lry="391" points="1586,369 1572,369 1558,369 1544,369" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f6/496.0,352.0,1092.0,39.0/full/0/native.jpg">
+          <path xml:id="path_45073da4197559ddae4e911d81417181" points="497,379 1588,373"/>
+          <line xml:id="line_08e1b16df29251ae86ca5e8cdc344608" n="2">miciilres adeeqee Patieiee ranenatioidetoee</line>
         </zone>
-        <zone xml:id="zoneLine_0117" type="DefaultLine" subtype="none" n="none" ulx="496.0" uly="780.0" lrx="1583" lry="846" points="497,828 497,840 896,842 897,842" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f6/496.0,780.0,1087.0,66.0/full/0/native.jpg">
-          <path xml:id="path_0118" points="497,828 1583,821"/>
-          <line xml:id="line_0119" n="3">nous lier d’amitié auecque les personnes ay¬</line>
+        <zone xml:id="zoneLine_2fef8713c20555818d3844f2e6b10fc3" type="DefaultLine" subtype="none" n="none" ulx="496.0" uly="780.0" lrx="1583" lry="846" points="497,828 497,840 896,842 897,842" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f6/496.0,780.0,1087.0,66.0/full/0/native.jpg">
+          <path xml:id="path_b5994513cb4852aa9789ec1a882aa482" points="497,828 1583,821"/>
+          <line xml:id="line_827a934ae2ef5eb288da8e91032ead48" n="3">nous lier d’amitié auecque les personnes ay¬</line>
         </zone>
-        <zone xml:id="zoneLine_0120" type="DefaultLine" subtype="none" n="none" ulx="497.0" uly="974.0" lrx="1583" lry="1044" points="499,1021 499,1035 510,1043 511,1043" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f6/497.0,974.0,1086.0,70.0/full/0/native.jpg">
-          <path xml:id="path_0121" points="499,1021 1583,1017"/>
-          <line xml:id="line_0122" n="4">qu’elles n’en puisfent estre separées; &amp; com¬</line>
+        <zone xml:id="zoneLine_97cd83f207845c5491e95aa37f513103" type="DefaultLine" subtype="none" n="none" ulx="497.0" uly="974.0" lrx="1583" lry="1044" points="499,1021 499,1035 510,1043 511,1043" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f6/497.0,974.0,1086.0,70.0/full/0/native.jpg">
+          <path xml:id="path_2c74bd5ed18e5022ae49d3225e135f87" points="499,1021 1583,1017"/>
+          <line xml:id="line_7e853094a4f75a9386c9e3ed2f5aa40d" n="4">qu’elles n’en puisfent estre separées; &amp; com¬</line>
         </zone>
       </zone>
-      <zone xml:id="zone_0123" type="QuireMarksZone" corresp="#QuireMarksZone" subtype="none" n="none" ulx="1438" uly="2010" lrx="1591" lry="2083" points="1438,2010 1591,2010 1591,2083 1438,2083" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f6/1438,2010,153,73/full/0/native.jpg">
-        <zone xml:id="zoneLine_0124" type="DefaultLine" subtype="none" n="none" ulx="1470.0" uly="2009.0" lrx="1583" lry="2077" points="1470,2057 1470,2071 1568,2077 1569,2077" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f6/1470.0,2009.0,113.0,68.0/full/0/native.jpg">
-          <path xml:id="path_0125" points="1470,2057 1583,2057"/>
-          <line xml:id="line_0126" n="1">fort</line>
+      <zone xml:id="zone_2873c5ffef545ef282e4b9667e9eb103" type="QuireMarksZone" corresp="#QuireMarksZone" subtype="none" n="none" ulx="1438" uly="2010" lrx="1591" lry="2083" points="1438,2010 1591,2010 1591,2083 1438,2083" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f6/1438,2010,153,73/full/0/native.jpg">
+        <zone xml:id="zoneLine_61ff1e1f77cb5ab4aae734cc1cc14cdc" type="DefaultLine" subtype="none" n="none" ulx="1470.0" uly="2009.0" lrx="1583" lry="2077" points="1470,2057 1470,2071 1568,2077 1569,2077" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f6/1470.0,2009.0,113.0,68.0/full/0/native.jpg">
+          <path xml:id="path_24310aa3844753a18ac1c551681c27a9" points="1470,2057 1583,2057"/>
+          <line xml:id="line_b23a8e2dc95952adb2a53e85f75edcbc" n="1">fort</line>
         </zone>
       </zone>
     </surface>
     <surface xml:id="f7" n="7" ulx="0" uly="0" lrx="1749" lry="2481">
       <graphic url="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f7/full/full/0/native.jpg"/>
-      <zone xml:id="zone_0127" type="NumberingZone" corresp="#NumberingZone" subtype="none" n="none" ulx="649" uly="214" lrx="763" lry="279" points="649,214 763,214 763,279 649,279" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f7/649,214,114,65/full/0/native.jpg">
-        <zone xml:id="zoneLine_0128" type="DefaultLine" subtype="none" n="none" ulx="655.0" uly="208.0" lrx="748" lry="279" points="656,259 656,270 699,279 700,279" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f7/655.0,208.0,93.0,71.0/full/0/native.jpg">
-          <path xml:id="path_0129" points="656,259 748,256"/>
-          <line xml:id="line_0130" n="1">258</line>
+      <zone xml:id="zone_f85f1e53b73b59999e189ddc2532201b" type="NumberingZone" corresp="#NumberingZone" subtype="none" n="none" ulx="649" uly="214" lrx="763" lry="279" points="649,214 763,214 763,279 649,279" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f7/649,214,114,65/full/0/native.jpg">
+        <zone xml:id="zoneLine_f1ce61097cfa54f0ac530fdfdb4344f7" type="DefaultLine" subtype="none" n="none" ulx="655.0" uly="208.0" lrx="748" lry="279" points="656,259 656,270 699,279 700,279" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f7/655.0,208.0,93.0,71.0/full/0/native.jpg">
+          <path xml:id="path_c39073d5add851db867f35fe13be9fb6" points="656,259 748,256"/>
+          <line xml:id="line_357613e24e04513e9528cc250dd727fe" n="1">258</line>
         </zone>
       </zone>
-      <zone xml:id="zone_0131" type="RunningTitleZone" corresp="#RunningTitleZone" subtype="none" n="none" ulx="929" uly="192" lrx="1422" lry="267" points="929,192 1422,192 1422,267 929,267" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f7/929,192,493,75/full/0/native.jpg">
-        <zone xml:id="zoneLine_0132" type="DefaultLine" subtype="none" n="none" ulx="937.0" uly="197.0" lrx="1405" lry="267" points="939,253 939,260 1030,267 1031,267" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f7/937.0,197.0,468.0,70.0/full/0/native.jpg">
-          <path xml:id="path_0133" points="939,253 1405,246"/>
-          <line xml:id="line_0134" n="1">DEL'ORIGINE</line>
+      <zone xml:id="zone_4636c1fed42652d1b207ad373a997c2f" type="RunningTitleZone" corresp="#RunningTitleZone" subtype="none" n="none" ulx="929" uly="192" lrx="1422" lry="267" points="929,192 1422,192 1422,267 929,267" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f7/929,192,493,75/full/0/native.jpg">
+        <zone xml:id="zoneLine_4f746ac92df95d42846e3e1438e49d74" type="DefaultLine" subtype="none" n="none" ulx="937.0" uly="197.0" lrx="1405" lry="267" points="939,253 939,260 1030,267 1031,267" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f7/937.0,197.0,468.0,70.0/full/0/native.jpg">
+          <path xml:id="path_5fbbf8e2550a5de5a486051fdd3259ba" points="939,253 1405,246"/>
+          <line xml:id="line_2bf7ce62b24b54efb35dc7703d14c0f1" n="1">DEL'ORIGINE</line>
         </zone>
       </zone>
-      <zone xml:id="zone_0135" type="MainZone" corresp="#MainZone" subtype="none" n="none" ulx="639" uly="267" lrx="1668" lry="1946" points="639,267 1668,267 1668,1946 639,1946" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f7/639,267,1029,1679/full/0/native.jpg">
-        <zone xml:id="zoneLine_0136" type="DefaultLine" subtype="none" n="none" ulx="652.0" uly="272.0" lrx="1640" lry="341" points="653,326 653,333 707,341 708,341" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f7/652.0,272.0,988.0,69.0/full/0/native.jpg">
-          <path xml:id="path_0137" points="653,326 1264,317 1640,323"/>
-          <line xml:id="line_0138" n="1">uarice, nous serrerons auec soin, ce que nors</line>
+      <zone xml:id="zone_19921b346312517886bfb673c29bbcd1" type="MainZone" corresp="#MainZone" subtype="none" n="none" ulx="639" uly="267" lrx="1668" lry="1946" points="639,267 1668,267 1668,1946 639,1946" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f7/639,267,1029,1679/full/0/native.jpg">
+        <zone xml:id="zoneLine_b29ee1b269ee5433bd0f613905ba98ff" type="DefaultLine" subtype="none" n="none" ulx="652.0" uly="272.0" lrx="1640" lry="341" points="653,326 653,333 707,341 708,341" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f7/652.0,272.0,988.0,69.0/full/0/native.jpg">
+          <path xml:id="path_a43856298be65cd791fd20914d99edde" points="653,326 1264,317 1640,323"/>
+          <line xml:id="line_ec3eb7c5cdf65e8bb7ef054712e6f03c" n="1">uarice, nous serrerons auec soin, ce que nors</line>
         </zone>
-        <zone xml:id="zoneLine_0139" type="DefaultLine" subtype="none" n="none" ulx="652.0" uly="350.0" lrx="1642" lry="396" points="1631,369 1617,369 1604,369 1590,369" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f7/652.0,350.0,990.0,46.0/full/0/native.jpg">
-          <path xml:id="path_0140" points="653,387 1126,379 1642,383"/>
-          <line xml:id="line_0141" n="2">foulons à preient. os PImiees iiemiesie vou¬</line>
+        <zone xml:id="zoneLine_be85e30f02f1592a854a95147524f8c6" type="DefaultLine" subtype="none" n="none" ulx="652.0" uly="350.0" lrx="1642" lry="396" points="1631,369 1617,369 1604,369 1590,369" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f7/652.0,350.0,990.0,46.0/full/0/native.jpg">
+          <path xml:id="path_98095051bdbe5a33824333e38a6269cb" points="653,387 1126,379 1642,383"/>
+          <line xml:id="line_c2ffee4eb2ef5b5e861666352b9ff3b6" n="2">foulons à preient. os PImiees iiemiesie vou¬</line>
         </zone>
-        <zone xml:id="zoneLine_0142" type="DefaultLine" subtype="none" n="none" ulx="653.0" uly="399.0" lrx="1641" lry="463" points="655,447 655,453 670,461 671,461" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f7/653.0,399.0,988.0,64.0/full/0/native.jpg">
-          <path xml:id="path_0143" points="655,447 1104,441 1641,445"/>
-          <line xml:id="line_0144" n="3">dront enrichir de choses qui sont mainte-</line>
+        <zone xml:id="zoneLine_91c54780e3c9596a890ff297d270c8da" type="DefaultLine" subtype="none" n="none" ulx="653.0" uly="399.0" lrx="1641" lry="463" points="655,447 655,453 670,461 671,461" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f7/653.0,399.0,988.0,64.0/full/0/native.jpg">
+          <path xml:id="path_10b8132a8c545bd1b51456e07b565d81" points="655,447 1104,441 1641,445"/>
+          <line xml:id="line_6ea5355a698e5dd1b82300e6415f8ecb" n="3">dront enrichir de choses qui sont mainte-</line>
         </zone>
-        <zone xml:id="zoneLine_0145" type="DefaultLine" subtype="none" n="none" ulx="655.0" uly="518.0" lrx="1642" lry="584" points="656,569 656,576 802,584 804,584" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f7/655.0,518.0,987.0,66.0/full/0/native.jpg">
-          <path xml:id="path_0146" points="656,569 1424,562 1642,570"/>
-          <line xml:id="line_0147" n="4">ront des offices pour de vieux souliers: &amp; il</line>
+        <zone xml:id="zoneLine_80621616c1e95526b85d40ce599b73e5" type="DefaultLine" subtype="none" n="none" ulx="655.0" uly="518.0" lrx="1642" lry="584" points="656,569 656,576 802,584 804,584" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f7/655.0,518.0,987.0,66.0/full/0/native.jpg">
+          <path xml:id="path_c5add2d7a6fd51709ef9d1952456acda" points="656,569 1424,562 1642,570"/>
+          <line xml:id="line_74296205ffae5201807bdb46ce71f497" n="4">ront des offices pour de vieux souliers: &amp; il</line>
         </zone>
       </zone>
     </surface>
     <surface xml:id="f8" n="8" ulx="0" uly="0" lrx="1316" lry="2372">
       <graphic url="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f8/full/full/0/native.jpg"/>
-      <zone xml:id="zone_0148" type="NumberingZone" corresp="#NumberingZone" subtype="none" n="none" ulx="341" uly="174" lrx="441" lry="244" points="341,174 341,244 441,244 441,174" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f8/341,174,100,70/full/0/native.jpg">
-        <zone xml:id="zoneLine_0149" type="DefaultLine" corresp="#DefaultLine" subtype="none" n="none" ulx="350" uly="175" lrx="435" lry="256" points="429,175 409,175 389,175 370,175" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f8/350,175,85,81/full/0/native.jpg">
-          <path xml:id="path_0150" points="351,224 437,224"/>
-          <line xml:id="line_0151" n="1">552</line>
+      <zone xml:id="zone_c3f3e56c8a495f76bd599ba3f3418437" type="NumberingZone" corresp="#NumberingZone" subtype="none" n="none" ulx="341" uly="174" lrx="441" lry="244" points="341,174 341,244 441,244 441,174" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f8/341,174,100,70/full/0/native.jpg">
+        <zone xml:id="zoneLine_136d8278c6a3589b848e255fefe750f3" type="DefaultLine" corresp="#DefaultLine" subtype="none" n="none" ulx="350" uly="175" lrx="435" lry="256" points="429,175 409,175 389,175 370,175" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f8/350,175,85,81/full/0/native.jpg">
+          <path xml:id="path_40519dbe11af58a4b045893c5f84a513" points="351,224 437,224"/>
+          <line xml:id="line_dfcd17a240055891833d91fc0025c62a" n="1">552</line>
         </zone>
       </zone>
-      <zone xml:id="zone_0152" type="MainZone" corresp="#MainZone" subtype="none" n="none" ulx="316.3935852050781" uly="234.68753051757812" lrx="1295" lry="2000" points="316,234 1296,234 1296,2000 316,2000" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f8/316.3935852050781,234.68753051757812,979.9997253417969,1766.2485046386719/full/0/native.jpg">
-        <zone xml:id="zoneLine_0153" type="DefaultLine" corresp="#DefaultLine" subtype="none" n="none" ulx="338" uly="235" lrx="1264" lry="300" points="1189,235 1169,235 1149,235 1129,235" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f8/338,235,926,65/full/0/native.jpg">
-          <path xml:id="path_0154" points="340,281 1265,282"/>
-          <line xml:id="line_0155" n="1">à dire, qui est tellement en acte, qu’il n'a</line>
+      <zone xml:id="zone_6d4af1b2ef2b578fb64359f541d37d60" type="MainZone" corresp="#MainZone" subtype="none" n="none" ulx="316.3935852050781" uly="234.68753051757812" lrx="1295" lry="2000" points="316,234 1296,234 1296,2000 316,2000" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f8/316.3935852050781,234.68753051757812,979.9997253417969,1766.2485046386719/full/0/native.jpg">
+        <zone xml:id="zoneLine_c14e195649105cc586bacbf88b53eadf" type="DefaultLine" corresp="#DefaultLine" subtype="none" n="none" ulx="338" uly="235" lrx="1264" lry="300" points="1189,235 1169,235 1149,235 1129,235" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f8/338,235,926,65/full/0/native.jpg">
+          <path xml:id="path_775e3b313f1f57c7b32a6488dc93e7a2" points="340,281 1265,282"/>
+          <line xml:id="line_39c3a4d6d42e550c99f682b4d47badd8" n="1">à dire, qui est tellement en acte, qu’il n'a</line>
         </zone>
-        <zone xml:id="zoneLine_0156" type="DefaultLine" corresp="#DefaultLine" subtype="none" n="none" ulx="334" uly="299" lrx="1268" lry="361" points="1257,309 1244,309 1231,309 1218,309" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f8/334,299,934,62/full/0/native.jpg">
-          <path xml:id="path_0157" points="336,337 1268,336"/>
-          <line xml:id="line_0158" n="2">rien en soy qui soit en puissance seulement</line>
+        <zone xml:id="zoneLine_17254a3bbd985e17b5c154fd7882aae2" type="DefaultLine" corresp="#DefaultLine" subtype="none" n="none" ulx="334" uly="299" lrx="1268" lry="361" points="1257,309 1244,309 1231,309 1218,309" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f8/334,299,934,62/full/0/native.jpg">
+          <path xml:id="path_1da84d10e63858c09c2cc00d8f127cd4" points="336,337 1268,336"/>
+          <line xml:id="line_5bf459371cae5b1f8486c7fd39f990be" n="2">rien en soy qui soit en puissance seulement</line>
         </zone>
-        <zone xml:id="zoneLine_0159" type="DefaultLine" corresp="#DefaultLine" subtype="none" n="none" ulx="338" uly="516" lrx="1268" lry="586" points="340,562 340,586 395,574 545,574" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f8/338,516,930,70/full/0/native.jpg">
-          <path xml:id="path_0160" points="340,562 1268,560"/>
-          <line xml:id="line_0161" n="3">puisse estre &amp; luy arriuer à l’aduenir, cõ¬</line>
+        <zone xml:id="zoneLine_a7f85a4d1bf6589e8f079d278cdad290" type="DefaultLine" corresp="#DefaultLine" subtype="none" n="none" ulx="338" uly="516" lrx="1268" lry="586" points="340,562 340,586 395,574 545,574" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f8/338,516,930,70/full/0/native.jpg">
+          <path xml:id="path_d755e04e6bdb50589d0ed34121709343" points="340,562 1268,560"/>
+          <line xml:id="line_b27ef653dd44591990d76c24c3a2f562" n="3">puisse estre &amp; luy arriuer à l’aduenir, cõ¬</line>
         </zone>
-        <zone xml:id="zoneLine_0162" type="HeadingLine" corresp="#HeadingLine" subtype="none" n="none" ulx="685" uly="739" lrx="957" lry="810" points="685,790 685,809 803,802 822,805" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f8/685,739,272,71/full/0/native.jpg">
-          <path xml:id="path_0163" points="685,790 957,790"/>
-          <line xml:id="line_0164" n="4">IDEE.</line>
+        <zone xml:id="zoneLine_4868e3bf010551b798318db3dba09da9" type="HeadingLine" corresp="#HeadingLine" subtype="none" n="none" ulx="685" uly="739" lrx="957" lry="810" points="685,790 685,809 803,802 822,805" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f8/685,739,272,71/full/0/native.jpg">
+          <path xml:id="path_c5468664725e5fe58816d1eaf825b467" points="685,790 957,790"/>
+          <line xml:id="line_66b1853b71c55a01b0f8c9b07abe475a" n="4">IDEE.</line>
         </zone>
-        <zone xml:id="zoneLine_0165" type="DefaultLine" corresp="#DefaultLine" subtype="none" n="none" ulx="338" uly="910" lrx="1268" lry="981" points="340,959 340,972 506,972 510,973" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f8/338,910,930,71/full/0/native.jpg">
-          <path xml:id="path_0166" points="340,959 1268,952"/>
-          <line xml:id="line_0167" n="5">modele, le tableau, l’original &amp; l’exem¬</line>
+        <zone xml:id="zoneLine_1ac6537774ec579db858475d0d1024f2" type="DefaultLine" corresp="#DefaultLine" subtype="none" n="none" ulx="338" uly="910" lrx="1268" lry="981" points="340,959 340,972 506,972 510,973" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f8/338,910,930,71/full/0/native.jpg">
+          <path xml:id="path_f205137918e953a685dc91a816df35bf" points="340,959 1268,952"/>
+          <line xml:id="line_0f0b2839741f5b70ad12aef50b909967" n="5">modele, le tableau, l’original &amp; l’exem¬</line>
         </zone>
       </zone>
-      <zone xml:id="zone_0168" type="RunningTitleZone" corresp="#RunningTitleZone" subtype="none" n="none" ulx="722.1002197265625" uly="181.5970001220703" lrx="910" lry="238" points="722,181 910,181 910,239 722,239" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f8/722.1002197265625,181.5970001220703,188.53167724609375,57.410308837890625/full/0/native.jpg">
-        <zone xml:id="zoneLine_0169" type="DefaultLine" corresp="#DefaultLine" subtype="none" n="none" ulx="725" uly="158" lrx="905" lry="242" points="726,222 727,242 751,234 758,241" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f8/725,158,180,84/full/0/native.jpg">
-          <path xml:id="path_0170" points="726,222 905,221"/>
-          <line xml:id="line_0171" n="1">Termes</line>
+      <zone xml:id="zone_27909c45b036557584addb20419055c6" type="RunningTitleZone" corresp="#RunningTitleZone" subtype="none" n="none" ulx="722.1002197265625" uly="181.5970001220703" lrx="910" lry="238" points="722,181 910,181 910,239 722,239" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f8/722.1002197265625,181.5970001220703,188.53167724609375,57.410308837890625/full/0/native.jpg">
+        <zone xml:id="zoneLine_0b79cbb758b65d7b9565d99dac89d083" type="DefaultLine" corresp="#DefaultLine" subtype="none" n="none" ulx="725" uly="158" lrx="905" lry="242" points="726,222 727,242 751,234 758,241" source="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f8/725,158,180,84/full/0/native.jpg">
+          <path xml:id="path_2dc9525338f65881a0bbd3e5b4e5df1b" points="726,222 905,221"/>
+          <line xml:id="line_7c247d558a785f799bfcdcd20bceae03" n="1">Termes</line>
         </zone>
       </zone>
     </surface>
@@ -530,34 +530,34 @@
     <body>
       <div>
         <pb corresp="#f1" facs="#f1" n="1"/>
-        <fw corresp="#zone_0001" type="RunningTitleZone" xml:lang="fra"><lb corresp="#zoneLine_0002" facs="#zoneLine_0002"/>DE LAMOVR, LIVRE VII.</fw>
-        <fw corresp="#zone_0005" type="NumberingZone" xml:lang="fra"><lb corresp="#zoneLine_0006" facs="#zoneLine_0006"/>805</fw>
-        <ab corresp="#zone_0009" type="MainZone" xml:lang="fra"><lb corresp="#zoneLine_0010" facs="#zoneLine_0010"/>CHAPTPKEPREMIER.<lb corresp="#zoneLine_0013" facs="#zoneLine_0013"/>Des raisons qui nous obligent à sanctifier<lb corresp="#zoneLine_0016" facs="#zoneLine_0016"/>que nostre soin principal doit estre de le pu¬<lb corresp="#zoneLine_0019" facs="#zoneLine_0019"/>IVn Philosophe a donné sa male¬4imus<lb corresp="#zoneLine_0022" facs="#zoneLine_0022"/><lb corresp="#zoneLine_0025" facs="#zoneLine_0025"/>y</ab>
-        <note corresp="#zone_0028" type="MarginTextZone" xml:lang="lat"><lb corresp="#zoneLine_0029" facs="#zoneLine_0029"/>diuinis<lb corresp="#zoneLine_0032" facs="#zoneLine_0032"/>nom, c.4¬</note>
-        <ab corresp="#zone_0035" type="MainZone" xml:lang="fra"><lb corresp="#zoneLine_0036" facs="#zoneLine_0036"/>CHAPTPKEPREMIER.<lb corresp="#zoneLine_0039" facs="#zoneLine_0039"/>Des raisons qui nous obligent à sanctifier<lb corresp="#zoneLine_0042" facs="#zoneLine_0042"/>que nostre soin principal doit estre de le pu¬<lb corresp="#zoneLine_0045" facs="#zoneLine_0045"/>IVn Philosophe a donné sa male¬4imus<lb corresp="#zoneLine_0048" facs="#zoneLine_0048"/><lb corresp="#zoneLine_0051" facs="#zoneLine_0051"/>y</ab>
-        <fw corresp="#zone_0054" type="QuireMarksZone" xml:lang="fra"><lb corresp="#zoneLine_0055" facs="#zoneLine_0055"/>1I111 iij</fw>
+        <fw corresp="#zone_c038da228e4d56989463de66524294d4" type="RunningTitleZone" xml:lang="fra"><lb corresp="#zoneLine_d36ddedd21b852009cfe7b94b068f880" facs="#zoneLine_d36ddedd21b852009cfe7b94b068f880"/>DE LAMOVR, LIVRE VII.</fw>
+        <fw corresp="#zone_5d9211258488547f9391ef6d8c5c139c" type="NumberingZone" xml:lang="fra"><lb corresp="#zoneLine_8441d075d7285fc0bc906a63d306ef8b" facs="#zoneLine_8441d075d7285fc0bc906a63d306ef8b"/>805</fw>
+        <ab corresp="#zone_46be43d8544b51c3bd9b5457048772fd" type="MainZone" xml:lang="fra"><lb corresp="#zoneLine_2b4f6dfa7e7a594db469aaa0e99a32be" facs="#zoneLine_2b4f6dfa7e7a594db469aaa0e99a32be"/>CHAPTPKEPREMIER.<lb corresp="#zoneLine_b317012829e95282a4b8965fcbe8981b" facs="#zoneLine_b317012829e95282a4b8965fcbe8981b"/>Des raisons qui nous obligent à sanctifier<lb corresp="#zoneLine_10bfa7ad330350c6bbc52da58a3aaeff" facs="#zoneLine_10bfa7ad330350c6bbc52da58a3aaeff"/>que nostre soin principal doit estre de le pu¬<lb corresp="#zoneLine_5c52a7bf858056758aa38e4f677e6bbf" facs="#zoneLine_5c52a7bf858056758aa38e4f677e6bbf"/>IVn Philosophe a donné sa male¬4imus<lb corresp="#zoneLine_20869192b9b556db85fce59217bfe383" facs="#zoneLine_20869192b9b556db85fce59217bfe383"/><lb corresp="#zoneLine_0ec5392d192e531dac38859c79c53bcc" facs="#zoneLine_0ec5392d192e531dac38859c79c53bcc"/>y</ab>
+        <note corresp="#zone_b9348f2492f153999022f05507143e85" type="MarginTextZone" xml:lang="lat"><lb corresp="#zoneLine_bf7767d1b0c05ad481e91da7109bd9d7" facs="#zoneLine_bf7767d1b0c05ad481e91da7109bd9d7"/>diuinis<lb corresp="#zoneLine_36d1d022a39f5f1a88dd403885510216" facs="#zoneLine_36d1d022a39f5f1a88dd403885510216"/>nom, c.4¬</note>
+        <ab corresp="#zone_a7472911c26e5c7e9370dd304a6a7380" type="MainZone" xml:lang="fra"><lb corresp="#zoneLine_0c2a9214822f51d199a82ffdb0a975a6" facs="#zoneLine_0c2a9214822f51d199a82ffdb0a975a6"/>CHAPTPKEPREMIER.<lb corresp="#zoneLine_9a4bb5e6105e5954b3964106ea691fcd" facs="#zoneLine_9a4bb5e6105e5954b3964106ea691fcd"/>Des raisons qui nous obligent à sanctifier<lb corresp="#zoneLine_43b243165fa25c7399e13a182d5ea935" facs="#zoneLine_43b243165fa25c7399e13a182d5ea935"/>que nostre soin principal doit estre de le pu¬<lb corresp="#zoneLine_ec785f8207f95e4b948f4edded86d867" facs="#zoneLine_ec785f8207f95e4b948f4edded86d867"/>IVn Philosophe a donné sa male¬4imus<lb corresp="#zoneLine_8b2654e8f2c5504dae9b69849dd35383" facs="#zoneLine_8b2654e8f2c5504dae9b69849dd35383"/><lb corresp="#zoneLine_7c73f186d71759bbafc3352f4033c1a5" facs="#zoneLine_7c73f186d71759bbafc3352f4033c1a5"/>y</ab>
+        <fw corresp="#zone_4a24a152034357058dfd8e64d425ae78" type="QuireMarksZone" xml:lang="fra"><lb corresp="#zoneLine_0c7fbbafb4775e02a8d32c0e3cc0993f" facs="#zoneLine_0c7fbbafb4775e02a8d32c0e3cc0993f"/>1I111 iij</fw>
         <pb corresp="#f2" facs="#f2" n="2"/>
-        <ab corresp="#zone_0058" type="GraphicZone" xml:lang="fra"><lb corresp="#zoneLine_0059" facs="#zoneLine_0059"/>3r Ruret Imueu et. ficit<lb corresp="#zoneLine_0062" facs="#zoneLine_0062"/></ab>
+        <ab corresp="#zone_b59c3c31855a5663a39bbc784012353e" type="GraphicZone" xml:lang="fra"><lb corresp="#zoneLine_55ecdc50fc9d58e58c0308a427ba371a" facs="#zoneLine_55ecdc50fc9d58e58c0308a427ba371a"/>3r Ruret Imueu et. ficit<lb corresp="#zoneLine_e9c0a12dba4f5af5874ab8d3e5133f48" facs="#zoneLine_e9c0a12dba4f5af5874ab8d3e5133f48"/></ab>
         <pb corresp="#f3" facs="#f3" n="3"/>
-        <ab corresp="#zone_0065" type="TitlePageZone" xml:lang="fra"><lb corresp="#zoneLine_0066" facs="#zoneLine_0066"/>Contraste insuffisart<lb corresp="#zoneLine_0069" facs="#zoneLine_0069"/>NE Z43-120-14</ab>
+        <ab corresp="#zone_e3644cf7a4845f5385d4055cbeb8f5e8" type="TitlePageZone" xml:lang="fra"><lb corresp="#zoneLine_fece132d403157e682a5b2b1aff0ed23" facs="#zoneLine_fece132d403157e682a5b2b1aff0ed23"/>Contraste insuffisart<lb corresp="#zoneLine_2940e155afb0541d8d5454501b9a3579" facs="#zoneLine_2940e155afb0541d8d5454501b9a3579"/>NE Z43-120-14</ab>
         <pb corresp="#f4" facs="#f4" n="4"/>
-        <ab corresp="#zone_0072" type="MainZone" xml:lang="lat"><lb corresp="#zoneLine_0073" facs="#zoneLine_0073"/><foreign xml:lang="fra">Censure de la</foreign><lb corresp="#zoneLine_0076" facs="#zoneLine_0076"/>Fœtibus infamis semper damnosáque munde<lb corresp="#zoneLine_0079" facs="#zoneLine_0079"/>Humani, quibus &amp; Diuúm contemnere cul¬<lb corresp="#zoneLine_0082" facs="#zoneLine_0082"/>Greg. Mos fuit, &amp;* mactare suos sine vindice</ab>
-        <note corresp="#zone_0085" type="MarginTextZone" xml:lang="fra" target="#zoneLine_0082"><lb corresp="#zoneLine_0086" facs="#zoneLine_0086"/>Tuton<lb corresp="#zoneLine_0089" facs="#zoneLine_0089"/>.c<lb corresp="#zoneLine_0092" facs="#zoneLine_0092"/>**e</note>
+        <ab corresp="#zone_e0923738fb305aed9ab2e434cae69686" type="MainZone" xml:lang="lat"><lb corresp="#zoneLine_566a769b0f4c5ed5be1b96e9417f921b" facs="#zoneLine_566a769b0f4c5ed5be1b96e9417f921b"/><foreign xml:lang="fra">Censure de la</foreign><lb corresp="#zoneLine_dadbbc04cc165e149f1668215ce31e45" facs="#zoneLine_dadbbc04cc165e149f1668215ce31e45"/>Fœtibus infamis semper damnosáque munde<lb corresp="#zoneLine_1a6a80341e39553f8ea3975ec29528af" facs="#zoneLine_1a6a80341e39553f8ea3975ec29528af"/>Humani, quibus &amp; Diuúm contemnere cul¬<lb corresp="#zoneLine_69a57439265558e0916264e64f310232" facs="#zoneLine_69a57439265558e0916264e64f310232"/>Greg. Mos fuit, &amp;* mactare suos sine vindice</ab>
+        <note corresp="#zone_7da06e45b1255fedbfe252e6e056a59f" type="MarginTextZone" xml:lang="fra" target="#zoneLine_69a57439265558e0916264e64f310232"><lb corresp="#zoneLine_167c80f0062c57358856eaab8a8d6a9d" facs="#zoneLine_167c80f0062c57358856eaab8a8d6a9d"/>Tuton<lb corresp="#zoneLine_9289764d84005e6886b72ff58fd4b8be" facs="#zoneLine_9289764d84005e6886b72ff58fd4b8be"/>.c<lb corresp="#zoneLine_b16da6eb4c525d79aa784f00e44c1c37" facs="#zoneLine_b16da6eb4c525d79aa784f00e44c1c37"/>**e</note>
         <pb corresp="#f5" facs="#f5" n="5"/>
-        <ab corresp="#zone_0095" type="MainZone" xml:lang="fra"><lb corresp="#zoneLine_0096" facs="#zoneLine_0096"/>Censure de la Doctrine Curieuse.<lb corresp="#zoneLine_0099" facs="#zoneLine_0099"/>Quare age, dum Sorbona silet, dum Curia</ab>
+        <ab corresp="#zone_f0e7c506a6a756ec82c9f83d7a9cddb1" type="MainZone" xml:lang="fra"><lb corresp="#zoneLine_a8394bb8d6b857c88857290580eccf79" facs="#zoneLine_a8394bb8d6b857c88857290580eccf79"/>Censure de la Doctrine Curieuse.<lb corresp="#zoneLine_5d496e4909a05c14b77f64f4b7ad9e57" facs="#zoneLine_5d496e4909a05c14b77f64f4b7ad9e57"/>Quare age, dum Sorbona silet, dum Curia</ab>
         <pb corresp="#f6" facs="#f6" n="6"/>
-        <ab corresp="#zone_0102" type="CustomZone"><lb corresp="#zoneLine_0103" facs="#zoneLine_0103"/></ab>
-        <fw corresp="#zone_0106" type="RunningTitleZone" xml:lang="fra"><lb corresp="#zoneLine_0107" facs="#zoneLine_0107"/>DE LA NATVRE</fw>
-        <ab corresp="#zone_0110" type="MainZone" xml:lang="fra"><lb corresp="#zoneLine_0111" facs="#zoneLine_0111"/>les conuersations particulieres; &amp; souffrira<lb corresp="#zoneLine_0114" facs="#zoneLine_0114"/>miciilres adeeqee Patieiee ranenatioidetoee<lb corresp="#zoneLine_0117" facs="#zoneLine_0117"/>nous lier d’amitié auecque les personnes ay¬<lb corresp="#zoneLine_0120" facs="#zoneLine_0120"/>qu’elles n’en puisfent estre separées; &amp; com¬</ab>
-        <fw corresp="#zone_0123" type="QuireMarksZone" xml:lang="fra"><lb corresp="#zoneLine_0124" facs="#zoneLine_0124"/>fort</fw>
+        <ab corresp="#zone_5a5bb78981a956c9bbeb4bb0845b77e4" type="CustomZone"><lb corresp="#zoneLine_4dfb39e8bd2058fc8a737cc89bb0d3c3" facs="#zoneLine_4dfb39e8bd2058fc8a737cc89bb0d3c3"/></ab>
+        <fw corresp="#zone_9ce0ba41bb4e564ab22b694516d73abc" type="RunningTitleZone" xml:lang="fra"><lb corresp="#zoneLine_fde284a9968a5891a3dd513794c2df27" facs="#zoneLine_fde284a9968a5891a3dd513794c2df27"/>DE LA NATVRE</fw>
+        <ab corresp="#zone_7e20a732602658e088b3a2d4671e5098" type="MainZone" xml:lang="fra"><lb corresp="#zoneLine_917340e81f825bc2950861ffb4b8f340" facs="#zoneLine_917340e81f825bc2950861ffb4b8f340"/>les conuersations particulieres; &amp; souffrira<lb corresp="#zoneLine_bde406a0a3d7555ba14720564a72f9d1" facs="#zoneLine_bde406a0a3d7555ba14720564a72f9d1"/>miciilres adeeqee Patieiee ranenatioidetoee<lb corresp="#zoneLine_2fef8713c20555818d3844f2e6b10fc3" facs="#zoneLine_2fef8713c20555818d3844f2e6b10fc3"/>nous lier d’amitié auecque les personnes ay¬<lb corresp="#zoneLine_97cd83f207845c5491e95aa37f513103" facs="#zoneLine_97cd83f207845c5491e95aa37f513103"/>qu’elles n’en puisfent estre separées; &amp; com¬</ab>
+        <fw corresp="#zone_2873c5ffef545ef282e4b9667e9eb103" type="QuireMarksZone" xml:lang="fra"><lb corresp="#zoneLine_61ff1e1f77cb5ab4aae734cc1cc14cdc" facs="#zoneLine_61ff1e1f77cb5ab4aae734cc1cc14cdc"/>fort</fw>
         <pb corresp="#f7" facs="#f7" n="7"/>
-        <fw corresp="#zone_0127" type="NumberingZone" xml:lang="fra"><lb corresp="#zoneLine_0128" facs="#zoneLine_0128"/>258</fw>
-        <fw corresp="#zone_0131" type="RunningTitleZone" xml:lang="fra"><lb corresp="#zoneLine_0132" facs="#zoneLine_0132"/>DEL'ORIGINE</fw>
-        <ab corresp="#zone_0135" type="MainZone" xml:lang="fra"><lb corresp="#zoneLine_0136" facs="#zoneLine_0136"/>uarice, nous serrerons auec soin, ce que nors<lb corresp="#zoneLine_0139" facs="#zoneLine_0139"/>foulons à preient. os PImiees iiemiesie vou¬<lb corresp="#zoneLine_0142" facs="#zoneLine_0142"/>dront enrichir de choses qui sont mainte-<lb corresp="#zoneLine_0145" facs="#zoneLine_0145"/>ront des offices pour de vieux souliers: &amp; il</ab>
+        <fw corresp="#zone_f85f1e53b73b59999e189ddc2532201b" type="NumberingZone" xml:lang="fra"><lb corresp="#zoneLine_f1ce61097cfa54f0ac530fdfdb4344f7" facs="#zoneLine_f1ce61097cfa54f0ac530fdfdb4344f7"/>258</fw>
+        <fw corresp="#zone_4636c1fed42652d1b207ad373a997c2f" type="RunningTitleZone" xml:lang="fra"><lb corresp="#zoneLine_4f746ac92df95d42846e3e1438e49d74" facs="#zoneLine_4f746ac92df95d42846e3e1438e49d74"/>DEL'ORIGINE</fw>
+        <ab corresp="#zone_19921b346312517886bfb673c29bbcd1" type="MainZone" xml:lang="fra"><lb corresp="#zoneLine_b29ee1b269ee5433bd0f613905ba98ff" facs="#zoneLine_b29ee1b269ee5433bd0f613905ba98ff"/>uarice, nous serrerons auec soin, ce que nors<lb corresp="#zoneLine_be85e30f02f1592a854a95147524f8c6" facs="#zoneLine_be85e30f02f1592a854a95147524f8c6"/>foulons à preient. os PImiees iiemiesie vou¬<lb corresp="#zoneLine_91c54780e3c9596a890ff297d270c8da" facs="#zoneLine_91c54780e3c9596a890ff297d270c8da"/>dront enrichir de choses qui sont mainte-<lb corresp="#zoneLine_80621616c1e95526b85d40ce599b73e5" facs="#zoneLine_80621616c1e95526b85d40ce599b73e5"/>ront des offices pour de vieux souliers: &amp; il</ab>
         <pb corresp="#f8" facs="#f8" n="8"/>
-        <fw corresp="#zone_0148" type="NumberingZone" xml:lang="fra"><lb corresp="#zoneLine_0149" facs="#zoneLine_0149"/>552</fw>
-        <ab corresp="#zone_0152" type="MainZone" xml:lang="fra"><lb corresp="#zoneLine_0153" facs="#zoneLine_0153"/>à dire, qui est tellement en acte, qu’il n'a<lb corresp="#zoneLine_0156" facs="#zoneLine_0156"/>rien en soy qui soit en puissance seulement<lb corresp="#zoneLine_0159" facs="#zoneLine_0159"/>puisse estre &amp; luy arriuer à l’aduenir, cõ¬<hi rend="HeadingLine"><lb corresp="#zoneLine_0162" facs="#zoneLine_0162"/>IDEE.</hi><lb corresp="#zoneLine_0165" facs="#zoneLine_0165"/>modele, le tableau, l’original &amp; l’exem¬</ab>
-        <fw corresp="#zone_0168" type="RunningTitleZone" xml:lang="fra"><lb corresp="#zoneLine_0169" facs="#zoneLine_0169"/>Termes</fw>
+        <fw corresp="#zone_c3f3e56c8a495f76bd599ba3f3418437" type="NumberingZone" xml:lang="fra"><lb corresp="#zoneLine_136d8278c6a3589b848e255fefe750f3" facs="#zoneLine_136d8278c6a3589b848e255fefe750f3"/>552</fw>
+        <ab corresp="#zone_6d4af1b2ef2b578fb64359f541d37d60" type="MainZone" xml:lang="fra"><lb corresp="#zoneLine_c14e195649105cc586bacbf88b53eadf" facs="#zoneLine_c14e195649105cc586bacbf88b53eadf"/>à dire, qui est tellement en acte, qu’il n'a<lb corresp="#zoneLine_17254a3bbd985e17b5c154fd7882aae2" facs="#zoneLine_17254a3bbd985e17b5c154fd7882aae2"/>rien en soy qui soit en puissance seulement<lb corresp="#zoneLine_a7f85a4d1bf6589e8f079d278cdad290" facs="#zoneLine_a7f85a4d1bf6589e8f079d278cdad290"/>puisse estre &amp; luy arriuer à l’aduenir, cõ¬<hi rend="HeadingLine"><lb corresp="#zoneLine_4868e3bf010551b798318db3dba09da9" facs="#zoneLine_4868e3bf010551b798318db3dba09da9"/>IDEE.</hi><lb corresp="#zoneLine_1ac6537774ec579db858475d0d1024f2" facs="#zoneLine_1ac6537774ec579db858475d0d1024f2"/>modele, le tableau, l’original &amp; l’exem¬</ab>
+        <fw corresp="#zone_27909c45b036557584addb20419055c6" type="RunningTitleZone" xml:lang="fra"><lb corresp="#zoneLine_0b79cbb758b65d7b9565d99dac89d083" facs="#zoneLine_0b79cbb758b65d7b9565d99dac89d083"/>Termes</fw>
       </div>
     </body>
   </text>
