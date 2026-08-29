@@ -207,6 +207,14 @@ def _build_surface_fragment_inner(document_name, filepath, num, segmonto_zones,
             line_count += 1
             surface_tree.line(textline, tb.id, tl.id, line_count, "".join(words_parts).strip())
 
+    # Duplicate ALTO ids were disambiguated by SurfaceTree; report them
+    # through the return tuple — a logger call inside a forkserver worker
+    # never reaches the parent's log file.
+    dup_keys = [k for k, n in surface_tree._seen_keys.items() if n > 1]
+    if dup_keys:
+        dup_note = f"{len(dup_keys)} duplicate ALTO id(s) disambiguated"
+        warning = f"{warning}; {dup_note}" if warning else dup_note
+
     return num, etree.tostring(surface, encoding="utf-8"), warning
 
 

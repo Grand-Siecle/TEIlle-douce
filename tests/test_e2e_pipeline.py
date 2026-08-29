@@ -230,12 +230,9 @@ def tei_court_bis(tmp_path_factory):
 @pytest.mark.e2e
 def test_court_est_stable_entre_deux_executions(tei_court, tei_court_bis):
     """
-    Non-regression : deux executions doivent produire le meme TEI une fois les
-    identifiants normalises. C'est ce test qui deviendra un golden-file exact
-    quand les uuid5 remplaceront les uuid4 (audit 2.8).
-
-    La taxonomie est retiree avant comparaison : son ordre est instable pour
-    une raison distincte, epinglee par le test suivant.
+    Non-regression : deux executions (deux processus, deux PYTHONHASHSEED)
+    doivent produire le meme TEI a l'octet pres, identifiants et taxonomie
+    compris — seule la date de generation est neutralisee (audit 2.8, 6.9).
     """
     assert normaliser(tei_court_bis) == normaliser(tei_court)
 
@@ -243,9 +240,8 @@ def test_court_est_stable_entre_deux_executions(tei_court, tei_court_bis):
 @pytest.mark.e2e
 def test_court_ordre_de_la_taxonomie_stable(tei_court, tei_court_bis):
     """
-    L'ordre des <catDesc> de la taxonomie SegmOnto doit etre reproductible.
-    Aujourd'hui il varie d'un processus a l'autre, ce qui bruiterait tout diff
-    entre deux sorties meme apres le passage aux uuid5.
+    L'ordre des <catDesc> de la taxonomie SegmOnto doit etre reproductible
+    d'un processus a l'autre (audit 6.9, corrige par un tri explicite).
     """
     ordre = lambda f: [
         c.get(XML_ID) for c in etree.parse(str(f)).iter("{*}catDesc")
@@ -261,8 +257,6 @@ def test_court_correspond_au_golden(tei_court):
     """
     if not GOLDEN.exists():
         pytest.skip(f"golden absent : {GOLDEN.relative_to(RACINE)}")
-    # Taxonomie neutralisee ici aussi : sans cela le golden serait instable
-    # tant que l'audit 6.9 n'est pas corrige.
     assert normaliser(tei_court) == GOLDEN.read_text(encoding="utf-8")
 
 

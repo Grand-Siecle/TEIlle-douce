@@ -258,6 +258,46 @@ def test_build_sourcedoc_ids_are_deterministic_across_runs(tmp_path, monkeypatch
     )
 
 
+DUPLICATE_BLOCK_ALTO = """<alto xmlns="http://www.loc.gov/standards/alto/ns-v4#">
+  <Tags>
+    <OtherTag ID="BT1" LABEL="MainZone"/>
+    <OtherTag ID="LT1" LABEL="DefaultLine"/>
+  </Tags>
+  <Layout><Page WIDTH="1000" HEIGHT="1500"><PrintSpace>
+    <TextBlock ID="tb1" TAGREFS="BT1" HPOS="100" VPOS="200" WIDTH="300" HEIGHT="400">
+      <TextLine ID="tl1" TAGREFS="LT1" HPOS="100" VPOS="200" WIDTH="300" HEIGHT="40" BASELINE="100 240 400 240">
+        <String ID="s1" CONTENT="premier" HPOS="100" VPOS="200" WIDTH="140" HEIGHT="40"/>
+      </TextLine>
+    </TextBlock>
+    <TextBlock ID="tb1" TAGREFS="BT1" HPOS="100" VPOS="700" WIDTH="300" HEIGHT="400">
+      <TextLine ID="tl2" TAGREFS="LT1" HPOS="100" VPOS="700" WIDTH="300" HEIGHT="40" BASELINE="100 740 400 740">
+        <String ID="s2" CONTENT="second" HPOS="100" VPOS="700" WIDTH="140" HEIGHT="40"/>
+      </TextLine>
+    </TextBlock>
+  </PrintSpace></Page></Layout>
+</alto>"""
+
+
+def test_build_sourcedoc_reports_duplicate_alto_ids_from_workers(tmp_path, monkeypatch, caplog):
+    """La desambiguisation des ID ALTO dupliques a lieu dans un worker
+    forkserver : un logger appele la-bas n'atteint jamais le log du parent.
+    Le signalement doit donc voyager par le tuple de retour du worker et
+    ressortir en warning cote parent."""
+    monkeypatch.setattr(builder, "MAX_WORKERS", 1)
+    f = write_alto(tmp_path, "f1.xml", DUPLICATE_BLOCK_ALTO)
+
+    output_root = etree.Element("TEI")
+    with caplog.at_level(logging.WARNING, logger="src.sourcedoc.builder"):
+        _, skipped = build_sourcedoc("DOC1", output_root, [f], {}, [], [], {})
+
+    assert skipped == []
+    ids = [el.get(XML_ID) for el in output_root.iter() if el.get(XML_ID)]
+    assert len(ids) == len(set(ids)), "xml:id dupliques malgre la desambiguisation"
+    assert any("duplicate ALTO id" in r.message for r in caplog.records), (
+        [r.message for r in caplog.records]
+    )
+
+
 def test_surfacetree_disambiguates_duplicate_alto_ids_deterministically():
     """Les exports ALTO reels dupliquent parfois un ID sur une page (cas
     present dans la fixture e2e : deux TextBlock ID='block_2'). uuid4

@@ -569,8 +569,10 @@ def _inject_reg_entities(entities, cert_thresholds, entity_types_config):
         if n == 1:
             ent_fragment_ids[id(ent)] = [None]  # no xml:id needed
         else:
-            # Deterministic fragment ids (audit 2.8): entity order is the
-            # document order, stable for a given input.
+            # Deterministic fragment ids (audit 2.8): ent_index follows the
+            # processing order of `entities` (confidence-ranked upstream by
+            # resolve_overlaps, not document order) — deterministic for a
+            # given input, though a changed confidence renumbers later ids.
             base = uuid.uuid5(
                 UUID_NAMESPACE,
                 f"{ent.entity_type}\x1f{ent.text}\x1f{ent_index}",
