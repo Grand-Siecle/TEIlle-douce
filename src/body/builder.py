@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 
 from lxml import etree
 
-from ..constants import NS_XML, XML_ID, XML_LANG
+from ..constants import XML_ID, XML_LANG
 from ..lang import get_detector
 
 logger = logging.getLogger(__name__)
@@ -170,6 +170,46 @@ def _append_tokens_with_foreign(parent, tokens, token_langs):
         target.append(token)
 
 
+def _new_sentence_fragment(parent, seg, line_index, fragment_ids, s_occurrences):
+    """
+    Create one <s> fragment under *parent* with its fragmentation links.
+
+    A sentence spanning several lines is split into one <s> per line,
+    chained by @part (I/M/F) and @next/@prev. The modernized and plain
+    rebuild paths differ ONLY by the parent element (audit 4.8: the
+    22-line chaining logic used to be written out twice, so any fix to
+    the fragmentation had to be made in both copies).
+    """
+    s_new = etree.SubElement(parent, "s")
+    frag_id = fragment_ids.get((seg.s_xml_id, line_index), seg.s_xml_id)
+    s_new.set(XML_ID, frag_id)
+
+    occurrences = s_occurrences.get(seg.s_xml_id, [])
+    if len(occurrences) <= 1:
+        return s_new
+
+    frag_idx = [idx for idx, (li, _) in enumerate(occurrences) if li == line_index][0]
+    total = len(occurrences)
+
+    if frag_idx == 0:
+        s_new.set("part", "I")
+    elif frag_idx == total - 1:
+        s_new.set("part", "F")
+    else:
+        s_new.set("part", "M")
+
+    if frag_idx < total - 1:
+        next_id = fragment_ids.get((seg.s_xml_id, occurrences[frag_idx + 1][0]))
+        if next_id:
+            s_new.set("next", f"#{next_id}")
+    if frag_idx > 0:
+        prev_id = fragment_ids.get((seg.s_xml_id, occurrences[frag_idx - 1][0]))
+        if prev_id:
+            s_new.set("prev", f"#{prev_id}")
+
+    return s_new
+
+
 def _rebuild_with_modernization(container, groups, corresp_to_mod):
     """
     Rebuild an enriched container with <choice> wrapping for modernized lines.
@@ -218,7 +258,6 @@ def _rebuild_with_modernization(container, groups, corresp_to_mod):
         container.set(k, v)
 
     # Phase 4: Rebuild
-    XML_ID_KEY = f"{{{NS_XML}}}id"
     count = 0
 
     for i, group in enumerate(groups):
@@ -239,33 +278,9 @@ def _rebuild_with_modernization(container, groups, corresp_to_mod):
             orig = etree.SubElement(choice, "orig")
 
             for seg in group.segments:
-                s_new = etree.SubElement(orig, "s")
-                frag_id = fragment_ids.get((seg.s_xml_id, i), seg.s_xml_id)
-                s_new.set(XML_ID_KEY, frag_id)
-
-                # Set @part/@next/@prev for fragmented sentences
-                occurrences = s_occurrences.get(seg.s_xml_id, [])
-                if len(occurrences) > 1:
-                    frag_idx = [idx for idx, (li, _) in enumerate(occurrences) if li == i][0]
-                    total = len(occurrences)
-
-                    if frag_idx == 0:
-                        s_new.set("part", "I")
-                    elif frag_idx == total - 1:
-                        s_new.set("part", "F")
-                    else:
-                        s_new.set("part", "M")
-
-                    if frag_idx < total - 1:
-                        next_line_idx = occurrences[frag_idx + 1][0]
-                        next_id = fragment_ids.get((seg.s_xml_id, next_line_idx))
-                        if next_id:
-                            s_new.set("next", f"#{next_id}")
-                    if frag_idx > 0:
-                        prev_line_idx = occurrences[frag_idx - 1][0]
-                        prev_id = fragment_ids.get((seg.s_xml_id, prev_line_idx))
-                        if prev_id:
-                            s_new.set("prev", f"#{prev_id}")
+                s_new = _new_sentence_fragment(
+                    orig, seg, i, fragment_ids, s_occurrences
+                )
 
                 _append_tokens_with_foreign(s_new, seg.tokens, seg.token_langs)
 
@@ -276,32 +291,9 @@ def _rebuild_with_modernization(container, groups, corresp_to_mod):
         else:
             # Non-modernized line: add <s> fragments directly to container
             for seg in group.segments:
-                s_new = etree.SubElement(container, "s")
-                frag_id = fragment_ids.get((seg.s_xml_id, i), seg.s_xml_id)
-                s_new.set(XML_ID_KEY, frag_id)
-
-                occurrences = s_occurrences.get(seg.s_xml_id, [])
-                if len(occurrences) > 1:
-                    frag_idx = [idx for idx, (li, _) in enumerate(occurrences) if li == i][0]
-                    total = len(occurrences)
-
-                    if frag_idx == 0:
-                        s_new.set("part", "I")
-                    elif frag_idx == total - 1:
-                        s_new.set("part", "F")
-                    else:
-                        s_new.set("part", "M")
-
-                    if frag_idx < total - 1:
-                        next_line_idx = occurrences[frag_idx + 1][0]
-                        next_id = fragment_ids.get((seg.s_xml_id, next_line_idx))
-                        if next_id:
-                            s_new.set("next", f"#{next_id}")
-                    if frag_idx > 0:
-                        prev_line_idx = occurrences[frag_idx - 1][0]
-                        prev_id = fragment_ids.get((seg.s_xml_id, prev_line_idx))
-                        if prev_id:
-                            s_new.set("prev", f"#{prev_id}")
+                s_new = _new_sentence_fragment(
+                    container, seg, i, fragment_ids, s_occurrences
+                )
 
                 _append_tokens_with_foreign(s_new, seg.tokens, seg.token_langs)
 
