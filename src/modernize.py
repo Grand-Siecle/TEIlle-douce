@@ -29,6 +29,7 @@ from config import (
     MODERNIZE_BATCH_SIZE,
     MODERNIZE_CERT_THRESHOLDS,
     MODERNIZE_MAX_CONCURRENT,
+    MODERNIZE_SIMILARITY_MIN,
     MODERNIZE_TIMEOUT,
 )
 
@@ -43,7 +44,7 @@ TOLERANCE_ABS = 2
 # original and modernized text.  Below this threshold the API output
 # is considered hallucinated.  Legitimate old-French → modern-French
 # changes (cognoiſtre → connaître) stay above ~0.73 after normalization.
-SIMILARITY_MIN = 0.8
+
 
 # Lines matching this pattern have no real textual content to modernize.
 _SKIP_RE = re.compile(r'^[\s\W\d]*$')
@@ -92,7 +93,7 @@ def _is_divergent(original, modernized):
         return True
     # Character-level similarity check (catches hallucinations with
     # similar word count, e.g. Greek OCR artifacts → invented French).
-    if similarity(original, modernized) < SIMILARITY_MIN:
+    if similarity(original, modernized) < MODERNIZE_SIMILARITY_MIN:
         return True
     return False
 

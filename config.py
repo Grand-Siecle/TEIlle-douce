@@ -4,12 +4,40 @@
 # -----------------------------------------------------------
 
 import os
+import warnings
 from pathlib import Path
 
 
 def _env_path(name, default):
     """Path overridable via environment variable (for fast test runs)."""
     return Path(os.environ.get(name, default))
+
+
+def _env_str(name, default):
+    """String setting overridable via environment variable — service URLs
+    move between machines (a laptop, a lab server, CI) and used to be
+    editable only by patching this file (audit 2.13)."""
+    return os.environ.get(name, default)
+
+
+def _env_float(name, default):
+    """
+    Numeric setting overridable via environment variable.
+
+    An unreadable value keeps the default AND says so: silently ignoring
+    a typo would leave the operator believing a setting took effect.
+    """
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    try:
+        return float(raw)
+    except ValueError:
+        warnings.warn(
+            f"{name}={raw!r} is not a number — keeping the default {default}",
+            RuntimeWarning, stacklevel=2,
+        )
+        return default
 
 
 def _env_bool(name, default):
@@ -195,10 +223,10 @@ LANG_DEFAULT = "fra"  # fallback to French for ambiguous texts
 ENRICHMENT_ENABLED = _env_bool("ALTO2TEI_ENRICHMENT", True)
 
 # PyHellen API server URL
-PYHELLEN_URL = "http://localhost:8000"
+PYHELLEN_URL = _env_str("ALTO2TEI_PYHELLEN_URL", "http://localhost:8000")
 
 # Request timeout in seconds (higher for first request / model loading)
-PYHELLEN_TIMEOUT = 120
+PYHELLEN_TIMEOUT = _env_float("ALTO2TEI_PYHELLEN_TIMEOUT", 120)
 
 # Maximum concurrent PyHellen requests (audit 3.3 — same model as
 # MODERNIZE_MAX_CONCURRENT).
@@ -237,14 +265,14 @@ MODERNIZE_ENABLED = _env_bool("ALTO2TEI_MODERNIZE", True)
 # Mapping from TEI language ident to modernization API base URL
 # Add entries for other languages as APIs become available
 MODERNIZE_API = {
-    "fra": "http://localhost:8011",
+    "fra": _env_str("ALTO2TEI_MODERNIZE_URL", "http://localhost:8011"),
 }
 
 # Number of lines per batch request to the modernization API
 MODERNIZE_BATCH_SIZE = 64
 
 # Timeout in seconds for modernization API calls
-MODERNIZE_TIMEOUT = 300
+MODERNIZE_TIMEOUT = _env_float("ALTO2TEI_MODERNIZE_TIMEOUT", 300)
 
 # Max concurrent requests to the modernization API (avoid PoolTimeout)
 MODERNIZE_MAX_CONCURRENT = 8
@@ -257,6 +285,12 @@ MODERNIZE_MAX_CONCURRENT = 8
 # as a hallucination — so >= 0.95 is a light spelling normalization,
 # and < 0.90 a heavy rewrite worth flagging to a reader.
 MODERNIZE_CERT_THRESHOLDS = {"low": 0.0, "medium": 0.90, "high": 0.95}
+
+# Below this similarity a modernized line is rejected as a hallucination
+# and left unmodified. Single home: the value used to live in
+# src/modernize.py AND be restated in the editorialDecl prose below, free
+# to diverge (audit 2.13) — the prose now reads it.
+MODERNIZE_SIMILARITY_MIN = _env_float("ALTO2TEI_MODERNIZE_SIMILARITY_MIN", 0.8)
 
 # =============================================================================
 # NAMED ENTITY RECOGNITION (NER)
@@ -413,7 +447,7 @@ EDITORIAL_DECLARATIONS = {
             "automatically via a translation API (LSTM Fairseq/FreEM model). "
             "Lines whose modernized form diverges too far from the original "
             "(word-count ratio or character-level similarity after "
-            "normalization below 0.8) are left unmodified."
+            f"normalization below {MODERNIZE_SIMILARITY_MIN}) are left unmodified."
         ),
     },
     "segmentation": {

@@ -1,5 +1,9 @@
-lxml
-pandas
-rich
-lingua-language-detector
-httpx
+# Socle du pipeline. Versions epinglees sur une majeure : un run
+# reproductible ne doit pas dependre de la date d'installation, et la
+# detection de langue en particulier CHANGE de resultat d'une version de
+# lingua a l'autre (la CI epingle Python 3.12 pour cette raison).
+lxml>=6.0,<7
+pandas>=3.0,<4
+rich>=14.0,<15
+lingua-language-detector>=2.2,<3
+httpx>=0.28,<1
