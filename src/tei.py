@@ -32,6 +32,29 @@ def strip_residual_hyphens(modernized):
     return [m.replace("¬", "") if m else m for m in modernized]
 
 
+def drop_carried_words(modernized, carried):
+    """
+    Remove, from each carried line, the word that belongs to an earlier one.
+
+    Dehyphenation repeats a split word on every line it spans so the
+    modernization API sees it whole — but that is input context, not
+    encoding. Left in place, the repetition reaches the <reg> elements
+    and any extraction of the modernized text yields doubled words
+    (audit 1.12). The word stays on the line where it STARTS; the lines
+    that merely continue it drop their leading token (a line that was
+    nothing but a fragment thus ends up empty, which is exactly what it
+    contributes of its own). The diplomatic reading is untouched: <orig>
+    still carries every line's text, hyphen included.
+    """
+    out = list(modernized)
+    for idx in carried:
+        if idx >= len(out) or not out[idx]:
+            continue
+        parts = out[idx].split(None, 1)
+        out[idx] = parts[1] if len(parts) > 1 else ""
+    return out
+
+
 class TEI:
     """
     Central data structure for TEI document construction.
@@ -214,7 +237,7 @@ class TEI:
         # Dehyphenate before modernization: join words split by ¬/-
         # across lines so the API sees complete words.
         # Only joins within the same zone type to avoid cross-container merges.
-        joined_texts = dehyphenate_lines(original_texts, zone_types=zone_types)
+        joined_texts, carried = dehyphenate_lines(original_texts, zone_types=zone_types)
 
         try:
             modernized = modernize_texts(
@@ -228,6 +251,7 @@ class TEI:
             return 0
 
         modernized = strip_residual_hyphens(modernized)
+        modernized = drop_carried_words(modernized, carried)
 
         if enriched:
             # Build corresp -> modernized mapping for lines that changed

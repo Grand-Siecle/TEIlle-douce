@@ -265,12 +265,17 @@ def dehyphenate_lines(texts, zone_types=None):
 
     The full reconstructed word is written onto line i, onto every
     intermediate chain line, and onto the terminal line — redundant on
-    purpose, to give the modernization API maximum context on every line
+    purpose, so the modernization API sees a complete word on every line
     touched by the split:
     - Line N:   "...le souv¬"        -> "...le souverain"
     - Line N+1: "erain Arbitre:..."  -> "souverain Arbitre:..."
     (and, for a 3+-line split, every line in between also gets the full
     word on its own).
+
+    That repetition is INPUT ONLY. It must not reach the output, or any
+    extraction of the modernized text yields doubled words (audit 1.12);
+    the returned `carried` set names the lines whose first word belongs
+    to an earlier line, so the caller can drop it after modernization.
 
     Lines of different zone types (e.g. MainZone vs RunningTitleZone)
     are never merged, preventing cross-container corruption.
@@ -281,9 +286,14 @@ def dehyphenate_lines(texts, zone_types=None):
                     If None, joins with immediately next line (legacy behavior).
 
     Returns:
-        list: Modified texts with hyphenated words rejoined.
+        tuple: (joined_texts, carried) — the rejoined lines, and the
+        indices of those that open with a word carried over from an
+        earlier line.
     """
     joined = list(texts)
+    # Lines that START with a word carried over from an earlier line
+    # (see the docstring): the caller needs them to undo the repetition.
+    carried = set()
 
     def next_same_zone(idx, zone):
         for j in range(idx + 1, len(joined)):
@@ -357,9 +367,11 @@ def dehyphenate_lines(texts, zone_types=None):
         joined[i] = prefix_line + full_word
         for c in chain:
             joined[c] = full_word
+            carried.add(c)
         joined[j] = full_word + (" " + next_words[1] if len(next_words) > 1 else "")
+        carried.add(j)
 
-    return joined
+    return joined, carried
 
 
 async def _send_batch(client, base_url, batch_texts, batch_size=None):
