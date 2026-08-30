@@ -16,6 +16,7 @@ from pathlib import Path
 from collections import defaultdict
 
 import pandas as pd
+from lxml import etree
 
 from config import (
     CSV_DELIMITER,
@@ -282,6 +283,201 @@ def build_metadata_dict(row):
     }
 
 
+# Language names as the catalogue writes them -> ISO 639-2 ident.
+# Slicing the first three letters (the previous approach) works only by
+# accident: "français"->fra and "latin"->lat are right, but
+# "espagnol"->esp (spa), "anglais"->ang (eng — and "ang" IS Old
+# English), "allemand"->all (deu), "grec"->gre (grc for the ancient
+# language) are all wrong. This path is what survives on documents
+# where detection found nothing, so its codes must be right.
+_LANGUAGE_IDENTS = {
+    "francais": "fra", "français": "fra", "french": "fra",
+    "latin": "lat",
+    "grec": "grc", "grec ancien": "grc", "ancient greek": "grc", "greek": "grc",
+    "italien": "ita", "italian": "ita",
+    "espagnol": "spa", "spanish": "spa",
+    "anglais": "eng", "english": "eng",
+    "allemand": "deu", "german": "deu",
+    "neerlandais": "nld", "néerlandais": "nld", "dutch": "nld",
+}
+
+
+def _language_ident(name):
+    """ISO ident for a catalogue language name; "und" when unknown."""
+    if not name:
+        return "und"
+    ident = _LANGUAGE_IDENTS.get(str(name).strip().lower())
+    if ident:
+        return ident
+    logger.warning("Unknown catalogue language %r — ident set to 'und'", name)
+    return "und"
+
+
+# CSV field -> (TEI element, @type) for the person's identifiers and
+# notes, in the order they are emitted inside <person>. Adding a CSV
+# column is a line here, not another copy of the same if/SubElement
+# block (audit 4.4).
+_PERSON_EXTRA_FIELDS = (
+    ("isni", "idno", "isni"),
+    ("ark", "idno", "ark"),
+    ("portraits", "note", "portrait"),
+    ("oeuvre", "note", "works"),
+    ("milieux_reseaux", "note", "networks"),
+    ("contacts_artistes", "note", "contacts"),
+    ("fortune_critique", "note", "reception"),
+    ("publications", "note", "publications"),
+    ("citations", "note", "citations"),
+    ("bibliographie", "note", "bibliography"),
+    ("webographie", "note", "webography"),
+    ("note", "note", None),
+    ("commentaires", "note", "comments"),
+)
+
+
+# =============================================================================
+# TEI ELEMENT BUILDERS
+#
+# Module level, not nested inside override_teiheader_from_csv: four
+# closures over `person_db` made the function untestable in pieces
+# (audit 4.4). The database is an explicit parameter now.
+# =============================================================================
+
+def _add_life_event(parent, tag, date, place, place_id):
+    """
+    Add a <birth>/<death> to *parent*, one way for the whole file.
+
+    titleStmt and listPerson used to encode the same CSV fields
+    differently — raw "1590/05/22" against ISO "1590-05-22", a geonames
+    <ptr> against a bare numeric @ref (a relative URI resolving to
+    nothing) — audit 5.6. Here: normalized @when, and @ref carrying the
+    full geonames URI.
+    """
+    if not date and not place:
+        return None
+    event = etree.SubElement(parent, tag)
+    if date:
+        attrs = date_attributes(date)
+        for key, value in attrs.items():
+            event.attrib[key] = value
+        if not attrs:
+            # Unparseable: keep what the catalogue says rather than drop
+            # it or assert a date the source does not support.
+            event.text = str(date).strip()
+    if place:
+        placename = etree.SubElement(event, "placeName")
+        placename.text = str(place)
+        if place_id:
+            placename.attrib["ref"] = f"https://www.geonames.org/{place_id}/"
+    return event
+
+
+def create_persname_element(parent, person_data, with_pointers=True):
+    """
+    Create a <persName> with the name parts, and optionally the ISNI/ARK
+    pointers (a <respStmt> in <bibl> wants the name alone).
+    """
+    persname = etree.SubElement(parent, "persName")
+    if person_data.get("forename"):
+        forename = etree.SubElement(persname, "forename")
+        forename.text = person_data["forename"]
+    if person_data.get("namelink"):
+        # The CSV column behind "namelink" is GenName, which listPerson
+        # already encodes as <genName>. <nameLink> means a linking
+        # particle ("de", "van"), so the two paths disagreed on the same
+        # cell and this one was semantically wrong too (audit 5.6).
+        genname = etree.SubElement(persname, "genName")
+        genname.text = person_data["namelink"]
+    if person_data.get("surname"):
+        surname = etree.SubElement(persname, "surname")
+        surname.text = person_data["surname"]
+    if not with_pointers:
+        return persname
+    # Add ISNI pointer
+    if person_data.get("isni"):
+        ptr = etree.SubElement(persname, "ptr", type="isni")
+        ptr.attrib["target"] = f"https://isni.org/isni/{person_data['isni']}"
+    # Add ARK pointer
+    if person_data.get("ark"):
+        ptr = etree.SubElement(persname, "ptr", type="ark")
+        ptr.attrib["target"] = person_data["ark"]
+    return persname
+
+def _ark_fallback(element, person_id):
+    """
+    Encode an unresolved contributor id.
+
+    A raw ark is not a name: it goes in an <idno>, valid directly inside
+    <author>/<editor>/<person> (model.pPart.data). Anything else is a
+    local id and can stand as the element's text. Written once — this
+    shape used to be repeated at four sites (audit 4.4).
+    """
+    if str(person_id).startswith("ark:"):
+        idno_el = etree.SubElement(element, "idno", type="ark")
+        idno_el.text = person_id
+    else:
+        element.text = person_id
+
+
+def _contributor_element(parent, person_id, person_db, tag, role=None):
+    """
+    Create an <author> or <editor> for titleStmt.
+
+    Name and pointers only: <birth>/<death> are not allowed inside these
+    elements (verified against tei_all.rng) and the person's life events
+    live in the <listPerson> entry @ref points at — the authority record
+    (audit 5.6). The two builders were copy-paste twins differing by tag
+    and @role alone (audit 4.4).
+    """
+    element = etree.SubElement(parent, tag)
+    if role:
+        element.attrib["role"] = role
+    # listPerson gets an entry for this id whether or not the database
+    # resolves it — @ref must point at it, or that record is orphaned.
+    element.attrib["ref"] = f"#{safe_person_id(person_id)}"
+
+    if person_db and person_id in person_db:
+        person_data = person_db.enrich_author_data(person_id, role=role or "author")
+        create_persname_element(element, person_data)
+    else:
+        _ark_fallback(element, person_id)
+    return element
+
+
+def create_author_element(parent, person_id, person_db):
+    """Create an <author> for titleStmt (see _contributor_element)."""
+    return _contributor_element(parent, person_id, person_db, "author")
+
+
+def create_editor_element(parent, person_id, role, person_db):
+    """Create an <editor role="..."> for titleStmt (see _contributor_element)."""
+    return _contributor_element(parent, person_id, person_db, "editor", role=role)
+
+
+def create_bibl_respstmt(parent, person_id, resp_label, person_db):
+    """
+    Create a <respStmt> in <bibl> with a French role label.
+
+    respStmt's content model is strict — resp+, (name|orgName|persName)+
+    — so an unresolved ark cannot be a sibling of persName here (unlike
+    <author>/<editor>); it is nested inside the otherwise-empty persName,
+    where <idno> is valid.
+    """
+    respstmt = etree.SubElement(parent, "respStmt")
+    resp_el = etree.SubElement(respstmt, "resp")
+    resp_el.text = resp_label
+
+    if person_db and person_id in person_db:
+        person_data = person_db.enrich_author_data(person_id)
+        # Same name parts as everywhere else, minus the identifier
+        # pointers, which belong to the listPerson authority record.
+        persname = create_persname_element(respstmt, person_data, with_pointers=False)
+        persname.attrib["ref"] = f"#{safe_person_id(person_id)}"
+    else:
+        persname = etree.SubElement(respstmt, "persName")
+        _ark_fallback(persname, person_id)
+    return respstmt
+
+
 def override_teiheader_from_csv(root, row, document_name=None):
     """
     Inject CSV metadata into an existing TEI header.
@@ -303,7 +499,6 @@ def override_teiheader_from_csv(root, row, document_name=None):
     if row is None:
         return
 
-    from lxml import etree
 
     def set_text(xpath, value):
         """Set element text if value is valid."""
@@ -351,126 +546,6 @@ def override_teiheader_from_csv(root, row, document_name=None):
     if person_db is None:
         person_db = load_person_database(METADATA_PERSON_CSV)
 
-    def create_persname_element(parent, person_data):
-        """Create a persName element with forename, surname, and identifiers."""
-        persname = etree.SubElement(parent, "persName")
-        if person_data.get("forename"):
-            forename = etree.SubElement(persname, "forename")
-            forename.text = person_data["forename"]
-        if person_data.get("namelink"):
-            namelink = etree.SubElement(persname, "nameLink")
-            namelink.text = person_data["namelink"]
-        if person_data.get("surname"):
-            surname = etree.SubElement(persname, "surname")
-            surname.text = person_data["surname"]
-        # Add ISNI pointer
-        if person_data.get("isni"):
-            ptr = etree.SubElement(persname, "ptr", type="isni")
-            ptr.attrib["target"] = f"https://isni.org/isni/{person_data['isni']}"
-        # Add ARK pointer
-        if person_data.get("ark"):
-            ptr = etree.SubElement(persname, "ptr", type="ark")
-            ptr.attrib["target"] = person_data["ark"]
-        return persname
-
-    def create_author_element(parent, person_id):
-        """Create an author element with full person data."""
-        if person_db and person_id in person_db:
-            person_data = person_db.enrich_author_data(person_id, role="author")
-            author_el = etree.SubElement(parent, "author")
-            author_el.attrib["ref"] = f"#{safe_person_id(person_id)}"
-            create_persname_element(author_el, person_data)
-            if person_data.get("birth_date") or person_data.get("birth_place"):
-                birth = etree.SubElement(author_el, "birth")
-                if person_data.get("birth_date"):
-                    birth.attrib["when"] = str(person_data["birth_date"])
-                    date_el = etree.SubElement(birth, "date")
-                    date_el.text = str(person_data["birth_date"])
-                if person_data.get("birth_place"):
-                    place = etree.SubElement(birth, "placeName")
-                    place.text = str(person_data["birth_place"])
-                    if person_data.get("birth_place_id"):
-                        ptr = etree.SubElement(place, "ptr", type="geonames")
-                        ptr.attrib["target"] = f"https://www.geonames.org/{person_data['birth_place_id']}/"
-            if person_data.get("death_date") or person_data.get("death_place"):
-                death = etree.SubElement(author_el, "death")
-                if person_data.get("death_date"):
-                    death.attrib["when"] = str(person_data["death_date"])
-                    date_el = etree.SubElement(death, "date")
-                    date_el.text = str(person_data["death_date"])
-                if person_data.get("death_place"):
-                    place = etree.SubElement(death, "placeName")
-                    place.text = str(person_data["death_place"])
-                    if person_data.get("death_place_id"):
-                        ptr = etree.SubElement(place, "ptr", type="geonames")
-                        ptr.attrib["target"] = f"https://www.geonames.org/{person_data['death_place_id']}/"
-        else:
-            author_el = etree.SubElement(parent, "author")
-            if person_id.startswith("ark:"):
-                # Unknown name: don't show the raw ark as if it were the
-                # author's name. <idno> is a model.pPart.data element, valid
-                # directly inside <author> (macro.phraseSeq.limited content).
-                idno_el = etree.SubElement(author_el, "idno", type="ark")
-                idno_el.text = person_id
-            else:
-                author_el.text = person_id
-        return author_el
-
-    def create_editor_element(parent, person_id, role):
-        """Create an editor element with role (e.g., translator)."""
-        if person_db and person_id in person_db:
-            person_data = person_db.enrich_author_data(person_id, role=role)
-            editor_el = etree.SubElement(parent, "editor")
-            editor_el.attrib["role"] = role
-            editor_el.attrib["ref"] = f"#{safe_person_id(person_id)}"
-            create_persname_element(editor_el, person_data)
-        else:
-            editor_el = etree.SubElement(parent, "editor")
-            editor_el.attrib["role"] = role
-            if person_id.startswith("ark:"):
-                # Same rationale as create_author_element: idno is valid
-                # directly inside <editor> (same phraseSeq-limited content
-                # model family), so the ark doesn't pollute the name text.
-                idno_el = etree.SubElement(editor_el, "idno", type="ark")
-                idno_el.text = person_id
-            else:
-                editor_el.text = person_id
-        return editor_el
-
-    def create_bibl_respstmt(parent, person_id, resp_label):
-        """Create a respStmt in bibl with French role label and enriched person data."""
-        respstmt = etree.SubElement(parent, "respStmt")
-        resp_el = etree.SubElement(respstmt, "resp")
-        resp_el.text = resp_label
-        if person_db and person_id in person_db:
-            person_data = person_db.enrich_author_data(person_id)
-            persname = etree.SubElement(respstmt, "persName")
-            persname.attrib["ref"] = f"#{safe_person_id(person_id)}"
-            if person_data.get("forename"):
-                forename = etree.SubElement(persname, "forename")
-                forename.text = person_data["forename"]
-            if person_data.get("namelink"):
-                namelink = etree.SubElement(persname, "nameLink")
-                namelink.text = person_data["namelink"]
-            if person_data.get("surname"):
-                surname = etree.SubElement(persname, "surname")
-                surname.text = person_data["surname"]
-        else:
-            persname = etree.SubElement(respstmt, "persName")
-            if person_id.startswith("ark:"):
-                # respStmt's content model is strict: resp+, (name|orgName|
-                # persName)+ - no <idno> allowed as a direct child of
-                # respStmt itself (unlike <author>/<editor> above, or
-                # <person> in listPerson). So the ark can't be a sibling of
-                # persName here; nest it inside the otherwise-empty persName
-                # instead (idno is a valid model.pPart.data child of
-                # persName's macro.phraseSeq content model).
-                idno_el = etree.SubElement(persname, "idno", type="ark")
-                idno_el.text = person_id
-            else:
-                persname.text = person_id
-        return respstmt
-
     # titleStmt: only authors and translators (intellectual contributors)
     titleStmt = root.find(".//teiHeader/fileDesc/titleStmt")
     if titleStmt is not None:
@@ -480,10 +555,10 @@ def override_teiheader_from_csv(root, row, document_name=None):
                 titleStmt.remove(old_author)
         # Authors
         for aid in auteurs:
-            create_author_element(titleStmt, aid)
+            create_author_element(titleStmt, aid, person_db)
         # Translators as <editor role="translator">
         for tid in traducteurs:
-            create_editor_element(titleStmt, tid, "translator")
+            create_editor_element(titleStmt, tid, "translator", person_db)
 
     # Publication places - support multiple
     lieux = _safe_value_list(row, "Lieu_publication")
@@ -497,11 +572,11 @@ def override_teiheader_from_csv(root, row, document_name=None):
             bibl.remove(old_pub)
         # Add respStmt for each production/distribution role
         for iid in imprimeurs:
-            create_bibl_respstmt(bibl, iid, "Imprimeur")
+            create_bibl_respstmt(bibl, iid, "Imprimeur", person_db)
         for lid in libraires:
-            create_bibl_respstmt(bibl, lid, "Libraire")
+            create_bibl_respstmt(bibl, lid, "Libraire", person_db)
         for eid in editeurs:
-            create_bibl_respstmt(bibl, eid, "Éditeur")
+            create_bibl_respstmt(bibl, eid, "Éditeur", person_db)
 
     # Date
     set_text(".//teiHeader/fileDesc/sourceDesc/bibl/date", row.get("Date_01") or row.get("Date_02"))
@@ -547,7 +622,17 @@ def override_teiheader_from_csv(root, row, document_name=None):
     cotes = _safe_value_list(row, "Cote")
     set_text_multi(".//teiHeader/fileDesc/sourceDesc/msDesc/msIdentifier/idno", cotes)
 
-    # Languages - support multiple
+    # Languages — the catalogue's declared languages.
+    #
+    # Audit 4.12 calls this block dead because finalize_langusage()
+    # rewrites <langUsage> afterwards. Measured: it does so ONLY when
+    # language detection produced statistics (build_langusage returns
+    # early, without clearing, on empty stats). So in a normal run these
+    # values are indeed replaced by the detected ones — but when nothing
+    # was detected (an image-only document, or detect_lang=False) they
+    # are what survives, and a catalogue declaration beats an empty
+    # langUsage. Kept deliberately; pinned by
+    # tests/test_csv_book.py::test_csv_languages_survive_when_nothing_is_detected.
     langues = _safe_value_list(row, "langues")
     if langues:
         langUsage = root.find(".//teiHeader/profileDesc/langUsage")
@@ -556,12 +641,12 @@ def override_teiheader_from_csv(root, row, document_name=None):
             lang_el = langUsage.find("language")
             if lang_el is not None:
                 lang_el.text = langues[0]
-                lang_el.attrib["ident"] = langues[0][:3].lower() if langues[0] else ""
+                lang_el.attrib["ident"] = _language_ident(langues[0])
             # Add additional languages
             for lang in langues[1:]:
                 new_lang = etree.SubElement(langUsage, "language")
                 new_lang.text = lang
-                new_lang.attrib["ident"] = lang[:3].lower() if lang else ""
+                new_lang.attrib["ident"] = _language_ident(lang)
 
     # Subjects - split both Sujet and Matiere on |
     sujets_raw = _safe_value_list(row, "Sujet")
@@ -661,27 +746,14 @@ def override_teiheader_from_csv(root, row, document_name=None):
                         addname_el = etree.SubElement(persname, "addName", type="nickname")
                         addname_el.text = person["nicknames"]
 
-                    # birth
-                    if person.get("birth_date") or person.get("birth_place"):
-                        birth = etree.SubElement(person_el, "birth")
-                        if person.get("birth_date"):
-                            birth.attrib["when"] = _normalize_date(person["birth_date"])
-                        if person.get("birth_place"):
-                            placename = etree.SubElement(birth, "placeName")
-                            placename.text = person["birth_place"]
-                            if person.get("birth_place_id"):
-                                placename.attrib["ref"] = person["birth_place_id"]
-
-                    # death
-                    if person.get("death_date") or person.get("death_place"):
-                        death = etree.SubElement(person_el, "death")
-                        if person.get("death_date"):
-                            death.attrib["when"] = _normalize_date(person["death_date"])
-                        if person.get("death_place"):
-                            placename = etree.SubElement(death, "placeName")
-                            placename.text = person["death_place"]
-                            if person.get("death_place_id"):
-                                placename.attrib["ref"] = person["death_place_id"]
+                    _add_life_event(
+                        person_el, "birth", person.get("birth_date"),
+                        person.get("birth_place"), person.get("birth_place_id"),
+                    )
+                    _add_life_event(
+                        person_el, "death", person.get("death_date"),
+                        person.get("death_place"), person.get("death_place_id"),
+                    )
 
                     # faith (Confession)
                     if person.get("confession"):
@@ -698,70 +770,18 @@ def override_teiheader_from_csv(root, row, document_name=None):
                         occupation_el = etree.SubElement(person_el, "occupation")
                         occupation_el.text = person["professions"]
 
-                    # idno - ISNI
-                    if person.get("isni"):
-                        idno_isni = etree.SubElement(person_el, "idno", type="isni")
-                        idno_isni.text = person["isni"]
+                    # Identifiers and notes: one table, one loop. The
+                    # same "if person.get(X): <note type=Y>" shape was
+                    # written out thirteen times (audit 4.4) — every new
+                    # CSV column meant another copy-paste of it.
+                    for field, tag, note_type in _PERSON_EXTRA_FIELDS:
+                        value = person.get(field)
+                        if not value:
+                            continue
+                        attrs = {"type": note_type} if note_type else {}
+                        el = etree.SubElement(person_el, tag, attrs)
+                        el.text = value
 
-                    # idno - ARK
-                    if person.get("ark"):
-                        idno_ark = etree.SubElement(person_el, "idno", type="ark")
-                        idno_ark.text = person["ark"]
-
-                    # portraits
-                    if person.get("portraits"):
-                        note_el = etree.SubElement(person_el, "note", type="portrait")
-                        note_el.text = person["portraits"]
-
-                    # oeuvre
-                    if person.get("oeuvre"):
-                        note_el = etree.SubElement(person_el, "note", type="works")
-                        note_el.text = person["oeuvre"]
-
-                    # milieux / réseaux
-                    if person.get("milieux_reseaux"):
-                        note_el = etree.SubElement(person_el, "note", type="networks")
-                        note_el.text = person["milieux_reseaux"]
-
-                    # contacts artistes
-                    if person.get("contacts_artistes"):
-                        note_el = etree.SubElement(person_el, "note", type="contacts")
-                        note_el.text = person["contacts_artistes"]
-
-                    # fortune critique
-                    if person.get("fortune_critique"):
-                        note_el = etree.SubElement(person_el, "note", type="reception")
-                        note_el.text = person["fortune_critique"]
-
-                    # publications
-                    if person.get("publications"):
-                        note_el = etree.SubElement(person_el, "note", type="publications")
-                        note_el.text = person["publications"]
-
-                    # citations
-                    if person.get("citations"):
-                        note_el = etree.SubElement(person_el, "note", type="citations")
-                        note_el.text = person["citations"]
-
-                    # bibliographie
-                    if person.get("bibliographie"):
-                        note_el = etree.SubElement(person_el, "note", type="bibliography")
-                        note_el.text = person["bibliographie"]
-
-                    # webographie
-                    if person.get("webographie"):
-                        note_el = etree.SubElement(person_el, "note", type="webography")
-                        note_el.text = person["webographie"]
-
-                    # notes
-                    if person.get("note"):
-                        note_el = etree.SubElement(person_el, "note")
-                        note_el.text = person["note"]
-
-                    # commentaires
-                    if person.get("commentaires"):
-                        note_el = etree.SubElement(person_el, "note", type="comments")
-                        note_el.text = person["commentaires"]
                 else:
                     # Person not in database - create minimal entry
                     person_el = etree.SubElement(listPerson, "person")
@@ -775,21 +795,98 @@ def override_teiheader_from_csv(root, row, document_name=None):
                         persname.text = pid
 
 
-def _normalize_date(date_str):
+def date_attributes(raw):
     """
-    Normalize a date string to ISO format for TEI @when attribute.
+    TEI date attributes for one CSV date cell.
 
-    Handles formats like: 1590, 1590/05/22, 15, 159, etc.
+    The corpus does not hold ISO dates. Measured on the real
+    metadata_personne.csv: 126 of 327 birth values and 6 of 103 death
+    values are something else — truncated years ("15" = 15xx, "159" =
+    159x), compact digit runs ("16520623", "169109"), uncertain values
+    ("? 1666"). Writing any of those into @when produced TEI that fails
+    tei_all (teidata.temporal.w3c wants an xsd date or gYear), so the
+    cell's *shape* decides which attributes it earns:
 
-    Args:
-        date_str (str): Date string from CSV.
+    - 1652-06-23 / 1652/06/23 / 16520623  -> @when="1652-06-23"
+    - 165206 / 1652-06                    -> @when="1652-06"
+    - 1652                                -> @when="1652"
+    - 165 / 16                            -> @notBefore/@notAfter (the
+                                             decade or century it spans)
+    - "? 1666"                            -> @when + @cert="low"
+    - anything else                       -> no attribute (the caller
+                                             keeps the raw text instead
+                                             of asserting a false date)
 
     Returns:
-        str: Normalized date string.
+        dict: attributes to set, possibly empty.
     """
-    if not date_str:
-        return ""
-    date_str = str(date_str).strip()
-    # Replace / with - for ISO format
-    date_str = date_str.replace("/", "-")
-    return date_str
+    if not raw:
+        return {}
+    text = str(raw).strip()
+    if not text:
+        return {}
+
+    # "?" anywhere, or a circa marker, means the value is an estimate —
+    # historical catalogues write "? 1666", "circa 1600", "vers 1650".
+    uncertain = bool(re.search(r"\?|\b(ca|circa|vers|env)\b\.?", text, re.I))
+    bce = text.lstrip("? ").startswith("-")
+    digits = re.sub(r"\D", "", text)
+    sign = "-" if bce else ""
+
+    def with_cert(attrs, cert=None):
+        if uncertain:
+            attrs["cert"] = "low"
+        elif cert:
+            attrs["cert"] = cert
+        return attrs
+
+    def year(value):
+        # TEI wants a four-digit year, BCE years included (Ovid's
+        # "-430320" is 20 March 43 BCE -> -0043-03-20).
+        return f"{sign}{int(value):04d}"
+
+    if len(digits) in (6, 8) or (bce and 5 <= len(digits) <= 8):
+        # A BCE year is not zero-padded in the source ("-430320" is
+        # 43 BCE, not 4303), so a compact run is split from the RIGHT:
+        # day, month, then whatever remains is the year.
+        if bce:
+            year_digits, month, day = digits[:-4], int(digits[-4:-2]), int(digits[-2:])
+        else:
+            year_digits, month = digits[:4], int(digits[4:6])
+            day = int(digits[6:]) if len(digits) == 8 else 1
+        if year_digits and 1 <= month <= 12 and 1 <= day <= 31:
+            when = f"{year(year_digits)}-{month:02d}"
+            if len(digits) == 8 or bce:
+                when += f"-{day:02d}"
+            return with_cert({"when": when})
+        # Not a date after all (an impossible month or day): fall through
+        # to the unusable branch rather than assert a wrong one.
+        logger.warning("Unusable date %r — impossible month or day", text)
+        return {}
+    if len(digits) == 4:
+        return with_cert({"when": year(digits)})
+    if 1 <= len(digits) <= 3:
+        # A truncated year is a span, not a date: in this early-modern
+        # corpus "15" means the 1500s and "159" the 1590s. It IS an
+        # inference — @cert="low" says so — and it is wrong for the rare
+        # ancient author (Ovid's death year "17" is 17 CE, not the
+        # 1700s): such rows are better fixed in the CSV.
+        span = 10 ** (4 - len(digits))
+        start = int(digits) * span
+        return with_cert(
+            {"notBefore": f"{sign}{start:04d}", "notAfter": f"{sign}{start + span - 1:04d}"},
+            cert="low",
+        )
+
+    logger.warning("Unusable date %r — no TEI date attribute emitted", text)
+    return {}
+
+
+def _normalize_date(date_str):
+    """
+    ISO form of a date cell, or "" when it has none.
+
+    Thin wrapper over date_attributes for callers that only want a
+    @when value.
+    """
+    return date_attributes(date_str).get("when", "")

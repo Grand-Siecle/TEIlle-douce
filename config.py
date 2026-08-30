@@ -377,7 +377,11 @@ NER_OUTPUT_DIR = Path("entities")
 NER_CONTAINERS = {"ab", "note"}
 
 # Confidence → @cert mapping thresholds
-NER_CERT_THRESHOLDS = {"low": 0.0, "mid": 0.6, "high": 0.85}
+# Confidence -> @cert. The keys ARE the emitted values, so they must
+# belong to TEI's closed vocabulary (teidata.certainty:
+# high|medium|low|unknown) — "mid" made every NER output fail
+# tei_all validation.
+NER_CERT_THRESHOLDS = {"low": 0.0, "medium": 0.6, "high": 0.85}
 
 # =============================================================================
 # EDITORIAL DECLARATIONS (encodingDesc/editorialDecl)
@@ -421,7 +425,7 @@ EDITORIAL_DECLARATIONS = {
             "GLiNER-multi-v2.1 on modernized text. Non-French text "
             "was processed with GLiNER only. Annotations carry "
             '@resp="#ner-auto" and @cert (low < 0.6, mid 0.6\u20130.85, '
-            "high > 0.85). Identifiers were resolved against local "
+            "high >= 0.85). Identifiers were resolved against local "
             "authority files."
         ),
     },

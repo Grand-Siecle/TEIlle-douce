@@ -10,6 +10,7 @@ but with placeholder text. The structure is later populated with actual
 metadata by the FullTree class.
 """
 
+import re
 from datetime import datetime
 from collections import defaultdict
 from lxml import etree
@@ -24,6 +25,21 @@ from config import (
 )
 from ..constants import XML_ID
 from ..utils.files import canonical_document_id
+
+
+def tei_version_number(version):
+    """
+    Keep the leading numeric part of a version string.
+
+    TEI requires @version on <application> to be a version NUMBER
+    (teidata.versionNumber), and it is mandatory — so the corpus
+    convention of writing an imprecise patch level ("4.3.x") made every
+    output file fail tei_all validation. The numeric prefix is emitted
+    instead ("4.3"), which is the strongest true statement available;
+    the full configured string stays visible in config.APP_VERSIONS.
+    """
+    match = re.match(r"\d+(?:\.\d+)*", str(version or ""))
+    return match.group(0) if match else "0"
 
 
 class DefaultTree:
@@ -254,7 +270,7 @@ class DefaultTree:
         for app_key, app_data in self.versions.items():
             app_el = etree.SubElement(appInfo, "application")
             app_el.attrib["ident"] = app_data["ident"]
-            app_el.attrib["version"] = app_data["version"]
+            app_el.attrib["version"] = tei_version_number(app_data["version"])
             label = etree.SubElement(app_el, "label")
             label.text = app_data["label"]
             ptr = etree.SubElement(app_el, "ptr")

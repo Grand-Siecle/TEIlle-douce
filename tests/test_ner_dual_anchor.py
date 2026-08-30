@@ -29,7 +29,7 @@ ENTITY_TYPES = {
     "person": {"tei_element": "persName"},
     "place": {"tei_element": "placeName"},
 }
-CERT = {"low": 0.0, "mid": 0.6, "high": 0.85}
+CERT = {"low": 0.0, "medium": 0.6, "high": 0.85}
 
 
 def _sub(parent, tag, text=None, **attrs):

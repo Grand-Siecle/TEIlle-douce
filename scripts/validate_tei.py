@@ -4,9 +4,9 @@
 # Optional: --schema chemin/vers/tei_all.rng ajoute la validation RelaxNG
 # complete (les violations sont des ERROR). Le schema n'est pas versionne
 # ici (~1 Mo, https://tei-c.org/release/xml/tei/custom/schema/relaxng/) ;
-# etat des lieux 2026-08-29 : il reste deux classes de violations connues
-# (birth/death dans l'author du titleStmt — audit 5.6 ; @version "4.3.x"
-# non conforme dans <application> — donnees de config.APP_VERSIONS).
+# etat des lieux 2026-08-30 : la sortie du pipeline valide tei_all sans
+# erreur, en mode court comme en run complet (NER compris) ; les tests
+# e2e le verifient des qu'un schema est disponible.
 # Exit 1 if any ERROR.
 # -----------------------------------------------------------
 import argparse

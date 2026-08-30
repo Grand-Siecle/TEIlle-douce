@@ -332,29 +332,25 @@ def test_override_teiheader_nominal_path(rich_person_csv):
     persname = author_el.find("persName")
     assert persname.find("forename").text == "Jean"
     assert persname.find("surname").text == "Dupont"
-    assert persname.find("nameLink").text == "le Jeune"
+    # Audit 5.6 : GenName est encode <genName> des deux cotes (listPerson
+    # le faisait deja) — <nameLink> designe une particule ("de", "van").
+    assert persname.find("genName").text == "le Jeune"
+    assert persname.find("nameLink") is None
     assert persname.find('ptr[@type="isni"]').get("target") == \
         "https://isni.org/isni/000000012153501X"
     assert persname.find('ptr[@type="ark"]').get("target") == "ark:/12148/pers0001"
 
-    birth = author_el.find("birth")
-    # NOT normalized here (raw CSV value kept as-is, slash included) -
-    # unlike the equivalent listPerson/person/birth below.
-    assert birth.get("when") == "1590/05/22"
-    assert birth.find("date").text == "1590/05/22"
-    birth_place = birth.find("placeName")
-    assert birth_place.text == "Paris"
-    assert birth_place.find('ptr[@type="geonames"]').get("target") == \
-        "https://www.geonames.org/2988507/"
-    death = author_el.find("death")
-    assert death.get("when") == "1650/01/01"
+    # Audit 5.6 : plus de <birth>/<death> dans <author> — tei_all.rng les
+    # y refuse, et les evenements de vie vivent dans le <listPerson> que
+    # le @ref ci-dessus designe (verifie plus bas).
+    assert author_el.find("birth") is None
+    assert author_el.find("death") is None
 
     editor_el = titleStmt.find('editor[@role="translator"]')
     assert editor_el is not None
     assert editor_el.get("ref") == "#PERS0002"
     assert editor_el.find("persName/forename").text == "Marie"
     assert editor_el.find("persName/surname").text == "Martin"
-    # editor elements never get birth/death (unlike author)
     assert editor_el.find("birth") is None
 
     # --- sourceDesc/bibl: pubPlace (multi), publisher removed, respStmt, date ---
@@ -420,15 +416,13 @@ def test_override_teiheader_nominal_path(rich_person_csv):
     assert pn1.find('addName[@type="nickname"]').text == "JD"
 
     birth1 = p1.find("birth")
-    # listPerson DOES normalize the date (slash -> dash) - unlike the
-    # titleStmt/author birth above, built from the exact same source field.
+    # Audit 5.6 : un seul encodage pour ces champs — @when normalise en
+    # ISO, et @ref portant l'URI geonames complete (un id nu est une URI
+    # relative qui ne resout rien).
     assert birth1.get("when") == "1590-05-22"
     bp1 = birth1.find("placeName")
     assert bp1.text == "Paris"
-    # Raw geonames id as a bare @ref here, NOT the geonames URL used above
-    # for the titleStmt author's placeName/ptr - a second inconsistency
-    # between the two code paths for what should be the same data.
-    assert bp1.get("ref") == "2988507"
+    assert bp1.get("ref") == "https://www.geonames.org/2988507/"
 
     death1 = p1.find("death")
     assert death1.get("when") == "1650-01-01"
@@ -651,3 +645,130 @@ def test_extra_repository_and_cote_siblings_precede_altidentifier():
             if localname(c) == tag and c.text == texte
         )
         assert idx < alt_index, f"<{tag}> '{texte}' doit preceder altIdentifier"
+
+
+# ---------------------------------------------------------------------------
+# Encodage unifie des evenements de vie (audit 5.6) et version d'application
+# ---------------------------------------------------------------------------
+
+def test_add_life_event_normalizes_date_and_builds_a_geonames_uri():
+    """Audit 5.6 : un seul encodage — @when ISO, @ref en URI complete."""
+    from src.metadata.csv_book import _add_life_event
+
+    parent = etree.Element("person")
+    birth = _add_life_event(parent, "birth", "1590/05/22", "Paris", "2988507")
+    assert birth.get("when") == "1590-05-22"
+    place = birth.find("placeName")
+    assert place.text == "Paris"
+    assert place.get("ref") == "https://www.geonames.org/2988507/"
+
+
+def test_add_life_event_partial_and_empty_inputs():
+    from src.metadata.csv_book import _add_life_event
+
+    parent = etree.Element("person")
+    # sans identifiant de lieu : pas de @ref invente
+    death = _add_life_event(parent, "death", "1650", "Lyon", None)
+    assert death.get("when") == "1650"
+    assert death.find("placeName").get("ref") is None
+
+    # date seule : pas de <placeName> vide
+    only_date = _add_life_event(parent, "birth", "1600", None, None)
+    assert only_date.find("placeName") is None
+
+    # rien a encoder : aucun element cree
+    before = len(parent)
+    assert _add_life_event(parent, "birth", None, None, "2988507") is None
+    assert len(parent) == before
+
+
+def test_tei_version_number_keeps_the_numeric_prefix():
+    """TEI exige un numero de version sur <application> ; la convention du
+    corpus ("4.3.x") le rendait invalide."""
+    from src.teiheader.default import tei_version_number
+
+    assert tei_version_number("4.3.x") == "4.3"
+    assert tei_version_number("8.0.x") == "8.0"
+    assert tei_version_number("1.0.0") == "1.0.0"
+    assert tei_version_number("2") == "2"
+    assert tei_version_number("") == "0"
+    assert tei_version_number(None) == "0"
+    assert tei_version_number("vNext") == "0"
+
+
+def test_csv_languages_survive_when_nothing_is_detected():
+    """Audit 4.12 : le bloc langUsage du CSV n'est pas mort. Il est bien
+    ecrase par les langues DETECTEES quand il y en a — mais quand la
+    detection ne produit rien, la declaration du catalogue survit, ce qui
+    vaut mieux qu'un <langUsage> vide."""
+    from src.lang import build_langusage
+
+    root = _build_default_root()
+    override_teiheader_from_csv(root, {"langues": "français|latin"}, "TESTDOC0001")
+    langues = [(l.get("ident"), l.text) for l in root.iter("language")]
+    assert langues == [("fra", "français"), ("lat", "latin")]
+
+    # rien de detecte : la declaration du CSV reste en place
+    build_langusage(root, {})
+    assert [(l.get("ident"), l.text) for l in root.iter("language")] == langues
+
+    # des langues detectees : elles remplacent la declaration
+    build_langusage(root, {"grc": 12})
+    assert [l.get("ident") for l in root.iter("language")] == ["grc"]
+
+
+# ---------------------------------------------------------------------------
+# Dates du corpus reel : chaque forme doit produire du TEI valide
+# ---------------------------------------------------------------------------
+
+def test_date_attributes_maps_each_corpus_shape():
+    """Le corpus ne contient pas des dates ISO : 126 des 327 valeurs de
+    naissance sont autre chose. La forme de la cellule decide des
+    attributs, car @when n'accepte qu'une date xsd (teidata.temporal.w3c)."""
+    from src.metadata.csv_book import date_attributes
+
+    # dates completes, quelle que soit l'ecriture
+    assert date_attributes("1590/05/22") == {"when": "1590-05-22"}
+    assert date_attributes("16520623") == {"when": "1652-06-23"}
+    assert date_attributes("163303") == {"when": "1633-03"}
+    assert date_attributes("1652") == {"when": "1652"}
+
+    # annee tronquee : un intervalle, pas une date — et l'inference est
+    # signalee par @cert
+    assert date_attributes("15") == {
+        "notBefore": "1500", "notAfter": "1599", "cert": "low"}
+    assert date_attributes("159") == {
+        "notBefore": "1590", "notAfter": "1599", "cert": "low"}
+
+    # valeur incertaine
+    assert date_attributes("? 1666") == {"when": "1666", "cert": "low"}
+
+    # avant J.-C. : l'annee n'est pas zero-padee a la source (Ovide, ne le
+    # 20 mars 43 av. J.-C.)
+    assert date_attributes("-430320") == {"when": "-0043-03-20"}
+
+    # mois impossible : aucun attribut plutot qu'une date fausse
+    assert date_attributes("20991345") == {}
+    assert date_attributes("") == {}
+    assert date_attributes(None) == {}
+
+
+def test_approximate_dates_keep_their_year_and_say_so():
+    """Les catalogues historiques ecrivent "circa 1600", "vers 1650" :
+    l'annee est exploitable, l'approximation doit rester visible."""
+    from src.metadata.csv_book import date_attributes
+
+    assert date_attributes("circa 1600") == {"when": "1600", "cert": "low"}
+    assert date_attributes("vers 1650") == {"when": "1650", "cert": "low"}
+    assert date_attributes("1650") == {"when": "1650"}
+
+
+def test_unusable_date_is_kept_as_text_not_dropped():
+    """Une date que le pipeline ne sait pas lire ne doit ni disparaitre ni
+    devenir un @when invalide : elle reste en texte."""
+    from src.metadata.csv_book import _add_life_event
+
+    parent = etree.Element("person")
+    birth = _add_life_event(parent, "birth", "date inconnue", None, None)
+    assert birth.attrib == {}
+    assert birth.text == "date inconnue"

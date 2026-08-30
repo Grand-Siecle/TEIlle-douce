@@ -86,7 +86,7 @@ def make_block(source, container, text="", char_to_w=None, char_to_reg=None):
     )
 
 
-CERT = {"low": 0.0, "mid": 0.6, "high": 0.85}
+CERT = {"low": 0.0, "medium": 0.6, "high": 0.85}
 ENTITY_TYPES = {
     "person": {"tei_element": "persName"},
     "place": {"tei_element": "placeName"},

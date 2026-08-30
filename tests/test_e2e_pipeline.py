@@ -22,6 +22,7 @@ import re
 import shutil
 import subprocess
 import sys
+from functools import lru_cache
 from pathlib import Path
 
 import pytest
@@ -121,6 +122,28 @@ def normaliser(chemin):
     texte = Path(chemin).read_text(encoding="utf-8")
     texte = re.sub(r'when="20\d\d-\d\d-\d\d"', 'when="DATE-GENERATION"', texte)
     return texte
+
+
+@lru_cache(maxsize=2)
+def _schema_compile(chemin):
+    """Compiler tei_all (~1 Mo) coute quelques secondes : une fois suffit."""
+    return etree.RelaxNG(etree.parse(chemin))
+
+
+def _valider_schema(chemin):
+    """Valide contre tei_all.rng quand il est disponible, sinon skip."""
+    demande = os.environ.get("ALTO2TEI_TEI_RNG")
+    schema = Path(demande or (RACINE / "tei_all.rng"))
+    if not schema.exists():
+        # Un chemin explicitement demande et introuvable est une erreur de
+        # configuration, pas une raison de sauter le controle en silence.
+        assert not demande, f"ALTO2TEI_TEI_RNG pointe sur un fichier absent : {schema}"
+        pytest.skip(f"tei_all.rng absent ({schema}) — validation de schema sautee")
+    relaxng = _schema_compile(str(schema))
+    doc = etree.parse(str(chemin))
+    assert relaxng.validate(doc), "\n".join(
+        f"L{e.line}: {e.message}" for e in list(relaxng.error_log)[:10]
+    )
 
 
 def local(el):
@@ -261,6 +284,18 @@ def test_court_correspond_au_golden(tei_court):
 
 
 @pytest.mark.e2e
+def test_court_est_valide_selon_tei_all(tei_court):
+    """
+    Validation de schema complete, quand un tei_all.rng est disponible.
+
+    Le schema (~1 Mo) n'est pas versionne : poser le fichier a la racine
+    (ou pointer ALTO2TEI_TEI_RNG dessus) active le controle. Telechargement :
+    https://tei-c.org/release/xml/tei/custom/schema/relaxng/tei_all.rng
+    """
+    _valider_schema(tei_court)
+
+
+@pytest.mark.e2e
 def test_court_un_document_casse_ne_tue_pas_le_run(tmp_path):
     """
     Audit 2.1/2.10 : un document corrompu est signale, compte dans le bilan et
@@ -327,17 +362,22 @@ def test_court_skip_existing_saute_le_converti_et_traite_le_reste(tmp_path):
 # Mode complet
 # =============================================================================
 
-@pytest.mark.e2e_full
-def test_complet_produit_les_annotations_linguistiques(tmp_path):
+@pytest.fixture(scope="module")
+def tei_complet(tmp_path_factory):
+    """Un seul run complet (~15 s) partage par les tests du mode complet."""
     manquants = services_manquants()
     if manquants:
         pytest.skip("services indisponibles : " + ", ".join(manquants))
 
-    tei = lancer_pipeline(
-        tmp_path,
+    return lancer_pipeline(
+        tmp_path_factory.mktemp("e2e_complet"),
         ALTO2TEI_NER="1", ALTO2TEI_ENRICHMENT="1", ALTO2TEI_MODERNIZE="1",
     )
-    arbre = etree.parse(str(tei))
+
+
+@pytest.mark.e2e_full
+def test_complet_produit_les_annotations_linguistiques(tei_complet):
+    arbre = etree.parse(str(tei_complet))
     presents = {local(e) for e in arbre.find(".//{*}body").iter()}
 
     assert "s" in presents, "aucune phrase <s> : l'enrichissement n'a rien produit"
@@ -346,3 +386,11 @@ def test_complet_produit_les_annotations_linguistiques(tmp_path):
     assert any(
         w.get("lemma") or w.get("pos") for w in arbre.iter("{*}w")
     ), "aucun <w> ne porte de lemme ni de categorie"
+
+
+@pytest.mark.e2e_full
+def test_complet_est_valide_selon_tei_all(tei_complet):
+    """Le mode complet produit les @cert et les <persName> automatiques :
+    ce sont eux qui, avec "mid" hors vocabulaire TEI, rendaient invalide
+    tout fichier annote alors que le TEI de base etait propre."""
+    _valider_schema(tei_complet)
