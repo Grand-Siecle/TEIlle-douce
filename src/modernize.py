@@ -51,6 +51,21 @@ def _normalize_for_comparison(text):
     return "".join(c for c in nfkd if unicodedata.category(c) != "Mn")
 
 
+def similarity(original, modernized):
+    """
+    Character-level similarity of a modernized line to its original.
+
+    Already computed inside _is_divergent to reject hallucinations; also
+    the honest basis for the reading's @cert (audit 1.12), so it lives
+    in one place.
+    """
+    if not original or not modernized:
+        return 0.0
+    return SequenceMatcher(
+        None, _normalize_for_comparison(original), _normalize_for_comparison(modernized)
+    ).ratio()
+
+
 def _is_divergent(original, modernized):
     """
     Check if modernized text diverges too much from original.
@@ -69,9 +84,7 @@ def _is_divergent(original, modernized):
         return True
     # Character-level similarity check (catches hallucinations with
     # similar word count, e.g. Greek OCR artifacts → invented French).
-    n_orig = _normalize_for_comparison(original)
-    n_mod = _normalize_for_comparison(modernized)
-    if SequenceMatcher(None, n_orig, n_mod).ratio() < SIMILARITY_MIN:
+    if similarity(original, modernized) < SIMILARITY_MIN:
         return True
     return False
 

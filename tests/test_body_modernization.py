@@ -319,22 +319,12 @@ def test_wrap_plain_lines_no_matching_lb_returns_zero():
 
 
 # =============================================================================
-# xfail -- audit SS1.12: <reg type="modernized"> is produced without @resp
-# or @cert, even though the similarity score used to accept/reject the
-# modernization is already computed upstream (src/modernize.py::_is_divergent).
-# This fixes the *expected* post-correctif behavior: a <reg> emitted by the
-# modernization entry point should carry @resp and @cert.
+# Audit SS1.12 : une lecture modernisee est attribuee — @resp (elle est
+# automatique) et @cert (le score de similarite, deja calcule en amont
+# pour rejeter les hallucinations, dit si c'est une simple normalisation
+# orthographique ou une reecriture lourde).
 # =============================================================================
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "audit SS1.12: <reg type='modernized'> n'a ni @resp ni @cert, alors "
-        "que le score de similarite est calcule en amont dans "
-        "src/modernize.py::_is_divergent -- correctif attendu : propager "
-        "resp/cert jusque sur <reg>."
-    ),
-)
 def test_apply_modernization_reg_carries_resp_and_cert():
     xml = """<TEI><text><body>
     <ab><lb corresp="l1"/>Texte original</ab>
@@ -347,3 +337,49 @@ def test_apply_modernization_reg_carries_resp_and_cert():
     assert reg is not None
     assert reg.get("resp") is not None
     assert reg.get("cert") is not None
+
+
+def test_reg_cert_grades_with_the_similarity_of_the_reading():
+    """Audit 1.12 : @cert distingue une normalisation orthographique
+    legere d'une reecriture lourde — le score existait deja, il servait
+    seulement a rejeter les hallucinations. Les seuils sont cales sur la
+    distribution reelle du corpus (similarite 0.81-1.00, mediane 0.96),
+    donc sur des lignes entieres, pas sur quelques mots."""
+    def cert_pour(original, modernise):
+        root = etree.fromstring(
+            f'<TEI><text><body><ab><lb corresp="l1"/>{original}</ab></body></text></TEI>'
+        )
+        apply_modernization(root, [modernise])
+        return root.find(".//reg").get("cert")
+
+    ligne = ("Des raisons qui nous obligent a sanctifier le jour du Seigneur "
+             "et a le passer en oeuvres de pieté")
+    # une graphie modernisee sur une ligne entiere : lecture sure
+    assert cert_pour(ligne + " estoit", ligne + " était") == "high"
+    # la moitie de la ligne reecrite : lecture a prendre avec precaution
+    assert cert_pour(ligne, "Des raisons obscures parfaitement etrangeres au propos") == "low"
+
+    # et la gradation est monotone : plus la lecture s'ecarte, moins on
+    # l'affirme
+    ordre = ["high", "medium", "low"]
+    proches = cert_pour(ligne + " estoit", ligne + " était")
+    lointaines = cert_pour(ligne, "Des raisons obscures parfaitement etrangeres au propos")
+    assert ordre.index(proches) < ordre.index(lointaines)
+
+
+def test_modernization_responsibility_is_declared_and_idempotent():
+    """Le @resp des lectures doit resoudre : le respStmt est declare dans
+    le header, et un second passage ne le duplique pas."""
+    from src.tei import declare_modernization_responsibility
+    from src.constants import XML_ID
+
+    root = etree.fromstring(
+        '<TEI><teiHeader><fileDesc><titleStmt><title>T</title></titleStmt>'
+        "</fileDesc></teiHeader></TEI>"
+    )
+    declare_modernization_responsibility(root)
+    declare_modernization_responsibility(root)
+
+    resp = [e for e in root.iter() if e.get(XML_ID) == "modernize-auto"]
+    assert len(resp) == 1, f"{len(resp)} respStmt modernize-auto"
+    assert qlocal(resp[0]) == "respStmt"

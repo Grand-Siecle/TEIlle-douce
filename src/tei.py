@@ -14,8 +14,9 @@ from pathlib import Path
 
 from lxml import etree
 
-from .constants import NS_TEI, XML_ID
+from .constants import NS_TEI, XML_ID, tag_like
 from .utils.files import canonical_document_id
+from .utils.xml import local_tag
 
 logger = logging.getLogger(__name__)
 from .teiheader import build_header
@@ -30,6 +31,46 @@ def strip_residual_hyphens(modernized):
     """A modernized reg must never contain the soft hyphen ¬: whatever the
     API returned, joining the fragments is always the right repair."""
     return [m.replace("¬", "") if m else m for m in modernized]
+
+
+def declare_modernization_responsibility(root):
+    """
+    Declare the agent behind the modernized readings.
+
+    Every <reg type="modernized"> carries @resp="#modernize-auto"
+    (audit 1.12); without this the pointer dangles. Idempotent, like its
+    NER counterpart: a second pass must not duplicate the xml:id.
+    """
+    header = next((e for e in root.iter() if local_tag(e.tag) == "teiHeader"), None)
+    if header is None:
+        return None
+    file_desc = next((c for c in header if local_tag(c.tag) == "fileDesc"), None)
+    if file_desc is None:
+        return None
+
+    edition_stmt = next(
+        (c for c in file_desc if local_tag(c.tag) == "editionStmt"), None
+    )
+    if edition_stmt is None:
+        edition_stmt = etree.Element(tag_like(file_desc, "editionStmt"))
+        edition = etree.SubElement(edition_stmt, tag_like(file_desc, "edition"))
+        edition.text = "Édition enrichie avec annotations automatiques"
+        title_idx = next(
+            (i for i, c in enumerate(file_desc) if local_tag(c.tag) == "titleStmt"), -1
+        )
+        file_desc.insert(title_idx + 1, edition_stmt)
+
+    for child in edition_stmt:
+        if local_tag(child.tag) == "respStmt" and child.get(XML_ID) == "modernize-auto":
+            return child
+
+    resp_stmt = etree.SubElement(edition_stmt, tag_like(edition_stmt, "respStmt"))
+    resp_stmt.set(XML_ID, "modernize-auto")
+    resp = etree.SubElement(resp_stmt, tag_like(edition_stmt, "resp"))
+    resp.text = "Modernisation automatique des formes anciennes"
+    name = etree.SubElement(resp_stmt, tag_like(edition_stmt, "name"))
+    name.text = "VieuxParler"
+    return resp_stmt
 
 
 def drop_carried_words(modernized, carried):
@@ -252,6 +293,11 @@ class TEI:
 
         modernized = strip_residual_hyphens(modernized)
         modernized = drop_carried_words(modernized, carried)
+
+        # The readings point at it with @resp, so declare it as soon as
+        # there is one.
+        if any(m and m != o for m, o in zip(modernized, original_texts)):
+            declare_modernization_responsibility(self.root)
 
         if enriched:
             # Build corresp -> modernized mapping for lines that changed

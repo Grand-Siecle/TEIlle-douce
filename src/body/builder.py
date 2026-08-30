@@ -284,8 +284,11 @@ def _rebuild_with_modernization(container, groups, corresp_to_mod):
 
                 _append_tokens_with_foreign(s_new, seg.tokens, seg.token_langs)
 
-            reg = etree.SubElement(choice, "reg", type="modernized")
-            reg.text = corresp_to_mod[group.lb_corresp]
+            # The line's diplomatic text, for the similarity score
+            original_text = " ".join(
+                (tok.text or "") for seg in group.segments for tok in seg.tokens
+            ).strip()
+            _make_reg(choice, original_text, corresp_to_mod[group.lb_corresp])
             count += 1
 
         else:
@@ -298,6 +301,29 @@ def _rebuild_with_modernization(container, groups, corresp_to_mod):
                 _append_tokens_with_foreign(s_new, seg.tokens, seg.token_langs)
 
     return count
+
+
+def _make_reg(choice, original, modernized):
+    """
+    Create the modernized reading, attributed.
+
+    <reg> used to carry neither @resp nor @cert although the pipeline
+    computes a similarity score for every line (audit 1.12): a reader
+    could not tell an automatic reading from an editor's, nor a light
+    spelling normalization from a heavy rewrite.
+    """
+    from ..modernize import similarity
+    from config import MODERNIZE_CERT_THRESHOLDS
+
+    reg = etree.SubElement(choice, "reg", type="modernized")
+    reg.text = modernized
+    reg.set("resp", "#modernize-auto")
+    score = similarity(original, modernized)
+    for label, floor in sorted(MODERNIZE_CERT_THRESHOLDS.items(), key=lambda kv: -kv[1]):
+        if score >= floor:
+            reg.set("cert", label)
+            break
+    return reg
 
 
 def _append_choice(parent, original, modernized):
@@ -316,8 +342,7 @@ def _append_choice(parent, original, modernized):
     choice = etree.SubElement(parent, "choice")
     orig = etree.SubElement(choice, "orig")
     orig.text = original
-    reg = etree.SubElement(choice, "reg", type="modernized")
-    reg.text = modernized
+    _make_reg(choice, original, modernized)
     return choice
 
 

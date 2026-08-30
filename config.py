@@ -202,6 +202,15 @@ PYHELLEN_TIMEOUT = 120
 
 # Maximum concurrent PyHellen requests (audit 3.3 — same model as
 # MODERNIZE_MAX_CONCURRENT).
+
+# Similarity (original vs modernized) -> @cert on the reading. Keys ARE
+# the emitted values, so they must belong to TEI's closed vocabulary
+# (teidata.certainty). Boundaries measured on real VieuxParler output
+# for this corpus: the similarity of a modernized line runs 0.81-1.00
+# (median 0.96), anything below SIMILARITY_MIN being rejected outright
+# as a hallucination — so >= 0.95 is a light spelling normalization,
+# and < 0.90 a heavy rewrite worth flagging to a reader.
+MODERNIZE_CERT_THRESHOLDS = {"low": 0.0, "medium": 0.90, "high": 0.95}
 PYHELLEN_MAX_CONCURRENT = 8
 
 # Circuit breaker (audit 2.7): stop calling PyHellen after this many
