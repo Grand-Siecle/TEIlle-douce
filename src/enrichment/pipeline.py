@@ -23,7 +23,7 @@ from config import (
     ENRICHMENT_MIN_TEXT_LENGTH,
     ENRICHMENT_MAX_MISALIGNED_RATIO,
 )
-from ..constants import NS_XML, XML_ID
+from ..constants import XML_ID, XML_LANG
 from ..utils.xml import local_tag as _local
 from .extractor import extract_spans
 from .dehyphenation import dehyphenate
@@ -34,7 +34,6 @@ from .reconstructor import rebuild_container
 
 logger = logging.getLogger(__name__)
 
-XML_LANG = f"{{{NS_XML}}}lang"
 
 
 def enrich_body(root, progress_callback=None):
@@ -283,7 +282,7 @@ def _finish_container(job, stats):
         aligned, id_scope=f"{job.index}\x1f{scope_ref}"
     )
 
-    rebuild_container(container, sentences, job.spans, primary_lang=job.primary_lang)
+    rebuild_container(container, sentences, primary_lang=job.primary_lang)
 
     stats["containers_enriched"] += 1
     stats["tokens_total"] += len(tokens)

@@ -122,7 +122,6 @@ class TEI:
             self.d,
             self.root,
             self.fp,
-            self.tags,
             self.segmonto_zones,
             self.segmonto_lines,
             config["iiifURI"],

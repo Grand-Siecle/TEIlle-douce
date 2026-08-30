@@ -101,13 +101,13 @@ def test_surfacetree_ids_normalization_and_baseline_path():
     surface = tree.surface({"n": "1"})
     assert surface.get(XML_ID) == "f1"
 
-    zone_block = tree.zone1(surface, {"type": "MainZone"}, "tb1", 1)
+    zone_block = tree.zone1(surface, {"type": "MainZone"}, "tb1")
     assert zone_block.get(XML_ID).startswith("zone_")
     assert zone_block.get("type") == "MainZone"
 
     # "default" (lowercase, as produced by some ALTO/TAGREFS sources) is
     # normalized to the SegmOnto "DefaultLine" taxon.
-    zone_line = tree.zone2(zone_block, "tb1", {"type": "default"}, "tl1", 1)
+    zone_line = tree.zone2(zone_block, "tb1", {"type": "default"}, "tl1")
     assert zone_line.get(XML_ID).startswith("zoneLine_")
     assert zone_line.get("type") == "DefaultLine"
 
@@ -219,7 +219,7 @@ def test_build_sourcedoc_orders_surfaces_by_page_despite_imap_unordered(tmp_path
     f2 = write_alto(tmp_path, "f2.xml", GOOD_ALTO_TMPL.format(word="pagetwo"))
 
     output_root = etree.Element("TEI")
-    result, skipped = build_sourcedoc("DOC1", output_root, [f2, f1], {}, [], [], {})
+    result, skipped = build_sourcedoc("DOC1", output_root, [f2, f1], [], [], {})
 
     assert result is output_root
     assert skipped == []
@@ -247,7 +247,7 @@ def test_build_sourcedoc_ids_are_deterministic_across_runs(tmp_path, monkeypatch
 
     def ids_pour(document):
         root = etree.Element("TEI")
-        build_sourcedoc(document, root, [f1], {}, [], [], {})
+        build_sourcedoc(document, root, [f1], [], [], {})
         return [el.get(XML_ID) for el in root.iter() if el.get(XML_ID)]
 
     run1, run2 = ids_pour("DOC1"), ids_pour("DOC1")
@@ -288,7 +288,7 @@ def test_build_sourcedoc_reports_duplicate_alto_ids_from_workers(tmp_path, monke
 
     output_root = etree.Element("TEI")
     with caplog.at_level(logging.WARNING, logger="src.sourcedoc.builder"):
-        _, skipped = build_sourcedoc("DOC1", output_root, [f], {}, [], [], {})
+        _, skipped = build_sourcedoc("DOC1", output_root, [f], [], [], {})
 
     assert skipped == []
     ids = [el.get(XML_ID) for el in output_root.iter() if el.get(XML_ID)]
@@ -308,8 +308,8 @@ def test_surfacetree_disambiguates_duplicate_alto_ids_deterministically():
     def deux_zones():
         tree = SurfaceTree("DOC1", "f1", etree.Element("alto"))
         surface = etree.Element("surface")
-        z1 = tree.zone1(surface, {}, "block_2", 1)
-        z2 = tree.zone1(surface, {}, "block_2", 1)
+        z1 = tree.zone1(surface, {}, "block_2")
+        z2 = tree.zone1(surface, {}, "block_2")
         return z1.get(XML_ID), z2.get(XML_ID)
 
     a1, a2 = deux_zones()

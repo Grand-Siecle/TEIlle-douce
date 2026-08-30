@@ -27,13 +27,12 @@ from dataclasses import dataclass, field
 
 from lxml import etree
 
-from ..constants import UUID_NAMESPACE, NS_TEI, XML_ID
+from ..constants import UUID_NAMESPACE, XML_ID, tag_like
 from ..utils.xml import local_tag as _local
 from .ner_filter import filter_aligned_by_pos
 
 logger = logging.getLogger(__name__)
 
-TEI_NS = f"{{{NS_TEI}}}"
 
 
 # =============================================================================
@@ -468,8 +467,15 @@ def _confidence_to_cert(confidence, thresholds):
     return "low"
 
 
-def _make_entity_element(entity_type, cert, entity_types_config):
-    """Create a TEI entity element (e.g., <persName>, <rs type="event">)."""
+def _make_entity_element(entity_type, cert, entity_types_config, anchor=None):
+    """
+    Create a TEI entity element (e.g., <persName>, <rs type="event">).
+
+    The element follows *anchor*'s namespace convention: the pipeline's
+    own tree is bare in memory, a TEI file read back from disk is
+    namespaced, and injecting one fixed convention leaves the two
+    coexisting in a single tree (audit 4.2).
+    """
     cfg = entity_types_config.get(entity_type, {})
     tag = cfg.get("tei_element", "rs")
     attrs = {"resp": "#ner-auto", "cert": cert}
@@ -478,9 +484,7 @@ def _make_entity_element(entity_type, cert, entity_types_config):
     extra = cfg.get("tei_element_attrs", {})
     attrs.update(extra)
 
-    # Use TEI namespace for parsed trees
-    full_tag = f"{TEI_NS}{tag}"
-    elem = etree.Element(full_tag, **attrs)
+    elem = etree.Element(tag_like(anchor, tag), **attrs)
     return elem
 
 
@@ -527,7 +531,9 @@ def _inject_tokenized_entities(entities, cert_thresholds, entity_types_config):
                 continue
 
             # Create entity wrapper element
-            wrapper = _make_entity_element(ent.entity_type, cert, entity_types_config)
+            wrapper = _make_entity_element(
+                ent.entity_type, cert, entity_types_config, anchor=parent
+            )
 
             # Insert wrapper before the first <w> in the group
             first_w = group[0]
@@ -643,7 +649,9 @@ def _inject_reg_entities(entities, cert_thresholds, entity_types_config):
             else:
                 prev_elem.tail = (prev_elem.tail or "") + before
 
-            wrapper = _make_entity_element(ent.entity_type, cert, entity_types_config)
+            wrapper = _make_entity_element(
+                ent.entity_type, cert, entity_types_config, anchor=reg_elem
+            )
             wrapper.text = original_text[task["start"]:task["end"]]
             wrapper.tail = ""
             if task["xml_id"]:
@@ -711,7 +719,9 @@ def _inject_raw_text_entities(entities, cert_thresholds, entity_types_config):
                 prev_elem.tail = (prev_elem.tail or "") + before
 
             # Entity element
-            elem = _make_entity_element(ent.entity_type, cert, entity_types_config)
+            elem = _make_entity_element(
+                ent.entity_type, cert, entity_types_config, anchor=container
+            )
             elem.text = full_text[ent.text_start : ent.text_end]
             elem.tail = ""
             container.append(elem)

@@ -215,7 +215,7 @@ def _build_surface_fragment_inner(document_name, filepath, num, segmonto_zones,
         if not tb.id:
             continue
 
-        textblock = surface_tree.zone1(surface, tb.attributes, tb.id, num)
+        textblock = surface_tree.zone1(surface, tb.attributes, tb.id)
         textlines = attributes.zones(
             f'TextBlock[@ID="{tb.id}"]', "TextLine", segmonto_lines,
             elements=lines_by_block.get(tb.id, []),
@@ -226,7 +226,7 @@ def _build_surface_fragment_inner(document_name, filepath, num, segmonto_zones,
             if not tl.id:
                 continue
 
-            textline = surface_tree.zone2(textblock, tb.id, tl.attributes, tl.id, num)
+            textline = surface_tree.zone2(textblock, tb.id, tl.attributes, tl.id)
 
             # Get the ALTO TextLine element
             line_node = by_id.get(tl.id)
@@ -262,7 +262,6 @@ def build_sourcedoc(
     document_name,
     output_tei_root,
     filepath_list,
-    tags,
     segmonto_zones,
     segmonto_lines,
     config,
@@ -280,7 +279,6 @@ def build_sourcedoc(
         document_name (str): Name of the document.
         output_tei_root (etree.Element): TEI root element to append sourceDoc to.
         filepath_list (list): List of ALTO file paths.
-        tags (dict): Tag mappings (unused, kept for compatibility).
         segmonto_zones (list): Valid SegmOnto zone types.
         segmonto_lines (list): Valid SegmOnto line types.
         config (dict): IIIF configuration dictionary.

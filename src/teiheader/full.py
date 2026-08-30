@@ -10,12 +10,11 @@ and populates it with actual metadata from CSV or IIIF sources.
 """
 
 import logging
-import re
 from collections import namedtuple
 from lxml import etree
 
 from config import SEGMONTO
-from ..constants import NS_ALTO, XML_ID, SEGMONTO_ZONES, SEGMONTO_LINES
+from ..constants import SEGMONTO_TAG_RE, XML_ID, SEGMONTO_ZONES, SEGMONTO_LINES
 from ..sourcedoc.builder import extract_labels as _extract_labels
 
 logger = logging.getLogger(__name__)
@@ -199,7 +198,7 @@ class FullTree:
         unique_labels = set()
         for dic in all_tag_dicts:
             for value in dic.values():
-                match = re.match(r"(\w+):?(\w+)?#?(\d?)?", value)
+                match = SEGMONTO_TAG_RE.match(value)
                 if match:
                     unique_labels.add(match.group(1))
 

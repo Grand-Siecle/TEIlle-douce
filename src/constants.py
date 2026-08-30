@@ -3,7 +3,10 @@
 # XML namespaces and internal constants used across modules
 # -----------------------------------------------------------
 
+import re
 import uuid
+
+from lxml import etree
 
 # =============================================================================
 # IDENTIFIERS
@@ -29,8 +32,32 @@ NS_TEI = "http://www.tei-c.org/ns/1.0"
 # XML namespace (for xml:id attributes)
 NS_XML = "http://www.w3.org/XML/1998/namespace"
 
-# XML namespace attribute key
+# XML namespace attribute keys
 XML_ID = f"{{{NS_XML}}}id"
+XML_LANG = f"{{{NS_XML}}}lang"
+
+def tag_like(reference, tag):
+    """
+    Element name for *tag* following *reference*'s namespace convention.
+
+    The pipeline builds its tree with BARE tags (the root's nsmap puts
+    everything in the TEI namespace at serialization), but a TEI file
+    read back from disk is namespaced. Code that injects elements into
+    a tree it did not build must follow whatever convention that tree
+    uses, or the two coexist and lookups silently miss half the
+    elements (audit 4.2).
+    """
+    if reference is not None:
+        ns = etree.QName(reference).namespace if isinstance(reference.tag, str) else None
+        if ns:
+            return f"{{{ns}}}{tag}"
+    return tag
+
+
+# SegmOnto tag syntax: "MainZone:column#1" -> ("MainZone", "column", "1").
+# Single definition: the header taxonomy and the sourcedoc attributes
+# must read the same labels the same way (audit 4.9).
+SEGMONTO_TAG_RE = re.compile(r"(\w+):?(\w+)?#?(\d?)?")
 
 # =============================================================================
 # SEGMONTO TAXONOMY

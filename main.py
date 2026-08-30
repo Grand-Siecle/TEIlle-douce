@@ -38,12 +38,7 @@ from config import (
     ENRICHMENT_ENABLED,
     MODERNIZE_ENABLED,
     NER_ENABLED,
-    NER_ENTITY_TYPES,
-    NER_MODELS,
-    NER_CONFIDENCE_THRESHOLD,
     NER_OUTPUT_DIR,
-    NER_CONTAINERS,
-    NER_CERT_THRESHOLDS,
     DEBUG,
     LOG_FILE,
 )
@@ -107,9 +102,6 @@ from src.utils.files import parse_document_id
 
 console = Console()
 
-# Lazy-loaded NER models (shared across documents when NER is enabled)
-_ner_models = None
-
 
 # =============================================================================
 # UTILITY FUNCTIONS
@@ -122,11 +114,11 @@ def build_config():
     Returns:
         dict: Configuration dictionary for the pipeline.
     """
+    # "data" and "offline" used to sit here too; nothing ever read them
+    # (audit 4.6).
     return {
-        "data": {"path": str(OCR_DIR)},
         "iiifURI": IIIF_URI,
         "responsibility": RESPONSIBILITY,
-        "offline": True,
     }
 
 
@@ -210,19 +202,21 @@ def expand_archives(ocr_dir):
     return sorted(ready_dirs), failed_archives
 
 
-def _extract_bdd_prefix(doc_folder_name):
+def _document_iiif_config(manifest_url):
     """
-    Extract BDD prefix from document folder name.
+    Per-document IIIF settings: config.IIIF_URI with the volume's image
+    base filled in.
 
-    Args:
-        doc_folder_name (str): Document folder name.
-
-    Returns:
-        str: Extracted prefix or original name.
+    The Gallica-derived base wins when one can be computed; otherwise
+    whatever IIIF_URI configures survives. (Passing the derivation as a
+    keyword overwrote a configured base with None for every non-Gallica
+    manifest — the one key config.IIIF_URI still offers, audit 4.6.)
     """
-    from config import BDD_PREFIX_PATTERN
-    match = re.match(BDD_PREFIX_PATTERN, doc_folder_name)
-    return match.group(1) if match else doc_folder_name
+    doc_iiif = dict(IIIF_URI)
+    gallica_base = _gallica_image_base(manifest_url)
+    if gallica_base:
+        doc_iiif["image_base"] = gallica_base
+    return doc_iiif
 
 
 def _gallica_image_base(manifest_url):
@@ -279,7 +273,9 @@ def _process_document(doc_name, filepaths, doc_dir, df_meta, config,
     )
 
     # Load metadata for this document
-    row = find_metadata_row(df_meta, _extract_bdd_prefix(doc_name))
+    # find_metadata_row extracts the BDD prefix itself (audit 4.11:
+    # main.py used to keep a copy and apply it a second time).
+    row = find_metadata_row(df_meta, doc_name)
     tree.metadata = build_metadata_dict(row)
 
     # Resolve this document's IIIF image base from its manifest (Gallica
@@ -288,7 +284,7 @@ def _process_document(doc_name, filepaths, doc_dir, df_meta, config,
     manifests = tree.metadata["iiif"].get("manifests") or []
     volume = parse_document_id(doc_name)[1]
     doc_manifest = select_manifest(manifests, volume)
-    config["iiifURI"] = dict(IIIF_URI, image_base=_gallica_image_base(doc_manifest))
+    config["iiifURI"] = _document_iiif_config(doc_manifest)
 
     # Build TEI header
     tree.root, tree.segmonto_zones, tree.segmonto_lines = build_header(
@@ -399,59 +395,21 @@ def _process_document(doc_name, filepaths, doc_dir, df_meta, config,
         )
 
         try:
-            from src.enrichment.ner_detect import extract_ner_blocks, detect_entities
-            from src.enrichment.ner_align import align_and_inject
-            from src.enrichment.ner_resolve import resolve_entities
-            from src.enrichment.ner_models import NERModels
+            from src.enrichment.ner_pipeline import run_ner, summarize
 
-            # Lazy-load models (shared across documents)
-            global _ner_models
-            if _ner_models is None:
-                _ner_models = NERModels(NER_MODELS)
-
-            ner_models = _ner_models
-
-            # Phase 7: Extract blocks + inference
-            ner_blocks = extract_ner_blocks(tree.root, NER_CONTAINERS)
-            ner_spans = detect_entities(
-                ner_blocks, ner_models, NER_ENTITY_TYPES,
-                NER_MODELS, NER_CONFIDENCE_THRESHOLD,
-                root=tree.root,
-            )
-
-            # Phase 8: Align + merge + inject
-            aligned = align_and_inject(
-                ner_blocks, ner_spans,
-                NER_ENTITY_TYPES, NER_CERT_THRESHOLDS,
-            )
-
-            # Phase 9: Resolve + CSV + header + @ref
-            resolved = resolve_entities(
-                tree.root, aligned, NER_ENTITY_TYPES,
-                person_db, NER_OUTPUT_DIR, doc_name,
-            )
-
-            if resolved:
-                by_type = {}
-                for ent in resolved:
-                    by_type[ent.entity_type] = by_type.get(ent.entity_type, 0) + 1
-                total_mentions = sum(len(e.mentions) for e in resolved)
-                type_str = ", ".join(
-                    f"{c} {t}" for t, c in sorted(by_type.items(), key=lambda x: -x[1])
-                )
-                console.print(
-                    f"  [dim]NER: {len(resolved)} entities ({type_str}), "
-                    f"{total_mentions} mentions[/dim]"
-                )
+            resolved = run_ner(tree.root, person_db, doc_name)
+            summary = summarize(resolved)
+            if summary:
+                console.print(f"  [dim]NER: {summary}[/dim]")
 
         except ImportError as e:
             console.print(
-                f"[yellow]Warning: NER dependencies not installed ({e}) "
-                f"— skipping NER.[/yellow]"
+                f"[yellow]Warning: NER dependencies not installed "
+                f"({escape(str(e))}) — skipping NER.[/yellow]"
             )
         except Exception as e:
             logging.getLogger(__name__).error("NER pipeline failed: %s", e, exc_info=True)
-            console.print(f"[yellow]Warning: NER failed ({e}) — continuing.[/yellow]")
+            console.print(f"[yellow]Warning: NER failed ({escape(str(e))}) — continuing.[/yellow]")
 
         progress.update(task_ner, visible=False)
 

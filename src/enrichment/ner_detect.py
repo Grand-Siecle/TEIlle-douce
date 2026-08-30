@@ -25,14 +25,12 @@ try:
 except ImportError:
     _HAS_TORCH = False
 
-from ..constants import NS_TEI, NS_XML
+from ..constants import XML_LANG
 from ..utils.xml import local_tag as _local
 from .ner_filter import filter_spans, extract_title_from_tei
 
 logger = logging.getLogger(__name__)
 
-XML_LANG = f"{{{NS_XML}}}lang"
-TEI_NS = f"{{{NS_TEI}}}"
 
 
 # =============================================================================

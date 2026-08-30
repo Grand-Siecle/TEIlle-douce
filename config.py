@@ -97,18 +97,6 @@ APP_VERSIONS = {
     },
 }
 
-# Model information for OCR/HTR
-MODELS_VERSIONS = {
-    "KRAKEN_MODEL": {
-        "name": "",
-        "source": "",
-    },
-    "YOLO_MODEL": {
-        "name": "CapricciosaX.pt",
-        "source": "https://doi.org/10.5281/zenodo.10602196",
-    },
-}
-
 # =============================================================================
 # SEGMONTO TAXONOMY CONFIGURATION
 # =============================================================================
@@ -161,12 +149,19 @@ PLACEHOLDER_ORCID = "0000-0000-0000-0000"
 # =============================================================================
 
 # IIIF server configuration for image references
+# IIIF image settings.
+#
+# "image_base" is the IIIF Image API base of the volume's scans; @source
+# on each page is built from it. main.py derives it per document from a
+# Gallica manifest URL, and falls back to the value set here — which is
+# how a non-Gallica server (whose image API cannot be guessed from its
+# manifest URL) gets its pages linked.
+#
+# The five URL-building keys this dict used to carry (scheme, server,
+# manifest_prefix, manifest_suffix, image_prefix) were read nowhere:
+# editing them changed nothing in the output (audit 4.6).
 IIIF_URI = {
-    "scheme": "https",
-    "server": "gallica.bnf.fr",
-    "manifest_prefix": "/iiif/ark:/12148/",
-    "manifest_suffix": "/manifest.json",
-    "image_prefix": "/iiif/ark:/12148",
+    # "image_base": "https://iiif.example.org/iiif/2/my-volume",
 }
 
 # =============================================================================

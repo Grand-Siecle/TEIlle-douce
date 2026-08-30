@@ -12,19 +12,16 @@ import uuid
 
 from lxml import etree
 
-from ..constants import NS_XML, UUID_NAMESPACE, XML_ID
+from ..constants import UUID_NAMESPACE, XML_ID, XML_LANG
 from .segmenter import Sentence
 from .aligner import AlignedToken
-
-# xml:lang attribute key
-XML_LANG = f"{{{NS_XML}}}lang"
 
 # Punctuation join rules
 JOIN_LEFT = {".", ",", ";", ":", "!", "?", ")", "]", "»"}
 JOIN_RIGHT = {"(", "[", "«"}
 
 
-def rebuild_container(container, sentences, spans, primary_lang=None):
+def rebuild_container(container, sentences, primary_lang=None):
     """
     Rebuild a container element with tokenized content.
 
@@ -34,7 +31,6 @@ def rebuild_container(container, sentences, spans, primary_lang=None):
     Args:
         container: The lxml Element to rebuild (ab, note, fw).
         sentences: List of Sentence objects for this container.
-        spans: List of TextSpan objects from extraction.
         primary_lang: TEI ident of the container's primary language.
             Tokens whose ``origin_lang`` differs are wrapped in
             ``<foreign xml:lang="…">`` inside their sentence.
@@ -108,7 +104,7 @@ def rebuild_container(container, sentences, spans, primary_lang=None):
                 if first_span.lb_element is not None and first_span.line_index != prev_line_index:
                     lb_id = id(first_span.lb_element)
                     if lb_id not in inserted_lbs:
-                        _insert_lb(target, first_span, at, inserted_lbs)
+                        _insert_lb(target, first_span, inserted_lbs)
                         prev_line_index = first_span.line_index
 
             # Emit the token element
@@ -122,7 +118,7 @@ def rebuild_container(container, sentences, spans, primary_lang=None):
                 _create_w(target, at)
 
 
-def _insert_lb(parent, span, aligned_token, inserted_lbs):
+def _insert_lb(parent, span, inserted_lbs):
     """Insert an <lb/> element as a child of parent."""
     lb = etree.SubElement(parent, "lb")
     if span.lb_corresp:

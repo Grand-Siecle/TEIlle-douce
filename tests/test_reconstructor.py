@@ -120,7 +120,7 @@ def test_rebuild_container_nominal_word_order_and_attributes():
     sent2 = mk_sentence("s2", [mk_aligned(mk_token("Fin", pos="NOUN"))], prev_id="s1")
 
     container = mk_container()
-    rebuild_container(container, [sent1, sent2], spans=[], primary_lang="fra")
+    rebuild_container(container, [sent1, sent2], primary_lang="fra")
 
     s_elements = list(container)
     assert [qlocal(e) for e in s_elements] == ["s", "s"]
@@ -161,7 +161,7 @@ def test_rebuild_container_primary_lang_defaults_from_container_attribute():
     container = mk_container(lang="fra")
     sent = mk_sentence("s1", [mk_aligned(mk_token("mot", origin_lang="lat"))])
 
-    rebuild_container(container, [sent], spans=[], primary_lang=None)
+    rebuild_container(container, [sent], primary_lang=None)
 
     s = container[0]
     w_or_foreign = list(s)
@@ -169,22 +169,21 @@ def test_rebuild_container_primary_lang_defaults_from_container_attribute():
     assert w_or_foreign[0].get(XML_LANG) == "lat"
 
 
-def test_rebuild_container_spans_parameter_is_dead():
+def test_rebuild_container_no_longer_takes_a_spans_parameter():
     """
-    Surprising finding: the *positional* `spans` argument of
-    rebuild_container is never read inside the function body (only
-    at.spans, the per-token attribute, is used). Passing anything for it
-    -- None, [], or garbage -- must not change the output.
+    Audit 6.4 : le 3e parametre positionnel `spans` etait documente mais
+    jamais lu (seul at.spans, l'attribut du token, sert). Il est
+    supprime : la signature ne doit plus l'accepter.
     """
+    import inspect
+
+    parametres = list(inspect.signature(rebuild_container).parameters)
+    assert parametres == ["container", "sentences", "primary_lang"]
+
     sent = mk_sentence("s1", [mk_aligned(mk_token("mot"))])
-
-    c1 = mk_container()
-    rebuild_container(c1, [sent], spans=None, primary_lang="fra")
-
-    c2 = mk_container()
-    rebuild_container(c2, [sent], spans=["not", "a", "textspan", 42], primary_lang="fra")
-
-    assert etree.tostring(c1) == etree.tostring(c2)
+    container = mk_container()
+    rebuild_container(container, [sent], primary_lang="fra")
+    assert [qlocal(c) for c in container] == ["s"]
 
 
 # =============================================================================
@@ -254,7 +253,7 @@ def test_rebuild_container_inserts_lb_at_each_line_change_in_place():
 
     sent = mk_sentence("s1", [at_il, at_vient, at_dot1, at_encore, at_dot2])
     container = mk_container()
-    rebuild_container(container, [sent], spans=[], primary_lang="fra")
+    rebuild_container(container, [sent], primary_lang="fra")
 
     s = container[0]
     tags = [qlocal(c) for c in s]
@@ -283,7 +282,7 @@ def test_rebuild_container_same_lb_never_reinserted():
     )
     sent = mk_sentence("s1", [at_a, at_b])
     container = mk_container()
-    rebuild_container(container, [sent], spans=[], primary_lang="fra")
+    rebuild_container(container, [sent], primary_lang="fra")
 
     s = container[0]
     assert [qlocal(c) for c in s].count("lb") == 1
@@ -295,7 +294,7 @@ def test_insert_lb_directly_sets_corresp_and_tracks_inserted_id():
     parent = etree.Element("s")
     inserted = set()
 
-    _insert_lb(parent, span, "unused-aligned-token-arg", inserted)
+    _insert_lb(parent, span, inserted)
 
     assert qlocal(parent[0]) == "lb"
     assert parent[0].get("corresp") == "#zoneLine_9"
@@ -519,7 +518,7 @@ def test_rebuild_container_dispatches_cross_line_tokens_to_fragmenter():
 
     sent = mk_sentence("s1", [at_pro, at_civile])
     container = mk_container()
-    rebuild_container(container, [sent], spans=[], primary_lang="fra")
+    rebuild_container(container, [sent], primary_lang="fra")
 
     s = container[0]
     tags = [qlocal(c) for c in s]
@@ -553,7 +552,7 @@ def test_rebuild_container_hi_groups_consecutive_tokens_same_hi_element():
 
     sent = mk_sentence("s1", [at_beau, at_temps, at_dot, at_clair])
     container = mk_container()
-    rebuild_container(container, [sent], spans=[], primary_lang="fra")
+    rebuild_container(container, [sent], primary_lang="fra")
 
     s = container[0]
     top_tags = [qlocal(c) for c in s]
@@ -584,7 +583,7 @@ def test_rebuild_container_foreign_wraps_only_non_primary_lang_runs():
 
     sent = mk_sentence("s1", [at_ainsi, at_ergo, at_sum, at_dit])
     container = mk_container()
-    rebuild_container(container, [sent], spans=[], primary_lang="fra")
+    rebuild_container(container, [sent], primary_lang="fra")
 
     s = container[0]
     top_tags = [qlocal(c) for c in s]
@@ -607,7 +606,7 @@ def test_rebuild_container_foreign_wraps_only_non_primary_lang_runs():
 
 def test_rebuild_container_empty_sentence_list_clears_the_container():
     container = mk_container(extra_attrs='type="marginal"', body="<w>reste</w>")
-    rebuild_container(container, [], spans=[], primary_lang="fra")
+    rebuild_container(container, [], primary_lang="fra")
 
     # real, observed behaviour: an empty sentence list empties the container
     # (text and all children removed), it is not left intact.
@@ -621,7 +620,7 @@ def test_rebuild_container_empty_sentence_list_clears_the_container():
 def test_rebuild_container_sentence_without_tokens_yields_empty_s():
     sent = mk_sentence("s1", [])
     container = mk_container()
-    rebuild_container(container, [sent], spans=[], primary_lang="fra")
+    rebuild_container(container, [sent], primary_lang="fra")
 
     s = container[0]
     assert qlocal(s) == "s"
@@ -635,7 +634,7 @@ def test_rebuild_container_token_with_empty_form_produces_no_stray_text():
     at_word = mk_aligned(mk_token("mot"))
     sent = mk_sentence("s1", [at_empty, at_word])
     container = mk_container()
-    rebuild_container(container, [sent], spans=[], primary_lang="fra")
+    rebuild_container(container, [sent], primary_lang="fra")
 
     s = container[0]
     w_empty, w_mot = list(s)

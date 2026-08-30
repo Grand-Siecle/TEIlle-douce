@@ -22,6 +22,7 @@ from config import (
     EDITORIAL_DECLARATIONS,
     LANG_USAGE_DESCRIPTION,
 )
+from ..constants import XML_ID
 from ..utils.files import canonical_document_id
 
 
@@ -261,7 +262,7 @@ class DefaultTree:
 
         # <classDecl> for SegmOnto taxonomy
         classDecl = etree.SubElement(encodingDesc, "classDecl")
-        taxonomy_id = {"{http://www.w3.org/XML/1998/namespace}id": SEGMONTO["id"]}
+        taxonomy_id = {XML_ID: SEGMONTO["id"]}
         self.children["taxonomy"] = etree.SubElement(classDecl, "taxonomy", taxonomy_id)
 
         tax_bibl = etree.SubElement(self.children["taxonomy"], "bibl")
