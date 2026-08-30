@@ -226,13 +226,9 @@ def test_detect_csv_swallows_exception_from_unreadable_candidate(tmp_path):
 def test_iiif_uri_carries_no_unread_url_building_keys():
     """Audit 4.6 : IIIF_URI embarquait 5 cles (scheme, server,
     manifest_prefix, manifest_suffix, image_prefix) que personne ne
-    lisait — les editer ne changeait rien a la sortie. Elles sont
-    supprimees ; seules "image_base" et "view_number" sont lues, et
-    toutes deux sont calculees par document dans main.py. Ce test
-    echoue le jour ou une cle morte revient sans consommateur."""
-    mortes = {"scheme", "server", "manifest_prefix", "manifest_suffix", "image_prefix"}
-    assert set(config.IIIF_URI) & mortes == set()
-
+    lisait — les editer ne changeait rien a la sortie. Toute cle qu'il
+    porte doit avoir un consommateur ; ce test echoue le jour ou de la
+    config morte revient."""
     consumer_sources = "".join(
         (REPO_ROOT / rel).read_text(encoding="utf-8")
         for rel in (
@@ -243,10 +239,39 @@ def test_iiif_uri_carries_no_unread_url_building_keys():
             "src/sourcedoc/elements.py",
         )
     )
+    mortes = {"scheme", "server", "manifest_prefix", "manifest_suffix", "image_prefix"}
+    for cle in mortes:
+        assert f'"{cle}"' not in consumer_sources, f"{cle} : cle morte re-branchee ?"
+
     for cle in config.IIIF_URI:
-        # une cle presente doit avoir un consommateur (lecture par
-        # litteral chaine), sinon c'est de la config morte
-        assert f'"{cle}"' in consumer_sources or f"'{cle}'" in consumer_sources, cle
+        assert f'"{cle}"' in consumer_sources or f"'{cle}'" in consumer_sources, (
+            f"{cle} : cle de config sans aucun consommateur"
+        )
+
+
+def test_configured_image_base_survives_a_non_gallica_manifest():
+    """Audit 4.6 : la seule cle que IIIF_URI offre encore doit etre
+    reellement branchee. Un manifeste non-Gallica ne permet pas de
+    deduire la base d'images ; la valeur configuree doit alors survivre
+    au lieu d'etre ecrasee par None (et de faire perdre @source a
+    toutes les pages)."""
+    import main
+
+    base = "https://iiif.example.org/iiif/2/mon-volume"
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(main, "IIIF_URI", {"image_base": base})
+
+        # manifeste non-Gallica : rien a deduire, la config survit
+        assert main._document_iiif_config(
+            "https://digitale-sammlungen.de/iiif/vol/manifest"
+        )["image_base"] == base
+        assert main._document_iiif_config(None)["image_base"] == base
+
+        # manifeste Gallica : la base deduite prime
+        derive = main._document_iiif_config(
+            "https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/manifest.json"
+        )["image_base"]
+        assert derive == "https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001"
 
 
 PERSON_CSV_HEADER = "BDD;Nom;Prenoms;ISNI;Label_categ"

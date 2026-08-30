@@ -315,7 +315,8 @@ def _sub(parent, tag, **attrs):
 
 
 def _find_or_create(parent, tag):
-    """Find or create a direct child element in TEI namespace."""
+    """Find a direct child by local name, or create one following the
+    host tree's namespace convention (see _sub)."""
     for child in parent:
         if _local(child.tag) == tag:
             return child

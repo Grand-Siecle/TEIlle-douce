@@ -11,7 +11,7 @@ Uses parallel processing for performance on large documents.
 Usage:
     from src.sourcedoc import build_sourcedoc
 
-    build_sourcedoc(doc_name, root, filepaths, tags, zones, lines, config, progress, task, iiif_mapping)
+    build_sourcedoc(doc_name, root, filepaths, zones, lines, config, progress, task, iiif_mapping)
 """
 
 from .builder import build_sourcedoc, extract_labels

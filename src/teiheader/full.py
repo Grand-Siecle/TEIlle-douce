@@ -10,12 +10,11 @@ and populates it with actual metadata from CSV or IIIF sources.
 """
 
 import logging
-import re
 from collections import namedtuple
 from lxml import etree
 
 from config import SEGMONTO
-from ..constants import SEGMONTO_TAG_RE, NS_ALTO, XML_ID, SEGMONTO_ZONES, SEGMONTO_LINES
+from ..constants import SEGMONTO_TAG_RE, XML_ID, SEGMONTO_ZONES, SEGMONTO_LINES
 from ..sourcedoc.builder import extract_labels as _extract_labels
 
 logger = logging.getLogger(__name__)

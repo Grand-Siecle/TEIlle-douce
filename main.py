@@ -202,6 +202,23 @@ def expand_archives(ocr_dir):
     return sorted(ready_dirs), failed_archives
 
 
+def _document_iiif_config(manifest_url):
+    """
+    Per-document IIIF settings: config.IIIF_URI with the volume's image
+    base filled in.
+
+    The Gallica-derived base wins when one can be computed; otherwise
+    whatever IIIF_URI configures survives. (Passing the derivation as a
+    keyword overwrote a configured base with None for every non-Gallica
+    manifest — the one key config.IIIF_URI still offers, audit 4.6.)
+    """
+    doc_iiif = dict(IIIF_URI)
+    gallica_base = _gallica_image_base(manifest_url)
+    if gallica_base:
+        doc_iiif["image_base"] = gallica_base
+    return doc_iiif
+
+
 def _gallica_image_base(manifest_url):
     """
     IIIF image base for a Gallica manifest URL, else None.
@@ -267,7 +284,7 @@ def _process_document(doc_name, filepaths, doc_dir, df_meta, config,
     manifests = tree.metadata["iiif"].get("manifests") or []
     volume = parse_document_id(doc_name)[1]
     doc_manifest = select_manifest(manifests, volume)
-    config["iiifURI"] = dict(IIIF_URI, image_base=_gallica_image_base(doc_manifest))
+    config["iiifURI"] = _document_iiif_config(doc_manifest)
 
     # Build TEI header
     tree.root, tree.segmonto_zones, tree.segmonto_lines = build_header(
@@ -387,8 +404,8 @@ def _process_document(doc_name, filepaths, doc_dir, df_meta, config,
 
         except ImportError as e:
             console.print(
-                f"[yellow]Warning: NER dependencies not installed ({e}) "
-                f"— skipping NER.[/yellow]"
+                f"[yellow]Warning: NER dependencies not installed "
+                f"({escape(str(e))}) — skipping NER.[/yellow]"
             )
         except Exception as e:
             logging.getLogger(__name__).error("NER pipeline failed: %s", e, exc_info=True)

@@ -16,6 +16,7 @@ unlike the enrichment and modernization phases which go through the
 """
 
 import logging
+from collections import Counter
 
 from config import (
     NER_CERT_THRESHOLDS,
@@ -48,7 +49,9 @@ def reset_models():
     _models = None
 
 
-def run_ner(root, person_db, document_name, models=None):
+def run_ner(root, person_db, document_name, models=None,
+            entity_types=None, ner_models=None, containers=None,
+            confidence_threshold=None, cert_thresholds=None, output_dir=None):
     """
     Run phases 7-9 of the NER pipeline on one document.
 
@@ -59,6 +62,11 @@ def run_ner(root, person_db, document_name, models=None):
             ``NER_OUTPUT_DIR/<document_name>/`` (audit 2.4).
         models: Optional preloaded NERModels; defaults to the run-level
             cache.
+        entity_types, ner_models, containers, confidence_threshold,
+        cert_thresholds, output_dir: Optional overrides of the matching
+            config values — the module reads config only for its
+            defaults, so a caller (or a test) can steer the phases
+            without patching config globals.
 
     Returns:
         list[ResolvedEntity]: the document's resolved entities.
@@ -74,22 +82,27 @@ def run_ner(root, person_db, document_name, models=None):
 
     if models is None:
         models = get_models()
+    entity_types = NER_ENTITY_TYPES if entity_types is None else entity_types
+    ner_models = NER_MODELS if ner_models is None else ner_models
+    containers = NER_CONTAINERS if containers is None else containers
+    if confidence_threshold is None:
+        confidence_threshold = NER_CONFIDENCE_THRESHOLD
+    cert_thresholds = NER_CERT_THRESHOLDS if cert_thresholds is None else cert_thresholds
+    output_dir = NER_OUTPUT_DIR if output_dir is None else output_dir
 
     # Phase 7: extract blocks + inference
-    blocks = extract_ner_blocks(root, NER_CONTAINERS)
+    blocks = extract_ner_blocks(root, containers)
     spans = detect_entities(
-        blocks, models, NER_ENTITY_TYPES, NER_MODELS,
-        NER_CONFIDENCE_THRESHOLD, root=root,
+        blocks, models, entity_types, ner_models,
+        confidence_threshold, root=root,
     )
 
     # Phase 8: align + merge + inject
-    aligned = align_and_inject(
-        blocks, spans, NER_ENTITY_TYPES, NER_CERT_THRESHOLDS
-    )
+    aligned = align_and_inject(blocks, spans, entity_types, cert_thresholds)
 
     # Phase 9: resolve + CSV + header + @ref
     return resolve_entities(
-        root, aligned, NER_ENTITY_TYPES, person_db, NER_OUTPUT_DIR, document_name
+        root, aligned, entity_types, person_db, output_dir, document_name
     )
 
 
@@ -102,12 +115,7 @@ def summarize(resolved):
     if not resolved:
         return None
 
-    by_type = {}
-    for ent in resolved:
-        by_type[ent.entity_type] = by_type.get(ent.entity_type, 0) + 1
+    by_type = Counter(ent.entity_type for ent in resolved)
     total_mentions = sum(len(e.mentions) for e in resolved)
-    type_str = ", ".join(
-        f"{count} {etype}"
-        for etype, count in sorted(by_type.items(), key=lambda kv: -kv[1])
-    )
+    type_str = ", ".join(f"{count} {etype}" for etype, count in by_type.most_common())
     return f"{len(resolved)} entities ({type_str}), {total_mentions} mentions"

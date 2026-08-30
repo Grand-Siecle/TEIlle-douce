@@ -613,12 +613,24 @@ def override_teiheader_from_csv(root, row, document_name=None):
         profileDesc = root.find(".//teiHeader/profileDesc")
         if profileDesc is not None:
             # Find-or-create: the NER phase runs first and may already
-            # have created a particDesc — appending a second one left
-            # consumers reading .//particDesc/listPerson blind to the
-            # CSV-derived persons (audit 4.2).
+            # have created the particDesc — appending a second one left
+            # the header with two containers for one concept (audit 4.2).
+            #
+            # Inside it, the curated CSV list and the automatic NER list
+            # (source="#ner-auto") stay SEPARATE on purpose: audit 1.3
+            # defers merging them to the reconciliation repo. A consumer
+            # that wants both must iterate listPerson, not find() one.
             particDesc = profileDesc.find("particDesc")
             if particDesc is None:
                 particDesc = etree.SubElement(profileDesc, "particDesc")
+
+            # Replace-not-append, like inject_header_entities does for its
+            # own list (audit 6.13): a second pass over the same tree must
+            # not duplicate the persons — and their xml:ids with them.
+            for old_list in list(particDesc):
+                if (etree.QName(old_list).localname == "listPerson"
+                        and old_list.get("source") != "#ner-auto"):
+                    particDesc.remove(old_list)
             listPerson = etree.SubElement(particDesc, "listPerson")
 
             for pid in sorted(all_person_ids):

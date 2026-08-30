@@ -149,13 +149,20 @@ PLACEHOLDER_ORCID = "0000-0000-0000-0000"
 # =============================================================================
 
 # IIIF server configuration for image references
-# Per-document IIIF settings. Only "view_number" (the page's scan
-# number) and "image_base" are ever read, and both are computed per
-# document by main.py — image_base from the volume's own manifest URL.
+# IIIF image settings.
+#
+# "image_base" is the IIIF Image API base of the volume's scans; @source
+# on each page is built from it. main.py derives it per document from a
+# Gallica manifest URL, and falls back to the value set here — which is
+# how a non-Gallica server (whose image API cannot be guessed from its
+# manifest URL) gets its pages linked.
+#
 # The five URL-building keys this dict used to carry (scheme, server,
 # manifest_prefix, manifest_suffix, image_prefix) were read nowhere:
 # editing them changed nothing in the output (audit 4.6).
-IIIF_URI = {}
+IIIF_URI = {
+    # "image_base": "https://iiif.example.org/iiif/2/my-volume",
+}
 
 # =============================================================================
 # LANGUAGE DETECTION CONFIGURATION

@@ -140,7 +140,7 @@ class SurfaceTree:
 
         return surface
 
-    def zone1(self, surface, attributes, block_id, blocks_on_page):
+    def zone1(self, surface, attributes, block_id):
         """
         Create a <zone> element for a TextBlock.
 
@@ -148,7 +148,6 @@ class SurfaceTree:
             surface (etree.Element): Parent <surface> element.
             attributes (dict): Zone attributes (type, coords, etc.).
             block_id (str): ALTO TextBlock ID.
-            blocks_on_page: Page context (unused, kept for compatibility).
 
         Returns:
             etree.Element: The created <zone> element.
@@ -163,7 +162,7 @@ class SurfaceTree:
 
         return zone
 
-    def zone2(self, textblock, block_parent, attributes, line_id, lines_on_page):
+    def zone2(self, textblock, block_parent, attributes, line_id):
         """
         Create a <zone> element for a TextLine with baseline path.
 
@@ -172,7 +171,6 @@ class SurfaceTree:
             block_parent (str): Parent block ID.
             attributes (dict): Zone attributes (type, coords, etc.).
             line_id (str): ALTO TextLine ID.
-            lines_on_page: Page context (unused, kept for compatibility).
 
         Returns:
             etree.Element: The created <zone> element.

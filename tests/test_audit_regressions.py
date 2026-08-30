@@ -198,14 +198,13 @@ def test_ner_and_csv_share_a_single_particdesc(tmp_path, monkeypatch):
         NER_ENTITY_TYPES,
     )
     # 2) ... puis l'injection CSV doit le REUTILISER, pas en ajouter un second
-    csv_person._person_db = None
+    monkeypatch.setattr(csv_person, "_person_db", None)
     csv = _ecrire_csv_personne(
         tmp_path / "personnes.csv",
         [["PERS0001", "", "", "Charles", "Le Brun", "M", "peintre"]],
     )
     load_person_database(csv)
     override_teiheader_from_csv(root, {"ID_auteur": "PERS0001"}, "TESTDOC0001")
-    csv_person._person_db = None
 
     partic = [e for e in root.iter() if qlocal(e) == "particDesc"]
     assert len(partic) == 1, f"{len(partic)} particDesc — les deux conventions coexistent"

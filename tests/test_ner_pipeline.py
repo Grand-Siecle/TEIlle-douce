@@ -52,30 +52,59 @@ def test_get_models_loads_once_per_run(monkeypatch):
 
 
 def test_run_ner_chains_the_three_phases(monkeypatch):
-    """run_ner enchaine extraction/inference, alignement et resolution en
-    passant le nom du document (les CSV d'entites vont dans son
+    """run_ner enchaine extraction/inference, alignement et resolution :
+    la sortie de chaque phase doit etre l'entree de la suivante (le seul
+    defaut qu'une extraction en facade peut introduire), et le nom du
+    document doit atteindre la phase 9 (les CSV d'entites vont dans son
     sous-dossier, audit 2.4)."""
-    appels = {}
+    vus = {}
+    BLOCKS, SPANS, ALIGNED = ["bloc"], ["span"], ["aligne"]
 
     import src.enrichment.ner_detect as detect_mod
     import src.enrichment.ner_align as align_mod
     import src.enrichment.ner_resolve as resolve_mod
 
-    monkeypatch.setattr(detect_mod, "extract_ner_blocks",
-                        lambda root, containers: appels.setdefault("blocks", ["b"]))
-    monkeypatch.setattr(detect_mod, "detect_entities",
-                        lambda blocks, models, *a, **k: appels.setdefault("spans", ["s"]))
-    monkeypatch.setattr(align_mod, "align_and_inject",
-                        lambda blocks, spans, *a: appels.setdefault("aligned", ["a"]))
+    def faux_extract(root, containers):
+        vus["extract"] = (root, containers)
+        return BLOCKS
 
-    def faux_resolve(root, aligned, types, db, out_dir, document_name):
-        appels["document_name"] = document_name
+    def faux_detect(blocks, models, entity_types, ner_models, threshold, root=None):
+        vus["detect"] = (blocks, models, entity_types, threshold, root)
+        return SPANS
+
+    def faux_align(blocks, spans, entity_types, cert_thresholds):
+        vus["align"] = (blocks, spans, entity_types, cert_thresholds)
+        return ALIGNED
+
+    def faux_resolve(root, aligned, entity_types, db, out_dir, document_name):
+        vus["resolve"] = (root, aligned, out_dir, document_name)
         return [_ent("person", "Poussin")]
 
+    monkeypatch.setattr(detect_mod, "extract_ner_blocks", faux_extract)
+    monkeypatch.setattr(detect_mod, "detect_entities", faux_detect)
+    monkeypatch.setattr(align_mod, "align_and_inject", faux_align)
     monkeypatch.setattr(resolve_mod, "resolve_entities", faux_resolve)
 
     root = etree.Element("TEI")
-    resolved = ner_pipeline.run_ner(root, None, "LIV0001", models=object())
+    modeles = object()
+    resolved = ner_pipeline.run_ner(
+        root, None, "LIV0001", models=modeles,
+        containers=["ab"], entity_types={"person": {}},
+        confidence_threshold=0.7, cert_thresholds={"high": 0.9},
+        output_dir="/tmp/entities",
+    )
 
-    assert appels["document_name"] == "LIV0001"
+    # chainage : la sortie de chaque phase est bien l'entree de la suivante
+    assert vus["extract"] == (root, ["ab"])
+    assert vus["detect"][0] is BLOCKS and vus["detect"][1] is modeles
+    assert vus["detect"][4] is root, "detect_entities doit recevoir root=root"
+    assert vus["align"][0] is BLOCKS and vus["align"][1] is SPANS
+    assert vus["resolve"][0] is root and vus["resolve"][1] is ALIGNED
+
+    # les surcharges du appelant priment sur la config du module
+    assert vus["detect"][2] == {"person": {}} and vus["detect"][3] == 0.7
+    assert vus["align"][3] == {"high": 0.9}
+    assert vus["resolve"][2] == "/tmp/entities"
+    assert vus["resolve"][3] == "LIV0001"
+
     assert [e.canonical_name for e in resolved] == ["Poussin"]
