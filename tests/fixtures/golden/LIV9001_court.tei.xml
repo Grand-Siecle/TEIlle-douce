@@ -522,7 +522,7 @@
   <text>
     <front>
       <pb corresp="#f3" facs="#f3" n="3"/>
-      <titlePage facs="#zone_e3644cf7a4845f5385d4055cbeb8f5e8">
+      <titlePage facs="#f3">
         <titlePart corresp="#zone_e3644cf7a4845f5385d4055cbeb8f5e8" type="TitlePageZone" xml:lang="fra"><lb corresp="#zoneLine_fece132d403157e682a5b2b1aff0ed23" facs="#zoneLine_fece132d403157e682a5b2b1aff0ed23"/>Contraste insuffisart<lb corresp="#zoneLine_2940e155afb0541d8d5454501b9a3579" facs="#zoneLine_2940e155afb0541d8d5454501b9a3579"/>NE Z43-120-14</titlePart>
       </titlePage>
     </front>

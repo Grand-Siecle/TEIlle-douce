@@ -61,52 +61,86 @@ class Text:
             root (etree.Element): TEI root element containing sourceDoc.
         """
         self.root = root
-        self.data = self._extract_lines()
-        self.graphics, self.front_pages = self._extract_zones()
+        self.data, self.graphics, self.front_pages = self._extract()
 
-    def _extract_zones(self):
+    def _extract(self):
         """
-        Collect the zones the body needs but no line can announce.
+        Walk the sourceDoc once, collecting everything the body needs.
 
         Returns:
-            tuple: (graphics, front_pages)
-                graphics: list of Graphic, in reading order.
-                front_pages: set of surface xml:id carrying front matter.
+            tuple: (lines, graphics, front_pages)
+
+        Lines and graphics come out of the SAME traversal on purpose: a
+        graphic is placed by the number of lines preceding it, so two
+        walks counting lines by different rules would misplace — and then
+        silently drop — every figure past the first discrepancy.
 
         A GraphicZone often holds no TextLine at all: walking lines alone,
         an illustration leaves no trace in the body even though the
         sourceDoc has its coordinates and its IIIF crop URL.
         """
+        lines = []
         graphics = []
-        front_pages = set()
-        seen_lines = 0
+        page_zone_types = {}  # surface xml:id -> set of zone types
 
         for el in self.root.iter():
             tag = local_tag(el.tag)
+
             if tag == "line":
-                seen_lines += 1
+                lines.append(self._line_of(el))
                 continue
             if tag != "zone":
                 continue
+
             zone_type = el.get("type")
-            if zone_type in FRONT_ZONES:
-                surface = self._surface_of(el)
-                if surface is not None:
-                    front_pages.add(surface.get(XML_ID))
-            elif zone_type in GRAPHIC_ZONES:
-                surface = self._surface_of(el)
+            surface = self._surface_of(el)
+            page_id = surface.get(XML_ID) if surface is not None else None
+            if page_id is not None:
+                page_zone_types.setdefault(page_id, set()).add(zone_type)
+
+            if zone_type in GRAPHIC_ZONES:
                 graphics.append(
                     Graphic(
                         zone_id=el.get(XML_ID),
                         zone_type=zone_type,
                         source=el.get("source"),
-                        page_id=surface.get(XML_ID) if surface is not None else None,
+                        page_id=page_id,
                         page_n=surface.get("n") if surface is not None else None,
-                        after_lines=seen_lines,
+                        after_lines=len(lines),
                     )
                 )
 
-        return graphics, front_pages
+        # Front matter is a page given over to a title page. A page that
+        # also carries running text is NOT one: the corpus has an inner
+        # title page (LIV0039b f848) sitting among MainZone and margin
+        # notes at page 848 — hoisting it, and its running text with it,
+        # to the head of the volume would be a plain falsification.
+        front_pages = {
+            page_id
+            for page_id, types in page_zone_types.items()
+            if types & FRONT_ZONES
+            and not any((t or "").startswith("Main") for t in types)
+        }
+
+        return lines, graphics, front_pages
+
+    def _line_of(self, ln):
+        """Build the Line namedtuple for one <line> element."""
+        # line -> zone (TextLine) -> zone (TextBlock) -> surface
+        line_zone = ln.getparent()
+        text_block = line_zone.getparent() if line_zone is not None else None
+        surface = text_block.getparent() if text_block is not None else None
+
+        return Line(
+            id=line_zone.get(XML_ID) if line_zone is not None else None,
+            n=ln.get("n"),
+            text=ln.text or "",
+            line_type=line_zone.get("type") if line_zone is not None else None,
+            zone_type=text_block.get("type") if text_block is not None else None,
+            zone_id=text_block.get(XML_ID) if text_block is not None else None,
+            page_id=surface.get(XML_ID) if surface is not None else None,
+            page_n=surface.get("n") if surface is not None else None,
+        )
 
     @staticmethod
     def _surface_of(el):
@@ -116,44 +150,3 @@ class Text:
             parent = parent.getparent()
         return parent
 
-    def _extract_lines(self):
-        """
-        Extract contextual and attribute data for each text line.
-
-        Parses all <line> elements in the sourceDoc and creates Line
-        namedtuples containing:
-        - id: The line zone's xml:id
-        - n: Line number
-        - text: Text content
-        - line_type: Type of the line (DefaultLine, HeadingLine, etc.)
-        - zone_type: Type of the parent zone (MainZone, NumberingZone, etc.)
-        - zone_id: The parent zone's xml:id
-        - page_id: The page surface's xml:id
-        - page_n: The page surface's number (@n), for <pb n="..."> (audit 1.6)
-
-        Returns:
-            list: List of Line namedtuples for each text line.
-        """
-        lines = []
-
-        for ln in self.root.findall(".//line"):
-            # Navigate up the tree to get parent element info
-            # line -> zone (TextLine) -> zone (TextBlock) -> surface
-            line_zone = ln.getparent()
-            text_block = line_zone.getparent() if line_zone is not None else None
-            surface = text_block.getparent() if text_block is not None else None
-
-            lines.append(
-                Line(
-                    id=line_zone.get(XML_ID) if line_zone is not None else None,
-                    n=ln.get("n"),
-                    text=ln.text or "",
-                    line_type=line_zone.get("type") if line_zone is not None else None,
-                    zone_type=text_block.get("type") if text_block is not None else None,
-                    zone_id=text_block.get(XML_ID) if text_block is not None else None,
-                    page_id=surface.get(XML_ID) if surface is not None else None,
-                    page_n=surface.get("n") if surface is not None else None,
-                )
-            )
-
-        return lines

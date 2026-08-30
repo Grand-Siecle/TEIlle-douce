@@ -39,9 +39,18 @@ def content_root(root):
 
     Falls back to `<body>` for trees built without a `<text>` wrapper
     (unit tests, external callers), and to None when neither exists.
+
+    Lookup goes through ElementPath rather than a Python-level walk: this
+    is called once per phase, and `<text>` is the LAST child of `<TEI>` —
+    scanning in Python would traverse the whole sourceDoc (hundreds of
+    thousands of elements on a full volume) six times per document.
+    `{*}` matches both namespace conventions, which coexist in the same
+    tree (audit 4.2).
     """
-    for name in ("text", "body"):
-        found = next((e for e in root.iter() if local_tag(e.tag) == name), None)
+    if local_tag(root.tag) in ("text", "body"):
+        return root
+    for path in ("{*}text", ".//{*}text", "{*}body", ".//{*}body"):
+        found = root.find(path)
         if found is not None:
             return found
     return None

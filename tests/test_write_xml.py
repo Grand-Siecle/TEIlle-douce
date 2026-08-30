@@ -12,6 +12,12 @@ from src.utils import xml as xml_mod
 from src.utils.xml import write_xml
 
 
+def qlocal(el):
+    """Nom local du tag : les deux conventions de namespace coexistent
+    dans le meme arbre (audit 4.2)."""
+    return etree.QName(el).localname
+
+
 def test_write_xml_writes_the_file(tmp_path):
     root = etree.Element("TEI")
     etree.SubElement(root, "teiHeader")
@@ -81,16 +87,22 @@ def test_content_root_returns_text_so_front_matter_is_processed():
         b"<TEI><text><front><titlePage/></front><body><div/></body></text></TEI>"
     )
     trouve = xml_mod.content_root(root)
-    assert trouve.tag == "text"
-    assert [el.tag for el in trouve] == ["front", "body"]
+    assert qlocal(trouve) == "text"
+    assert [qlocal(el) for el in trouve] == ["front", "body"]
 
 
 def test_content_root_falls_back_to_body_then_none():
     """Les arbres construits sans <text> (tests unitaires, appels
     externes) doivent continuer de fonctionner."""
     sans_text = etree.fromstring(b"<TEI><body><div/></body></TEI>")
-    assert xml_mod.content_root(sans_text).tag == "body"
+    assert qlocal(xml_mod.content_root(sans_text)) == "body"
     assert xml_mod.content_root(etree.fromstring(b"<TEI/>")) is None
+
+
+def test_content_root_accepts_the_container_itself():
+    """Un appelant qui passe deja le <body> doit le recuperer, pas None."""
+    body = etree.fromstring(b"<body><div/></body>")
+    assert xml_mod.content_root(body) is body
 
 
 def test_content_root_handles_namespaced_trees():

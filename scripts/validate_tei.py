@@ -41,11 +41,28 @@ def validate(path, relaxng=None):
     def local(el):
         return etree.QName(el).localname if isinstance(el.tag, str) else ""
 
+    # Zones graphiques et figures, collectées dans la passe générale
+    # ci-dessous plutôt qu'en parcours séparés : validate() visite déjà
+    # tout l'arbre, sourceDoc compris.
+    graphic_sources = {}   # xml:id de la zone -> son crop IIIF (ou None)
+    graphic_sans_id = 0
+    figures = []           # (cible de @corresp, a-t-il un <graphic url>)
+
     for el in root.iter():
         if not isinstance(el.tag, str):
             continue
         tag = local(el)
         xid = el.get(XML_ID)
+        if tag == "zone" and el.get("type") == "GraphicZone":
+            if xid:
+                graphic_sources[xid] = el.get("source")
+            else:
+                graphic_sans_id += 1
+        elif tag == "figure":
+            figures.append((
+                (el.get("corresp") or "").lstrip("#"),
+                any(local(c) == "graphic" and c.get("url") for c in el),
+            ))
         if xid and not NCNAME.match(xid):
             errors.append(f"xml:id invalide (NCName): {xid!r} sur <{tag}>")
         pts = el.get("points")
@@ -64,29 +81,26 @@ def validate(path, relaxng=None):
         if src and src.startswith("http") and "_reconciled" in src:
             errors.append(f"URL IIIF construite sur le nom de fichier: {src[:70]}")
 
-    # Chaque zone graphique du sourceDoc doit ressortir en <figure> avec
-    # son image : sans ce contrôle, une illustration redevient invisible
-    # dans le corps sans que rien ne le signale.
-    graphic_zones = {
-        el.get(XML_ID)
-        for el in root.iter()
-        if local(el) == "zone" and el.get("type") == "GraphicZone"
-    }
-    figured = set()
-    for fig in root.iter():
-        if local(fig) != "figure":
-            continue
-        figured.add((fig.get("corresp") or "").lstrip("#"))
-        if not any(local(c) == "graphic" and c.get("url") for c in fig):
-            errors.append(
-                f"<figure corresp={fig.get('corresp')}> sans <graphic url>"
-            )
-    manquantes = graphic_zones - figured
+    # Chaque zone graphique du sourceDoc doit ressortir en <figure> :
+    # sans ce contrôle, une illustration redevient invisible dans le corps
+    # sans que rien ne le signale.
+    figured = {cible for cible, _ in figures}
+    manquantes = set(graphic_sources) - figured
     if manquantes:
         errors.append(
             f"{len(manquantes)} GraphicZone sans <figure> dans le texte "
             f"(ex.: {sorted(manquantes)[:2]})"
         )
+    if graphic_sans_id:
+        warnings.append(
+            f"{graphic_sans_id} GraphicZone sans xml:id : leur <figure> est invérifiable"
+        )
+    # L'image manque seulement si la zone avait un crop IIIF à reprendre :
+    # sans mapping IIIF le sourceDoc n'a pas de @source, et une <figure>
+    # ancrée par @corresp seul est alors la sortie normale.
+    for cible, a_une_image in figures:
+        if not a_une_image and graphic_sources.get(cible):
+            errors.append(f"<figure corresp=#{cible}> sans <graphic url>")
 
     tei_id = root.get(XML_ID) or ""
     if tei_id.startswith("ark_"):

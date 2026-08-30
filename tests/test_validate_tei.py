@@ -231,9 +231,35 @@ def test_graphiczone_sans_figure_est_une_erreur(tmp_path):
     assert any("GraphicZone sans <figure>" in e for e in errors), errors
 
 
-def test_figure_sans_graphic_est_une_erreur(tmp_path):
+def test_figure_sans_graphic_est_une_erreur_quand_le_crop_existe(tmp_path):
     contenu = TEI_FIGURE.replace(
         '<graphic url="https://iiif/f1/crop.jpg"/>', "<ab/>"
     )
     errors, _ = validate(_ecrire(tmp_path, contenu))
     assert any("sans <graphic url>" in e for e in errors), errors
+
+
+def test_figure_sans_graphic_est_normale_quand_la_zone_n_a_pas_de_crop(tmp_path):
+    """Sans mapping IIIF le sourceDoc n'a pas de @source : la <figure>
+    ancree par @corresp seul est la sortie normale du pipeline, et le
+    validateur ne doit pas contredire le constructeur."""
+    contenu = TEI_FIGURE.replace(' source="https://iiif/f1/crop.jpg"', "", 1)
+    contenu = contenu.replace('<graphic url="https://iiif/f1/crop.jpg"/>', "")
+    errors, warnings = validate(_ecrire(tmp_path, contenu))
+    assert errors == []
+    assert warnings == []
+
+
+def test_zone_graphique_sans_xml_id_ne_fait_pas_planter_la_validation(tmp_path):
+    """Deux zones sans identifiant faisaient lever un TypeError au tri,
+    et la traceback emportait tous les fichiers suivants de la ligne de
+    commande."""
+    contenu = TEI_FIGURE.replace(
+        '<zone xml:id="zone_g" type="GraphicZone" corresp="#GraphicZone"\n            source="https://iiif/f1/crop.jpg"/>',
+        '<zone type="GraphicZone" corresp="#GraphicZone"/>\n'
+        '      <zone type="GraphicZone" corresp="#GraphicZone"/>\n'
+        '      <zone xml:id="zone_g" type="GraphicZone" corresp="#GraphicZone" source="https://iiif/f1/crop.jpg"/>',
+    )
+    errors, warnings = validate(_ecrire(tmp_path, contenu))
+    assert errors == []
+    assert any("sans xml:id" in w for w in warnings), warnings
