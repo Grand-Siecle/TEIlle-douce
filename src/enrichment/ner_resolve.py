@@ -19,8 +19,7 @@ from pathlib import Path
 from lxml import etree
 
 from ..constants import UUID_NAMESPACE, XML_ID, tag_like
-from ..utils.xml import local_tag as _local
-from ..utils.xml import declare_responsibility
+from ..utils.xml import content_root, declare_responsibility, local_tag as _local
 from .ner_filter import (
     _normalize,
     fix_canonical_names,
@@ -456,11 +455,7 @@ def add_refs_to_body(root, entities, entity_types_config):
                 text_lookup[(ent.entity_type, mention.text)] = ent.xml_id
 
     # Find all elements with @resp="#ner-auto"
-    body = None
-    for elem in root.iter():
-        if _local(elem.tag) == "body":
-            body = elem
-            break
+    body = content_root(root)
     if body is None:
         return
 

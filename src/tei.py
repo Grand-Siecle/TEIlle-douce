@@ -14,9 +14,9 @@ from pathlib import Path
 
 from lxml import etree
 
-from .constants import NS_TEI, XML_ID, tag_like
+from .constants import NS_TEI, TEXT_CONTAINERS, XML_ID, tag_like
 from .utils.files import canonical_document_id
-from .utils.xml import declare_responsibility
+from .utils.xml import content_root, declare_responsibility
 
 logger = logging.getLogger(__name__)
 from .teiheader import build_header
@@ -165,7 +165,13 @@ class TEI:
                          Format: {"fra": 1716, "lat": 38, "grc": 7}
         """
         text = Text(self.root)
-        self.lang_stats = build_body(self.root, text.data, detect_lang=detect_lang)
+        self.lang_stats = build_body(
+            self.root,
+            text.data,
+            detect_lang=detect_lang,
+            graphics=text.graphics,
+            front_pages=text.front_pages,
+        )
         return self.lang_stats
 
     def extract_line_data(self):
@@ -179,7 +185,7 @@ class TEI:
             list[tuple[str|None, str, str]]: List of (corresp, text, zone_type)
                 tuples, one per <lb> element in document order.
         """
-        body = self.root.find(".//body")
+        body = content_root(self.root)
         if body is None:
             return []
         result = []
@@ -188,7 +194,7 @@ class TEI:
             text = lb.tail or ""
             # Walk up to the container (ab, note, fw) to get zone type
             parent = lb.getparent()
-            while parent is not None and parent.tag not in ("ab", "note", "fw"):
+            while parent is not None and parent.tag not in TEXT_CONTAINERS:
                 parent = parent.getparent()
             zone_type = parent.get("type", "") if parent is not None else ""
             result.append((corresp, text, zone_type))

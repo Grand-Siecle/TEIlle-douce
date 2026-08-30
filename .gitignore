@@ -10,6 +10,8 @@ tei_output/
 # Sauvegardes de ces memes CSV (donnees nominatives) : la regle *.csv ne
 # couvre pas un suffixe .bak, un `git add -A` les publierait.
 *.bak
+# Schema TEI telecharge a la demande (CI et validation locale)
+tei_all.rng
 *.log
 plans/
 superpowers/

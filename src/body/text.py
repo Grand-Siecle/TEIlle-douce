@@ -12,6 +12,7 @@ the built sourceDoc for use in body construction.
 from collections import namedtuple
 
 from ..constants import XML_ID
+from ..utils.xml import local_tag
 
 
 # Named tuple for line data. page_n defaults to None so hand-built Line
@@ -21,6 +22,23 @@ Line = namedtuple(
     ["id", "n", "text", "line_type", "zone_type", "zone_id", "page_id", "page_n"],
     defaults=(None,),
 )
+
+# A zone that carries an image rather than (only) text. `after_lines` is
+# the number of lines extracted before it, i.e. where it belongs in
+# reading order — a GraphicZone holding no TextLine has no line of its
+# own to hang from, and used to leave no trace at all in the body.
+# Shares page_id/page_n with Line so both can feed <pb> construction.
+Graphic = namedtuple(
+    "Graphic",
+    ["zone_id", "zone_type", "source", "page_id", "page_n", "after_lines"],
+)
+
+# SegmOnto zones whose content belongs to the front matter rather than
+# the running text: a page carrying one is routed to <text><front>.
+FRONT_ZONES = frozenset({"TitlePageZone"})
+
+# SegmOnto zones rendered as <figure> in the body.
+GRAPHIC_ZONES = frozenset({"GraphicZone"})
 
 
 class Text:
@@ -44,6 +62,59 @@ class Text:
         """
         self.root = root
         self.data = self._extract_lines()
+        self.graphics, self.front_pages = self._extract_zones()
+
+    def _extract_zones(self):
+        """
+        Collect the zones the body needs but no line can announce.
+
+        Returns:
+            tuple: (graphics, front_pages)
+                graphics: list of Graphic, in reading order.
+                front_pages: set of surface xml:id carrying front matter.
+
+        A GraphicZone often holds no TextLine at all: walking lines alone,
+        an illustration leaves no trace in the body even though the
+        sourceDoc has its coordinates and its IIIF crop URL.
+        """
+        graphics = []
+        front_pages = set()
+        seen_lines = 0
+
+        for el in self.root.iter():
+            tag = local_tag(el.tag)
+            if tag == "line":
+                seen_lines += 1
+                continue
+            if tag != "zone":
+                continue
+            zone_type = el.get("type")
+            if zone_type in FRONT_ZONES:
+                surface = self._surface_of(el)
+                if surface is not None:
+                    front_pages.add(surface.get(XML_ID))
+            elif zone_type in GRAPHIC_ZONES:
+                surface = self._surface_of(el)
+                graphics.append(
+                    Graphic(
+                        zone_id=el.get(XML_ID),
+                        zone_type=zone_type,
+                        source=el.get("source"),
+                        page_id=surface.get(XML_ID) if surface is not None else None,
+                        page_n=surface.get("n") if surface is not None else None,
+                        after_lines=seen_lines,
+                    )
+                )
+
+        return graphics, front_pages
+
+    @staticmethod
+    def _surface_of(el):
+        """Walk up to the enclosing <surface>, or None."""
+        parent = el.getparent()
+        while parent is not None and local_tag(parent.tag) != "surface":
+            parent = parent.getparent()
+        return parent
 
     def _extract_lines(self):
         """

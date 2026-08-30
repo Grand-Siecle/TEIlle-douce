@@ -191,3 +191,49 @@ def test_hyphen_residuel_dans_reg_est_un_avertissement(tmp_path):
     errors, warnings = validate(_ecrire(tmp_path, contenu, nom="reg.xml"))
     assert any("dans reg" in w for w in warnings), warnings
     assert errors == []
+
+
+TEI_FIGURE = """<TEI xmlns="http://www.tei-c.org/ns/1.0">
+  <teiHeader>
+    <category xml:id="GraphicZone"/>
+  </teiHeader>
+  <sourceDoc>
+    <surface xml:id="f1">
+      <zone xml:id="zone_g" type="GraphicZone" corresp="#GraphicZone"
+            source="https://iiif/f1/crop.jpg"/>
+    </surface>
+  </sourceDoc>
+  <text><body><div>
+    <pb corresp="#f1" facs="#f1"/>
+    <figure corresp="#zone_g" facs="#zone_g" type="GraphicZone">
+      <graphic url="https://iiif/f1/crop.jpg"/>
+    </figure>
+  </div></body></text>
+</TEI>"""
+
+
+def test_figure_conforme_ne_leve_rien(tmp_path):
+    errors, warnings = validate(_ecrire(tmp_path, TEI_FIGURE))
+    assert errors == []
+    assert warnings == []
+
+
+def test_graphiczone_sans_figure_est_une_erreur(tmp_path):
+    """Une illustration presente dans le sourceDoc mais absente du texte :
+    c'est exactement l'etat d'avant, et rien ne le signalait."""
+    contenu = TEI_FIGURE.replace(
+        """<figure corresp="#zone_g" facs="#zone_g" type="GraphicZone">
+      <graphic url="https://iiif/f1/crop.jpg"/>
+    </figure>""",
+        '<ab corresp="#zone_g"/>',
+    )
+    errors, _ = validate(_ecrire(tmp_path, contenu))
+    assert any("GraphicZone sans <figure>" in e for e in errors), errors
+
+
+def test_figure_sans_graphic_est_une_erreur(tmp_path):
+    contenu = TEI_FIGURE.replace(
+        '<graphic url="https://iiif/f1/crop.jpg"/>', "<ab/>"
+    )
+    errors, _ = validate(_ecrire(tmp_path, contenu))
+    assert any("sans <graphic url>" in e for e in errors), errors

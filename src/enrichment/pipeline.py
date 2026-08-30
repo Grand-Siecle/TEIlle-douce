@@ -24,7 +24,7 @@ from config import (
     ENRICHMENT_MAX_MISALIGNED_RATIO,
 )
 from ..constants import XML_ID, XML_LANG
-from ..utils.xml import local_tag as _local
+from ..utils.xml import content_root, local_tag as _local
 from .extractor import extract_spans
 from .dehyphenation import dehyphenate
 from .client import tag_texts, get_model, check_server
@@ -70,10 +70,11 @@ def enrich_body(root, progress_callback=None):
         stats["server_unavailable"] = True
         return stats
 
-    # Find the body element
-    body = next((e for e in root.iter() if _local(e.tag) == "body"), None)
+    # Front matter travels with the body: a title page is the most
+    # metadata-dense page of a volume, it must not stay unannotated.
+    body = content_root(root)
     if body is None:
-        logger.warning("No <body> element found, skipping enrichment")
+        logger.warning("No <text> element found, skipping enrichment")
         return stats
 
     # Collect all containers in document order

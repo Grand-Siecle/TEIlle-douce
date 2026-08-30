@@ -311,11 +311,17 @@ ENRICHMENT_MAX_MISALIGNED_RATIO = 0.2
 PYHELLEN_MODELS = {"fra": "freem", "lat": "lasla", "grc": "grc"}
 
 # TEI container elements to enrich
+# Elements whose text goes through PyHellen. <head> and <titlePart>
+# joined the list when headings and title pages got their own container:
+# the title page is where the author, printer, place and date of the
+# volume are written out.
 ENRICHMENT_CONTAINERS = {
-                        "ab", 
-                        "note", 
-                         #"fw"
-                         }
+    "ab",
+    "note",
+    "head",
+    "titlePart",
+    # "fw",  # running titles and page numbers: no sentence to annotate
+}
 
 # Minimum text length (chars) to attempt enrichment
 ENRICHMENT_MIN_TEXT_LENGTH = 5
@@ -504,7 +510,7 @@ NER_OUTPUT_DIR = Path("entities")
 # TEI containers to scan for NER (same as enrichment by default)
 # <fw> excluded: running titles and page numbers rarely contain entities
 # and produce only noise in practice.
-NER_CONTAINERS = {"ab", "note"}
+NER_CONTAINERS = {"ab", "note", "head", "titlePart"}
 
 # Confidence → @cert mapping thresholds
 # Confidence -> @cert. The keys ARE the emitted values, so they must

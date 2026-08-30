@@ -97,7 +97,7 @@
     </fileDesc>
     <profileDesc>
       <langUsage>
-        <language ident="fra" usage="19">French</language>
+        <language ident="fra" usage="21">French</language>
         <language ident="lat" usage="2">Latin</language>
       </langUsage>
       <textClass>
@@ -520,6 +520,12 @@
     </surface>
   </sourceDoc>
   <text>
+    <front>
+      <pb corresp="#f3" facs="#f3" n="3"/>
+      <titlePage facs="#zone_e3644cf7a4845f5385d4055cbeb8f5e8">
+        <titlePart corresp="#zone_e3644cf7a4845f5385d4055cbeb8f5e8" type="TitlePageZone" xml:lang="fra"><lb corresp="#zoneLine_fece132d403157e682a5b2b1aff0ed23" facs="#zoneLine_fece132d403157e682a5b2b1aff0ed23"/>Contraste insuffisart<lb corresp="#zoneLine_2940e155afb0541d8d5454501b9a3579" facs="#zoneLine_2940e155afb0541d8d5454501b9a3579"/>NE Z43-120-14</titlePart>
+      </titlePage>
+    </front>
     <body>
       <div>
         <pb corresp="#f1" facs="#f1" n="1"/>
@@ -530,9 +536,10 @@
         <ab corresp="#zone_a7472911c26e5c7e9370dd304a6a7380" type="MainZone" xml:lang="fra"><lb corresp="#zoneLine_0c2a9214822f51d199a82ffdb0a975a6" facs="#zoneLine_0c2a9214822f51d199a82ffdb0a975a6"/>CHAPTPKEPREMIER.<lb corresp="#zoneLine_9a4bb5e6105e5954b3964106ea691fcd" facs="#zoneLine_9a4bb5e6105e5954b3964106ea691fcd"/>Des raisons qui nous obligent à sanctifier<lb corresp="#zoneLine_43b243165fa25c7399e13a182d5ea935" facs="#zoneLine_43b243165fa25c7399e13a182d5ea935"/>que nostre soin principal doit estre de le pu¬<lb corresp="#zoneLine_ec785f8207f95e4b948f4edded86d867" facs="#zoneLine_ec785f8207f95e4b948f4edded86d867"/>IVn Philosophe a donné sa male¬4imus<lb corresp="#zoneLine_8b2654e8f2c5504dae9b69849dd35383" facs="#zoneLine_8b2654e8f2c5504dae9b69849dd35383"/><lb corresp="#zoneLine_7c73f186d71759bbafc3352f4033c1a5" facs="#zoneLine_7c73f186d71759bbafc3352f4033c1a5"/>y</ab>
         <fw corresp="#zone_4a24a152034357058dfd8e64d425ae78" type="QuireMarksZone" xml:lang="fra"><lb corresp="#zoneLine_0c7fbbafb4775e02a8d32c0e3cc0993f" facs="#zoneLine_0c7fbbafb4775e02a8d32c0e3cc0993f"/>1I111 iij</fw>
         <pb corresp="#f2" facs="#f2" n="2"/>
-        <ab corresp="#zone_b59c3c31855a5663a39bbc784012353e" type="GraphicZone" xml:lang="fra"><lb corresp="#zoneLine_55ecdc50fc9d58e58c0308a427ba371a" facs="#zoneLine_55ecdc50fc9d58e58c0308a427ba371a"/>3r Ruret Imueu et. ficit<lb corresp="#zoneLine_e9c0a12dba4f5af5874ab8d3e5133f48" facs="#zoneLine_e9c0a12dba4f5af5874ab8d3e5133f48"/></ab>
-        <pb corresp="#f3" facs="#f3" n="3"/>
-        <ab corresp="#zone_e3644cf7a4845f5385d4055cbeb8f5e8" type="TitlePageZone" xml:lang="fra"><lb corresp="#zoneLine_fece132d403157e682a5b2b1aff0ed23" facs="#zoneLine_fece132d403157e682a5b2b1aff0ed23"/>Contraste insuffisart<lb corresp="#zoneLine_2940e155afb0541d8d5454501b9a3579" facs="#zoneLine_2940e155afb0541d8d5454501b9a3579"/>NE Z43-120-14</ab>
+        <figure corresp="#zone_b59c3c31855a5663a39bbc784012353e" facs="#zone_b59c3c31855a5663a39bbc784012353e" type="GraphicZone">
+          <graphic url="https://gallica.bnf.fr/iiif/ark:/12148/bpt6k9001/f2/163,183,1486,1970/full/0/native.jpg"/>
+          <ab corresp="#zone_b59c3c31855a5663a39bbc784012353e" type="GraphicZone" xml:lang="fra"><lb corresp="#zoneLine_55ecdc50fc9d58e58c0308a427ba371a" facs="#zoneLine_55ecdc50fc9d58e58c0308a427ba371a"/>3r Ruret Imueu et. ficit<lb corresp="#zoneLine_e9c0a12dba4f5af5874ab8d3e5133f48" facs="#zoneLine_e9c0a12dba4f5af5874ab8d3e5133f48"/></ab>
+        </figure>
         <pb corresp="#f4" facs="#f4" n="4"/>
         <ab corresp="#zone_e0923738fb305aed9ab2e434cae69686" type="MainZone" xml:lang="lat"><lb corresp="#zoneLine_566a769b0f4c5ed5be1b96e9417f921b" facs="#zoneLine_566a769b0f4c5ed5be1b96e9417f921b"/><foreign xml:lang="fra">Censure de la</foreign><lb corresp="#zoneLine_dadbbc04cc165e149f1668215ce31e45" facs="#zoneLine_dadbbc04cc165e149f1668215ce31e45"/>Fœtibus infamis semper damnosáque munde<lb corresp="#zoneLine_1a6a80341e39553f8ea3975ec29528af" facs="#zoneLine_1a6a80341e39553f8ea3975ec29528af"/>Humani, quibus &amp; Diuúm contemnere cul¬<lb corresp="#zoneLine_69a57439265558e0916264e64f310232" facs="#zoneLine_69a57439265558e0916264e64f310232"/>Greg. Mos fuit, &amp;* mactare suos sine vindice</ab>
         <note corresp="#zone_7da06e45b1255fedbfe252e6e056a59f" type="MarginTextZone" xml:lang="fra" target="#zoneLine_69a57439265558e0916264e64f310232"><lb corresp="#zoneLine_167c80f0062c57358856eaab8a8d6a9d" facs="#zoneLine_167c80f0062c57358856eaab8a8d6a9d"/>Tuton<lb corresp="#zoneLine_9289764d84005e6886b72ff58fd4b8be" facs="#zoneLine_9289764d84005e6886b72ff58fd4b8be"/>.c<lb corresp="#zoneLine_b16da6eb4c525d79aa784f00e44c1c37" facs="#zoneLine_b16da6eb4c525d79aa784f00e44c1c37"/>**e</note>
@@ -549,7 +556,11 @@
         <ab corresp="#zone_19921b346312517886bfb673c29bbcd1" type="MainZone" xml:lang="fra"><lb corresp="#zoneLine_b29ee1b269ee5433bd0f613905ba98ff" facs="#zoneLine_b29ee1b269ee5433bd0f613905ba98ff"/>uarice, nous serrerons auec soin, ce que nors<lb corresp="#zoneLine_be85e30f02f1592a854a95147524f8c6" facs="#zoneLine_be85e30f02f1592a854a95147524f8c6"/>foulons à preient. os PImiees iiemiesie vou¬<lb corresp="#zoneLine_91c54780e3c9596a890ff297d270c8da" facs="#zoneLine_91c54780e3c9596a890ff297d270c8da"/>dront enrichir de choses qui sont mainte-<lb corresp="#zoneLine_80621616c1e95526b85d40ce599b73e5" facs="#zoneLine_80621616c1e95526b85d40ce599b73e5"/>ront des offices pour de vieux souliers: &amp; il</ab>
         <pb corresp="#f8" facs="#f8" n="8"/>
         <fw corresp="#zone_c3f3e56c8a495f76bd599ba3f3418437" type="NumberingZone" xml:lang="fra"><lb corresp="#zoneLine_136d8278c6a3589b848e255fefe750f3" facs="#zoneLine_136d8278c6a3589b848e255fefe750f3"/>552</fw>
-        <ab corresp="#zone_6d4af1b2ef2b578fb64359f541d37d60" type="MainZone" xml:lang="fra"><lb corresp="#zoneLine_c14e195649105cc586bacbf88b53eadf" facs="#zoneLine_c14e195649105cc586bacbf88b53eadf"/>à dire, qui est tellement en acte, qu’il n'a<lb corresp="#zoneLine_17254a3bbd985e17b5c154fd7882aae2" facs="#zoneLine_17254a3bbd985e17b5c154fd7882aae2"/>rien en soy qui soit en puissance seulement<lb corresp="#zoneLine_a7f85a4d1bf6589e8f079d278cdad290" facs="#zoneLine_a7f85a4d1bf6589e8f079d278cdad290"/>puisse estre &amp; luy arriuer à l’aduenir, cõ¬<hi rend="HeadingLine"><lb corresp="#zoneLine_4868e3bf010551b798318db3dba09da9" facs="#zoneLine_4868e3bf010551b798318db3dba09da9"/>IDEE.</hi><lb corresp="#zoneLine_1ac6537774ec579db858475d0d1024f2" facs="#zoneLine_1ac6537774ec579db858475d0d1024f2"/>modele, le tableau, l’original &amp; l’exem¬</ab>
+        <ab corresp="#zone_6d4af1b2ef2b578fb64359f541d37d60" type="MainZone" xml:lang="fra"><lb corresp="#zoneLine_c14e195649105cc586bacbf88b53eadf" facs="#zoneLine_c14e195649105cc586bacbf88b53eadf"/>à dire, qui est tellement en acte, qu’il n'a<lb corresp="#zoneLine_17254a3bbd985e17b5c154fd7882aae2" facs="#zoneLine_17254a3bbd985e17b5c154fd7882aae2"/>rien en soy qui soit en puissance seulement<lb corresp="#zoneLine_a7f85a4d1bf6589e8f079d278cdad290" facs="#zoneLine_a7f85a4d1bf6589e8f079d278cdad290"/>puisse estre &amp; luy arriuer à l’aduenir, cõ¬</ab>
+      </div>
+      <div>
+        <head corresp="#zone_6d4af1b2ef2b578fb64359f541d37d60" type="MainZone" xml:lang="fra"><lb corresp="#zoneLine_4868e3bf010551b798318db3dba09da9" facs="#zoneLine_4868e3bf010551b798318db3dba09da9"/>IDEE.</head>
+        <ab corresp="#zone_6d4af1b2ef2b578fb64359f541d37d60" type="MainZone" xml:lang="fra"><lb corresp="#zoneLine_1ac6537774ec579db858475d0d1024f2" facs="#zoneLine_1ac6537774ec579db858475d0d1024f2"/>modele, le tableau, l’original &amp; l’exem¬</ab>
         <fw corresp="#zone_27909c45b036557584addb20419055c6" type="RunningTitleZone" xml:lang="fra"><lb corresp="#zoneLine_0b79cbb758b65d7b9565d99dac89d083" facs="#zoneLine_0b79cbb758b65d7b9565d99dac89d083"/>Termes</fw>
       </div>
     </body>

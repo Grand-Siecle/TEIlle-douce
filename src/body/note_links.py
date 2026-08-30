@@ -38,6 +38,7 @@ left without @n.
 import logging
 
 from ..constants import XML_ID
+from ..utils.xml import content_root
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +87,7 @@ def link_notes_to_lines(root):
     Returns the number of notes linked (i.e. that got a @target).
     """
     sourcedoc = root.find(".//sourceDoc")
-    body = root.find(".//body")
+    body = content_root(root)
     if sourcedoc is None or body is None:
         return 0
 

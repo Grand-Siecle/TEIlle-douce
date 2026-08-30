@@ -64,6 +64,30 @@ def validate(path, relaxng=None):
         if src and src.startswith("http") and "_reconciled" in src:
             errors.append(f"URL IIIF construite sur le nom de fichier: {src[:70]}")
 
+    # Chaque zone graphique du sourceDoc doit ressortir en <figure> avec
+    # son image : sans ce contrôle, une illustration redevient invisible
+    # dans le corps sans que rien ne le signale.
+    graphic_zones = {
+        el.get(XML_ID)
+        for el in root.iter()
+        if local(el) == "zone" and el.get("type") == "GraphicZone"
+    }
+    figured = set()
+    for fig in root.iter():
+        if local(fig) != "figure":
+            continue
+        figured.add((fig.get("corresp") or "").lstrip("#"))
+        if not any(local(c) == "graphic" and c.get("url") for c in fig):
+            errors.append(
+                f"<figure corresp={fig.get('corresp')}> sans <graphic url>"
+            )
+    manquantes = graphic_zones - figured
+    if manquantes:
+        errors.append(
+            f"{len(manquantes)} GraphicZone sans <figure> dans le texte "
+            f"(ex.: {sorted(manquantes)[:2]})"
+        )
+
     tei_id = root.get(XML_ID) or ""
     if tei_id.startswith("ark_"):
         errors.append(f"xml:id racine avec préfixe ark hardcodé: {tei_id}")

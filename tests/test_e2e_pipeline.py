@@ -202,10 +202,16 @@ def test_court_produit_un_tei_bien_forme(tei_court):
 @pytest.mark.e2e
 def test_court_couvre_toutes_les_structures_du_corps(tei_court):
     """La fixture est calibree pour exercer chaque forme produite par build_body."""
-    body = etree.parse(str(tei_court)).find(".//{*}body")
-    presents = {local(e) for e in body.iter()}
-    for attendu in ("pb", "lb", "ab", "note", "fw", "hi", "foreign"):
-        assert attendu in presents, f"<{attendu}> absent du corps produit"
+    texte = etree.parse(str(tei_court)).find(".//{*}text")
+    presents = {local(e) for e in texte.iter()}
+    for attendu in ("pb", "lb", "ab", "note", "fw", "foreign",
+                    "front", "titlePage", "titlePart", "figure", "graphic", "head"):
+        assert attendu in presents, f"<{attendu}> absent du texte produit"
+    # <hi> n'y figure pas : il ne sort que d'une DropCapitalLine, label
+    # qu'aucune page du corpus ne porte (une seule page porte un label de
+    # ligne, et c'est un HeadingLine, devenu <head>). La branche est
+    # couverte en unitaire — test_body_build.py.
+    assert "hi" not in presents
 
 
 @pytest.mark.e2e
@@ -213,7 +219,10 @@ def test_court_une_page_par_fichier_alto(tei_court):
     arbre = etree.parse(str(tei_court))
     alto = sorted((ALTO_MIN / DOCUMENT / "content" / "data" / "doc_1").glob("*.xml"))
     assert len(arbre.findall(".//{*}surface")) == len(alto)
-    assert len(arbre.findall(".//{*}body//{*}pb")) == len(alto)
+    # une page peut relever du <front> (page de titre) : c'est <text>
+    # entier qui doit porter un <pb> par fichier ALTO, pas le seul corps.
+    assert len(arbre.findall(".//{*}text//{*}pb")) == len(alto)
+    assert len(arbre.findall(".//{*}front//{*}pb")) == 1
 
 
 @pytest.mark.e2e

@@ -68,3 +68,35 @@ def test_write_xml_failure_preserves_previous_output(tmp_path, monkeypatch):
         write_xml(root, cible)
 
     assert cible.read_text(encoding="utf-8") == "<TEI>version precedente</TEI>"
+
+
+# =============================================================================
+# content_root : le point d'entree commun a toutes les phases
+# =============================================================================
+
+def test_content_root_returns_text_so_front_matter_is_processed():
+    """Chaque phase partait de <body> ; la page de titre, arrivee dans
+    <front>, aurait traverse le pipeline sans annotation."""
+    root = etree.fromstring(
+        b"<TEI><text><front><titlePage/></front><body><div/></body></text></TEI>"
+    )
+    trouve = xml_mod.content_root(root)
+    assert trouve.tag == "text"
+    assert [el.tag for el in trouve] == ["front", "body"]
+
+
+def test_content_root_falls_back_to_body_then_none():
+    """Les arbres construits sans <text> (tests unitaires, appels
+    externes) doivent continuer de fonctionner."""
+    sans_text = etree.fromstring(b"<TEI><body><div/></body></TEI>")
+    assert xml_mod.content_root(sans_text).tag == "body"
+    assert xml_mod.content_root(etree.fromstring(b"<TEI/>")) is None
+
+
+def test_content_root_handles_namespaced_trees():
+    """Les deux conventions de namespace coexistent dans le meme arbre
+    (audit 4.2) : le nom nu ne suffit pas."""
+    root = etree.fromstring(
+        b'<TEI xmlns="http://www.tei-c.org/ns/1.0"><text><body/></text></TEI>'
+    )
+    assert etree.QName(xml_mod.content_root(root)).localname == "text"

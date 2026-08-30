@@ -27,6 +27,26 @@ def local_tag(tag):
     return tag
 
 
+def content_root(root):
+    """Return the element holding every transcribed block: `<text>`.
+
+    Front matter (title pages) lives in `<text><front>`, running text in
+    `<text><body>`. Each phase that walks the transcription — line
+    extraction, enrichment, modernization, NER, note linking — must start
+    here rather than at `<body>`, or the title page would travel through
+    the pipeline unannotated. It is the most metadata-dense page of a
+    volume: title, author, printer, place, date.
+
+    Falls back to `<body>` for trees built without a `<text>` wrapper
+    (unit tests, external callers), and to None when neither exists.
+    """
+    for name in ("text", "body"):
+        found = next((e for e in root.iter() if local_tag(e.tag) == name), None)
+        if found is not None:
+            return found
+    return None
+
+
 def xml_id_safe(value):
     """Return ``value`` coerced to a valid XML NCName for use as ``xml:id``.
 
