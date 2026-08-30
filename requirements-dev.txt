@@ -1,3 +1,5 @@
+# Ce que la CI installe : le socle + de quoi lancer la suite. Ni modeles
+# NER ni services : la suite par defaut tourne sans reseau.
 -r requirements.txt
-pytest
-coverage
+pytest>=9.0,<10
+coverage>=7.15,<8

@@ -3,7 +3,11 @@
 # and the default test suite runs without them (lazy imports in
 # src/enrichment/ner_models.py, guarded import in ner_detect.py).
 -r requirements.txt
-transformers
-torch
-gliner
-flair
+transformers>=4.57,<5
+torch>=2.10,<3
+gliner>=0.2.25,<0.3
+flair>=0.15,<0.16
+# Importe directement par src/enrichment/ner_models.py pour resoudre les
+# instantanes de modeles : il arrivait en dependance transitive, donc
+# non declare et libre de disparaitre a la prochaine resolution.
+huggingface_hub>=0.36,<1
