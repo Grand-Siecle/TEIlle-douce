@@ -37,9 +37,10 @@ left without @n.
 """
 import logging
 
+from ..constants import XML_ID
+
 logger = logging.getLogger(__name__)
 
-XML_ID = "{http://www.w3.org/XML/1998/namespace}id"
 
 CALL_MARKS = {"*", "†", "‡"}
 

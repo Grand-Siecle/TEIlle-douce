@@ -12,12 +12,9 @@ import uuid
 
 from lxml import etree
 
-from ..constants import NS_XML, UUID_NAMESPACE, XML_ID
+from ..constants import UUID_NAMESPACE, XML_ID, XML_LANG
 from .segmenter import Sentence
 from .aligner import AlignedToken
-
-# xml:lang attribute key
-XML_LANG = f"{{{NS_XML}}}lang"
 
 # Punctuation join rules
 JOIN_LEFT = {".", ",", ";", ":", "!", "?", ")", "]", "»"}

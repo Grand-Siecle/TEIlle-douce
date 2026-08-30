@@ -210,21 +210,6 @@ def expand_archives(ocr_dir):
     return sorted(ready_dirs), failed_archives
 
 
-def _extract_bdd_prefix(doc_folder_name):
-    """
-    Extract BDD prefix from document folder name.
-
-    Args:
-        doc_folder_name (str): Document folder name.
-
-    Returns:
-        str: Extracted prefix or original name.
-    """
-    from config import BDD_PREFIX_PATTERN
-    match = re.match(BDD_PREFIX_PATTERN, doc_folder_name)
-    return match.group(1) if match else doc_folder_name
-
-
 def _gallica_image_base(manifest_url):
     """
     IIIF image base for a Gallica manifest URL, else None.
@@ -279,7 +264,9 @@ def _process_document(doc_name, filepaths, doc_dir, df_meta, config,
     )
 
     # Load metadata for this document
-    row = find_metadata_row(df_meta, _extract_bdd_prefix(doc_name))
+    # find_metadata_row extracts the BDD prefix itself (audit 4.11:
+    # main.py used to keep a copy and apply it a second time).
+    row = find_metadata_row(df_meta, doc_name)
     tree.metadata = build_metadata_dict(row)
 
     # Resolve this document's IIIF image base from its manifest (Gallica

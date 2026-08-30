@@ -11,11 +11,10 @@ to their source XML elements.
 
 from dataclasses import dataclass
 
-from ..constants import NS_XML
+from ..constants import XML_LANG
 from ..utils.xml import local_tag as _local
 
 
-XML_LANG = f"{{{NS_XML}}}lang"
 
 
 @dataclass

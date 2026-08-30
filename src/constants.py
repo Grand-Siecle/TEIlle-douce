@@ -3,6 +3,7 @@
 # XML namespaces and internal constants used across modules
 # -----------------------------------------------------------
 
+import re
 import uuid
 
 # =============================================================================
@@ -29,8 +30,14 @@ NS_TEI = "http://www.tei-c.org/ns/1.0"
 # XML namespace (for xml:id attributes)
 NS_XML = "http://www.w3.org/XML/1998/namespace"
 
-# XML namespace attribute key
+# XML namespace attribute keys
 XML_ID = f"{{{NS_XML}}}id"
+XML_LANG = f"{{{NS_XML}}}lang"
+
+# SegmOnto tag syntax: "MainZone:column#1" -> ("MainZone", "column", "1").
+# Single definition: the header taxonomy and the sourcedoc attributes
+# must read the same labels the same way (audit 4.9).
+SEGMONTO_TAG_RE = re.compile(r"(\w+):?(\w+)?#?(\d?)?")
 
 # =============================================================================
 # SEGMONTO TAXONOMY

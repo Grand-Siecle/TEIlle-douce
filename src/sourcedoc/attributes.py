@@ -14,7 +14,7 @@ from collections import namedtuple
 
 from lxml import etree
 
-from ..constants import NS_ALTO, XML_ID
+from ..constants import SEGMONTO_TAG_RE, NS_ALTO, XML_ID
 from ..utils.xml import xml_id_safe
 
 
@@ -146,7 +146,7 @@ class Attributes:
                 tag = str(self.tags[element.attrib["TAGREFS"]])
 
                 # Parse tag syntax: MainZone:column#1 -> (MainZone, column, 1)
-                tag_parts = re.match(r"(\w+):?(\w+)?#?(\d?)?", tag)
+                tag_parts = SEGMONTO_TAG_RE.match(tag)
                 if tag_parts:
                     main_type = tag_parts.group(1) or "none"
                     attributes["type"] = main_type

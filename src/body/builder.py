@@ -18,13 +18,11 @@ from dataclasses import dataclass, field
 
 from lxml import etree
 
-from ..constants import NS_XML
+from ..constants import NS_XML, XML_ID, XML_LANG
 from ..lang import get_detector
 
 logger = logging.getLogger(__name__)
 
-# xml:lang attribute key with namespace
-XML_LANG = f"{{{NS_XML}}}lang"
 
 
 @dataclass
@@ -59,7 +57,6 @@ def _walk_sentence_children(parent, foreign_lang=None):
         ("lb", <lb>, foreign_lang_or_None)
         ("token", <w|pc>, foreign_lang_or_None)
     """
-    XML_LANG_KEY = f"{{{NS_XML}}}lang"
     for child in parent:
         if not isinstance(child.tag, str):
             continue
@@ -71,7 +68,7 @@ def _walk_sentence_children(parent, foreign_lang=None):
         elif ctag == "hi":
             yield from _walk_sentence_children(child, foreign_lang)
         elif ctag == "foreign":
-            lang = child.get(XML_LANG_KEY) or foreign_lang
+            lang = child.get(XML_LANG) or foreign_lang
             yield from _walk_sentence_children(child, lang)
 
 
@@ -100,7 +97,7 @@ def _parse_line_groups(container):
 
         tag = s_elem.tag
         if tag == "s":
-            s_id = s_elem.get(f"{{{NS_XML}}}id", "")
+            s_id = s_elem.get(XML_ID, "")
             segment_for_this_s = None
             s_has_multiple_lines = False
 
@@ -164,7 +161,7 @@ def _append_tokens_with_foreign(parent, tokens, token_langs):
     for token, lang in zip(tokens, token_langs):
         if lang and lang != current_lang:
             current_foreign = etree.SubElement(parent, "foreign")
-            current_foreign.set(f"{{{NS_XML}}}lang", lang)
+            current_foreign.set(XML_LANG, lang)
             current_lang = lang
         elif not lang:
             current_foreign = None
