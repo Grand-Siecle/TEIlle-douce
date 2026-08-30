@@ -3,51 +3,109 @@
 # Modify these values to customize the pipeline
 # -----------------------------------------------------------
 
+import math
 import os
 import warnings
 from pathlib import Path
 
 
+def _env(name, default, convert=None):
+    """
+    Read a setting from the environment, or keep *default*.
+
+    Single conversion path for every setting type below, so they cannot
+    disagree on what a doubtful value means:
+
+    - unset keeps the default;
+    - SET BUT EMPTY also keeps the default, and says so. A wrapper doing
+      `export ALTO2TEI_MODERNIZE_URL="${MODERNIZE_URL}"` with the outer
+      variable unset would otherwise hand out an empty base URL, which
+      disables the service with no message a reader can act on;
+    - a value *convert* rejects keeps the default AND says so: silently
+      ignoring a typo would leave the operator believing a setting took
+      effect. The converter states the reason ("is not a number").
+    """
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    raw = raw.strip()
+    if not raw:
+        warnings.warn(
+            f"{name} is set but empty — keeping the default {default!r}",
+            RuntimeWarning, stacklevel=3,
+        )
+        return default
+    if convert is None:
+        return raw
+    try:
+        return convert(raw)
+    except ValueError as reason:
+        warnings.warn(
+            f"{name}={raw!r} {reason} — keeping the default {default!r}",
+            RuntimeWarning, stacklevel=3,
+        )
+        return default
+
+
+def _number(minimum=None, maximum=None):
+    """Converter for a finite float within [minimum, maximum] (inclusive).
+
+    Parsing alone is not enough: `float("nan")` and `float("inf")` both
+    succeed, and a NaN threshold quietly turns every comparison against
+    it into False — the guard reading it would stop rejecting anything.
+    Out-of-range values are the other readable-but-wrong case (a
+    similarity given as 95 rather than 0.95, a negative timeout).
+    """
+    def convert(raw):
+        try:
+            value = float(raw)
+        except ValueError:
+            raise ValueError("is not a number") from None
+        if not math.isfinite(value):
+            raise ValueError("is not a finite number")
+        if (minimum is not None and value < minimum) or (
+            maximum is not None and value > maximum
+        ):
+            low = "-inf" if minimum is None else minimum
+            high = "+inf" if maximum is None else maximum
+            raise ValueError(f"is outside [{low}, {high}]")
+        return value
+    return convert
+
+
+def _boolean(raw):
+    v = raw.lower()
+    if v in ("1", "true", "yes", "on"):
+        return True
+    if v in ("0", "false", "no", "off"):
+        return False
+    raise ValueError("is not a boolean")
+
+
 def _env_path(name, default):
     """Path overridable via environment variable (for fast test runs)."""
-    return Path(os.environ.get(name, default))
+    return Path(_env(name, default))
 
 
 def _env_str(name, default):
     """String setting overridable via environment variable — service URLs
     move between machines (a laptop, a lab server, CI) and used to be
     editable only by patching this file (audit 2.13)."""
-    return os.environ.get(name, default)
+    return _env(name, default)
 
 
-def _env_float(name, default):
-    """
-    Numeric setting overridable via environment variable.
-
-    An unreadable value keeps the default AND says so: silently ignoring
-    a typo would leave the operator believing a setting took effect.
-    """
-    raw = os.environ.get(name)
-    if raw is None:
-        return default
-    try:
-        return float(raw)
-    except ValueError:
-        warnings.warn(
-            f"{name}={raw!r} is not a number — keeping the default {default}",
-            RuntimeWarning, stacklevel=2,
-        )
-        return default
+def _env_float(name, default, minimum=None, maximum=None):
+    """Numeric setting overridable via environment variable."""
+    return _env(name, default, _number(minimum, maximum))
 
 
 def _env_bool(name, default):
     """Boolean overridable via environment variable.
 
-    Truthy values: "1", "true", "yes" (case-insensitive).
-    Any other value counts as False; unset keeps the default.
+    True: "1", "true", "yes", "on"; False: "0", "false", "no", "off"
+    (case-insensitive). Anything else keeps the default and warns.
     """
-    v = os.environ.get(name)
-    return default if v is None else v.strip().lower() in ("1", "true", "yes")
+    return _env(name, default, _boolean)
 
 
 # =============================================================================
@@ -226,7 +284,14 @@ ENRICHMENT_ENABLED = _env_bool("ALTO2TEI_ENRICHMENT", True)
 PYHELLEN_URL = _env_str("ALTO2TEI_PYHELLEN_URL", "http://localhost:8000")
 
 # Request timeout in seconds (higher for first request / model loading)
-PYHELLEN_TIMEOUT = _env_float("ALTO2TEI_PYHELLEN_TIMEOUT", 120)
+PYHELLEN_TIMEOUT = _env_float("ALTO2TEI_PYHELLEN_TIMEOUT", 120, minimum=0.1)
+
+# Timeout of the reachability probe both services answer before a run
+# (PyHellen /api/languages, VieuxParler /health). Shared, and generous:
+# a remote server still loading its model takes seconds to answer, and a
+# probe that gives up first disables the phase for the whole run with a
+# single warning line to explain the missing <w> or <choice>.
+HEALTH_TIMEOUT = _env_float("ALTO2TEI_HEALTH_TIMEOUT", 30, minimum=0.1)
 
 # Maximum concurrent PyHellen requests (audit 3.3 — same model as
 # MODERNIZE_MAX_CONCURRENT).
@@ -262,17 +327,26 @@ ENRICHMENT_MIN_TEXT_LENGTH = 5
 # Enable/disable text modernization (old French -> modern French)
 MODERNIZE_ENABLED = _env_bool("ALTO2TEI_MODERNIZE", True)
 
-# Mapping from TEI language ident to modernization API base URL
-# Add entries for other languages as APIs become available
+# Mapping from TEI language ident to modernization API base URL.
+# Add entries below as APIs become available: each one is overridable by
+# ALTO2TEI_MODERNIZE_URL_<IDENT> (e.g. ALTO2TEI_MODERNIZE_URL_FRA), and
+# the bare ALTO2TEI_MODERNIZE_URL moves every language that has no
+# specific override — so a second entry stays configurable without a
+# patch to this file, which is the whole point.
+_MODERNIZE_API_DEFAULTS = {"fra": "http://localhost:8011"}
+_MODERNIZE_URL = _env_str("ALTO2TEI_MODERNIZE_URL", None)
 MODERNIZE_API = {
-    "fra": _env_str("ALTO2TEI_MODERNIZE_URL", "http://localhost:8011"),
+    ident: _env_str(
+        f"ALTO2TEI_MODERNIZE_URL_{ident.upper()}", _MODERNIZE_URL or default
+    )
+    for ident, default in _MODERNIZE_API_DEFAULTS.items()
 }
 
 # Number of lines per batch request to the modernization API
 MODERNIZE_BATCH_SIZE = 64
 
 # Timeout in seconds for modernization API calls
-MODERNIZE_TIMEOUT = _env_float("ALTO2TEI_MODERNIZE_TIMEOUT", 300)
+MODERNIZE_TIMEOUT = _env_float("ALTO2TEI_MODERNIZE_TIMEOUT", 300, minimum=0.1)
 
 # Max concurrent requests to the modernization API (avoid PoolTimeout)
 MODERNIZE_MAX_CONCURRENT = 8
@@ -281,16 +355,25 @@ MODERNIZE_MAX_CONCURRENT = 8
 # the emitted values, so they must belong to TEI's closed vocabulary
 # (teidata.certainty). Boundaries measured on real VieuxParler output
 # for this corpus: the similarity of a modernized line runs 0.81-1.00
-# (median 0.96), anything below SIMILARITY_MIN being rejected outright
-# as a hallucination — so >= 0.95 is a light spelling normalization,
-# and < 0.90 a heavy rewrite worth flagging to a reader.
+# (median 0.96), anything below MODERNIZE_SIMILARITY_MIN being rejected
+# outright as a hallucination — so >= 0.95 is a light spelling
+# normalization, and < 0.90 a heavy rewrite worth flagging to a reader.
+# Raising the floor below narrows these buckets from underneath: at 0.95
+# nothing can be graded "low" or "medium" any more.
 MODERNIZE_CERT_THRESHOLDS = {"low": 0.0, "medium": 0.90, "high": 0.95}
 
-# Below this similarity a modernized line is rejected as a hallucination
-# and left unmodified. Single home: the value used to live in
-# src/modernize.py AND be restated in the editorialDecl prose below, free
-# to diverge (audit 2.13) — the prose now reads it.
-MODERNIZE_SIMILARITY_MIN = _env_float("ALTO2TEI_MODERNIZE_SIMILARITY_MIN", 0.8)
+# Below this character-level similarity (after normalizing long-s,
+# accents and case) a modernized line is rejected as a hallucination and
+# left unmodified. 0.8 sits under the legitimate changes — cognoiſtre →
+# connaître normalizes to ~0.73 similarity on the word alone, but a full
+# line of ordinary modernization stays above 0.81 — and over the Greek
+# OCR artifacts the API answers with invented French.
+# Single home: the value used to live in src/modernize.py AND be
+# restated in the editorialDecl prose below, free to diverge (audit
+# 2.13) — the prose now reads it.
+MODERNIZE_SIMILARITY_MIN = _env_float(
+    "ALTO2TEI_MODERNIZE_SIMILARITY_MIN", 0.8, minimum=0.0, maximum=1.0
+)
 
 # =============================================================================
 # NAMED ENTITY RECOGNITION (NER)

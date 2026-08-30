@@ -25,6 +25,7 @@ import httpx
 
 from config import (
     DEBUG,
+    HEALTH_TIMEOUT,
     MODERNIZE_API,
     MODERNIZE_BATCH_SIZE,
     MODERNIZE_CERT_THRESHOLDS,
@@ -39,12 +40,6 @@ logger = logging.getLogger(__name__)
 # orig_words * TOLERANCE_RATIO + TOLERANCE_ABS extra words.
 TOLERANCE_RATIO = 1.5
 TOLERANCE_ABS = 2
-
-# Minimum character-level similarity (after normalization) between
-# original and modernized text.  Below this threshold the API output
-# is considered hallucinated.  Legitimate old-French → modern-French
-# changes (cognoiſtre → connaître) stay above ~0.73 after normalization.
-
 
 # Lines matching this pattern have no real textual content to modernize.
 _SKIP_RE = re.compile(r'^[\s\W\d]*$')
@@ -112,7 +107,7 @@ def check_api(lang="fra"):
     if not base_url:
         return False
     try:
-        with httpx.Client(timeout=10) as client:
+        with httpx.Client(timeout=HEALTH_TIMEOUT) as client:
             r = client.get(f"{base_url}/health")
             return r.status_code == 200
     except httpx.HTTPError:

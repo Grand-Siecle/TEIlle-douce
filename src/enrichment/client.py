@@ -16,6 +16,7 @@ from urllib.error import URLError, HTTPError
 import httpx
 
 from config import (
+    HEALTH_TIMEOUT,
     PYHELLEN_URL,
     PYHELLEN_TIMEOUT,
     PYHELLEN_MODELS,
@@ -62,7 +63,7 @@ def check_server():
     """
     try:
         req = Request(f"{PYHELLEN_URL}/api/languages", method="GET")
-        with urlopen(req, timeout=5) as resp:
+        with urlopen(req, timeout=HEALTH_TIMEOUT) as resp:
             return resp.status == 200
     except (URLError, HTTPError, OSError):
         return False
