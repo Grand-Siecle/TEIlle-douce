@@ -14,18 +14,20 @@ Coordinates the 6 phases of linguistic enrichment:
 """
 
 import logging
+from dataclasses import dataclass, field
 
 from lxml import etree
 
 from config import (
     ENRICHMENT_CONTAINERS,
     ENRICHMENT_MIN_TEXT_LENGTH,
+    ENRICHMENT_MAX_MISALIGNED_RATIO,
 )
 from ..constants import NS_XML, XML_ID
 from ..utils.xml import local_tag as _local
 from .extractor import extract_spans
 from .dehyphenation import dehyphenate
-from .client import tag_text, get_model, check_server
+from .client import tag_texts, get_model, check_server
 from .aligner import align_tokens
 from .segmenter import segment_sentences, chain_cross_container
 from .reconstructor import rebuild_container
@@ -57,11 +59,16 @@ def enrich_body(root, progress_callback=None):
         "containers_failed": 0,
         "tokens_total": 0,
         "sentences_total": 0,
+        "server_unavailable": False,
     }
 
-    # Check PyHellen availability
+    # Check PyHellen availability. The server is probed once at startup
+    # AND here, per document: it can die mid-run, and that case used to
+    # return all-zero stats that no console message keyed on — the
+    # document ended up silently unannotated (audit 2.7).
     if not check_server():
         logger.warning("PyHellen server not available, skipping enrichment")
+        stats["server_unavailable"] = True
         return stats
 
     # Find the body element
@@ -76,23 +83,49 @@ def enrich_body(root, progress_callback=None):
     stats["containers_found"] = len(containers)
     logger.debug("Found %d containers to enrich", len(containers))
 
-    # Process each container sequentially
-    all_sentences = []
-
+    # Pass 1 — sequential, cheap: extract text, dehyphenate, derive the
+    # language blocks and build the HTTP requests of every container.
+    jobs = []
     for i, container in enumerate(containers):
-        if i > 0 and i % 100 == 0:
-            logger.debug("Progress: %d/%d containers processed", i, len(containers))
-
         try:
-            sentences = _process_container(container, stats, container_index=i)
+            jobs.append(_prepare_container(container, i, stats))
+        except Exception as e:
+            logger.error(f"Failed to prepare container {i}: {e}", exc_info=True)
+            stats["containers_failed"] += 1
+            jobs.append(None)
+
+    # Pass 2 — concurrent HTTP tagging over one keep-alive connection
+    # (audit 3.3): the dominant cost of a full run was thousands of
+    # sequential PyHellen round-trips per document.
+    flat_requests = []
+    owners = []  # parallel: (job, index of the request within the job)
+    for job in jobs:
+        if job is None:
+            continue
+        for k, (text, model, _base, _lang) in enumerate(job.requests):
+            flat_requests.append((text, model))
+            owners.append((job, k))
+
+    if flat_requests:
+        outcomes = tag_texts(flat_requests, progress_callback=progress_callback)
+        for (job, k), outcome in zip(owners, outcomes):
+            job.outcomes[k] = outcome
+
+    # Pass 3 — sequential DOM mutation: align, segment, rebuild.
+    all_sentences = []
+    for job in jobs:
+        if job is None:
+            all_sentences.append([])
+            continue
+        try:
+            sentences = _finish_container(job, stats)
             all_sentences.append(sentences if sentences else [])
         except Exception as e:
-            logger.error(f"Failed to enrich container {i}: {e}", exc_info=True)
+            logger.error(
+                f"Failed to enrich container {job.index}: {e}", exc_info=True
+            )
             stats["containers_failed"] += 1
             all_sentences.append([])
-
-        if progress_callback:
-            progress_callback(i + 1, len(containers))
 
     # Cross-container sentence chaining
     chain_cross_container(all_sentences)
@@ -105,17 +138,28 @@ def enrich_body(root, progress_callback=None):
     return stats
 
 
-def _process_container(container, stats, container_index=0):
-    """
-    Process a single container through the 6-phase pipeline.
+@dataclass
+class _ContainerJob:
+    """One container's state between the three enrichment passes."""
+    container: object
+    index: int
+    spans: list
+    offset_map: list
+    hyphen_joins: object
+    primary_lang: str
+    # [(stripped_text, model, absolute_base_offset, effective_lang)]
+    requests: list
+    outcomes: list = field(default_factory=list)
 
-    If the container contains <foreign> elements (from language
-    detection), each language block is tagged with the matching
-    PyHellen model; otherwise the container is tagged with the
-    primary-language model as before.
+
+def _prepare_container(container, container_index, stats):
+    """
+    Pass 1: everything before HTTP — extract, dehyphenate, language
+    blocks, request building.
 
     Returns:
-        list[Sentence] or None: Sentences if successful, None if skipped.
+        _ContainerJob or None when the container is skipped (no model,
+        too short, nothing to tag).
     """
     primary_lang = container.get(XML_LANG, "und")
     primary_model = get_model(primary_lang)
@@ -123,54 +167,123 @@ def _process_container(container, stats, container_index=0):
         stats["containers_skipped"] += 1
         return None
 
-    # Phase 1: Extract text (spans carry the per-fragment language).
     raw_text, spans = extract_spans(container)
-    clean_text = raw_text.strip()
-
-    if len(clean_text) < ENRICHMENT_MIN_TEXT_LENGTH:
+    if len(raw_text.strip()) < ENRICHMENT_MIN_TEXT_LENGTH:
         stats["containers_skipped"] += 1
         return None
 
-    # Phase 2: Dehyphenate.
     dehyphenated_text, offset_map, hyphen_joins = dehyphenate(raw_text, spans)
-
-    # Phase 2.5: Derive language blocks on dehyphenated_text from spans.
     blocks = _language_blocks_from_spans(
         spans, offset_map, len(dehyphenated_text), primary_lang
     )
 
-    # Phase 3: NLP tagging — one PyHellen call per block, with the
-    # appropriate model. Token offsets are rebased to the dehyph text.
-    try:
-        tokens = _tag_blocks(blocks, dehyphenated_text, primary_model, primary_lang)
-    except ConnectionError as e:
-        logger.warning(f"PyHellen connection error: {e}")
-        stats["containers_failed"] += 1
+    requests = []
+    for b_start, b_end, b_lang in blocks:
+        block_text = dehyphenated_text[b_start:b_end]
+        if not block_text.strip():
+            continue
+
+        if b_lang == primary_lang:
+            model, effective_lang = primary_model, primary_lang
+        else:
+            model = get_model(b_lang)
+            if model is None:
+                logger.warning(
+                    "No PyHellen model configured for detected language "
+                    "'%s' — tagging block with primary model '%s'. Align "
+                    "SUPPORTED_LANGUAGES and PYHELLEN_MODELS to fix.",
+                    b_lang, primary_lang,
+                )
+                model, effective_lang = primary_model, primary_lang
+            else:
+                effective_lang = b_lang
+
+        # The tagger strips its input; track the dropped leading
+        # whitespace so token offsets can be rebased correctly.
+        stripped = block_text.strip()
+        leading_ws = len(block_text) - len(block_text.lstrip())
+        requests.append((stripped, model, b_start + leading_ws, effective_lang))
+
+    if not requests:
+        stats["containers_skipped"] += 1
         return None
-    except RuntimeError as e:
-        logger.warning(f"PyHellen API error: {e}")
-        stats["containers_failed"] += 1
-        return None
+
+    job = _ContainerJob(
+        container=container, index=container_index, spans=spans,
+        offset_map=offset_map, hyphen_joins=hyphen_joins,
+        primary_lang=primary_lang, requests=requests,
+    )
+    job.outcomes = [None] * len(requests)
+    return job
+
+
+def _finish_container(job, stats):
+    """
+    Pass 3: collect the container's tagging outcomes, then align,
+    segment and rebuild — sequential DOM mutation.
+
+    Returns:
+        list[Sentence] or None when the container failed or was skipped.
+    """
+    container = job.container
+    corresp = container.get("corresp") or "?"
+    tokens = []
+    misaligned = 0
+    for (_text, _model, base, effective_lang), outcome in zip(job.requests, job.outcomes):
+        if outcome is None or outcome[0] != "ok":
+            reason = outcome[1] if outcome else "no outcome"
+            logger.warning("Container %s: tagging failed (%s)", corresp, reason)
+            stats["containers_failed"] += 1
+            return None
+        _status, block_tokens, block_misaligned = outcome
+
+        # Audit 2.12: a token the aligner could not find is anchored at
+        # the cursor and drags every following token of ITS OWN block
+        # with it — the cascade never crosses a block boundary, so the
+        # gate is per block. Judging the container as a whole would let
+        # a large clean block hide a short quotation whose annotations
+        # are entirely misplaced.
+        if block_misaligned and block_tokens:
+            block_ratio = block_misaligned / len(block_tokens)
+            if block_ratio > ENRICHMENT_MAX_MISALIGNED_RATIO:
+                logger.error(
+                    "Container %s: %d/%d tokens of a %s block could not be "
+                    "anchored (%.0f%% > %.0f%%) — left unenriched",
+                    corresp, block_misaligned, len(block_tokens), effective_lang,
+                    100 * block_ratio, 100 * ENRICHMENT_MAX_MISALIGNED_RATIO,
+                )
+                stats["containers_failed"] += 1
+                return None
+
+        misaligned += block_misaligned
+        for tok in block_tokens:
+            tok.char_start += base
+            tok.char_end += base
+            tok.origin_lang = effective_lang
+        tokens.extend(block_tokens)
 
     if not tokens:
         stats["containers_skipped"] += 1
         return None
 
-    # Phase 4: Align tokens to XML positions.
-    aligned = align_tokens(tokens, spans, offset_map, hyphen_joins)
+    if misaligned:
+        logger.warning(
+            "Container %s: %d/%d tokens anchored by cursor fallback",
+            corresp, misaligned, len(tokens),
+        )
 
-    # Phase 5: Segment into sentences. The scope of the deterministic
-    # sentence ids (audit 2.8) pairs the container's @corresp with its
-    # document-order index: @corresp alone is NOT unique (consecutive
-    # <fw> lines of one zone each get their own container with the same
-    # @corresp), and identical scopes would mean duplicate sentence ids.
+    aligned = align_tokens(tokens, job.spans, job.offset_map, job.hyphen_joins)
+
+    # The scope of the deterministic sentence ids (audit 2.8) pairs the
+    # container's @corresp with its document-order index: @corresp alone
+    # is NOT unique (consecutive <fw> lines of one zone each get their
+    # own container with the same @corresp).
     scope_ref = container.get("corresp") or container.get(XML_ID) or ""
     sentences = segment_sentences(
-        aligned, id_scope=f"{container_index}\x1f{scope_ref}"
+        aligned, id_scope=f"{job.index}\x1f{scope_ref}"
     )
 
-    # Phase 6: Rebuild XML.
-    rebuild_container(container, sentences, spans, primary_lang=primary_lang)
+    rebuild_container(container, sentences, job.spans, primary_lang=job.primary_lang)
 
     stats["containers_enriched"] += 1
     stats["tokens_total"] += len(tokens)
@@ -211,53 +324,3 @@ def _language_blocks_from_spans(spans, offset_map, dehyph_len, primary_lang):
             block_lang = lang_here
     blocks.append((block_start, dehyph_len, block_lang))
     return blocks
-
-
-def _tag_blocks(blocks, dehyphenated_text, primary_model, primary_lang):
-    """
-    Tag each language block with the matching PyHellen model.
-
-    Token offsets returned by PyHellen are block-local; this function
-    rebases them to absolute positions in ``dehyphenated_text`` and
-    stamps ``origin_lang`` on each token.
-
-    Falls back to the primary model (and keeps the primary lang label)
-    when no PyHellen model is configured for a detected foreign
-    language — emitting a warning so the mismatch between
-    SUPPORTED_LANGUAGES and PYHELLEN_MODELS is visible.
-    """
-    all_tokens = []
-    for b_start, b_end, b_lang in blocks:
-        block_text = dehyphenated_text[b_start:b_end]
-        if not block_text.strip():
-            continue
-
-        if b_lang == primary_lang:
-            model, effective_lang = primary_model, primary_lang
-        else:
-            model = get_model(b_lang)
-            if model is None:
-                logger.warning(
-                    "No PyHellen model configured for detected language "
-                    "'%s' — tagging block with primary model '%s'. Align "
-                    "SUPPORTED_LANGUAGES and PYHELLEN_MODELS to fix.",
-                    b_lang, primary_lang,
-                )
-                model, effective_lang = primary_model, primary_lang
-            else:
-                effective_lang = b_lang
-
-        # tag_text strips its input; track how many leading-whitespace
-        # chars were dropped so we can rebase token offsets correctly.
-        stripped_block = block_text.strip()
-        leading_ws = len(block_text) - len(block_text.lstrip())
-        block_tokens = tag_text(stripped_block, model)
-
-        base = b_start + leading_ws
-        for t in block_tokens:
-            t.char_start += base
-            t.char_end += base
-            t.origin_lang = effective_lang
-        all_tokens.extend(block_tokens)
-
-    return all_tokens

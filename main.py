@@ -355,6 +355,21 @@ def _process_document(doc_name, filepaths, doc_dir, df_meta, config,
                 f"{enrich_stats['tokens_total']} tokens, "
                 f"{enrich_stats['sentences_total']} sentences[/dim]"
             )
+        # containers_failed was never displayed: a document with hundreds
+        # of unannotated containers looked like a success in the console.
+        if enrich_stats and enrich_stats.get("containers_failed", 0) > 0:
+            console.print(
+                f"  [yellow]Warning: {enrich_stats['containers_failed']} "
+                f"container(s) failed enrichment — see log[/yellow]"
+            )
+        # A server that died after the startup probe leaves every counter
+        # at zero: without this the document would look simply "not
+        # enriched" instead of "enrichment lost".
+        if enrich_stats and enrich_stats.get("server_unavailable"):
+            console.print(
+                "  [yellow]Warning: PyHellen unreachable for this document "
+                "— no linguistic annotation[/yellow]"
+            )
 
     # Step 4: Text modernization (applied after enrichment)
     if do_modernize:
