@@ -73,3 +73,49 @@ def write_xml(root, output_path, pretty_print=True):
         logger.error("Failed to write XML to %s: %s", output_path, e)
         tmp_path.unlink(missing_ok=True)
         raise
+
+
+def declare_responsibility(root, xml_id, resp_text, agent_name):
+    """
+    Declare an automatic agent in <editionStmt>, idempotently.
+
+    Annotations point at these with @resp (#ner-auto, #modernize-auto):
+    without the declaration the pointer dangles. Shared because the NER
+    and modernization phases both need it and their two copies had
+    already drifted apart on the <edition> wording.
+
+    Returns:
+        The <respStmt>, or None when there is no <fileDesc> to put it in.
+    """
+    from ..constants import XML_ID, tag_like
+
+    header = next((e for e in root.iter() if local_tag(e.tag) == "teiHeader"), None)
+    if header is None:
+        return None
+    file_desc = next((c for c in header if local_tag(c.tag) == "fileDesc"), None)
+    if file_desc is None:
+        return None
+
+    edition_stmt = next(
+        (c for c in file_desc if local_tag(c.tag) == "editionStmt"), None
+    )
+    if edition_stmt is None:
+        edition_stmt = etree.Element(tag_like(file_desc, "editionStmt"))
+        edition = etree.SubElement(edition_stmt, tag_like(file_desc, "edition"))
+        edition.text = "Édition enrichie avec annotations automatiques"
+        title_idx = next(
+            (i for i, c in enumerate(file_desc) if local_tag(c.tag) == "titleStmt"), -1
+        )
+        file_desc.insert(title_idx + 1, edition_stmt)
+
+    for child in edition_stmt:
+        if local_tag(child.tag) == "respStmt" and child.get(XML_ID) == xml_id:
+            return child
+
+    resp_stmt = etree.SubElement(edition_stmt, tag_like(edition_stmt, "respStmt"))
+    resp_stmt.set(XML_ID, xml_id)
+    resp = etree.SubElement(resp_stmt, tag_like(edition_stmt, "resp"))
+    resp.text = resp_text
+    name = etree.SubElement(resp_stmt, tag_like(edition_stmt, "name"))
+    name.text = agent_name
+    return resp_stmt

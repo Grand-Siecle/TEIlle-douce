@@ -18,11 +18,19 @@ import asyncio
 import logging
 import re
 import unicodedata
+from collections import namedtuple
 from difflib import SequenceMatcher
 
 import httpx
 
-from config import DEBUG, MODERNIZE_API, MODERNIZE_BATCH_SIZE, MODERNIZE_TIMEOUT, MODERNIZE_MAX_CONCURRENT
+from config import (
+    DEBUG,
+    MODERNIZE_API,
+    MODERNIZE_BATCH_SIZE,
+    MODERNIZE_CERT_THRESHOLDS,
+    MODERNIZE_MAX_CONCURRENT,
+    MODERNIZE_TIMEOUT,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +59,21 @@ def _normalize_for_comparison(text):
     return "".join(c for c in nfkd if unicodedata.category(c) != "Mn")
 
 
+def similarity(original, modernized):
+    """
+    Character-level similarity of a modernized line to its original.
+
+    Already computed inside _is_divergent to reject hallucinations; also
+    the honest basis for the reading's @cert (audit 1.12), so it lives
+    in one place.
+    """
+    if not original or not modernized:
+        return 0.0
+    return SequenceMatcher(
+        None, _normalize_for_comparison(original), _normalize_for_comparison(modernized)
+    ).ratio()
+
+
 def _is_divergent(original, modernized):
     """
     Check if modernized text diverges too much from original.
@@ -69,9 +92,7 @@ def _is_divergent(original, modernized):
         return True
     # Character-level similarity check (catches hallucinations with
     # similar word count, e.g. Greek OCR artifacts → invented French).
-    n_orig = _normalize_for_comparison(original)
-    n_mod = _normalize_for_comparison(modernized)
-    if SequenceMatcher(None, n_orig, n_mod).ratio() < SIMILARITY_MIN:
+    if similarity(original, modernized) < SIMILARITY_MIN:
         return True
     return False
 
@@ -265,12 +286,17 @@ def dehyphenate_lines(texts, zone_types=None):
 
     The full reconstructed word is written onto line i, onto every
     intermediate chain line, and onto the terminal line — redundant on
-    purpose, to give the modernization API maximum context on every line
+    purpose, so the modernization API sees a complete word on every line
     touched by the split:
     - Line N:   "...le souv¬"        -> "...le souverain"
     - Line N+1: "erain Arbitre:..."  -> "souverain Arbitre:..."
     (and, for a 3+-line split, every line in between also gets the full
     word on its own).
+
+    That repetition is INPUT ONLY. It must not reach the output, or any
+    extraction of the modernized text yields doubled words (audit 1.12);
+    the returned `carried` set names the lines whose first word belongs
+    to an earlier line, so the caller can drop it after modernization.
 
     Lines of different zone types (e.g. MainZone vs RunningTitleZone)
     are never merged, preventing cross-container corruption.
@@ -281,9 +307,14 @@ def dehyphenate_lines(texts, zone_types=None):
                     If None, joins with immediately next line (legacy behavior).
 
     Returns:
-        list: Modified texts with hyphenated words rejoined.
+        tuple: (joined_texts, carried) — the rejoined lines, and the
+        indices of those that open with a word carried over from an
+        earlier line.
     """
     joined = list(texts)
+    # Lines that START with a word carried over from an earlier line
+    # (see the docstring): the caller needs them to undo the repetition.
+    carried = set()
 
     def next_same_zone(idx, zone):
         for j in range(idx + 1, len(joined)):
@@ -357,9 +388,80 @@ def dehyphenate_lines(texts, zone_types=None):
         joined[i] = prefix_line + full_word
         for c in chain:
             joined[c] = full_word
+            carried.add(c)
         joined[j] = full_word + (" " + next_words[1] if len(next_words) > 1 else "")
+        carried.add(j)
 
-    return joined
+    return joined, carried
+
+
+# A modernized line and how far the API moved it. `cert` is a TEI
+# certainty value; None when there is no basis to judge.
+Reading = namedtuple("Reading", "text cert")
+
+
+def drop_carried_words(texts, carried):
+    """
+    Remove, from each carried line, the word that belongs to an earlier one.
+
+    Counterpart of dehyphenate_lines' deliberate repetition: the word
+    stays on the line where it STARTS, and the lines that merely
+    continue it drop their leading token (a line that was nothing but a
+    fragment thus ends up empty, which is what it contributes of its
+    own). Lives next to dehyphenate_lines because the two share one
+    invariant — change how the chain is written and this must follow.
+
+    Caveat: the API is allowed to retokenize (see TOLERANCE_RATIO), so
+    "one leading token" is a best effort. It only ever applies to lines
+    the API actually changed, which bounds the damage to a line that was
+    being rewritten anyway.
+    """
+    out = list(texts)
+    for idx in carried:
+        if idx >= len(out) or not out[idx]:
+            continue
+        parts = out[idx].split(None, 1)
+        out[idx] = parts[1] if len(parts) > 1 else ""
+    return out
+
+
+def grade_readings(sent, returned, carried):
+    """
+    Turn the API's answers into readings, or None where it changed nothing.
+
+    Both decisions — "is this a modernization at all?" and "how far did
+    it stray?" — are taken between what was SENT and what came BACK.
+    Comparing against the raw diplomatic line instead would count
+    dehyphenation itself as an editorial modernization and grade a
+    mechanical word-rejoin as a heavy rewrite (both observed).
+
+    Args:
+        sent: the dehyphenated lines handed to the API.
+        returned: its answers, aligned.
+        carried: indices whose first word belongs to an earlier line.
+
+    Returns:
+        list[Reading | None]: one per line, None where nothing changed.
+    """
+    texts = drop_carried_words(returned, carried)
+    readings = []
+    for i, (before, after) in enumerate(zip(sent, returned)):
+        if not after or after == before:
+            readings.append(None)
+            continue
+        score = similarity(before, after)
+        readings.append(Reading(text=texts[i], cert=_cert_for(score)))
+    return readings
+
+
+def _cert_for(score):
+    """TEI certainty value for a similarity score."""
+    for label, floor in sorted(MODERNIZE_CERT_THRESHOLDS.items(), key=lambda kv: -kv[1]):
+        if score >= floor:
+            return label
+    # No configured floor matched: say so rather than leave the reading
+    # half-attributed (teidata.certainty has a value for exactly this).
+    return "unknown"
 
 
 async def _send_batch(client, base_url, batch_texts, batch_size=None):

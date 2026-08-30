@@ -14,8 +14,9 @@ from pathlib import Path
 
 from lxml import etree
 
-from .constants import NS_TEI, XML_ID
+from .constants import NS_TEI, XML_ID, tag_like
 from .utils.files import canonical_document_id
+from .utils.xml import declare_responsibility
 
 logger = logging.getLogger(__name__)
 from .teiheader import build_header
@@ -30,6 +31,14 @@ def strip_residual_hyphens(modernized):
     """A modernized reg must never contain the soft hyphen ¬: whatever the
     API returned, joining the fragments is always the right repair."""
     return [m.replace("¬", "") if m else m for m in modernized]
+
+
+def declare_modernization_responsibility(root):
+    """Declare the agent behind the modernized readings (@resp target)."""
+    return declare_responsibility(
+        root, "modernize-auto",
+        "Modernisation automatique des formes anciennes", "VieuxParler",
+    )
 
 
 class TEI:
@@ -202,7 +211,7 @@ class TEI:
         Returns:
             int: Number of lines modernized, or 0 on failure.
         """
-        from .modernize import modernize_texts, dehyphenate_lines
+        from .modernize import modernize_texts, dehyphenate_lines, grade_readings
 
         # Get line texts
         if line_data is None:
@@ -214,7 +223,7 @@ class TEI:
         # Dehyphenate before modernization: join words split by ¬/-
         # across lines so the API sees complete words.
         # Only joins within the same zone type to avoid cross-container merges.
-        joined_texts = dehyphenate_lines(original_texts, zone_types=zone_types)
+        joined_texts, carried = dehyphenate_lines(original_texts, zone_types=zone_types)
 
         try:
             modernized = modernize_texts(
@@ -228,17 +237,24 @@ class TEI:
             return 0
 
         modernized = strip_residual_hyphens(modernized)
+        # Grade against what was SENT, not against the raw diplomatic
+        # line: dehyphenation alone would otherwise count as an
+        # editorial modernization (audit 1.12 follow-up).
+        readings = grade_readings(joined_texts, modernized, carried)
+
+        # The readings point at it with @resp, so declare it as soon as
+        # there is one to point.
+        if any(r is not None for r in readings):
+            declare_modernization_responsibility(self.root)
 
         if enriched:
-            # Build corresp -> modernized mapping for lines that changed
-            corresp_to_mod = {}
-            for ld, mod in zip(line_data, modernized):
-                corresp, orig = ld[0], ld[1]
-                if mod and mod != orig and corresp:
-                    corresp_to_mod[corresp] = mod
+            corresp_to_mod = {
+                ld[0]: reading
+                for ld, reading in zip(line_data, readings)
+                if reading is not None and ld[0]
+            }
             return apply_modernization_enriched(self.root, corresp_to_mod)
-        else:
-            return apply_modernization(self.root, modernized)
+        return apply_modernization(self.root, readings)
 
     def enrich_body(self, progress_callback=None):
         """

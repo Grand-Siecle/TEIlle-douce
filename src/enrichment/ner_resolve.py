@@ -20,6 +20,7 @@ from lxml import etree
 
 from ..constants import UUID_NAMESPACE, XML_ID, tag_like
 from ..utils.xml import local_tag as _local
+from ..utils.xml import declare_responsibility
 from .ner_filter import (
     _normalize,
     fix_canonical_names,
@@ -386,11 +387,16 @@ def inject_header_entities(root, entities, entity_types_config):
             name_tag = cfg.get("tei_element", "name")
             extra_attrs = cfg.get("tei_element_attrs", {})
 
+            # Some item elements have a mandatory intermediate level in
+            # TEI's content model (<object> wants <objectIdentifier>).
+            wrapper_tag = cfg.get("tei_item_wrapper")
+            name_parent = _sub(item, wrapper_tag) if wrapper_tag else item
+
             # For events, use <label> instead of <rs>
             if etype == "event":
-                name_elem = _sub(item, "label")
+                name_elem = _sub(name_parent, "label")
             else:
-                name_elem = _sub(item, name_tag, **extra_attrs)
+                name_elem = _sub(name_parent, name_tag, **extra_attrs)
             name_elem.text = ent.canonical_name
 
     logger.info("NER: injected entity lists into TEI header")
@@ -542,43 +548,11 @@ def inject_editorial_declaration(root):
     if tei_header is None:
         return
 
-    # Add respStmt to editionStmt (created after titleStmt if missing)
-    file_desc = None
-    for child in tei_header:
-        if _local(child.tag) == "fileDesc":
-            file_desc = child
-            break
-    if file_desc is not None:
-        title_stmt_idx = None
-        edition_stmt = None
-        for idx, child in enumerate(file_desc):
-            local = _local(child.tag)
-            if local == "titleStmt":
-                title_stmt_idx = idx
-            elif local == "editionStmt":
-                edition_stmt = child
-                break
-
-        if edition_stmt is None:
-            edition_stmt = etree.Element(tag_like(file_desc, "editionStmt"))
-            edition = etree.SubElement(edition_stmt, tag_like(file_desc, "edition"))
-            edition.text = "Édition enrichie avec annotations d'entités nommées automatiques"
-            insert_idx = (title_stmt_idx + 1) if title_stmt_idx is not None else 0
-            file_desc.insert(insert_idx, edition_stmt)
-
-        # Idempotence (audit 6.13): a second pass over the same tree
-        # (resume, partial reprocessing, library use) must not duplicate
-        # the xml:id="ner-auto" respStmt — that would be an invalid TEI.
-        for child in edition_stmt:
-            if _local(child.tag) == "respStmt" and child.get(XML_ID) == "ner-auto":
-                return
-
-        resp_stmt = _sub(edition_stmt, "respStmt")
-        resp_stmt.set(XML_ID, "ner-auto")
-        resp = _sub(resp_stmt, "resp")
-        resp.text = "Automatic named entity recognition"
-        name = _sub(resp_stmt, "name")
-        name.text = "NER Pipeline (CamemBERT + GLiNER)"
+    declare_responsibility(
+        root, "ner-auto",
+        "Automatic named entity recognition",
+        "NER Pipeline (CamemBERT + GLiNER)",
+    )
 
 
 # =============================================================================

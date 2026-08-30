@@ -23,7 +23,6 @@
 # Run: venv/bin/python -m pytest tests/test_body_modernization.py -q
 from unittest.mock import patch
 
-import pytest
 from lxml import etree
 
 from src.body import builder
@@ -319,22 +318,12 @@ def test_wrap_plain_lines_no_matching_lb_returns_zero():
 
 
 # =============================================================================
-# xfail -- audit SS1.12: <reg type="modernized"> is produced without @resp
-# or @cert, even though the similarity score used to accept/reject the
-# modernization is already computed upstream (src/modernize.py::_is_divergent).
-# This fixes the *expected* post-correctif behavior: a <reg> emitted by the
-# modernization entry point should carry @resp and @cert.
+# Audit SS1.12 : une lecture modernisee est attribuee — @resp (elle est
+# automatique) et @cert (le score de similarite, deja calcule en amont
+# pour rejeter les hallucinations, dit si c'est une simple normalisation
+# orthographique ou une reecriture lourde).
 # =============================================================================
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "audit SS1.12: <reg type='modernized'> n'a ni @resp ni @cert, alors "
-        "que le score de similarite est calcule en amont dans "
-        "src/modernize.py::_is_divergent -- correctif attendu : propager "
-        "resp/cert jusque sur <reg>."
-    ),
-)
 def test_apply_modernization_reg_carries_resp_and_cert():
     xml = """<TEI><text><body>
     <ab><lb corresp="l1"/>Texte original</ab>
@@ -347,3 +336,74 @@ def test_apply_modernization_reg_carries_resp_and_cert():
     assert reg is not None
     assert reg.get("resp") is not None
     assert reg.get("cert") is not None
+
+
+def test_grading_uses_the_api_delta_not_the_diplomatic_line():
+    """
+    Le point le plus glissant du 1.12 : la de-hyphenation modifie deja la
+    ligne AVANT l'appel a l'API. Comparer la sortie a la ligne
+    diplomatique brute ferait passer un simple recollage de mot pour une
+    modernisation editoriale — et le graderait "reecriture lourde". La
+    decision et la note se prennent entre ce qui est ENVOYE et ce qui
+    REVIENT.
+    """
+    from src.modernize import dehyphenate_lines, grade_readings
+
+    envoye, portes = dehyphenate_lines(
+        ["Le vray et le souv¬", "erain Arbitre: et le reste"]
+    )
+    # une API qui ne modernise rien : aucune lecture ne doit etre produite
+    identique = grade_readings(envoye, list(envoye), portes)
+    assert identique == [None, None], identique
+
+
+def test_reg_cert_grades_with_the_similarity_of_the_reading():
+    """Audit 1.12 : @cert distingue une normalisation orthographique
+    legere d'une reecriture lourde. Les seuils sont cales sur la
+    distribution reelle du corpus (similarite 0.81-1.00, mediane 0.96),
+    donc sur des lignes entieres, pas sur quelques mots."""
+    from src.modernize import grade_readings
+
+    ligne = ("Des raisons qui nous obligent a sanctifier le jour du Seigneur "
+             "et a le passer en oeuvres de pieté")
+
+    def cert_pour(envoye, revenu):
+        return grade_readings([envoye], [revenu], set())[0].cert
+
+    # une graphie modernisee sur une ligne entiere : lecture sure
+    assert cert_pour(ligne + " estoit", ligne + " était") == "high"
+    # la moitie de la ligne reecrite : lecture a prendre avec precaution
+    assert cert_pour(ligne, "Des raisons obscures parfaitement etrangeres au propos") == "low"
+
+
+def test_reg_carries_the_grade_decided_upstream():
+    """L'applier ecrit ce qu'on lui donne : il ne recalcule aucun score
+    (il n'a pas la bonne paire de chaines sous la main)."""
+    from src.modernize import Reading
+
+    root = etree.fromstring(
+        '<TEI><text><body><ab><lb corresp="l1"/>Texte original</ab></body></text></TEI>'
+    )
+    apply_modernization(root, [Reading(text="Texte modernise", cert="high")])
+    reg = root.find(".//reg")
+    assert reg.text == "Texte modernise"
+    assert reg.get("resp") == "#modernize-auto"
+    assert reg.get("cert") == "high"
+
+
+def test_modernization_responsibility_is_declared_and_idempotent():
+    """Le @resp des lectures doit resoudre : le respStmt est declare dans
+    le header, et un second passage ne le duplique pas."""
+    from src.tei import declare_modernization_responsibility
+    from src.constants import XML_ID
+
+    root = etree.fromstring(
+        '<TEI><teiHeader><fileDesc><titleStmt><title>T</title></titleStmt>'
+        "</fileDesc></teiHeader></TEI>"
+    )
+    declare_modernization_responsibility(root)
+    declare_modernization_responsibility(root)
+
+    resp = [e for e in root.iter() if e.get(XML_ID) == "modernize-auto"]
+    assert len(resp) == 1, f"{len(resp)} respStmt modernize-auto"
+    assert qlocal(resp[0]) == "respStmt"
