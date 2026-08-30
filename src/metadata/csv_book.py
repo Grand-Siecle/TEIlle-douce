@@ -612,7 +612,13 @@ def override_teiheader_from_csv(root, row, document_name=None):
     if all_person_ids and person_db:
         profileDesc = root.find(".//teiHeader/profileDesc")
         if profileDesc is not None:
-            particDesc = etree.SubElement(profileDesc, "particDesc")
+            # Find-or-create: the NER phase runs first and may already
+            # have created a particDesc — appending a second one left
+            # consumers reading .//particDesc/listPerson blind to the
+            # CSV-derived persons (audit 4.2).
+            particDesc = profileDesc.find("particDesc")
+            if particDesc is None:
+                particDesc = etree.SubElement(profileDesc, "particDesc")
             listPerson = etree.SubElement(particDesc, "listPerson")
 
             for pid in sorted(all_person_ids):

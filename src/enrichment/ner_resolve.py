@@ -18,7 +18,7 @@ from pathlib import Path
 
 from lxml import etree
 
-from ..constants import NS_TEI, UUID_NAMESPACE, XML_ID
+from ..constants import UUID_NAMESPACE, XML_ID, tag_like
 from ..utils.xml import local_tag as _local
 from .ner_filter import (
     _normalize,
@@ -29,7 +29,6 @@ from .ner_filter import (
 
 logger = logging.getLogger(__name__)
 
-TEI_NS = f"{{{NS_TEI}}}"
 
 
 # =============================================================================
@@ -302,14 +301,17 @@ def write_entity_csvs(entities, entity_types_config, output_dir, document_name):
 # =============================================================================
 
 
-def _tei(tag):
-    """Prefix a tag with the TEI namespace."""
-    return f"{TEI_NS}{tag}"
-
-
 def _sub(parent, tag, **attrs):
-    """Create a TEI-namespaced SubElement."""
-    return etree.SubElement(parent, _tei(tag), **attrs)
+    """
+    Create a SubElement following the host tree's namespace convention.
+
+    The pipeline's own tree is bare in memory; a TEI file read back from
+    disk is namespaced. Injecting one fixed convention made the two
+    coexist: body.iter("persName") missed the NER entities and
+    find(".//particDesc") missed the CSV one, so a second particDesc got
+    appended beside it (audit 4.2). Following the parent works in both.
+    """
+    return etree.SubElement(parent, tag_like(parent, tag), **attrs)
 
 
 def _find_or_create(parent, tag):
@@ -557,8 +559,8 @@ def inject_editorial_declaration(root):
                 break
 
         if edition_stmt is None:
-            edition_stmt = etree.Element(_tei("editionStmt"))
-            edition = etree.SubElement(edition_stmt, _tei("edition"))
+            edition_stmt = etree.Element(tag_like(file_desc, "editionStmt"))
+            edition = etree.SubElement(edition_stmt, tag_like(file_desc, "edition"))
             edition.text = "Édition enrichie avec annotations d'entités nommées automatiques"
             insert_idx = (title_stmt_idx + 1) if title_stmt_idx is not None else 0
             file_desc.insert(insert_idx, edition_stmt)

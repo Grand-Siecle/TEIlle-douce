@@ -163,3 +163,51 @@ def test_glyph_zone_and_char_report_the_same_certainty():
     assert degre_zone == degre_car == "0.5", (
         f"attendu GC=0.5 des deux cotes : zone={degre_zone}, c={degre_car}"
     )
+
+
+# =============================================================================
+# 4.2 -- deux conventions de namespace dans le meme arbre
+# =============================================================================
+
+def test_ner_and_csv_share_a_single_particdesc(tmp_path, monkeypatch):
+    """
+    Audit 4.2 : la phase NER injectait des elements NAMESPACES dans un
+    arbre construit en tags nus. Consequence concrete mesuree : le
+    find("particDesc") de csv_book ne voyait pas celui du NER et en
+    ajoutait un second a cote — tout consommateur lisant
+    .//particDesc/listPerson ne voyait alors qu'une moitie des personnes.
+    """
+    from src.enrichment.ner_resolve import ResolvedEntity, inject_header_entities
+    from src.metadata import csv_person
+    from src.metadata.csv_book import override_teiheader_from_csv
+    from src.metadata.csv_person import load_person_database
+    from config import NER_ENTITY_TYPES
+
+    # arbre nu, comme celui que le pipeline construit en memoire
+    root = etree.Element("TEI", nsmap={None: "http://www.tei-c.org/ns/1.0"})
+    header = etree.SubElement(root, "teiHeader")
+    file_desc = etree.SubElement(header, "fileDesc")
+    etree.SubElement(file_desc, "titleStmt")
+    etree.SubElement(header, "profileDesc")
+
+    # 1) le NER cree son particDesc ...
+    inject_header_entities(
+        root,
+        [ResolvedEntity(entity_type="person", canonical_name="Nicolas Poussin",
+                        xml_id="pers-x", mentions=[])],
+        NER_ENTITY_TYPES,
+    )
+    # 2) ... puis l'injection CSV doit le REUTILISER, pas en ajouter un second
+    csv_person._person_db = None
+    csv = _ecrire_csv_personne(
+        tmp_path / "personnes.csv",
+        [["PERS0001", "", "", "Charles", "Le Brun", "M", "peintre"]],
+    )
+    load_person_database(csv)
+    override_teiheader_from_csv(root, {"ID_auteur": "PERS0001"}, "TESTDOC0001")
+    csv_person._person_db = None
+
+    partic = [e for e in root.iter() if qlocal(e) == "particDesc"]
+    assert len(partic) == 1, f"{len(partic)} particDesc — les deux conventions coexistent"
+    listes = [e for e in partic[0] if qlocal(e) == "listPerson"]
+    assert len(listes) == 2, "les deux listes (NER et CSV) doivent vivre sous le meme particDesc"
