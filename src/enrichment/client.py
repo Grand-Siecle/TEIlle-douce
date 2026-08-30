@@ -8,7 +8,6 @@ Sends text to PyHellen for tokenization, POS tagging, and lemmatization.
 """
 
 import asyncio
-import json
 import logging
 from dataclasses import dataclass
 from urllib.request import Request, urlopen
@@ -67,37 +66,6 @@ def check_server():
             return resp.status == 200
     except (URLError, HTTPError, OSError):
         return False
-
-
-def tag_text(text, model):
-    """
-    Send a single text to PyHellen for annotation.
-
-    Args:
-        text: Text string to annotate.
-        model: PyHellen model name.
-
-    Returns:
-        list[NLPToken]: Annotated tokens with character offsets.
-
-    Raises:
-        ConnectionError: If server is unreachable.
-        RuntimeError: If API returns an error.
-    """
-    url = f"{PYHELLEN_URL}/api/tag/{model}"
-    payload = json.dumps({"text": text}).encode("utf-8")
-    req = Request(url, data=payload, method="POST")
-    req.add_header("Content-Type", "application/json")
-
-    try:
-        with urlopen(req, timeout=PYHELLEN_TIMEOUT) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-    except HTTPError as e:
-        raise RuntimeError(f"PyHellen API error {e.code}: {e.read().decode()}")
-    except (URLError, OSError) as e:
-        raise ConnectionError(f"PyHellen unreachable: {e}")
-
-    return _process_response(data, text)
 
 
 def _process_response(data, text):
