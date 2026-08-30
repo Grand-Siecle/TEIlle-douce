@@ -459,12 +459,20 @@ def resolve_overlaps(entities):
 
 
 def _confidence_to_cert(confidence, thresholds):
-    """Map confidence score to TEI @cert value."""
-    if confidence >= thresholds["high"]:
-        return "high"
-    elif confidence >= thresholds["medium"]:
-        return "medium"
-    return "low"
+    """
+    Map a confidence score to a @cert label.
+
+    The labels come from `thresholds` itself — its keys ARE the emitted
+    values, and they must belong to TEI's closed vocabulary
+    (teidata.certainty: high|medium|low|unknown). Hard-coding them here
+    would break any caller passing a different, equally valid set.
+    """
+    for label, floor in sorted(thresholds.items(), key=lambda kv: -kv[1]):
+        if confidence >= floor:
+            return label
+    # No threshold matched (every floor above the score): the lowest
+    # label is still the honest answer.
+    return min(thresholds.items(), key=lambda kv: kv[1])[0] if thresholds else "unknown"
 
 
 def _make_entity_element(entity_type, cert, entity_types_config, anchor=None):

@@ -332,7 +332,10 @@ def test_override_teiheader_nominal_path(rich_person_csv):
     persname = author_el.find("persName")
     assert persname.find("forename").text == "Jean"
     assert persname.find("surname").text == "Dupont"
-    assert persname.find("nameLink").text == "le Jeune"
+    # Audit 5.6 : GenName est encode <genName> des deux cotes (listPerson
+    # le faisait deja) — <nameLink> designe une particule ("de", "van").
+    assert persname.find("genName").text == "le Jeune"
+    assert persname.find("nameLink") is None
     assert persname.find('ptr[@type="isni"]').get("target") == \
         "https://isni.org/isni/000000012153501X"
     assert persname.find('ptr[@type="ark"]').get("target") == "ark:/12148/pers0001"
@@ -693,7 +696,7 @@ def test_tei_version_number_keeps_the_numeric_prefix():
     assert tei_version_number("vNext") == "0"
 
 
-def test_csv_languages_survive_when_nothing_is_detected(tmp_path):
+def test_csv_languages_survive_when_nothing_is_detected():
     """Audit 4.12 : le bloc langUsage du CSV n'est pas mort. Il est bien
     ecrase par les langues DETECTEES quand il y en a — mais quand la
     detection ne produit rien, la declaration du catalogue survit, ce qui
@@ -712,3 +715,60 @@ def test_csv_languages_survive_when_nothing_is_detected(tmp_path):
     # des langues detectees : elles remplacent la declaration
     build_langusage(root, {"grc": 12})
     assert [l.get("ident") for l in root.iter("language")] == ["grc"]
+
+
+# ---------------------------------------------------------------------------
+# Dates du corpus reel : chaque forme doit produire du TEI valide
+# ---------------------------------------------------------------------------
+
+def test_date_attributes_maps_each_corpus_shape():
+    """Le corpus ne contient pas des dates ISO : 126 des 327 valeurs de
+    naissance sont autre chose. La forme de la cellule decide des
+    attributs, car @when n'accepte qu'une date xsd (teidata.temporal.w3c)."""
+    from src.metadata.csv_book import date_attributes
+
+    # dates completes, quelle que soit l'ecriture
+    assert date_attributes("1590/05/22") == {"when": "1590-05-22"}
+    assert date_attributes("16520623") == {"when": "1652-06-23"}
+    assert date_attributes("163303") == {"when": "1633-03"}
+    assert date_attributes("1652") == {"when": "1652"}
+
+    # annee tronquee : un intervalle, pas une date — et l'inference est
+    # signalee par @cert
+    assert date_attributes("15") == {
+        "notBefore": "1500", "notAfter": "1599", "cert": "low"}
+    assert date_attributes("159") == {
+        "notBefore": "1590", "notAfter": "1599", "cert": "low"}
+
+    # valeur incertaine
+    assert date_attributes("? 1666") == {"when": "1666", "cert": "low"}
+
+    # avant J.-C. : l'annee n'est pas zero-padee a la source (Ovide, ne le
+    # 20 mars 43 av. J.-C.)
+    assert date_attributes("-430320") == {"when": "-0043-03-20"}
+
+    # mois impossible : aucun attribut plutot qu'une date fausse
+    assert date_attributes("20991345") == {}
+    assert date_attributes("") == {}
+    assert date_attributes(None) == {}
+
+
+def test_approximate_dates_keep_their_year_and_say_so():
+    """Les catalogues historiques ecrivent "circa 1600", "vers 1650" :
+    l'annee est exploitable, l'approximation doit rester visible."""
+    from src.metadata.csv_book import date_attributes
+
+    assert date_attributes("circa 1600") == {"when": "1600", "cert": "low"}
+    assert date_attributes("vers 1650") == {"when": "1650", "cert": "low"}
+    assert date_attributes("1650") == {"when": "1650"}
+
+
+def test_unusable_date_is_kept_as_text_not_dropped():
+    """Une date que le pipeline ne sait pas lire ne doit ni disparaitre ni
+    devenir un @when invalide : elle reste en texte."""
+    from src.metadata.csv_book import _add_life_event
+
+    parent = etree.Element("person")
+    birth = _add_life_event(parent, "birth", "date inconnue", None, None)
+    assert birth.attrib == {}
+    assert birth.text == "date inconnue"

@@ -425,7 +425,7 @@ EDITORIAL_DECLARATIONS = {
             "GLiNER-multi-v2.1 on modernized text. Non-French text "
             "was processed with GLiNER only. Annotations carry "
             '@resp="#ner-auto" and @cert (low < 0.6, mid 0.6\u20130.85, '
-            "high > 0.85). Identifiers were resolved against local "
+            "high >= 0.85). Identifiers were resolved against local "
             "authority files."
         ),
     },

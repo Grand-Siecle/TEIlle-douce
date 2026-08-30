@@ -34,6 +34,20 @@ jobs:
       - name: Installer les dependances
         run: pip install -r requirements-dev.txt
 
+      # Le schema TEI (~1 Mo) n'est pas versionne : sans lui les tests de
+      # validation se contentent de se sauter, et la conformite du pipeline
+      # ne serait verifiee par rien. Mis en cache par version de schema.
+      - name: Cache du schema TEI
+        id: cache-tei-rng
+        uses: actions/cache@v4
+        with:
+          path: tei_all.rng
+          key: tei-all-rng-current
+      - name: Telecharger tei_all.rng
+        if: steps.cache-tei-rng.outputs.cache-hit != 'true'
+        run: curl -sSL --retry 3 --max-time 120 -o tei_all.rng
+          https://tei-c.org/release/xml/tei/custom/schema/relaxng/tei_all.rng
+
       # `combine` est obligatoire : les workers multiprocessing et les
       # sous-processus E2E ecrivent chacun leur fichier de donnees.
       # `report` applique le cliquet fail_under de pyproject.toml.
