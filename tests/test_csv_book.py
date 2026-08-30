@@ -642,3 +642,52 @@ def test_extra_repository_and_cote_siblings_precede_altidentifier():
             if localname(c) == tag and c.text == texte
         )
         assert idx < alt_index, f"<{tag}> '{texte}' doit preceder altIdentifier"
+
+
+# ---------------------------------------------------------------------------
+# Encodage unifie des evenements de vie (audit 5.6) et version d'application
+# ---------------------------------------------------------------------------
+
+def test_add_life_event_normalizes_date_and_builds_a_geonames_uri():
+    """Audit 5.6 : un seul encodage — @when ISO, @ref en URI complete."""
+    from src.metadata.csv_book import _add_life_event
+
+    parent = etree.Element("person")
+    birth = _add_life_event(parent, "birth", "1590/05/22", "Paris", "2988507")
+    assert birth.get("when") == "1590-05-22"
+    place = birth.find("placeName")
+    assert place.text == "Paris"
+    assert place.get("ref") == "https://www.geonames.org/2988507/"
+
+
+def test_add_life_event_partial_and_empty_inputs():
+    from src.metadata.csv_book import _add_life_event
+
+    parent = etree.Element("person")
+    # sans identifiant de lieu : pas de @ref invente
+    death = _add_life_event(parent, "death", "1650", "Lyon", None)
+    assert death.get("when") == "1650"
+    assert death.find("placeName").get("ref") is None
+
+    # date seule : pas de <placeName> vide
+    only_date = _add_life_event(parent, "birth", "1600", None, None)
+    assert only_date.find("placeName") is None
+
+    # rien a encoder : aucun element cree
+    before = len(parent)
+    assert _add_life_event(parent, "birth", None, None, "2988507") is None
+    assert len(parent) == before
+
+
+def test_tei_version_number_keeps_the_numeric_prefix():
+    """TEI exige un numero de version sur <application> ; la convention du
+    corpus ("4.3.x") le rendait invalide."""
+    from src.teiheader.default import tei_version_number
+
+    assert tei_version_number("4.3.x") == "4.3"
+    assert tei_version_number("8.0.x") == "8.0"
+    assert tei_version_number("1.0.0") == "1.0.0"
+    assert tei_version_number("2") == "2"
+    assert tei_version_number("") == "0"
+    assert tei_version_number(None) == "0"
+    assert tei_version_number("vNext") == "0"
