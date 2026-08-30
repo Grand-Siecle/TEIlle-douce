@@ -585,7 +585,17 @@ def override_teiheader_from_csv(root, row, document_name=None):
     cotes = _safe_value_list(row, "Cote")
     set_text_multi(".//teiHeader/fileDesc/sourceDesc/msDesc/msIdentifier/idno", cotes)
 
-    # Languages - support multiple
+    # Languages — the catalogue's declared languages.
+    #
+    # Audit 4.12 calls this block dead because finalize_langusage()
+    # rewrites <langUsage> afterwards. Measured: it does so ONLY when
+    # language detection produced statistics (build_langusage returns
+    # early, without clearing, on empty stats). So in a normal run these
+    # values are indeed replaced by the detected ones — but when nothing
+    # was detected (an image-only document, or detect_lang=False) they
+    # are what survives, and a catalogue declaration beats an empty
+    # langUsage. Kept deliberately; pinned by
+    # tests/test_csv_book.py::test_csv_languages_survive_when_nothing_is_detected.
     langues = _safe_value_list(row, "langues")
     if langues:
         langUsage = root.find(".//teiHeader/profileDesc/langUsage")

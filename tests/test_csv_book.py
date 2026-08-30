@@ -691,3 +691,24 @@ def test_tei_version_number_keeps_the_numeric_prefix():
     assert tei_version_number("") == "0"
     assert tei_version_number(None) == "0"
     assert tei_version_number("vNext") == "0"
+
+
+def test_csv_languages_survive_when_nothing_is_detected(tmp_path):
+    """Audit 4.12 : le bloc langUsage du CSV n'est pas mort. Il est bien
+    ecrase par les langues DETECTEES quand il y en a — mais quand la
+    detection ne produit rien, la declaration du catalogue survit, ce qui
+    vaut mieux qu'un <langUsage> vide."""
+    from src.lang import build_langusage
+
+    root = _build_default_root()
+    override_teiheader_from_csv(root, {"langues": "français|latin"}, "TESTDOC0001")
+    langues = [(l.get("ident"), l.text) for l in root.iter("language")]
+    assert langues == [("fra", "français"), ("lat", "latin")]
+
+    # rien de detecte : la declaration du CSV reste en place
+    build_langusage(root, {})
+    assert [(l.get("ident"), l.text) for l in root.iter("language")] == langues
+
+    # des langues detectees : elles remplacent la declaration
+    build_langusage(root, {"grc": 12})
+    assert [l.get("ident") for l in root.iter("language")] == ["grc"]
