@@ -14,13 +14,15 @@ with support for mixed-language detection using <foreign> tags.
 """
 
 import logging
+from collections import defaultdict
 from dataclasses import dataclass, field
 
 from lxml import etree
 
-from ..constants import XML_ID, XML_LANG
+from ..constants import TEXT_CONTAINERS, XML_ID, XML_LANG
 from ..lang import get_detector
-from ..utils.xml import declare_responsibility
+from ..utils.xml import content_root, declare_responsibility
+from .text import GRAPHIC_ZONES
 
 logger = logging.getLogger(__name__)
 
@@ -360,16 +362,35 @@ def _make_pb(line):
     return etree.Element("pb", atts)
 
 
-def build_body(root, data, detect_lang=True):
+def _figure_caption(figure):
+    """The <ab> holding a figure's transcribed lines, created on demand.
+
+    Text inside a GraphicZone is transcription, not editorial description,
+    so it goes to <ab> rather than <figDesc> — and <ab> is what the
+    enrichment and NER phases know how to walk.
     """
-    Build the TEI <body> element from extracted line data.
+    for child in figure:
+        if child.tag == "ab":
+            return child
+    atts = {"corresp": figure.get("corresp")}
+    if figure.get("type"):
+        atts["type"] = figure.get("type")
+    return etree.SubElement(figure, "ab", atts)
+
+
+def build_body(root, data, detect_lang=True, graphics=None, front_pages=None):
+    """
+    Build the TEI <text> element from extracted sourceDoc data.
 
     Creates the text structure with appropriate TEI elements:
+    - <front><titlePage> for the pages given over to a title page
     - <pb/> for page breaks
     - <fw> for running titles, page numbers, quire marks
     - <note> for margin text
+    - <figure><graphic/> for illustrations, with their IIIF crop
+    - <div><head> opened by each run of heading lines
     - <ab> for main text blocks
-    - <hi> for emphasized lines (drop capitals, headings)
+    - <hi> for emphasized lines (drop capitals)
     - <lb/> for line breaks
 
     When detect_lang=True, detects language at the container level
@@ -377,13 +398,28 @@ def build_body(root, data, detect_lang=True):
     uses <foreign> tags for non-primary language segments.
 
     Args:
-        root (etree.Element): TEI root element to append body to.
-        data (list): List of Line namedtuples from Text class.
+        root (etree.Element): TEI root element to append text to.
+        data (Text or list): The Text built from the sourceDoc — pass it
+            whole; it carries the lines, the graphic zones and the front
+            pages, and passing only its lines silently drops the figures
+            and the front matter. A bare list of Line namedtuples stays
+            accepted for hand-built callers.
         detect_lang (bool): Whether to detect and add xml:lang attributes.
+        graphics (list): Graphic namedtuples, in reading order. Defaults
+            to the ones carried by *data*.
+        front_pages (set): Surface xml:ids to route to <front>. Defaults
+            to the ones carried by *data*.
 
     Returns:
         dict or None: Language statistics if detect_lang=True, else None.
     """
+    if hasattr(data, "data"):  # a Text: take everything it extracted
+        if graphics is None:
+            graphics = data.graphics
+        if front_pages is None:
+            front_pages = data.front_pages
+        data = data.data
+
     # Initialize language detector if needed
     detector = None
     if detect_lang:
@@ -392,14 +428,79 @@ def build_body(root, data, detect_lang=True):
 
     text_el = etree.SubElement(root, "text")
     body = etree.SubElement(text_el, "body")
-    div = etree.SubElement(body, "div")
+    body_div = etree.SubElement(body, "div")
+    front = None
+    current_page = None
+    front_pages = front_pages or set()
 
-    # Track containers for language detection
-    containers = []  # list of (element, list of line texts)
+    # Graphics keyed by the number of lines that precede them, so an
+    # illustration lands at its place in reading order — including one
+    # with no TextLine of its own, which no line could ever announce.
+    graphics_at = defaultdict(list)
+    for graphic in graphics or ():
+        graphics_at[graphic.after_lines].append(graphic)
 
-    last_page_id = None
+    containers = []       # (element, list of line texts) for language detection
+    registered = {}       # id(element) -> its list of texts
+    figures = {}          # zone xml:id -> <figure>, to hang its lines on
+    title_pages = {}      # page xml:id -> <titlePage>
 
-    for line in data:
+    def register(element, text):
+        """Record a line's text under its container.
+
+        Keyed by element rather than by "is it the last one registered":
+        the figure captions and title parts are re-entered after other
+        elements have been emitted, and a second entry for the same
+        element would make _apply_language_detection run over it twice,
+        splicing <foreign> against a truncated list of line texts.
+        """
+        if not detector:
+            return
+        texts = registered.get(id(element))
+        if texts is None:
+            texts = [text]
+            registered[id(element)] = texts
+            containers.append((element, texts))
+        else:
+            texts.append(text)
+
+    def container_for(page_id):
+        """<front> for a page given over to a title page, else the open <div>."""
+        nonlocal front
+        if page_id in front_pages:
+            if front is None:
+                front = etree.Element("front")
+                text_el.insert(0, front)
+            return front
+        return body_div
+
+    def open_page(container, record):
+        """Emit the <pb> of *record*'s page when it is a new one."""
+        nonlocal current_page
+        if record.page_id != current_page:
+            container.append(_make_pb(record))
+            current_page = record.page_id
+        elif len(container) == 0:
+            container.append(_make_pb(record))
+
+    def emit_graphic(graphic):
+        container = container_for(graphic.page_id)
+        open_page(container, graphic)
+        atts = {"corresp": f"#{graphic.zone_id}", "facs": f"#{graphic.zone_id}"}
+        if graphic.zone_type:
+            atts["type"] = graphic.zone_type
+        figure = etree.SubElement(container, "figure", atts)
+        if graphic.source:
+            # The sourceDoc already holds the IIIF crop of the zone.
+            etree.SubElement(figure, "graphic", url=graphic.source)
+        else:
+            logger.debug("Graphic zone %s has no IIIF source", graphic.zone_id)
+        figures[graphic.zone_id] = figure
+
+    for index, line in enumerate(data):
+        for graphic in graphics_at.get(index, ()):
+            emit_graphic(graphic)
+
         # Prepare zone attributes (without language for now)
         zone_atts = {"corresp": f"#{line.zone_id}", "type": line.zone_type}
 
@@ -408,68 +509,102 @@ def build_body(root, data, detect_lang=True):
         lb = etree.Element("lb", corresp=f"#{line.id}", facs=f"#{line.id}")
         lb.tail = f"{line.text}"
 
-        # Add page break when the page changes (not per zone)
-        if line.page_id != last_page_id:
-            div.append(_make_pb(line))
-            last_page_id = line.page_id
-
-        # Ensure div has at least one element
-        if len(div) == 0:
-            div.append(_make_pb(line))
-
-        last_element = div[-1]
+        container = container_for(line.page_id)
+        open_page(container, line)
+        last_element = container[-1] if len(container) else None
+        last_tag = last_element.tag if last_element is not None else None
 
         # Handle different zone types
         if line.zone_type in ("NumberingZone", "QuireMarksZone", "RunningTitleZone"):
             # Page numbers, quire marks, running titles -> <fw>
-            fw = etree.Element("fw", zone_atts)
-            last_element.addnext(fw)
+            fw = etree.SubElement(container, "fw", zone_atts)
             fw.append(lb)
-            # Track for language detection
-            if detector:
-                containers.append((fw, [line.text]))
+            register(fw, line.text)
 
         elif line.zone_type == "MarginTextZone":
             # Margin text -> <note>
-            if last_element.tag != "note":
-                note = etree.Element("note", zone_atts)
-                last_element.addnext(note)
+            if last_tag != "note":
+                note = etree.SubElement(container, "note", zone_atts)
                 note.append(lb)
-                if detector:
-                    containers.append((note, [line.text]))
+                register(note, line.text)
             else:
                 last_element.append(lb)
-                # Add text to existing container
-                if detector and containers and containers[-1][0] == last_element:
-                    containers[-1][1].append(line.text)
+                register(last_element, line.text)
+
+        elif line.zone_type in GRAPHIC_ZONES and line.zone_id in figures:
+            # Text transcribed inside an illustration stays inside its
+            # <figure> rather than floating next to it as a bare <ab>.
+            caption = _figure_caption(figures[line.zone_id])
+            caption.append(lb)
+            register(caption, line.text)
+
+        elif line.zone_type == "TitlePageZone" and container is front:
+            # Title page -> <front><titlePage><titlePart>. One <titlePart>
+            # per zone: the pipeline has no signal telling a title from a
+            # byline or an imprint, and inventing that distinction would
+            # be an editorial claim the OCR does not support.
+            # Kept per page, not per neighbouring element: a signature or
+            # a folio number printed between two title zones must not
+            # split the page into two <titlePage>.
+            title_page = title_pages.get(line.page_id)
+            if title_page is None:
+                title_page = etree.SubElement(
+                    container, "titlePage", {"facs": f"#{line.page_id}"}
+                )
+                title_pages[line.page_id] = title_page
+            part = next(
+                (c for c in title_page
+                 if c.tag == "titlePart" and c.get("corresp") == zone_atts["corresp"]),
+                None,
+            )
+            if part is None:
+                part = etree.SubElement(title_page, "titlePart", zone_atts)
+            part.append(lb)
+            register(part, line.text)
 
         elif line.zone_type and line.zone_type.startswith("Main"):
+            # A heading opens a section: it becomes the <head> of a new
+            # <div>, which is also the only place TEI accepts a head.
+            # Front matter has no <div> to open, so a heading there keeps
+            # the <hi> treatment below.
+            if line.line_type == "HeadingLine" and container is body_div:
+                # A title set on several lines is ONE title: consecutive
+                # heading lines of the same zone continue the same <head>
+                # instead of opening a section per line.
+                if last_tag == "head" and last_element.get("corresp") == zone_atts["corresp"]:
+                    last_element.append(lb)
+                    register(last_element, line.text)
+                    continue
+
+                new_div = etree.SubElement(body, "div")
+                if last_tag == "pb":
+                    # The page opens on the heading: its page break belongs
+                    # to the section starting here, not to the one ending.
+                    new_div.append(last_element)
+                head = etree.SubElement(new_div, "head", zone_atts)
+                head.append(lb)
+                register(head, line.text)
+                body_div = new_div
+                continue
+
             # Main text -> <ab>. The type check keeps Main text out of the
             # fallback <ab> a preceding unhandled zone may have opened.
-            if last_element.tag != "ab" or not (last_element.get("type") or "").startswith("Main"):
-                ab = etree.Element("ab", zone_atts)
-                last_element.addnext(ab)
-                last_element = div[-1]
-                if detector:
-                    containers.append((ab, [line.text]))
-            else:
-                # Add text to existing container
-                if detector and containers and containers[-1][0] == last_element:
-                    containers[-1][1].append(line.text)
+            if last_tag != "ab" or not (last_element.get("type") or "").startswith("Main"):
+                last_element = etree.SubElement(container, "ab", zone_atts)
+            register(last_element, line.text)
 
-            # Handle emphasized lines (drop capitals, headings)
+            # Handle emphasized lines (drop capitals, headings in front)
             if line.line_type in ("DropCapitalLine", "HeadingLine"):
-                ab_children = last_element.getchildren()
+                ab_children = list(last_element)
                 # Check if we need a new <hi> or can reuse existing
                 if (
                     len(ab_children) == 0
                     or ab_children[-1].tag != "hi"
                     or ab_children[-1].get("rend") != line.line_type
                 ):
-                    hi = etree.Element("hi", rend=line.line_type)
-                    last_element.append(hi)
+                    hi = etree.SubElement(last_element, "hi", rend=line.line_type)
                     hi.append(lb)
-                elif ab_children[-1].tag == "hi":
+                else:
                     ab_children[-1].append(lb)
 
             # Regular lines — and any other line type: an unknown label
@@ -478,25 +613,41 @@ def build_body(root, data, detect_lang=True):
                 last_element.append(lb)
 
         else:
-            # Fallback for zone types without a dedicated branch
-            # (TitlePageZone, GraphicZone, StampZone, TableZone,
-            # CustomZone, ...): a plain <ab type="..."> per zone, so no
-            # text is ever silently lost (audit 1.1). Consecutive lines
-            # of the same zone share one <ab>.
-            if last_element.tag == "ab" and last_element.get("corresp") == zone_atts["corresp"]:
+            # Fallback for zone types without a dedicated branch (StampZone,
+            # TableZone, CustomZone, and a TitlePageZone sitting on a page
+            # that also carries running text — <titlePage> is front matter,
+            # TEI does not accept it inside a <div>): a plain
+            # <ab type="..."> per zone, so no text is ever silently lost
+            # (audit 1.1). Consecutive lines of the same zone share one <ab>.
+            if last_tag == "ab" and last_element.get("corresp") == zone_atts["corresp"]:
                 last_element.append(lb)
-                if detector and containers and containers[-1][0] == last_element:
-                    containers[-1][1].append(line.text)
+                register(last_element, line.text)
             else:
                 logger.debug(
                     "Zone type %r has no dedicated body element; falling back to <ab>",
                     line.zone_type,
                 )
-                ab = etree.Element("ab", {k: v for k, v in zone_atts.items() if v})
-                last_element.addnext(ab)
+                ab = etree.SubElement(
+                    container, "ab", {k: v for k, v in zone_atts.items() if v}
+                )
                 ab.append(lb)
-                if detector:
-                    containers.append((ab, [line.text]))
+                register(ab, line.text)
+
+    # Trailing graphics: everything the loop never reached. Keyed on ">="
+    # rather than "== len(data)" so a miscount can only misplace a figure,
+    # never drop it.
+    for index in sorted(k for k in graphics_at if k >= len(data)):
+        for graphic in graphics_at[index]:
+            emit_graphic(graphic)
+
+    # Drop the <div> a document opening on a heading leaves empty, then
+    # keep <body> non-empty: neither an empty <body> nor an empty <div>
+    # is valid TEI, and a volume that is nothing but a title page would
+    # produce both.
+    for div in [el for el in body if el.tag == "div" and len(el) == 0]:
+        body.remove(div)
+    if len(body) == 0:
+        etree.SubElement(etree.SubElement(body, "div"), "ab")
 
     # Apply language detection to containers (two-pass)
     if detector:
@@ -556,7 +707,7 @@ def apply_modernization(root, modernized_texts):
     Returns:
         int: Number of lines that were modernized.
     """
-    body = root.find(".//body")
+    body = content_root(root)
     if body is None:
         return 0
 
@@ -605,12 +756,16 @@ def apply_modernization_enriched(root, corresp_to_mod):
     Returns:
         int: Number of lines wrapped in <choice>.
     """
-    body = root.find(".//body")
+    body = content_root(root)
     if body is None:
         return 0
 
     count = 0
-    for container in body.iter("ab", "note", "fw"):
+    # TEXT_CONTAINERS, not a literal list: <head> and <titlePart> are
+    # enriched and scanned for entities, so leaving them out here paid
+    # for VieuxParler round-trips whose readings nothing consumed —
+    # the title page came back modernized and was dropped on the floor.
+    for container in body.iter(*TEXT_CONTAINERS):
         has_sentences = any(c.tag == "s" for c in container)
 
         if has_sentences:

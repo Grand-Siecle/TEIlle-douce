@@ -27,6 +27,35 @@ def local_tag(tag):
     return tag
 
 
+def content_root(root):
+    """Return the element holding every transcribed block: `<text>`.
+
+    Front matter (title pages) lives in `<text><front>`, running text in
+    `<text><body>`. Each phase that walks the transcription — line
+    extraction, enrichment, modernization, NER, note linking — must start
+    here rather than at `<body>`, or the title page would travel through
+    the pipeline unannotated. It is the most metadata-dense page of a
+    volume: title, author, printer, place, date.
+
+    Falls back to `<body>` for trees built without a `<text>` wrapper
+    (unit tests, external callers), and to None when neither exists.
+
+    Lookup goes through ElementPath rather than a Python-level walk: this
+    is called once per phase, and `<text>` is the LAST child of `<TEI>` —
+    scanning in Python would traverse the whole sourceDoc (hundreds of
+    thousands of elements on a full volume) six times per document.
+    `{*}` matches both namespace conventions, which coexist in the same
+    tree (audit 4.2).
+    """
+    if local_tag(root.tag) in ("text", "body"):
+        return root
+    for path in ("{*}text", ".//{*}text", "{*}body", ".//{*}body"):
+        found = root.find(path)
+        if found is not None:
+            return found
+    return None
+
+
 def xml_id_safe(value):
     """Return ``value`` coerced to a valid XML NCName for use as ``xml:id``.
 

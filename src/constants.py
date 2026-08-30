@@ -83,6 +83,11 @@ SEGMONTO_ZONES = {
     "TitlePageZone": "https://segmonto.github.io/gd/gdZ/TitlePageZone",
 }
 
+# Body containers holding transcribed lines. Their @type carries the
+# SegmOnto zone label, so every phase that walks a line back up to its
+# zone stops at one of these.
+TEXT_CONTAINERS = ("ab", "note", "fw", "head", "titlePart")
+
 # SegmOnto line types and their documentation URLs
 SEGMONTO_LINES = {
     "CustomLine": "https://segmonto.github.io/gd/gdL/CustomLine/",

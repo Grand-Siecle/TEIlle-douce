@@ -26,7 +26,7 @@ except ImportError:
     _HAS_TORCH = False
 
 from ..constants import XML_LANG
-from ..utils.xml import local_tag as _local
+from ..utils.xml import content_root, local_tag as _local
 from .ner_filter import filter_spans, extract_title_from_tei
 
 logger = logging.getLogger(__name__)
@@ -256,14 +256,9 @@ def extract_ner_blocks(root, containers_config):
     Returns:
         list[NERBlock]: Extracted blocks ready for inference.
     """
-    body = None
-    for elem in root.iter():
-        if _local(elem.tag) == "body":
-            body = elem
-            break
-
+    body = content_root(root)
     if body is None:
-        logger.warning("No <body> element found, skipping NER extraction")
+        logger.warning("No <text> element found, skipping NER extraction")
         return []
 
     blocks = []

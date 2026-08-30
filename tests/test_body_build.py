@@ -143,11 +143,10 @@ def test_build_body_inserts_one_pb_per_page_change_no_duplicates():
 # =============================================================================
 
 
-def test_build_body_groups_dropcap_and_heading_lines_into_hi():
+def test_build_body_groups_dropcap_lines_into_hi():
     lines = [
         make_line("l1", "MainZone", "zone_a", "p1", text="D", line_type="DropCapitalLine"),
         make_line("l2", "MainZone", "zone_a", "p1", text="ii", line_type="DropCapitalLine"),
-        make_line("l3", "MainZone", "zone_a", "p1", text="Titre", line_type="HeadingLine"),
         make_line("l4", "MainZone", "zone_a", "p1", text="texte normal", line_type="DefaultLine"),
         make_line("l5", "MainZone", "zone_a", "p1", text="D2", line_type="DropCapitalLine"),
     ]
@@ -163,19 +162,43 @@ def test_build_body_groups_dropcap_and_heading_lines_into_hi():
     kinds = [(qlocal(c), c.get("rend")) for c in children]
     assert kinds == [
         ("hi", "DropCapitalLine"),
-        ("hi", "HeadingLine"),
         ("lb", None),
         ("hi", "DropCapitalLine"),
     ]
 
     # les 2 DropCapitalLine consecutives sont regroupees dans le meme <hi>
     assert len(list(children[0])) == 2
-    # la HeadingLine ouvre un nouveau <hi> (rend different)
-    assert len(list(children[1])) == 1
     # une DefaultLine interrompt le regroupement : le <hi rend="DropCapitalLine">
     # qui suit est un NOUVEAU <hi>, meme si le rend est identique au premier
-    assert children[0] is not children[3]
-    assert len(list(children[3])) == 1
+    assert children[0] is not children[2]
+    assert len(list(children[2])) == 1
+
+
+def test_a_heading_line_opens_a_new_div_with_its_head():
+    """Une ligne de titre n'est pas une emphase typographique : elle ouvre
+    une section. TEI n'accepte un <head> qu'en tete de <div>, donc le seul
+    encodage valide est d'ouvrir la division au titre."""
+    lines = [
+        make_line("l1", "MainZone", "zone_a", "p1", text="fin du chapitre"),
+        make_line("l2", "MainZone", "zone_a", "p1", text="CHAPITRE II", line_type="HeadingLine"),
+        make_line("l3", "MainZone", "zone_b", "p1", text="debut du suivant"),
+    ]
+    root = etree.Element("TEI")
+
+    build_body(root, lines, detect_lang=False)
+
+    divs = [el for el in root.find(".//body") if qlocal(el) == "div"]
+    assert len(divs) == 2
+
+    assert [qlocal(el) for el in divs[0]] == ["pb", "ab"]
+    head = divs[1][0]
+    assert qlocal(head) == "head"
+    assert head.get("corresp") == "#zone_a"
+    assert head[0].tail == "CHAPITRE II"
+
+    # le texte qui suit le titre est dans la NOUVELLE division
+    assert [qlocal(el) for el in divs[1]] == ["head", "ab"]
+    assert divs[1][1][0].tail == "debut du suivant"
 
 
 # =============================================================================
@@ -341,17 +364,46 @@ def test_apply_language_detection_skips_xml_lang_when_detector_returns_none():
 # =============================================================================
 
 
-def test_build_body_titlepagezone_gets_fallback_ab_after_fix():
-    """Audit 1.1 : les zones sans branche dediee tombent dans un <ab> de repli."""
+def test_a_title_page_lands_in_front_not_in_a_fallback_ab():
+    """Audit 1.1 : la page de titre etait perdue, puis reprise dans un <ab>
+    de repli. Elle a maintenant sa place TEI — <front><titlePage> — et la
+    page entiere sort du fil du texte."""
     lines = [make_line("l_title", "TitlePageZone", "zone_title", "p1", text="LE TITRE DU LIVRE")]
+    root = etree.Element("TEI")
+
+    build_body(root, lines, detect_lang=False, front_pages={"p1"})
+
+    front = root.find(".//front")
+    assert front is not None, "la page de titre doit ouvrir un <front>"
+    assert [qlocal(el) for el in front] == ["pb", "titlePage"]
+
+    part = front[1][0]
+    assert qlocal(part) == "titlePart"
+    assert part.get("corresp") == "#zone_title"
+    assert part.find("lb").tail == "LE TITRE DU LIVRE"
+
+    # rien de la page de titre ne reste dans le corps
+    body = root.find(".//body")
+    assert "TitlePageZone" not in [el.get("type") for el in body.iter()]
+
+
+def test_a_title_page_zone_on_a_running_text_page_stays_in_the_body():
+    """Le corpus a une page de titre interieure (LIV0039b f848) au milieu
+    du texte courant : elle reste a sa place, en <ab> de repli — <titlePage>
+    est du liminaire, TEI ne l'accepte pas dans une <div>."""
+    lines = [
+        make_line("l_main", "MainZone", "zone_main", "p848", text="fin du livre I"),
+        make_line("l_title", "TitlePageZone", "zone_title", "p848", text="LIVRE II"),
+    ]
     root = etree.Element("TEI")
 
     build_body(root, lines, detect_lang=False)
 
-    div = root.find(".//div")
-    fallback = [el for el in div if qlocal(el) == "ab" and el.get("type") == "TitlePageZone"]
-    assert len(fallback) == 1, "attendu : <ab type='TitlePageZone'> en repli ; actuellement la ligne est perdue"
-    assert fallback[0].find("lb").tail == "LE TITRE DU LIVRE"
+    assert root.find(".//front") is None
+    assert root.find(".//titlePage") is None
+    repli = [el for el in root.find(".//div") if el.get("type") == "TitlePageZone"]
+    assert len(repli) == 1 and qlocal(repli[0]) == "ab"
+    assert repli[0].find("lb").tail == "LIVRE II"
 
 
 def test_build_body_fallback_ab_groups_by_zone_without_absorbing_main_text():
@@ -428,3 +480,235 @@ def test_build_body_pb_without_page_n_omits_n():
     pb = root.find(".//div/pb")
     assert pb.get("facs") == "#p1"
     assert pb.get("n") is None
+
+
+# =============================================================================
+# 6. Zones que les lignes ne peuvent pas annoncer : figures et page de titre
+# =============================================================================
+
+TEI_SOURCE_GRAPHIQUE = """<TEI>
+  <sourceDoc>
+    <surface xml:id="f1" n="1">
+      <zone xml:id="zone_main" type="MainZone">
+        <zone xml:id="zoneLine_a" type="DefaultLine"><line n="1">avant l'image</line></zone>
+      </zone>
+    </surface>
+    <surface xml:id="f2" n="2">
+      <zone xml:id="zone_fig" type="GraphicZone" source="https://iiif/f2/10,20,30,40/full/0/native.jpg"/>
+    </surface>
+    <surface xml:id="f3" n="3">
+      <zone xml:id="zone_fig2" type="GraphicZone" source="https://iiif/f3/crop.jpg">
+        <zone xml:id="zoneLine_c" type="DefaultLine"><line n="1">legende gravee</line></zone>
+      </zone>
+      <zone xml:id="zone_titre" type="TitlePageZone">
+        <zone xml:id="zoneLine_t" type="DefaultLine"><line n="1">LE TITRE</line></zone>
+      </zone>
+    </surface>
+  </sourceDoc>
+</TEI>"""
+
+
+def test_text_collects_graphic_zones_and_front_pages():
+    """Une GraphicZone sans TextLine n'apparait dans aucune Line : sans
+    passe dediee, l'illustration ne laisse aucune trace dans le corps."""
+    root = etree.fromstring(TEI_SOURCE_GRAPHIQUE.encode("utf-8"))
+
+    text = Text(root)
+
+    assert [g.zone_id for g in text.graphics] == ["zone_fig", "zone_fig2"]
+    sans_ligne = text.graphics[0]
+    assert sans_ligne.source.endswith("native.jpg")
+    assert (sans_ligne.page_id, sans_ligne.page_n) == ("f2", "2")
+    # position en ordre de lecture : apres la 1re ligne, avant les suivantes
+    assert sans_ligne.after_lines == 1
+    assert text.graphics[1].after_lines == 1
+
+    assert text.front_pages == {"f3"}
+
+
+def test_build_body_emits_a_figure_with_its_iiif_crop():
+    root = etree.fromstring(TEI_SOURCE_GRAPHIQUE.encode("utf-8"))
+    text = Text(root)
+
+    build_body(root, text.data, detect_lang=False,
+               graphics=text.graphics, front_pages=text.front_pages)
+
+    div = root.find(".//body/div")
+    figures = [el for el in div if qlocal(el) == "figure"]
+    assert len(figures) == 1, "seule la figure hors page de titre reste au corps"
+
+    figure = figures[0]
+    assert figure.get("corresp") == "#zone_fig"
+    assert figure.get("facs") == "#zone_fig"
+    graphic = figure[0]
+    assert qlocal(graphic) == "graphic"
+    assert graphic.get("url").endswith("native.jpg")
+
+    # la page de la figure a bien son <pb>, alors qu'aucune ligne ne la porte
+    pbs = [el.get("corresp") for el in div if qlocal(el) == "pb"]
+    assert pbs == ["#f1", "#f2"]
+
+
+def test_graphic_zone_lines_stay_inside_their_figure():
+    """Le texte grave dans l'image appartient a l'image, pas au fil du texte."""
+    root = etree.fromstring(TEI_SOURCE_GRAPHIQUE.encode("utf-8"))
+    text = Text(root)
+
+    build_body(root, text.data, detect_lang=False,
+               graphics=text.graphics, front_pages=text.front_pages)
+
+    figure = root.find(".//front//figure")
+    assert figure is not None, "la figure de la page de titre suit sa page"
+    kinds = [qlocal(c) for c in figure]
+    assert kinds == ["graphic", "ab"]
+    assert figure[1].find("lb").tail == "legende gravee"
+    # et rien ne flotte a cote de la figure
+    assert root.find(".//front/ab") is None
+
+
+def test_a_graphic_zone_without_iiif_source_still_produces_a_figure():
+    source = TEI_SOURCE_GRAPHIQUE.replace(
+        ' source="https://iiif/f2/10,20,30,40/full/0/native.jpg"', ""
+    )
+    root = etree.fromstring(source.encode("utf-8"))
+    text = Text(root)
+
+    build_body(root, text.data, detect_lang=False,
+               graphics=text.graphics, front_pages=text.front_pages)
+
+    figure = [el for el in root.find(".//body/div") if qlocal(el) == "figure"][0]
+    assert figure.get("corresp") == "#zone_fig"
+    assert len(figure) == 0, "pas de <graphic> vide : l'ancrage reste @corresp"
+
+
+# =============================================================================
+# 7. Cas limites trouves en review
+# =============================================================================
+
+def test_a_heading_on_several_lines_is_one_head_not_one_div_per_line():
+    """Un titre de chapitre imprime sur deux lignes est UN titre. Une
+    <div> par ligne produirait une section vide dont le head est la
+    moitie du titre."""
+    lines = [
+        make_line("l1", "MainZone", "zone_a", "p1", text="fin du chapitre"),
+        make_line("l2", "MainZone", "zone_t", "p1", text="DE LA", line_type="HeadingLine"),
+        make_line("l3", "MainZone", "zone_t", "p1", text="PEINTURE", line_type="HeadingLine"),
+        make_line("l4", "MainZone", "zone_b", "p1", text="suite"),
+    ]
+    root = etree.Element("TEI")
+
+    build_body(root, lines, detect_lang=False)
+
+    divs = [el for el in root.find(".//body") if qlocal(el) == "div"]
+    assert len(divs) == 2, "un seul titre : une seule nouvelle section"
+    head = divs[1][0]
+    assert qlocal(head) == "head"
+    assert [c.tail for c in head] == ["DE LA", "PEINTURE"]
+
+
+def test_a_heading_opening_a_page_takes_the_page_break_with_it():
+    """Le <pb> de la page ouverte par le titre appartient a la section qui
+    commence, pas a celle qui se termine."""
+    lines = [
+        make_line("l1", "MainZone", "zone_a", "p1", text="fin"),
+        make_line("l2", "MainZone", "zone_t", "p2", text="CHAPITRE II", line_type="HeadingLine"),
+        make_line("l3", "MainZone", "zone_b", "p2", text="suite"),
+    ]
+    root = etree.Element("TEI")
+
+    build_body(root, lines, detect_lang=False)
+
+    divs = [el for el in root.find(".//body") if qlocal(el) == "div"]
+    assert [qlocal(el) for el in divs[0]] == ["pb", "ab"]
+    assert [qlocal(el) for el in divs[1]] == ["pb", "head", "ab"]
+    assert divs[1][0].get("corresp") == "#p2"
+
+
+def test_a_document_opening_on_a_heading_leaves_no_empty_div():
+    lines = [
+        make_line("l1", "MainZone", "zone_t", "p1", text="AVERTISSEMENT", line_type="HeadingLine"),
+        make_line("l2", "MainZone", "zone_a", "p1", text="texte"),
+    ]
+    root = etree.Element("TEI")
+
+    build_body(root, lines, detect_lang=False)
+
+    divs = [el for el in root.find(".//body") if qlocal(el) == "div"]
+    assert len(divs) == 1, "aucune section vide en tete"
+    assert [qlocal(el) for el in divs[0]] == ["pb", "head", "ab"]
+
+
+def test_a_folio_number_between_two_title_zones_keeps_one_titlepage():
+    """Une page de titre portant une signature ou un folio est courante :
+    elle ne doit pas se scinder en deux <titlePage>."""
+    lines = [
+        make_line("l1", "TitlePageZone", "zone_t1", "p1", text="LE TITRE"),
+        make_line("l2", "QuireMarksZone", "zone_q", "p1", text="Aij"),
+        make_line("l3", "TitlePageZone", "zone_t2", "p1", text="A PARIS"),
+    ]
+    root = etree.Element("TEI")
+
+    build_body(root, lines, detect_lang=False, front_pages={"p1"})
+
+    front = root.find(".//front")
+    assert [qlocal(el) for el in front] == ["pb", "titlePage", "fw"]
+    parts = list(front[1])
+    assert [el.get("corresp") for el in parts] == ["#zone_t1", "#zone_t2"]
+
+
+class _StubDetectorCompteur:
+    """Detecteur factice : enregistre ce que build_body lui transmet."""
+    def __init__(self):
+        self.vus = []
+
+    def reset_stats(self):
+        pass
+
+    def compute_document_prior(self, textes):
+        list(textes)
+
+    def detect_primary_and_segments(self, texte, **kwargs):
+        self.vus.append(texte)
+        return "fra", []
+
+    def get_stats(self):
+        return {"fra": len(self.vus)}
+
+
+def test_a_reentered_container_is_registered_once(monkeypatch):
+    """Une legende de figure reprise apres une interruption ne doit pas
+    etre enregistree deux fois : la detection de langue tournerait deux
+    fois sur le meme element, avec une liste de lignes tronquee."""
+    import src.body.builder as builder_mod
+
+    detecteur = _StubDetectorCompteur()
+    monkeypatch.setattr(builder_mod, "get_detector", lambda: detecteur)
+
+    from src.body.text import Graphic
+    graphics = [Graphic("zone_fig", "GraphicZone", "https://iiif/crop.jpg", "p1", "1", 0)]
+    lines = [
+        make_line("l1", "GraphicZone", "zone_fig", "p1", text="legende 1"),
+        make_line("l2", "MainZone", "zone_m", "p1", text="texte entre deux"),
+        make_line("l3", "GraphicZone", "zone_fig", "p1", text="legende 2"),
+    ]
+    root = etree.Element("TEI")
+
+    build_body(root, lines, detect_lang=True, graphics=graphics)
+
+    caption = root.find(".//figure/ab")
+    assert len([c for c in caption if qlocal(c) == "lb"]) == 2
+    # un seul passage de detection sur la legende, avec ses DEUX lignes
+    assert detecteur.vus.count("legende 1 legende 2") == 1
+    assert not any(t == "legende 1" for t in detecteur.vus)
+
+
+def test_build_body_accepts_the_text_object_whole():
+    """Passer text.data seul laissait tomber figures et liminaires en
+    silence : l'objet Text porte les trois."""
+    root = etree.fromstring(TEI_SOURCE_GRAPHIQUE.encode("utf-8"))
+    text = Text(root)
+
+    build_body(root, text, detect_lang=False)
+
+    assert root.find(".//front") is not None
+    assert root.find(".//figure/graphic") is not None
