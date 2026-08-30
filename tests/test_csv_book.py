@@ -337,24 +337,17 @@ def test_override_teiheader_nominal_path(rich_person_csv):
         "https://isni.org/isni/000000012153501X"
     assert persname.find('ptr[@type="ark"]').get("target") == "ark:/12148/pers0001"
 
-    birth = author_el.find("birth")
-    # NOT normalized here (raw CSV value kept as-is, slash included) -
-    # unlike the equivalent listPerson/person/birth below.
-    assert birth.get("when") == "1590/05/22"
-    assert birth.find("date").text == "1590/05/22"
-    birth_place = birth.find("placeName")
-    assert birth_place.text == "Paris"
-    assert birth_place.find('ptr[@type="geonames"]').get("target") == \
-        "https://www.geonames.org/2988507/"
-    death = author_el.find("death")
-    assert death.get("when") == "1650/01/01"
+    # Audit 5.6 : plus de <birth>/<death> dans <author> — tei_all.rng les
+    # y refuse, et les evenements de vie vivent dans le <listPerson> que
+    # le @ref ci-dessus designe (verifie plus bas).
+    assert author_el.find("birth") is None
+    assert author_el.find("death") is None
 
     editor_el = titleStmt.find('editor[@role="translator"]')
     assert editor_el is not None
     assert editor_el.get("ref") == "#PERS0002"
     assert editor_el.find("persName/forename").text == "Marie"
     assert editor_el.find("persName/surname").text == "Martin"
-    # editor elements never get birth/death (unlike author)
     assert editor_el.find("birth") is None
 
     # --- sourceDesc/bibl: pubPlace (multi), publisher removed, respStmt, date ---
@@ -420,15 +413,13 @@ def test_override_teiheader_nominal_path(rich_person_csv):
     assert pn1.find('addName[@type="nickname"]').text == "JD"
 
     birth1 = p1.find("birth")
-    # listPerson DOES normalize the date (slash -> dash) - unlike the
-    # titleStmt/author birth above, built from the exact same source field.
+    # Audit 5.6 : un seul encodage pour ces champs — @when normalise en
+    # ISO, et @ref portant l'URI geonames complete (un id nu est une URI
+    # relative qui ne resout rien).
     assert birth1.get("when") == "1590-05-22"
     bp1 = birth1.find("placeName")
     assert bp1.text == "Paris"
-    # Raw geonames id as a bare @ref here, NOT the geonames URL used above
-    # for the titleStmt author's placeName/ptr - a second inconsistency
-    # between the two code paths for what should be the same data.
-    assert bp1.get("ref") == "2988507"
+    assert bp1.get("ref") == "https://www.geonames.org/2988507/"
 
     death1 = p1.find("death")
     assert death1.get("when") == "1650-01-01"

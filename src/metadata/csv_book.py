@@ -313,6 +313,29 @@ _PERSON_EXTRA_FIELDS = (
 # (audit 4.4). The database is an explicit parameter now.
 # =============================================================================
 
+def _add_life_event(parent, tag, date, place, place_id):
+    """
+    Add a <birth>/<death> to *parent*, one way for the whole file.
+
+    titleStmt and listPerson used to encode the same CSV fields
+    differently — raw "1590/05/22" against ISO "1590-05-22", a geonames
+    <ptr> against a bare numeric @ref (a relative URI resolving to
+    nothing) — audit 5.6. Here: normalized @when, and @ref carrying the
+    full geonames URI.
+    """
+    if not date and not place:
+        return None
+    event = etree.SubElement(parent, tag)
+    if date:
+        event.attrib["when"] = _normalize_date(str(date))
+    if place:
+        placename = etree.SubElement(event, "placeName")
+        placename.text = str(place)
+        if place_id:
+            placename.attrib["ref"] = f"https://www.geonames.org/{place_id}/"
+    return event
+
+
 def create_persname_element(parent, person_data):
     """Create a persName element with forename, surname, and identifiers."""
     persname = etree.SubElement(parent, "persName")
@@ -336,36 +359,20 @@ def create_persname_element(parent, person_data):
     return persname
 
 def create_author_element(parent, person_id, person_db):
-    """Create an author element with full person data."""
+    """
+    Create an <author> for titleStmt.
+
+    Name and pointers only: <birth>/<death> are not allowed inside
+    <author> (verified against tei_all.rng) and the person's life events
+    live in the <listPerson> entry this element's @ref points at — the
+    authority record. Audit 5.6 asked for one encoding of those fields;
+    this is the valid one.
+    """
     if person_db and person_id in person_db:
         person_data = person_db.enrich_author_data(person_id, role="author")
         author_el = etree.SubElement(parent, "author")
         author_el.attrib["ref"] = f"#{safe_person_id(person_id)}"
         create_persname_element(author_el, person_data)
-        if person_data.get("birth_date") or person_data.get("birth_place"):
-            birth = etree.SubElement(author_el, "birth")
-            if person_data.get("birth_date"):
-                birth.attrib["when"] = str(person_data["birth_date"])
-                date_el = etree.SubElement(birth, "date")
-                date_el.text = str(person_data["birth_date"])
-            if person_data.get("birth_place"):
-                place = etree.SubElement(birth, "placeName")
-                place.text = str(person_data["birth_place"])
-                if person_data.get("birth_place_id"):
-                    ptr = etree.SubElement(place, "ptr", type="geonames")
-                    ptr.attrib["target"] = f"https://www.geonames.org/{person_data['birth_place_id']}/"
-        if person_data.get("death_date") or person_data.get("death_place"):
-            death = etree.SubElement(author_el, "death")
-            if person_data.get("death_date"):
-                death.attrib["when"] = str(person_data["death_date"])
-                date_el = etree.SubElement(death, "date")
-                date_el.text = str(person_data["death_date"])
-            if person_data.get("death_place"):
-                place = etree.SubElement(death, "placeName")
-                place.text = str(person_data["death_place"])
-                if person_data.get("death_place_id"):
-                    ptr = etree.SubElement(place, "ptr", type="geonames")
-                    ptr.attrib["target"] = f"https://www.geonames.org/{person_data['death_place_id']}/"
     else:
         author_el = etree.SubElement(parent, "author")
         if person_id.startswith("ark:"):
@@ -692,27 +699,14 @@ def override_teiheader_from_csv(root, row, document_name=None):
                         addname_el = etree.SubElement(persname, "addName", type="nickname")
                         addname_el.text = person["nicknames"]
 
-                    # birth
-                    if person.get("birth_date") or person.get("birth_place"):
-                        birth = etree.SubElement(person_el, "birth")
-                        if person.get("birth_date"):
-                            birth.attrib["when"] = _normalize_date(person["birth_date"])
-                        if person.get("birth_place"):
-                            placename = etree.SubElement(birth, "placeName")
-                            placename.text = person["birth_place"]
-                            if person.get("birth_place_id"):
-                                placename.attrib["ref"] = person["birth_place_id"]
-
-                    # death
-                    if person.get("death_date") or person.get("death_place"):
-                        death = etree.SubElement(person_el, "death")
-                        if person.get("death_date"):
-                            death.attrib["when"] = _normalize_date(person["death_date"])
-                        if person.get("death_place"):
-                            placename = etree.SubElement(death, "placeName")
-                            placename.text = person["death_place"]
-                            if person.get("death_place_id"):
-                                placename.attrib["ref"] = person["death_place_id"]
+                    _add_life_event(
+                        person_el, "birth", person.get("birth_date"),
+                        person.get("birth_place"), person.get("birth_place_id"),
+                    )
+                    _add_life_event(
+                        person_el, "death", person.get("death_date"),
+                        person.get("death_place"), person.get("death_place_id"),
+                    )
 
                     # faith (Confession)
                     if person.get("confession"):

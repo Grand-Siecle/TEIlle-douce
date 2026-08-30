@@ -261,6 +261,27 @@ def test_court_correspond_au_golden(tei_court):
 
 
 @pytest.mark.e2e
+def test_court_est_valide_selon_tei_all(tei_court):
+    """
+    Validation de schema complete, quand un tei_all.rng est disponible.
+
+    Le schema (~1 Mo) n'est pas versionne : poser le fichier a la racine
+    (ou pointer ALTO2TEI_TEI_RNG dessus) active le controle. Telechargement :
+    https://tei-c.org/release/xml/tei/custom/schema/relaxng/tei_all.rng
+    """
+    schema = os.environ.get("ALTO2TEI_TEI_RNG") or (RACINE / "tei_all.rng")
+    schema = Path(schema)
+    if not schema.exists():
+        pytest.skip(f"tei_all.rng absent ({schema}) — validation de schema sautee")
+
+    relaxng = etree.RelaxNG(etree.parse(str(schema)))
+    doc = etree.parse(str(tei_court))
+    assert relaxng.validate(doc), "\n".join(
+        f"L{e.line}: {e.message}" for e in list(relaxng.error_log)[:10]
+    )
+
+
+@pytest.mark.e2e
 def test_court_un_document_casse_ne_tue_pas_le_run(tmp_path):
     """
     Audit 2.1/2.10 : un document corrompu est signale, compte dans le bilan et
