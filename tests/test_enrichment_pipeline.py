@@ -173,3 +173,45 @@ def test_enrich_body_wires_the_three_passes(monkeypatch):
     assert stats["containers_found"] == 2
     assert stats["containers_enriched"] == 2
     assert stats["containers_failed"] == 0
+
+
+def test_finish_container_gate_is_per_block_not_diluted(monkeypatch):
+    """La cascade d'erreurs d'alignement ne franchit pas la frontiere d'un
+    bloc (le curseur est par appel) : un court bloc latin entierement
+    desaligne doit condamner le conteneur meme si un grand bloc francais
+    propre ferait passer le ratio global sous le seuil."""
+    def rebuild_interdit(*a, **k):
+        raise AssertionError("un bloc entierement desaligne doit faire echouer")
+
+    monkeypatch.setattr(pipeline, "rebuild_container", rebuild_interdit)
+
+    job = _job_pour(monkeypatch)
+    # bloc 1 : 40 tokens propres ; bloc 2 : 4 tokens tous desalignes.
+    # ratio global = 4/44 = 9 % (sous le seuil), ratio du bloc 2 = 100 %.
+    job.requests = [
+        (job.requests[0][0], "modele-fr", 0, "fra"),
+        ("citation latine", "modele-la", 100, "lat"),
+    ]
+    job.outcomes = [
+        ("ok", [_tok() for _ in range(40)], 0),
+        ("ok", [_tok() for _ in range(4)], 4),
+    ]
+
+    stats = _stats()
+    assert pipeline._finish_container(job, stats) is None
+    assert stats["containers_failed"] == 1
+
+
+def test_enrich_body_reports_an_unreachable_server(monkeypatch):
+    """Audit 2.7 : un serveur mort APRES la sonde de demarrage laissait
+    tous les compteurs a zero — le document paraissait simplement 'non
+    enrichi' au lieu de 'enrichissement perdu'."""
+    monkeypatch.setattr(pipeline, "check_server", lambda: False)
+
+    root = etree.fromstring(
+        '<TEI><text><body><div><ab corresp="#z1"><lb/>Texte</ab></div></body></text></TEI>'
+    )
+    stats = pipeline.enrich_body(root)
+
+    assert stats["server_unavailable"] is True
+    assert stats["containers_enriched"] == 0

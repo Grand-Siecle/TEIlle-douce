@@ -59,11 +59,16 @@ def enrich_body(root, progress_callback=None):
         "containers_failed": 0,
         "tokens_total": 0,
         "sentences_total": 0,
+        "server_unavailable": False,
     }
 
-    # Check PyHellen availability
+    # Check PyHellen availability. The server is probed once at startup
+    # AND here, per document: it can die mid-run, and that case used to
+    # return all-zero stats that no console message keyed on — the
+    # document ended up silently unannotated (audit 2.7).
     if not check_server():
         logger.warning("PyHellen server not available, skipping enrichment")
+        stats["server_unavailable"] = True
         return stats
 
     # Find the body element
@@ -221,18 +226,35 @@ def _finish_container(job, stats):
         list[Sentence] or None when the container failed or was skipped.
     """
     container = job.container
+    corresp = container.get("corresp") or "?"
     tokens = []
     misaligned = 0
     for (_text, _model, base, effective_lang), outcome in zip(job.requests, job.outcomes):
         if outcome is None or outcome[0] != "ok":
             reason = outcome[1] if outcome else "no outcome"
-            logger.warning(
-                "Container %s: tagging failed (%s)",
-                container.get("corresp") or "?", reason,
-            )
+            logger.warning("Container %s: tagging failed (%s)", corresp, reason)
             stats["containers_failed"] += 1
             return None
         _status, block_tokens, block_misaligned = outcome
+
+        # Audit 2.12: a token the aligner could not find is anchored at
+        # the cursor and drags every following token of ITS OWN block
+        # with it — the cascade never crosses a block boundary, so the
+        # gate is per block. Judging the container as a whole would let
+        # a large clean block hide a short quotation whose annotations
+        # are entirely misplaced.
+        if block_misaligned and block_tokens:
+            block_ratio = block_misaligned / len(block_tokens)
+            if block_ratio > ENRICHMENT_MAX_MISALIGNED_RATIO:
+                logger.error(
+                    "Container %s: %d/%d tokens of a %s block could not be "
+                    "anchored (%.0f%% > %.0f%%) — left unenriched",
+                    corresp, block_misaligned, len(block_tokens), effective_lang,
+                    100 * block_ratio, 100 * ENRICHMENT_MAX_MISALIGNED_RATIO,
+                )
+                stats["containers_failed"] += 1
+                return None
+
         misaligned += block_misaligned
         for tok in block_tokens:
             tok.char_start += base
@@ -244,24 +266,10 @@ def _finish_container(job, stats):
         stats["containers_skipped"] += 1
         return None
 
-    # Audit 2.12: unfindable tokens are anchored at the cursor and drag
-    # every following token with them. A few are tolerable OCR noise;
-    # past the threshold the annotations would attach to the wrong
-    # characters — better an unenriched container than a wrong one.
     if misaligned:
-        ratio = misaligned / len(tokens)
-        if ratio > ENRICHMENT_MAX_MISALIGNED_RATIO:
-            logger.error(
-                "Container %s: %d/%d tokens could not be anchored "
-                "(%.0f%% > %.0f%%) — left unenriched",
-                container.get("corresp") or "?", misaligned, len(tokens),
-                100 * ratio, 100 * ENRICHMENT_MAX_MISALIGNED_RATIO,
-            )
-            stats["containers_failed"] += 1
-            return None
         logger.warning(
             "Container %s: %d/%d tokens anchored by cursor fallback",
-            container.get("corresp") or "?", misaligned, len(tokens),
+            corresp, misaligned, len(tokens),
         )
 
     aligned = align_tokens(tokens, job.spans, job.offset_map, job.hyphen_joins)
