@@ -35,7 +35,7 @@ from src.enrichment.ner_resolve import (
     write_entity_csvs,
 )
 
-CERT = {"low": 0.0, "mid": 0.6, "high": 0.85}
+CERT = {"low": 0.0, "medium": 0.6, "high": 0.85}
 
 
 def qlocal(el):

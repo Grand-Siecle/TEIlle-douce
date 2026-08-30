@@ -462,8 +462,8 @@ def _confidence_to_cert(confidence, thresholds):
     """Map confidence score to TEI @cert value."""
     if confidence >= thresholds["high"]:
         return "high"
-    elif confidence >= thresholds["mid"]:
-        return "mid"
+    elif confidence >= thresholds["medium"]:
+        return "medium"
     return "low"
 
 

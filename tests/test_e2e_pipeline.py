@@ -123,6 +123,18 @@ def normaliser(chemin):
     return texte
 
 
+def _valider_schema(chemin):
+    """Valide contre tei_all.rng quand il est disponible, sinon skip."""
+    schema = Path(os.environ.get("ALTO2TEI_TEI_RNG") or (RACINE / "tei_all.rng"))
+    if not schema.exists():
+        pytest.skip(f"tei_all.rng absent ({schema}) — validation de schema sautee")
+    relaxng = etree.RelaxNG(etree.parse(str(schema)))
+    doc = etree.parse(str(chemin))
+    assert relaxng.validate(doc), "\n".join(
+        f"L{e.line}: {e.message}" for e in list(relaxng.error_log)[:10]
+    )
+
+
 def local(el):
     """Nom local du tag, robuste aux deux conventions de namespace (audit 4.2)."""
     return etree.QName(el).localname
@@ -269,16 +281,7 @@ def test_court_est_valide_selon_tei_all(tei_court):
     (ou pointer ALTO2TEI_TEI_RNG dessus) active le controle. Telechargement :
     https://tei-c.org/release/xml/tei/custom/schema/relaxng/tei_all.rng
     """
-    schema = os.environ.get("ALTO2TEI_TEI_RNG") or (RACINE / "tei_all.rng")
-    schema = Path(schema)
-    if not schema.exists():
-        pytest.skip(f"tei_all.rng absent ({schema}) — validation de schema sautee")
-
-    relaxng = etree.RelaxNG(etree.parse(str(schema)))
-    doc = etree.parse(str(tei_court))
-    assert relaxng.validate(doc), "\n".join(
-        f"L{e.line}: {e.message}" for e in list(relaxng.error_log)[:10]
-    )
+    _valider_schema(tei_court)
 
 
 @pytest.mark.e2e
@@ -367,3 +370,8 @@ def test_complet_produit_les_annotations_linguistiques(tmp_path):
     assert any(
         w.get("lemma") or w.get("pos") for w in arbre.iter("{*}w")
     ), "aucun <w> ne porte de lemme ni de categorie"
+
+    # Les annotations linguistiques et les entites doivent elles aussi
+    # tenir le schema : c'est le mode complet qui produit les @cert et
+    # les <persName> automatiques.
+    _valider_schema(tei)
