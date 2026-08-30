@@ -16,6 +16,7 @@ from pathlib import Path
 from collections import defaultdict
 
 import pandas as pd
+from lxml import etree
 
 from config import (
     CSV_DELIMITER,
@@ -282,6 +283,136 @@ def build_metadata_dict(row):
     }
 
 
+
+# =============================================================================
+# TEI ELEMENT BUILDERS
+#
+# Module level, not nested inside override_teiheader_from_csv: four
+# closures over `person_db` made the function untestable in pieces
+# (audit 4.4). The database is an explicit parameter now.
+# =============================================================================
+
+def create_persname_element(parent, person_data):
+    """Create a persName element with forename, surname, and identifiers."""
+    persname = etree.SubElement(parent, "persName")
+    if person_data.get("forename"):
+        forename = etree.SubElement(persname, "forename")
+        forename.text = person_data["forename"]
+    if person_data.get("namelink"):
+        namelink = etree.SubElement(persname, "nameLink")
+        namelink.text = person_data["namelink"]
+    if person_data.get("surname"):
+        surname = etree.SubElement(persname, "surname")
+        surname.text = person_data["surname"]
+    # Add ISNI pointer
+    if person_data.get("isni"):
+        ptr = etree.SubElement(persname, "ptr", type="isni")
+        ptr.attrib["target"] = f"https://isni.org/isni/{person_data['isni']}"
+    # Add ARK pointer
+    if person_data.get("ark"):
+        ptr = etree.SubElement(persname, "ptr", type="ark")
+        ptr.attrib["target"] = person_data["ark"]
+    return persname
+
+def create_author_element(parent, person_id, person_db):
+    """Create an author element with full person data."""
+    if person_db and person_id in person_db:
+        person_data = person_db.enrich_author_data(person_id, role="author")
+        author_el = etree.SubElement(parent, "author")
+        author_el.attrib["ref"] = f"#{safe_person_id(person_id)}"
+        create_persname_element(author_el, person_data)
+        if person_data.get("birth_date") or person_data.get("birth_place"):
+            birth = etree.SubElement(author_el, "birth")
+            if person_data.get("birth_date"):
+                birth.attrib["when"] = str(person_data["birth_date"])
+                date_el = etree.SubElement(birth, "date")
+                date_el.text = str(person_data["birth_date"])
+            if person_data.get("birth_place"):
+                place = etree.SubElement(birth, "placeName")
+                place.text = str(person_data["birth_place"])
+                if person_data.get("birth_place_id"):
+                    ptr = etree.SubElement(place, "ptr", type="geonames")
+                    ptr.attrib["target"] = f"https://www.geonames.org/{person_data['birth_place_id']}/"
+        if person_data.get("death_date") or person_data.get("death_place"):
+            death = etree.SubElement(author_el, "death")
+            if person_data.get("death_date"):
+                death.attrib["when"] = str(person_data["death_date"])
+                date_el = etree.SubElement(death, "date")
+                date_el.text = str(person_data["death_date"])
+            if person_data.get("death_place"):
+                place = etree.SubElement(death, "placeName")
+                place.text = str(person_data["death_place"])
+                if person_data.get("death_place_id"):
+                    ptr = etree.SubElement(place, "ptr", type="geonames")
+                    ptr.attrib["target"] = f"https://www.geonames.org/{person_data['death_place_id']}/"
+    else:
+        author_el = etree.SubElement(parent, "author")
+        if person_id.startswith("ark:"):
+            # Unknown name: don't show the raw ark as if it were the
+            # author's name. <idno> is a model.pPart.data element, valid
+            # directly inside <author> (macro.phraseSeq.limited content).
+            idno_el = etree.SubElement(author_el, "idno", type="ark")
+            idno_el.text = person_id
+        else:
+            author_el.text = person_id
+    return author_el
+
+def create_editor_element(parent, person_id, role, person_db):
+    """Create an editor element with role (e.g., translator)."""
+    if person_db and person_id in person_db:
+        person_data = person_db.enrich_author_data(person_id, role=role)
+        editor_el = etree.SubElement(parent, "editor")
+        editor_el.attrib["role"] = role
+        editor_el.attrib["ref"] = f"#{safe_person_id(person_id)}"
+        create_persname_element(editor_el, person_data)
+    else:
+        editor_el = etree.SubElement(parent, "editor")
+        editor_el.attrib["role"] = role
+        if person_id.startswith("ark:"):
+            # Same rationale as create_author_element: idno is valid
+            # directly inside <editor> (same phraseSeq-limited content
+            # model family), so the ark doesn't pollute the name text.
+            idno_el = etree.SubElement(editor_el, "idno", type="ark")
+            idno_el.text = person_id
+        else:
+            editor_el.text = person_id
+    return editor_el
+
+def create_bibl_respstmt(parent, person_id, resp_label, person_db):
+    """Create a respStmt in bibl with French role label and enriched person data."""
+    respstmt = etree.SubElement(parent, "respStmt")
+    resp_el = etree.SubElement(respstmt, "resp")
+    resp_el.text = resp_label
+    if person_db and person_id in person_db:
+        person_data = person_db.enrich_author_data(person_id)
+        persname = etree.SubElement(respstmt, "persName")
+        persname.attrib["ref"] = f"#{safe_person_id(person_id)}"
+        if person_data.get("forename"):
+            forename = etree.SubElement(persname, "forename")
+            forename.text = person_data["forename"]
+        if person_data.get("namelink"):
+            namelink = etree.SubElement(persname, "nameLink")
+            namelink.text = person_data["namelink"]
+        if person_data.get("surname"):
+            surname = etree.SubElement(persname, "surname")
+            surname.text = person_data["surname"]
+    else:
+        persname = etree.SubElement(respstmt, "persName")
+        if person_id.startswith("ark:"):
+            # respStmt's content model is strict: resp+, (name|orgName|
+            # persName)+ - no <idno> allowed as a direct child of
+            # respStmt itself (unlike <author>/<editor> above, or
+            # <person> in listPerson). So the ark can't be a sibling of
+            # persName here; nest it inside the otherwise-empty persName
+            # instead (idno is a valid model.pPart.data child of
+            # persName's macro.phraseSeq content model).
+            idno_el = etree.SubElement(persname, "idno", type="ark")
+            idno_el.text = person_id
+        else:
+            persname.text = person_id
+    return respstmt
+
+
 def override_teiheader_from_csv(root, row, document_name=None):
     """
     Inject CSV metadata into an existing TEI header.
@@ -303,7 +434,6 @@ def override_teiheader_from_csv(root, row, document_name=None):
     if row is None:
         return
 
-    from lxml import etree
 
     def set_text(xpath, value):
         """Set element text if value is valid."""
@@ -351,126 +481,6 @@ def override_teiheader_from_csv(root, row, document_name=None):
     if person_db is None:
         person_db = load_person_database(METADATA_PERSON_CSV)
 
-    def create_persname_element(parent, person_data):
-        """Create a persName element with forename, surname, and identifiers."""
-        persname = etree.SubElement(parent, "persName")
-        if person_data.get("forename"):
-            forename = etree.SubElement(persname, "forename")
-            forename.text = person_data["forename"]
-        if person_data.get("namelink"):
-            namelink = etree.SubElement(persname, "nameLink")
-            namelink.text = person_data["namelink"]
-        if person_data.get("surname"):
-            surname = etree.SubElement(persname, "surname")
-            surname.text = person_data["surname"]
-        # Add ISNI pointer
-        if person_data.get("isni"):
-            ptr = etree.SubElement(persname, "ptr", type="isni")
-            ptr.attrib["target"] = f"https://isni.org/isni/{person_data['isni']}"
-        # Add ARK pointer
-        if person_data.get("ark"):
-            ptr = etree.SubElement(persname, "ptr", type="ark")
-            ptr.attrib["target"] = person_data["ark"]
-        return persname
-
-    def create_author_element(parent, person_id):
-        """Create an author element with full person data."""
-        if person_db and person_id in person_db:
-            person_data = person_db.enrich_author_data(person_id, role="author")
-            author_el = etree.SubElement(parent, "author")
-            author_el.attrib["ref"] = f"#{safe_person_id(person_id)}"
-            create_persname_element(author_el, person_data)
-            if person_data.get("birth_date") or person_data.get("birth_place"):
-                birth = etree.SubElement(author_el, "birth")
-                if person_data.get("birth_date"):
-                    birth.attrib["when"] = str(person_data["birth_date"])
-                    date_el = etree.SubElement(birth, "date")
-                    date_el.text = str(person_data["birth_date"])
-                if person_data.get("birth_place"):
-                    place = etree.SubElement(birth, "placeName")
-                    place.text = str(person_data["birth_place"])
-                    if person_data.get("birth_place_id"):
-                        ptr = etree.SubElement(place, "ptr", type="geonames")
-                        ptr.attrib["target"] = f"https://www.geonames.org/{person_data['birth_place_id']}/"
-            if person_data.get("death_date") or person_data.get("death_place"):
-                death = etree.SubElement(author_el, "death")
-                if person_data.get("death_date"):
-                    death.attrib["when"] = str(person_data["death_date"])
-                    date_el = etree.SubElement(death, "date")
-                    date_el.text = str(person_data["death_date"])
-                if person_data.get("death_place"):
-                    place = etree.SubElement(death, "placeName")
-                    place.text = str(person_data["death_place"])
-                    if person_data.get("death_place_id"):
-                        ptr = etree.SubElement(place, "ptr", type="geonames")
-                        ptr.attrib["target"] = f"https://www.geonames.org/{person_data['death_place_id']}/"
-        else:
-            author_el = etree.SubElement(parent, "author")
-            if person_id.startswith("ark:"):
-                # Unknown name: don't show the raw ark as if it were the
-                # author's name. <idno> is a model.pPart.data element, valid
-                # directly inside <author> (macro.phraseSeq.limited content).
-                idno_el = etree.SubElement(author_el, "idno", type="ark")
-                idno_el.text = person_id
-            else:
-                author_el.text = person_id
-        return author_el
-
-    def create_editor_element(parent, person_id, role):
-        """Create an editor element with role (e.g., translator)."""
-        if person_db and person_id in person_db:
-            person_data = person_db.enrich_author_data(person_id, role=role)
-            editor_el = etree.SubElement(parent, "editor")
-            editor_el.attrib["role"] = role
-            editor_el.attrib["ref"] = f"#{safe_person_id(person_id)}"
-            create_persname_element(editor_el, person_data)
-        else:
-            editor_el = etree.SubElement(parent, "editor")
-            editor_el.attrib["role"] = role
-            if person_id.startswith("ark:"):
-                # Same rationale as create_author_element: idno is valid
-                # directly inside <editor> (same phraseSeq-limited content
-                # model family), so the ark doesn't pollute the name text.
-                idno_el = etree.SubElement(editor_el, "idno", type="ark")
-                idno_el.text = person_id
-            else:
-                editor_el.text = person_id
-        return editor_el
-
-    def create_bibl_respstmt(parent, person_id, resp_label):
-        """Create a respStmt in bibl with French role label and enriched person data."""
-        respstmt = etree.SubElement(parent, "respStmt")
-        resp_el = etree.SubElement(respstmt, "resp")
-        resp_el.text = resp_label
-        if person_db and person_id in person_db:
-            person_data = person_db.enrich_author_data(person_id)
-            persname = etree.SubElement(respstmt, "persName")
-            persname.attrib["ref"] = f"#{safe_person_id(person_id)}"
-            if person_data.get("forename"):
-                forename = etree.SubElement(persname, "forename")
-                forename.text = person_data["forename"]
-            if person_data.get("namelink"):
-                namelink = etree.SubElement(persname, "nameLink")
-                namelink.text = person_data["namelink"]
-            if person_data.get("surname"):
-                surname = etree.SubElement(persname, "surname")
-                surname.text = person_data["surname"]
-        else:
-            persname = etree.SubElement(respstmt, "persName")
-            if person_id.startswith("ark:"):
-                # respStmt's content model is strict: resp+, (name|orgName|
-                # persName)+ - no <idno> allowed as a direct child of
-                # respStmt itself (unlike <author>/<editor> above, or
-                # <person> in listPerson). So the ark can't be a sibling of
-                # persName here; nest it inside the otherwise-empty persName
-                # instead (idno is a valid model.pPart.data child of
-                # persName's macro.phraseSeq content model).
-                idno_el = etree.SubElement(persname, "idno", type="ark")
-                idno_el.text = person_id
-            else:
-                persname.text = person_id
-        return respstmt
-
     # titleStmt: only authors and translators (intellectual contributors)
     titleStmt = root.find(".//teiHeader/fileDesc/titleStmt")
     if titleStmt is not None:
@@ -480,10 +490,10 @@ def override_teiheader_from_csv(root, row, document_name=None):
                 titleStmt.remove(old_author)
         # Authors
         for aid in auteurs:
-            create_author_element(titleStmt, aid)
+            create_author_element(titleStmt, aid, person_db)
         # Translators as <editor role="translator">
         for tid in traducteurs:
-            create_editor_element(titleStmt, tid, "translator")
+            create_editor_element(titleStmt, tid, "translator", person_db)
 
     # Publication places - support multiple
     lieux = _safe_value_list(row, "Lieu_publication")
@@ -497,11 +507,11 @@ def override_teiheader_from_csv(root, row, document_name=None):
             bibl.remove(old_pub)
         # Add respStmt for each production/distribution role
         for iid in imprimeurs:
-            create_bibl_respstmt(bibl, iid, "Imprimeur")
+            create_bibl_respstmt(bibl, iid, "Imprimeur", person_db)
         for lid in libraires:
-            create_bibl_respstmt(bibl, lid, "Libraire")
+            create_bibl_respstmt(bibl, lid, "Libraire", person_db)
         for eid in editeurs:
-            create_bibl_respstmt(bibl, eid, "Éditeur")
+            create_bibl_respstmt(bibl, eid, "Éditeur", person_db)
 
     # Date
     set_text(".//teiHeader/fileDesc/sourceDesc/bibl/date", row.get("Date_01") or row.get("Date_02"))
