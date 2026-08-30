@@ -20,6 +20,7 @@ from lxml import etree
 
 from ..constants import XML_ID, XML_LANG
 from ..lang import get_detector
+from ..utils.xml import declare_responsibility
 
 logger = logging.getLogger(__name__)
 
@@ -284,11 +285,7 @@ def _rebuild_with_modernization(container, groups, corresp_to_mod):
 
                 _append_tokens_with_foreign(s_new, seg.tokens, seg.token_langs)
 
-            # The line's diplomatic text, for the similarity score
-            original_text = " ".join(
-                (tok.text or "") for seg in group.segments for tok in seg.tokens
-            ).strip()
-            _make_reg(choice, original_text, corresp_to_mod[group.lb_corresp])
+            _make_reg(choice, corresp_to_mod[group.lb_corresp])
             count += 1
 
         else:
@@ -303,26 +300,34 @@ def _rebuild_with_modernization(container, groups, corresp_to_mod):
     return count
 
 
-def _make_reg(choice, original, modernized):
+def _reading_text(reading):
+    """Text of a Reading, or of a bare string (a caller that grades nothing)."""
+    return reading.text if hasattr(reading, "text") else reading
+
+
+def _make_reg(choice, reading):
     """
-    Create the modernized reading, attributed.
+    Write the modernized reading, attributed.
 
     <reg> used to carry neither @resp nor @cert although the pipeline
-    computes a similarity score for every line (audit 1.12): a reader
-    could not tell an automatic reading from an editor's, nor a light
-    spelling normalization from a heavy rewrite.
+    computes a similarity score for every line (audit 1.12). The grade
+    is decided upstream, between what was SENT to the API and what came
+    BACK — recomputing it here from a re-derived "original" scored
+    dehyphenation as if it were an editorial rewrite.
     """
-    from ..modernize import similarity
-    from config import MODERNIZE_CERT_THRESHOLDS
-
+    text, cert = (reading.text, reading.cert) if hasattr(reading, "text") else (reading, None)
     reg = etree.SubElement(choice, "reg", type="modernized")
-    reg.text = modernized
+    reg.text = text
     reg.set("resp", "#modernize-auto")
-    score = similarity(original, modernized)
-    for label, floor in sorted(MODERNIZE_CERT_THRESHOLDS.items(), key=lambda kv: -kv[1]):
-        if score >= floor:
-            reg.set("cert", label)
-            break
+    # Declared here rather than by the caller: apply_modernization* are
+    # public entry points (CLAUDE.md documents standalone use), and a
+    # @resp with no respStmt to point at is a dangling pointer.
+    root = choice.getroottree().getroot()
+    declare_responsibility(
+        root, "modernize-auto",
+        "Modernisation automatique des formes anciennes", "VieuxParler",
+    )
+    reg.set("cert", cert or "unknown")
     return reg
 
 
@@ -342,7 +347,7 @@ def _append_choice(parent, original, modernized):
     choice = etree.SubElement(parent, "choice")
     orig = etree.SubElement(choice, "orig")
     orig.text = original
-    _make_reg(choice, original, modernized)
+    _make_reg(choice, modernized)
     return choice
 
 
@@ -563,7 +568,12 @@ def apply_modernization(root, modernized_texts):
             break
         original = lb.tail or ""
         mod = modernized_texts[i]
-        if not mod or mod == original:
+        # A Reading is only present for a line the API actually changed
+        # (grade_readings puts None everywhere else); a bare string still
+        # gets the old "did anything change?" check.
+        if mod is None:
+            continue
+        if not hasattr(mod, "text") and (not mod or mod == original):
             continue
         # Clear the tail text from the lb, insert <choice> after it
         lb.tail = None
@@ -644,7 +654,7 @@ def _wrap_plain_lines(container, corresp_to_mod):
         if not corresp or corresp not in corresp_to_mod:
             continue
         mod_text = corresp_to_mod[corresp]
-        if mod_text == original:
+        if not hasattr(mod_text, "text") and mod_text == original:
             continue
         lb.tail = None
         choice = _append_choice(lb.getparent(), original, mod_text)

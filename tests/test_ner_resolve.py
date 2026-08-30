@@ -344,7 +344,10 @@ def test_inject_header_entities_routes_standoff():
     list_object = next(c for c in stand_off if qlocal(c) == "listObject")
     object_item = list_object[0]
     assert object_item.get(XML_ID) == "artwork-a"
-    object_name = next(c for c in object_item if qlocal(c) == "objectName")
+    # TEI exige le niveau <objectIdentifier> : sans lui, tout fichier
+    # portant une entite oeuvre echouait a la validation tei_all.
+    identifier = next(c for c in object_item if qlocal(c) == "objectIdentifier")
+    object_name = next(c for c in identifier if qlocal(c) == "objectName")
     assert object_name.text == "La Joconde"
 
 

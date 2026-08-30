@@ -105,14 +105,14 @@ def validate(path, relaxng=None):
     if dangling_target:
         errors.append(f"{dangling_target} @target du body sans cible dans le document")
 
-    # @corresp et @facs — le mécanisme central body->sourceDoc (et
-    # zones->taxonomie) : chaque #ref doit résoudre dans le document.
+    # @corresp, @facs et @resp — le mécanisme central body->sourceDoc,
+    # zones->taxonomie, et l'attribution des annotations automatiques : chaque #ref doit résoudre dans le document.
     # C'est le contrôle qui manquait quand 218 @corresp pendants
     # (#MarginTextZone/#GraphicZone non déclarés) passaient inaperçus.
     dangling_link = 0
     exemples = []
     for el in root.iter():
-        for att in ("corresp", "facs"):
+        for att in ("corresp", "facs", "resp"):
             for ref in (el.get(att) or "").split():
                 if ref.startswith("#") and ref[1:] not in ids:
                     dangling_link += 1
@@ -120,7 +120,7 @@ def validate(path, relaxng=None):
                         exemples.append(f"{att}={ref}")
     if dangling_link:
         errors.append(
-            f"{dangling_link} @corresp/@facs sans cible dans le document "
+            f"{dangling_link} @corresp/@facs/@resp sans cible dans le document "
             f"(ex.: {exemples})"
         )
 

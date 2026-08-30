@@ -16,7 +16,7 @@ from lxml import etree
 
 from .constants import NS_TEI, XML_ID, tag_like
 from .utils.files import canonical_document_id
-from .utils.xml import local_tag
+from .utils.xml import declare_responsibility
 
 logger = logging.getLogger(__name__)
 from .teiheader import build_header
@@ -34,66 +34,11 @@ def strip_residual_hyphens(modernized):
 
 
 def declare_modernization_responsibility(root):
-    """
-    Declare the agent behind the modernized readings.
-
-    Every <reg type="modernized"> carries @resp="#modernize-auto"
-    (audit 1.12); without this the pointer dangles. Idempotent, like its
-    NER counterpart: a second pass must not duplicate the xml:id.
-    """
-    header = next((e for e in root.iter() if local_tag(e.tag) == "teiHeader"), None)
-    if header is None:
-        return None
-    file_desc = next((c for c in header if local_tag(c.tag) == "fileDesc"), None)
-    if file_desc is None:
-        return None
-
-    edition_stmt = next(
-        (c for c in file_desc if local_tag(c.tag) == "editionStmt"), None
+    """Declare the agent behind the modernized readings (@resp target)."""
+    return declare_responsibility(
+        root, "modernize-auto",
+        "Modernisation automatique des formes anciennes", "VieuxParler",
     )
-    if edition_stmt is None:
-        edition_stmt = etree.Element(tag_like(file_desc, "editionStmt"))
-        edition = etree.SubElement(edition_stmt, tag_like(file_desc, "edition"))
-        edition.text = "Édition enrichie avec annotations automatiques"
-        title_idx = next(
-            (i for i, c in enumerate(file_desc) if local_tag(c.tag) == "titleStmt"), -1
-        )
-        file_desc.insert(title_idx + 1, edition_stmt)
-
-    for child in edition_stmt:
-        if local_tag(child.tag) == "respStmt" and child.get(XML_ID) == "modernize-auto":
-            return child
-
-    resp_stmt = etree.SubElement(edition_stmt, tag_like(edition_stmt, "respStmt"))
-    resp_stmt.set(XML_ID, "modernize-auto")
-    resp = etree.SubElement(resp_stmt, tag_like(edition_stmt, "resp"))
-    resp.text = "Modernisation automatique des formes anciennes"
-    name = etree.SubElement(resp_stmt, tag_like(edition_stmt, "name"))
-    name.text = "VieuxParler"
-    return resp_stmt
-
-
-def drop_carried_words(modernized, carried):
-    """
-    Remove, from each carried line, the word that belongs to an earlier one.
-
-    Dehyphenation repeats a split word on every line it spans so the
-    modernization API sees it whole — but that is input context, not
-    encoding. Left in place, the repetition reaches the <reg> elements
-    and any extraction of the modernized text yields doubled words
-    (audit 1.12). The word stays on the line where it STARTS; the lines
-    that merely continue it drop their leading token (a line that was
-    nothing but a fragment thus ends up empty, which is exactly what it
-    contributes of its own). The diplomatic reading is untouched: <orig>
-    still carries every line's text, hyphen included.
-    """
-    out = list(modernized)
-    for idx in carried:
-        if idx >= len(out) or not out[idx]:
-            continue
-        parts = out[idx].split(None, 1)
-        out[idx] = parts[1] if len(parts) > 1 else ""
-    return out
 
 
 class TEI:
@@ -266,7 +211,7 @@ class TEI:
         Returns:
             int: Number of lines modernized, or 0 on failure.
         """
-        from .modernize import modernize_texts, dehyphenate_lines
+        from .modernize import modernize_texts, dehyphenate_lines, grade_readings
 
         # Get line texts
         if line_data is None:
@@ -292,23 +237,24 @@ class TEI:
             return 0
 
         modernized = strip_residual_hyphens(modernized)
-        modernized = drop_carried_words(modernized, carried)
+        # Grade against what was SENT, not against the raw diplomatic
+        # line: dehyphenation alone would otherwise count as an
+        # editorial modernization (audit 1.12 follow-up).
+        readings = grade_readings(joined_texts, modernized, carried)
 
         # The readings point at it with @resp, so declare it as soon as
-        # there is one.
-        if any(m and m != o for m, o in zip(modernized, original_texts)):
+        # there is one to point.
+        if any(r is not None for r in readings):
             declare_modernization_responsibility(self.root)
 
         if enriched:
-            # Build corresp -> modernized mapping for lines that changed
-            corresp_to_mod = {}
-            for ld, mod in zip(line_data, modernized):
-                corresp, orig = ld[0], ld[1]
-                if mod and mod != orig and corresp:
-                    corresp_to_mod[corresp] = mod
+            corresp_to_mod = {
+                ld[0]: reading
+                for ld, reading in zip(line_data, readings)
+                if reading is not None and ld[0]
+            }
             return apply_modernization_enriched(self.root, corresp_to_mod)
-        else:
-            return apply_modernization(self.root, modernized)
+        return apply_modernization(self.root, readings)
 
     def enrich_body(self, progress_callback=None):
         """
