@@ -38,12 +38,7 @@ from config import (
     ENRICHMENT_ENABLED,
     MODERNIZE_ENABLED,
     NER_ENABLED,
-    NER_ENTITY_TYPES,
-    NER_MODELS,
-    NER_CONFIDENCE_THRESHOLD,
     NER_OUTPUT_DIR,
-    NER_CONTAINERS,
-    NER_CERT_THRESHOLDS,
     DEBUG,
     LOG_FILE,
 )
@@ -106,9 +101,6 @@ from src.utils.files import parse_document_id
 
 
 console = Console()
-
-# Lazy-loaded NER models (shared across documents when NER is enabled)
-_ner_models = None
 
 
 # =============================================================================
@@ -386,50 +378,12 @@ def _process_document(doc_name, filepaths, doc_dir, df_meta, config,
         )
 
         try:
-            from src.enrichment.ner_detect import extract_ner_blocks, detect_entities
-            from src.enrichment.ner_align import align_and_inject
-            from src.enrichment.ner_resolve import resolve_entities
-            from src.enrichment.ner_models import NERModels
+            from src.enrichment.ner_pipeline import run_ner, summarize
 
-            # Lazy-load models (shared across documents)
-            global _ner_models
-            if _ner_models is None:
-                _ner_models = NERModels(NER_MODELS)
-
-            ner_models = _ner_models
-
-            # Phase 7: Extract blocks + inference
-            ner_blocks = extract_ner_blocks(tree.root, NER_CONTAINERS)
-            ner_spans = detect_entities(
-                ner_blocks, ner_models, NER_ENTITY_TYPES,
-                NER_MODELS, NER_CONFIDENCE_THRESHOLD,
-                root=tree.root,
-            )
-
-            # Phase 8: Align + merge + inject
-            aligned = align_and_inject(
-                ner_blocks, ner_spans,
-                NER_ENTITY_TYPES, NER_CERT_THRESHOLDS,
-            )
-
-            # Phase 9: Resolve + CSV + header + @ref
-            resolved = resolve_entities(
-                tree.root, aligned, NER_ENTITY_TYPES,
-                person_db, NER_OUTPUT_DIR, doc_name,
-            )
-
-            if resolved:
-                by_type = {}
-                for ent in resolved:
-                    by_type[ent.entity_type] = by_type.get(ent.entity_type, 0) + 1
-                total_mentions = sum(len(e.mentions) for e in resolved)
-                type_str = ", ".join(
-                    f"{c} {t}" for t, c in sorted(by_type.items(), key=lambda x: -x[1])
-                )
-                console.print(
-                    f"  [dim]NER: {len(resolved)} entities ({type_str}), "
-                    f"{total_mentions} mentions[/dim]"
-                )
+            resolved = run_ner(tree.root, person_db, doc_name)
+            summary = summarize(resolved)
+            if summary:
+                console.print(f"  [dim]NER: {summary}[/dim]")
 
         except ImportError as e:
             console.print(
@@ -438,7 +392,7 @@ def _process_document(doc_name, filepaths, doc_dir, df_meta, config,
             )
         except Exception as e:
             logging.getLogger(__name__).error("NER pipeline failed: %s", e, exc_info=True)
-            console.print(f"[yellow]Warning: NER failed ({e}) — continuing.[/yellow]")
+            console.print(f"[yellow]Warning: NER failed ({escape(str(e))}) — continuing.[/yellow]")
 
         progress.update(task_ner, visible=False)
 
