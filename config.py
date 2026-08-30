@@ -97,18 +97,6 @@ APP_VERSIONS = {
     },
 }
 
-# Model information for OCR/HTR
-MODELS_VERSIONS = {
-    "KRAKEN_MODEL": {
-        "name": "",
-        "source": "",
-    },
-    "YOLO_MODEL": {
-        "name": "CapricciosaX.pt",
-        "source": "https://doi.org/10.5281/zenodo.10602196",
-    },
-}
-
 # =============================================================================
 # SEGMONTO TAXONOMY CONFIGURATION
 # =============================================================================
@@ -161,13 +149,13 @@ PLACEHOLDER_ORCID = "0000-0000-0000-0000"
 # =============================================================================
 
 # IIIF server configuration for image references
-IIIF_URI = {
-    "scheme": "https",
-    "server": "gallica.bnf.fr",
-    "manifest_prefix": "/iiif/ark:/12148/",
-    "manifest_suffix": "/manifest.json",
-    "image_prefix": "/iiif/ark:/12148",
-}
+# Per-document IIIF settings. Only "view_number" (the page's scan
+# number) and "image_base" are ever read, and both are computed per
+# document by main.py — image_base from the volume's own manifest URL.
+# The five URL-building keys this dict used to carry (scheme, server,
+# manifest_prefix, manifest_suffix, image_prefix) were read nowhere:
+# editing them changed nothing in the output (audit 4.6).
+IIIF_URI = {}
 
 # =============================================================================
 # LANGUAGE DETECTION CONFIGURATION

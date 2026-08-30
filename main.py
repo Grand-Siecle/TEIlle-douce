@@ -114,11 +114,11 @@ def build_config():
     Returns:
         dict: Configuration dictionary for the pipeline.
     """
+    # "data" and "offline" used to sit here too; nothing ever read them
+    # (audit 4.6).
     return {
-        "data": {"path": str(OCR_DIR)},
         "iiifURI": IIIF_URI,
         "responsibility": RESPONSIBILITY,
-        "offline": True,
     }
 
 

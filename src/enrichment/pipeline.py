@@ -282,7 +282,7 @@ def _finish_container(job, stats):
         aligned, id_scope=f"{job.index}\x1f{scope_ref}"
     )
 
-    rebuild_container(container, sentences, job.spans, primary_lang=job.primary_lang)
+    rebuild_container(container, sentences, primary_lang=job.primary_lang)
 
     stats["containers_enriched"] += 1
     stats["tokens_total"] += len(tokens)

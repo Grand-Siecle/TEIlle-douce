@@ -223,28 +223,15 @@ def test_detect_csv_swallows_exception_from_unreadable_candidate(tmp_path):
 # =============================================================================
 
 
-def test_iiif_uri_dict_keys_are_never_read_by_the_pipeline():
-    """config.IIIF_URI ships 5 keys (scheme, server, manifest_prefix,
-    manifest_suffix, image_prefix). Tracing every consumer of the config
-    dict handed down from main.build_config()/main.py's per-document
-    override (config["iiifURI"] = dict(IIIF_URI, image_base=...)) shows
-    only two keys are ever read out of it: "image_base" (computed
-    separately by main._gallica_image_base() via a Gallica-specific regex
-    on the manifest URL - NOT derived from IIIF_URI's own keys) and
-    "view_number". Editing IIIF_URI's 5 keys in config.py therefore has
-    zero observable effect on pipeline output. This test fails the day
-    someone actually wires one of them in, which is the point."""
-    assert set(config.IIIF_URI) == {
-        "scheme",
-        "server",
-        "manifest_prefix",
-        "manifest_suffix",
-        "image_prefix",
-    }
-
-    # src/metadata/iiif.py (this test file's own target) never imports it either.
-    iiif_source = (REPO_ROOT / "src" / "metadata" / "iiif.py").read_text(encoding="utf-8")
-    assert "IIIF_URI" not in iiif_source
+def test_iiif_uri_carries_no_unread_url_building_keys():
+    """Audit 4.6 : IIIF_URI embarquait 5 cles (scheme, server,
+    manifest_prefix, manifest_suffix, image_prefix) que personne ne
+    lisait — les editer ne changeait rien a la sortie. Elles sont
+    supprimees ; seules "image_base" et "view_number" sont lues, et
+    toutes deux sont calculees par document dans main.py. Ce test
+    echoue le jour ou une cle morte revient sans consommateur."""
+    mortes = {"scheme", "server", "manifest_prefix", "manifest_suffix", "image_prefix"}
+    assert set(config.IIIF_URI) & mortes == set()
 
     consumer_sources = "".join(
         (REPO_ROOT / rel).read_text(encoding="utf-8")
@@ -256,17 +243,11 @@ def test_iiif_uri_dict_keys_are_never_read_by_the_pipeline():
             "src/sourcedoc/elements.py",
         )
     )
-    for key in config.IIIF_URI:
-        # Look for the key used as an actual mapping lookup (quoted string
-        # literal), not as an English word inside a comment/docstring
-        # (e.g. "servers" in a comment would otherwise false-positive).
-        assert f'"{key}"' not in consumer_sources, key
-        assert f"'{key}'" not in consumer_sources, key
+    for cle in config.IIIF_URI:
+        # une cle presente doit avoir un consommateur (lecture par
+        # litteral chaine), sinon c'est de la config morte
+        assert f'"{cle}"' in consumer_sources or f"'{cle}'" in consumer_sources, cle
 
-
-# =============================================================================
-# PersonDatabase.load / _build_index / _parse_person_row
-# =============================================================================
 
 PERSON_CSV_HEADER = "BDD;Nom;Prenoms;ISNI;Label_categ"
 PERSON_CSV_ROWS = [
