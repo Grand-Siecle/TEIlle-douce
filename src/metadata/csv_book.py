@@ -284,6 +284,27 @@ def build_metadata_dict(row):
 
 
 
+# CSV field -> (TEI element, @type) for the person's identifiers and
+# notes, in the order they are emitted inside <person>. Adding a CSV
+# column is a line here, not another copy of the same if/SubElement
+# block (audit 4.4).
+_PERSON_EXTRA_FIELDS = (
+    ("isni", "idno", "isni"),
+    ("ark", "idno", "ark"),
+    ("portraits", "note", "portrait"),
+    ("oeuvre", "note", "works"),
+    ("milieux_reseaux", "note", "networks"),
+    ("contacts_artistes", "note", "contacts"),
+    ("fortune_critique", "note", "reception"),
+    ("publications", "note", "publications"),
+    ("citations", "note", "citations"),
+    ("bibliographie", "note", "bibliography"),
+    ("webographie", "note", "webography"),
+    ("note", "note", None),
+    ("commentaires", "note", "comments"),
+)
+
+
 # =============================================================================
 # TEI ELEMENT BUILDERS
 #
@@ -708,70 +729,18 @@ def override_teiheader_from_csv(root, row, document_name=None):
                         occupation_el = etree.SubElement(person_el, "occupation")
                         occupation_el.text = person["professions"]
 
-                    # idno - ISNI
-                    if person.get("isni"):
-                        idno_isni = etree.SubElement(person_el, "idno", type="isni")
-                        idno_isni.text = person["isni"]
+                    # Identifiers and notes: one table, one loop. The
+                    # same "if person.get(X): <note type=Y>" shape was
+                    # written out thirteen times (audit 4.4) — every new
+                    # CSV column meant another copy-paste of it.
+                    for field, tag, note_type in _PERSON_EXTRA_FIELDS:
+                        value = person.get(field)
+                        if not value:
+                            continue
+                        attrs = {"type": note_type} if note_type else {}
+                        el = etree.SubElement(person_el, tag, attrs)
+                        el.text = value
 
-                    # idno - ARK
-                    if person.get("ark"):
-                        idno_ark = etree.SubElement(person_el, "idno", type="ark")
-                        idno_ark.text = person["ark"]
-
-                    # portraits
-                    if person.get("portraits"):
-                        note_el = etree.SubElement(person_el, "note", type="portrait")
-                        note_el.text = person["portraits"]
-
-                    # oeuvre
-                    if person.get("oeuvre"):
-                        note_el = etree.SubElement(person_el, "note", type="works")
-                        note_el.text = person["oeuvre"]
-
-                    # milieux / réseaux
-                    if person.get("milieux_reseaux"):
-                        note_el = etree.SubElement(person_el, "note", type="networks")
-                        note_el.text = person["milieux_reseaux"]
-
-                    # contacts artistes
-                    if person.get("contacts_artistes"):
-                        note_el = etree.SubElement(person_el, "note", type="contacts")
-                        note_el.text = person["contacts_artistes"]
-
-                    # fortune critique
-                    if person.get("fortune_critique"):
-                        note_el = etree.SubElement(person_el, "note", type="reception")
-                        note_el.text = person["fortune_critique"]
-
-                    # publications
-                    if person.get("publications"):
-                        note_el = etree.SubElement(person_el, "note", type="publications")
-                        note_el.text = person["publications"]
-
-                    # citations
-                    if person.get("citations"):
-                        note_el = etree.SubElement(person_el, "note", type="citations")
-                        note_el.text = person["citations"]
-
-                    # bibliographie
-                    if person.get("bibliographie"):
-                        note_el = etree.SubElement(person_el, "note", type="bibliography")
-                        note_el.text = person["bibliographie"]
-
-                    # webographie
-                    if person.get("webographie"):
-                        note_el = etree.SubElement(person_el, "note", type="webography")
-                        note_el.text = person["webographie"]
-
-                    # notes
-                    if person.get("note"):
-                        note_el = etree.SubElement(person_el, "note")
-                        note_el.text = person["note"]
-
-                    # commentaires
-                    if person.get("commentaires"):
-                        note_el = etree.SubElement(person_el, "note", type="comments")
-                        note_el.text = person["commentaires"]
                 else:
                     # Person not in database - create minimal entry
                     person_el = etree.SubElement(listPerson, "person")
