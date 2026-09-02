@@ -12,17 +12,47 @@ code that writes it. Each declaration is emitted as
 src/teiheader/default.py, and switching one off with `enabled: False`
 removes it from the output.
 
-The normalization paragraph reads MODERNIZE_SIMILARITY_MIN from the
-configuration rather than restating it: the threshold and the sentence
-describing it used to be free to drift apart (audit 2.13).
+Nothing here restates a value the code already holds: the normalization
+paragraph reads MODERNIZE_SIMILARITY_MIN, the interpretation paragraph
+derives its certainty bands from NER_CERT_THRESHOLDS, and the
+language-detection paragraph lists TEXT_CONTAINERS. A sentence and the
+setting it describes used to be free to drift apart (audit 2.13) — and
+did: the prose announced a @cert value ("mid") no element ever carried.
 """
 
 from config import (
     ENRICHMENT_ENABLED,
     MODERNIZE_ENABLED,
     MODERNIZE_SIMILARITY_MIN,
+    NER_CERT_THRESHOLDS,
     NER_ENABLED,
 )
+
+from ..constants import TEXT_CONTAINERS
+
+
+def _cert_bands(thresholds):
+    """The @cert bands, written from the table that decides them.
+
+    The keys ARE the emitted values and the floors ARE the boundaries
+    src.enrichment.ner_align._confidence_to_cert applies (a score takes
+    the label of the highest floor it reaches), so both are read from
+    the table rather than typed out: "low < 0.6, medium 0.6-0.85,
+    high >= 0.85".
+    """
+    bands = sorted(thresholds.items(), key=lambda kv: kv[1])
+    parts = []
+    for i, (label, floor) in enumerate(bands):
+        ceiling = bands[i + 1][1] if i + 1 < len(bands) else None
+        if ceiling is None:
+            parts.append(f"{label} >= {floor:g}")
+        elif i == 0:
+            # The lowest band has no meaningful floor: everything under
+            # the next one falls into it, including a score of 0.
+            parts.append(f"{label} < {ceiling:g}")
+        else:
+            parts.append(f"{label} {floor:g}\u2013{ceiling:g}")
+    return ", ".join(parts)
 
 # =============================================================================
 # EDITORIAL DECLARATIONS (encodingDesc/editorialDecl)
@@ -65,9 +95,8 @@ EDITORIAL_DECLARATIONS = {
             "CamemBERT-classical-fr-ner on original orthography and "
             "GLiNER-multi-v2.1 on modernized text. Non-French text "
             "was processed with GLiNER only. Annotations carry "
-            '@resp="#ner-auto" and @cert (low < 0.6, mid 0.6\u20130.85, '
-            "high >= 0.85). Identifiers were resolved against local "
-            "authority files."
+            f'@resp="#ner-auto" and @cert ({_cert_bands(NER_CERT_THRESHOLDS)}). '
+            "Identifiers were resolved against local authority files."
         ),
     },
 }
@@ -78,7 +107,8 @@ EDITORIAL_DECLARATIONS = {
 # because <langUsage> is not a valid child of <editorialDecl> in TEI P5.
 LANG_USAGE_DESCRIPTION = (
     "Language detection uses Lingua (statistical n-gram model) at "
-    "the container level (ab, note, fw). Mixed-language containers "
+    f"the container level ({', '.join(TEXT_CONTAINERS)}). "
+    "Mixed-language containers "
     "are segmented by Lingua's detect_multiple_languages_of, which "
     "identifies contiguous blocks via sliding-window character "
     "n-gram comparison. Segments classified as foreign are validated "

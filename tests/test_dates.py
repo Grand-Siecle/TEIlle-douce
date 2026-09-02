@@ -85,6 +85,25 @@ def test_an_approximation_marker_is_read_the_same_way_by_both():
     assert text_date_attributes("vers 1650")["cert"] == "low"
 
 
+@pytest.mark.parametrize("cellule", [
+    "environ 1650",   # \benv\b ne peut pas matcher « environ »
+    "env. 1650",
+    "vers 1650",
+    "ca. 1650",
+    "circa 1650",
+    "? 1650",
+])
+def test_every_circa_marker_the_stripper_knows_is_read_as_an_estimate(cellule):
+    """Le detecteur d'incertitude et la regex qui retire les mots
+    d'introduction doivent connaitre les memes marqueurs : « environ
+    1650 » etait retire cote texte et lu comme une date exacte cote
+    attribut, publiant une approximation comme une certitude."""
+    assert date_attributes(cellule) == {"when": "1650", "cert": "low"}
+    # et les deux lecteurs (cellule de CSV, date lue dans le texte)
+    # partagent ce verdict : _is_uncertain les sert tous les deux
+    assert text_date_attributes(cellule) == {"when": "1650", "cert": "low"}
+
+
 def test_a_lowercase_word_is_never_read_as_a_roman_year():
     """« dix » vaut 509 en chiffres romains si l'on plie la casse."""
     for mot in ("dix", "vi", "ci", "li"):

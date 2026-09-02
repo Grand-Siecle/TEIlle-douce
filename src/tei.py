@@ -216,13 +216,27 @@ class TEI:
             progress_callback: Optional callable(completed, total).
 
         Returns:
-            int: Number of lines modernized, or 0 on failure.
+            dict: Statistics about the modernization, shaped like the
+                enrichment ones (audit 2.7): "lines_found",
+                "lines_modernized", "containers_failed" and
+                "server_unavailable". A bare count could not tell a
+                document with nothing to modernize from a run whose
+                service had died — both were 0, and the console printed
+                neither.
         """
         from .modernize import modernize_texts, dehyphenate_lines, grade_readings
+
+        stats = {
+            "lines_found": 0,
+            "lines_modernized": 0,
+            "containers_failed": 0,
+            "server_unavailable": False,
+        }
 
         # Get line texts
         if line_data is None:
             line_data = self.extract_line_data()
+        stats["lines_found"] = len(line_data)
 
         original_texts = [text for _, text, *_ in line_data]
         zone_types = [zt for _, _, zt, *_ in line_data] if line_data and len(line_data[0]) > 2 else None
@@ -238,10 +252,21 @@ class TEI:
             )
         except Exception as e:
             logger.error("Modernization failed: %s: %r", type(e).__name__, e)
-            return 0
+            stats["server_unavailable"] = True
+            return stats
 
         if modernized is None:
-            return 0
+            # modernize_texts hands back the originals when there was
+            # nothing worth sending, so None means the readings were
+            # lost: no configured API for this language, or every batch
+            # failed. Either way the document leaves without a single
+            # <choice> and the caller has to say so.
+            logger.error(
+                "Modernization returned nothing for %s — document left unmodernized",
+                self.d,
+            )
+            stats["server_unavailable"] = True
+            return stats
 
         modernized = strip_residual_hyphens(modernized)
         # Grade against what was SENT, not against the raw diplomatic
@@ -260,8 +285,12 @@ class TEI:
                 for ld, reading in zip(line_data, readings)
                 if reading is not None and ld[0]
             }
-            return apply_modernization_enriched(self.root, corresp_to_mod)
-        return apply_modernization(self.root, readings)
+            stats["lines_modernized"] = apply_modernization_enriched(
+                self.root, corresp_to_mod, stats=stats
+            )
+        else:
+            stats["lines_modernized"] = apply_modernization(self.root, readings)
+        return stats
 
     def enrich_body(self, progress_callback=None):
         """

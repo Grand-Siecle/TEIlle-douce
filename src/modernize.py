@@ -134,9 +134,12 @@ def modernize_texts(texts, lang="fra", progress_callback=None):
         progress_callback: Optional callable(completed, total) for progress.
 
     Returns:
-        list or None: Modernized texts (same length as *texts*),
-                      or None if the language has no configured API
-                      or every batch failed.
+        list or None: Modernized texts (same length as *texts*), or None
+                      when the readings were LOST — no configured API for
+                      the language, or every batch failed. Lines with no
+                      textual content come back unchanged rather than as
+                      None: the caller reports a None as a service
+                      failure, and a page of digits is not one.
     """
     base_url = MODERNIZE_API.get(lang)
     if not base_url:
@@ -150,7 +153,10 @@ def modernize_texts(texts, lang="fra", progress_callback=None):
         if not _SKIP_RE.match(t) and sum(c.isalpha() for c in t) >= _MIN_ALPHA
     ]
     if not sendable_idx:
-        return None
+        # Nothing worth sending (whitespace, digits, punctuation only):
+        # the originals ARE the answer here, and saying so keeps this
+        # case distinguishable from a service that answered nothing.
+        return list(texts)
     sendable_texts = [texts[i] for i in sendable_idx]
 
     modernized = asyncio.run(
