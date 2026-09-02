@@ -102,7 +102,8 @@ def run_ner(root, person_db, document_name, models=None,
 
     # Phase 9: resolve + CSV + header + @ref
     return resolve_entities(
-        root, aligned, entity_types, person_db, output_dir, document_name
+        root, aligned, entity_types, person_db, output_dir, document_name,
+        cert_thresholds=cert_thresholds,
     )
 
 

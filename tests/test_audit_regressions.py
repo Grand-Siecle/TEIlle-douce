@@ -169,7 +169,7 @@ def test_glyph_zone_and_char_report_the_same_certainty():
 # 4.2 -- deux conventions de namespace dans le meme arbre
 # =============================================================================
 
-def test_ner_and_csv_share_a_single_particdesc(tmp_path, monkeypatch):
+def test_ner_and_csv_keep_one_container_each(tmp_path, monkeypatch):
     """
     Audit 4.2 : la phase NER injectait des elements NAMESPACES dans un
     arbre construit en tags nus. Consequence concrete mesuree : le
@@ -206,7 +206,20 @@ def test_ner_and_csv_share_a_single_particdesc(tmp_path, monkeypatch):
     load_person_database(csv)
     override_teiheader_from_csv(root, {"ID_auteur": "PERS0001"}, "TESTDOC0001")
 
+    # Le constat 4.2 tient toujours, sur le conteneur que la phase NER
+    # cree encore : <standOff>. Il est bati par _find_or_create/tag_like
+    # sur un arbre nu, et une seconde passe doit le RETROUVER au lieu
+    # d'en ajouter un second namespace a cote.
+    standoff = [e for e in root if qlocal(e) == "standOff"]
+    assert len(standoff) == 1, f"{len(standoff)} standOff — les deux conventions coexistent"
+    inferee = [e for e in standoff[0] if qlocal(e) == "listPerson"]
+    assert len(inferee) == 1 and inferee[0].get("source") == "#ner-auto"
+
+    # Et les deux listes ne se melangent plus (audit 1.9) : ce que
+    # l'editeur affirme reste dans le particDesc, ce qu'un modele a
+    # devine va dans le standOff.
     partic = [e for e in root.iter() if qlocal(e) == "particDesc"]
     assert len(partic) == 1, f"{len(partic)} particDesc — les deux conventions coexistent"
-    listes = [e for e in partic[0] if qlocal(e) == "listPerson"]
-    assert len(listes) == 2, "les deux listes (NER et CSV) doivent vivre sous le meme particDesc"
+    curee = [e for e in partic[0] if qlocal(e) == "listPerson"]
+    assert len(curee) == 1
+    assert curee[0].get("source") != "#ner-auto"
