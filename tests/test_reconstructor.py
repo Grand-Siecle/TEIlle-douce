@@ -470,26 +470,31 @@ def test_create_cross_line_w_fewer_than_two_parts_falls_back_to_create_w():
     assert w.get("part") is None
 
 
-def test_create_cross_line_w_lb_count_follows_lb_elements_not_parts():
-    """
-    Documents real (unvalidated) behaviour: the number of <lb/> emitted is
-    driven by len(lb_elements), not len(parts) - 1. With 3 parts but only 1
-    lb_element supplied (a malformed/mismatched aligner output), only one
-    <lb/> is produced even though there are two line boundaries.
-    """
+def test_create_cross_line_w_emits_one_lb_per_boundary(caplog):
+    """Audit 6.5 : le nombre de <lb/> suivait len(lb_elements). Avec 3
+    fragments et un seul lb_element (sortie d'aligneur incoherente), une
+    frontiere de ligne disparaissait en silence — deux lignes soudees en
+    une. Il en faut un par frontiere ; celui qui n'a pas de source garde
+    son role de saut de ligne, sans @corresp, et le signale."""
     lb1 = etree.Element("lb")
+    lb1.set("corresp", "#zoneLine_a")
     token = mk_token("redaction")
     at = mk_aligned(
         token,
         spans=[mk_span(line_index=i) for i in range(3)],
-        lb_elements=[lb1],  # only 1, though parts implies 2 boundaries
+        lb_elements=[lb1],  # 1 seul, pour 2 frontieres
         is_cross_line=True,
         original_parts=["re", "dac", "tion"],
     )
     parent = etree.Element("s")
-    _create_cross_line_w(parent, at, set())
 
-    assert [qlocal(c) for c in parent].count("lb") == 1
+    with caplog.at_level("WARNING"):
+        _create_cross_line_w(parent, at, set())
+
+    lbs = [c for c in parent if qlocal(c) == "lb"]
+    assert len(lbs) == 2
+    assert [lb.get("corresp") for lb in lbs] == ["#zoneLine_a", None]
+    assert "redaction" in caplog.text
     # part attributes are still correct for all 3 fragments regardless
     ws = [c for c in parent if qlocal(c) == "w"]
     assert [w.get("part") for w in ws] == ["I", "M", "F"]
@@ -604,15 +609,15 @@ def test_rebuild_container_foreign_wraps_only_non_primary_lang_runs():
 # 7. rebuild_container degraded inputs
 # =============================================================================
 
-def test_rebuild_container_empty_sentence_list_clears_the_container():
+def test_rebuild_container_with_no_sentence_leaves_the_text_alone():
+    """Audit 6.7 : la liste vide vidait le conteneur — attributs gardes,
+    contenu perdu. Un resultat de tagging vide doit rendre la
+    transcription intacte, pas la remplacer par rien."""
     container = mk_container(extra_attrs='type="marginal"', body="<w>reste</w>")
     rebuild_container(container, [], primary_lang="fra")
 
-    # real, observed behaviour: an empty sentence list empties the container
-    # (text and all children removed), it is not left intact.
-    assert container.text is None
-    assert list(container) == []
-    # but the container's own attributes survive the clear/restore cycle
+    assert [qlocal(c) for c in container] == ["w"]
+    assert container[0].text == "reste"
     assert container.get(XML_ID) == "ab1"
     assert container.get("type") == "marginal"
 

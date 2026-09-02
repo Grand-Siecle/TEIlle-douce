@@ -45,6 +45,9 @@ def texte_total(el):
     return "".join(el.itertext())
 
 
+XML_LANG_ATT = "{http://www.w3.org/XML/1998/namespace}lang"
+
+
 def make_container(tag, line_texts):
     """Build <tag><lb/>line0<lb/>line1...</tag>, mirroring how the real
     pipeline attaches lines: one <lb/> per entry of line_texts, appended
@@ -409,22 +412,34 @@ def test_insert_foreign_inline_line_index_beyond_available_lb_is_ignored():
     assert texte_total(container) == original_total
 
 
-def test_insert_foreign_inline_two_overlapping_segments_first_wins():
-    # Documented behavior of _splice_lb_tail: overlapping ops are
-    # dropped after the first (by start offset) is accepted. This test
-    # pins that behavior down explicitly so a change to it is a
-    # deliberate decision, not an accident -- the invariant that must
-    # hold regardless is that no text is lost or duplicated.
+def test_two_overlapping_segments_keep_both_languages():
+    """Deux segments ne peuvent pas couvrir les memes caracteres — un
+    element XML n'a qu'une langue — mais le second etait perdu en
+    entier, sa langue avec (audit 6.1). Il est rogne a ce qui reste
+    libre. L'invariant tient dans les deux cas : aucun texte perdu ni
+    duplique."""
     line = "abcdefgh"
     container = make_container("ab", [line])
     original_total = texte_total(container)
 
     _insert_foreign_inline(container, [line], [(0, 5, "la"), (3, 8, "it")])
 
-    assert [qlocal(c) for c in container] == ["lb", "foreign"]
-    lb, foreign = container
+    assert [qlocal(c) for c in container] == ["lb", "foreign", "foreign"]
+    lb, premier, second = container
     assert not lb.tail
-    assert foreign.text == "abcde"
-    assert foreign.get("{http://www.w3.org/XML/1998/namespace}lang") == "la"
-    assert foreign.tail == "fgh"
+    assert (premier.text, premier.get(XML_LANG_ATT)) == ("abcde", "la")
+    assert (second.text, second.get(XML_LANG_ATT)) == ("fgh", "it")
     assert texte_total(container) == original_total
+
+
+def test_a_segment_entirely_covered_by_another_is_dropped_with_a_warning(caplog):
+    """Rien ne reste a lui donner : le perdre est le seul choix, mais il
+    doit se voir dans les logs."""
+    line = "abcdefgh"
+    container = make_container("ab", [line])
+
+    with caplog.at_level("WARNING"):
+        _insert_foreign_inline(container, [line], [(0, 8, "la"), (2, 5, "it")])
+
+    assert [qlocal(c) for c in container] == ["lb", "foreign"]
+    assert "it" in caplog.text and "dropped" in caplog.text

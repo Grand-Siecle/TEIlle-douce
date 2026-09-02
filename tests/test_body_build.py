@@ -62,10 +62,8 @@ def test_build_body_dispatches_zone_types_to_expected_elements():
     div = root.find(".//div")
     tags = [qlocal(el) for el in div]
     # une seule <pb> (page unique), puis un element par ligne rencontree.
-    # NumberingZone/QuireMarksZone/RunningTitleZone produisent chacun leur
-    # PROPRE <fw> -- contrairement a <ab>/<note>, ces trois types ne
-    # fusionnent jamais entre lignes consecutives : le code ne teste jamais
-    # `last_element.tag != "fw"` avant d'en creer un nouveau.
+    # Trois zones DIFFERENTES -> trois <fw> distincts (la fusion se fait
+    # par zone, voir le test suivant).
     assert tags == ["pb", "ab", "note", "fw", "fw", "fw"]
 
     ab = div[1]
@@ -715,3 +713,23 @@ def test_build_body_accepts_the_text_object_whole():
 
     assert root.find(".//front") is not None
     assert root.find(".//figure/graphic") is not None
+
+
+def test_a_running_title_on_two_lines_is_one_fw():
+    """Un titre courant sur deux lignes est UN titre courant : le
+    fragmenter laissait chaque moitie en piece d'apparat separee."""
+    lines = [
+        make_line("l1", "RunningTitleZone", "zone_rt", "p1", text="DE LAMOVR,"),
+        make_line("l2", "RunningTitleZone", "zone_rt", "p1", text="LIVRE VII."),
+        make_line("l3", "NumberingZone", "zone_num", "p1", text="805"),
+    ]
+    root = etree.Element("TEI")
+
+    build_body(root, lines, detect_lang=False)
+
+    div = root.find(".//div")
+    assert [qlocal(el) for el in div] == ["pb", "fw", "fw"]
+    titre = div[1]
+    assert [c.tail for c in titre] == ["DE LAMOVR,", "LIVRE VII."]
+    # une zone differente ouvre bien son propre <fw>
+    assert div[2].get("corresp") == "#zone_num"

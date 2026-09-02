@@ -407,3 +407,22 @@ def test_modernization_responsibility_is_declared_and_idempotent():
     resp = [e for e in root.iter() if e.get(XML_ID) == "modernize-auto"]
     assert len(resp) == 1, f"{len(resp)} respStmt modernize-auto"
     assert qlocal(resp[0]) == "respStmt"
+
+
+def test_a_line_group_without_lb_is_reported_not_silently_skipped(caplog):
+    """Audit 6.8 : du texte place avant le premier <lb> d'un conteneur
+    forme un groupe sans @corresp, que la modernisation ne peut pas
+    apparier — il traverserait l'API pour rien. build_body n'en produit
+    pas aujourd'hui ; le jour ou il en produirait, ce serait un trou
+    silencieux."""
+    from src.body.builder import _parse_line_groups
+
+    container = etree.fromstring(
+        b'<ab><s><w>texte</w><w>avant</w><lb corresp="#l1"/><w>apres</w></s></ab>'
+    )
+
+    with caplog.at_level("WARNING"):
+        groups = _parse_line_groups(container)
+
+    assert [g.lb_corresp for g in groups] == [None, "#l1"]
+    assert "cannot be modernized" in caplog.text

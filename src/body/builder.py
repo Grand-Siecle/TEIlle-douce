@@ -148,6 +148,20 @@ def _parse_line_groups(container):
             )
             groups.append(current_group)
 
+    # A group with no <lb> to identify it cannot be matched against the
+    # modernized lines, which are keyed by @corresp: its text would go
+    # through the API and come back to nothing (audit 6.8). build_body
+    # always emits an <lb> before a line's text, so this does not happen
+    # today — but it would be a silent hole in the modernization the day
+    # it did, and a silent hole is what a warning is for.
+    for group in groups:
+        if group.lb_corresp is None and group.segments:
+            logger.warning(
+                "Line group in <%s> has no <lb> to anchor it: its text "
+                "cannot be modernized", container.tag,
+            )
+            break
+
     return groups
 
 
@@ -516,10 +530,18 @@ def build_body(root, data, detect_lang=True, graphics=None, front_pages=None):
 
         # Handle different zone types
         if line.zone_type in ("NumberingZone", "QuireMarksZone", "RunningTitleZone"):
-            # Page numbers, quire marks, running titles -> <fw>
-            fw = etree.SubElement(container, "fw", zone_atts)
-            fw.append(lb)
-            register(fw, line.text)
+            # Page numbers, quire marks, running titles -> <fw>.
+            # Consecutive lines of the SAME zone share one <fw>, as <ab>
+            # and <note> already did: a running title set on two lines is
+            # one running title, and splitting it left each half as a
+            # separate piece of apparatus (audit 6.2).
+            if last_tag == "fw" and last_element.get("corresp") == zone_atts["corresp"]:
+                last_element.append(lb)
+                register(last_element, line.text)
+            else:
+                fw = etree.SubElement(container, "fw", zone_atts)
+                fw.append(lb)
+                register(fw, line.text)
 
         elif line.zone_type == "MarginTextZone":
             # Margin text -> <note place="margin">. Without @place a
@@ -600,6 +622,12 @@ def build_body(root, data, detect_lang=True, graphics=None, front_pages=None):
             # Handle emphasized lines (drop capitals, headings in front)
             if line.line_type in ("DropCapitalLine", "HeadingLine"):
                 ab_children = list(last_element)
+                # Grouping looks at the immediate sibling only, and that
+                # is deliberate (audit 6.3 reads it as a defect): an
+                # ordinary line between two drop-capital runs means two
+                # different initials, not one interrupted. Merging them
+                # would claim a single ornament spanning text that sits
+                # between them.
                 # Check if we need a new <hi> or can reuse existing
                 if (
                     len(ab_children) == 0
@@ -906,20 +934,36 @@ def _splice_lb_tail(lb, splice_ops):
     Args:
         lb: The <lb/> lxml Element.
         splice_ops: Iterable of ``(start, end, lang)`` in the tail's
-            character positions. Overlapping ops are dropped after the
-            first one is accepted (sorted by start).
+            character positions. Two segments cannot cover the same
+            characters — one XML element cannot be in two languages — so
+            an overlapping one is trimmed to what is left free, and
+            dropped (with a warning) only when nothing is.
     """
     tail = lb.tail or ""
     if not tail:
         return
 
-    # Sort, clamp, drop overlaps.
+    # Sort, clamp, resolve overlaps.
     clean_ops = []
     prev_end = 0
     for s, e, lang in sorted(splice_ops, key=lambda x: x[0]):
         s = max(0, min(s, len(tail)))
         e = max(s, min(e, len(tail)))
-        if s < prev_end or s >= e:
+        if s < prev_end:
+            # Overlap: keep the part the previous segment left free
+            # rather than losing the language of the whole segment. The
+            # detector returns character ranges over a joined text, and
+            # two ranges can meet on a word boundary it read twice.
+            logger.debug(
+                "Foreign segments overlap on %r: %r trimmed from %d to %d",
+                tail[:40], lang, s, prev_end,
+            )
+            s = prev_end
+        if s >= e:
+            logger.warning(
+                "Foreign segment (%s) dropped: fully covered by another "
+                "language on line %r", lang, tail[:40],
+            )
             continue
         clean_ops.append((s, e, lang))
         prev_end = e
