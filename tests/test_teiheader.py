@@ -541,56 +541,115 @@ def test_keywords_taxonomy_is_declared_next_to_segmonto():
 # update_extent : la volumetrie, connue seulement en fin de chaine
 # -----------------------------------------------------------------------------
 
-def _tei_avec_corps(corps):
+def _tei(lignes, corps, extent=True):
+    """Un TEI minimal : le sourceDoc porte la transcription, le corps y
+    renvoie par @corresp — c'est la forme reelle d'un document produit.
+
+    lignes : [(id, type de zone, texte)]
+    """
+    zones = "\n".join(
+        f'''<zone xml:id="zoneblock_{i}" type="{ztype}">
+             <zone xml:id="{lid}" type="DefaultLine"><line>{texte}</line></zone>
+           </zone>'''
+        for i, (lid, ztype, texte) in enumerate(lignes)
+    )
+    entete = ("<extent><measure unit=\"images\" quantity=\"2\">2 images</measure></extent>"
+              if extent else "")
     return etree.fromstring(f"""<TEI>
-  <teiHeader><fileDesc>
-    <extent><measure unit="images" n="2" quantity="2">2 images</measure></extent>
-  </fileDesc></teiHeader>
+  <teiHeader><fileDesc>{entete}</fileDesc></teiHeader>
+  <sourceDoc><surface xml:id="f1">{zones}</surface></sourceDoc>
   <text><body><div>{corps}</div></body></text>
 </TEI>""".encode("utf-8"))
 
 
-def test_update_extent_counts_words_without_enrichment():
-    root = _tei_avec_corps(
-        '<ab><lb/>trois mots ici</ab><note><lb/>deux mots</note>'
+def test_update_extent_counts_the_running_text():
+    root = _tei(
+        [("l1", "MainZone", "trois mots ici"), ("l2", "MarginTextZone", "deux mots")],
+        '<ab><lb corresp="#l1"/>trois mots ici</ab>'
+        '<note><lb corresp="#l2"/>deux mots</note>',
     )
-    mesures = update_extent(root)
-    assert mesures == {"words": 5}
+    assert update_extent(root) == {"words": 5}
     unites = [(m.get("unit"), m.get("quantity")) for m in root.find(".//extent")]
     assert unites == [("images", "2"), ("words", "5")]
 
 
+def test_update_extent_leaves_the_page_apparatus_out():
+    """Un titre courant repete sur 600 pages ajouterait des milliers de
+    mots au chiffre qu'une notice de catalogue demande."""
+    root = _tei(
+        [("l1", "MainZone", "le texte lui meme"),
+         ("l2", "RunningTitleZone", "DE LAMOVR LIVRE VII"),
+         ("l3", "NumberingZone", "805"),
+         ("l4", "QuireMarksZone", "A iij")],
+        '<ab><lb corresp="#l1"/>le texte lui meme</ab>'
+        '<fw><lb corresp="#l2"/>DE LAMOVR LIVRE VII</fw>',
+    )
+    assert update_extent(root) == {"words": 4}
+
+
 def test_update_extent_reports_tokens_separately_when_enriched():
     """Le tokenizer separe l'article elide et la ponctuation : compter des
-    <w> n'est pas compter des mots separes par des espaces, les deux
-    mesures ne doivent pas se confondre."""
-    root = _tei_avec_corps(
-        '<ab><s><lb/><w>l</w><w>art</w><pc>,</pc><w>peinture</w></s></ab>'
+    <w> n'est pas compter des mots, les deux mesures restent distinctes."""
+    root = _tei(
+        [("l1", "MainZone", "l'art de peindre")],
+        '<ab><s><lb corresp="#l1"/><w>l\'</w><w>art</w><w>de</w><w>peindre</w></s></ab>',
     )
-    mesures = update_extent(root)
-    assert mesures == {"words": 3, "tokens": 3}
+    assert update_extent(root) == {"words": 3, "tokens": 4}
 
 
-def test_update_extent_is_idempotent():
-    root = _tei_avec_corps("<ab><lb/>deux mots</ab>")
-    update_extent(root)
-    update_extent(root)
+def test_the_word_count_does_not_depend_on_the_phases_that_ran():
+    """Meme document, deux modes : le chiffre publie doit etre le meme.
+    Il est mesure sur le sourceDoc, que ni l'enrichissement ni la
+    modernisation ne touchent."""
+    lignes = [("l1", "MainZone", "Le Roy de France")]
+    brut = _tei(lignes, '<ab><lb corresp="#l1"/>Le Roy de France</ab>')
+    annote = _tei(
+        lignes,
+        '<ab><s><lb corresp="#l1"/><choice><orig><w>Le</w><w>Roy</w><w>de</w>'
+        '<w>France</w></orig><reg type="modernized">Le Roi de France</reg>'
+        '</choice></s></ab>',
+    )
+    assert update_extent(brut)["words"] == update_extent(annote)["words"] == 4
+
+
+def test_update_extent_drops_a_measure_it_can_no_longer_take():
+    """Un document rejoue sans enrichissement ne doit pas garder le
+    compte de tokens du run precedent."""
+    root = _tei(
+        [("l1", "MainZone", "deux mots")],
+        '<ab><s><lb corresp="#l1"/><w>deux</w><w>mots</w></s></ab>',
+    )
+    assert update_extent(root) == {"words": 2, "tokens": 2}
+
+    # le corps est reconstruit sans annotation, comme dans le mode court
+    div = root.find(".//div")
+    for child in list(div):
+        div.remove(child)
+    ab = etree.SubElement(div, "ab")
+    etree.SubElement(ab, "lb").set("corresp", "#l1")
+
+    assert update_extent(root) == {"words": 2}
     unites = [m.get("unit") for m in root.find(".//extent")]
     assert unites == ["images", "words"], unites
 
 
+def test_update_extent_is_idempotent():
+    root = _tei([("l1", "MainZone", "deux mots")], '<ab><lb corresp="#l1"/>deux mots</ab>')
+    update_extent(root)
+    update_extent(root)
+    assert [m.get("unit") for m in root.find(".//extent")] == ["images", "words"]
+
+
 def test_update_extent_without_extent_or_text_does_nothing():
     assert update_extent(etree.fromstring(b"<TEI><text><body/></text></TEI>")) == {}
-    assert update_extent(etree.fromstring(
-        b"<TEI><teiHeader><fileDesc><extent/></fileDesc></teiHeader></TEI>"
-    )) == {}
+    assert update_extent(_tei([], "", extent=True)) == {}
 
 
-def test_update_extent_counts_a_modernized_line_once():
-    """<choice> ecrit le meme passage deux fois : sans garde, chaque ligne
-    modernisee comptait double dans la volumetrie."""
-    root = _tei_avec_corps(
-        '<ab><lb/><choice><orig>Le Roy de France</orig>'
-        '<reg type="modernized">Le Roi de France</reg></choice></ab>'
+def test_update_extent_reads_a_namespaced_tree():
+    """Un TEI relu depuis le disque est namespace : la mesure ne doit pas
+    rendre {} en silence (audit 4.2)."""
+    root = _tei([("l1", "MainZone", "deux mots")], '<ab><lb corresp="#l1"/>deux mots</ab>')
+    relu = etree.fromstring(
+        etree.tostring(root).replace(b"<TEI>", b'<TEI xmlns="http://www.tei-c.org/ns/1.0">')
     )
-    assert update_extent(root) == {"words": 4}
+    assert update_extent(relu) == {"words": 2}

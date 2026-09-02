@@ -194,7 +194,7 @@ APP_VERSIONS = {
 # controle d'un mot-cle libre (audit 1.15).
 KEYWORDS_TAXONOMY = {
     "id": "catalogue-subjects",
-    "label": "Sujets et matieres des notices de catalogue "
+    "label": "Sujets et matières des notices de catalogue "
              "(colonnes Sujet et Matiere du CSV local)",
 }
 
@@ -660,8 +660,13 @@ RESPONSIBILITY = {
     # d'edition qui lit le statut aurait refuse de rediffuser (audit 1.14).
     "availability": {"status": "free"},
     "licence": {"target": "https://creativecommons.org/licenses/by/4.0/"},
-    "licence_text": "Encodage TEI diffuse sous licence Creative Commons "
-                    "Attribution 4.0 International (CC BY 4.0). Les images "
-                    "et le texte source relevent de leur etablissement "
-                    "de conservation.",
+    "licence_text": "Encodage TEI diffusé sous licence Creative Commons "
+                    "Attribution 4.0 International (CC BY 4.0).",
+    # Les images ne sont pas dans le fichier : il y renvoie par IIIF. Le
+    # dire ici plutôt que dans <licence> évite d'annoncer status="free"
+    # au-dessus d'une phrase qui restreint une partie du materiau.
+    "source_rights": "Les images numérisées auxquelles renvoient les "
+                     "@facs et les URL IIIF restent soumises aux "
+                     "conditions d'utilisation de leur établissement de "
+                     "conservation.",
 }

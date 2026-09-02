@@ -204,7 +204,27 @@ def test_a_call_mark_makes_the_note_a_gloss():
 
 
 def test_a_note_without_call_mark_claims_nothing():
-    xml = TEI_STAR.replace("* la ligne avec l appel", "ligne sans appel")
+    """C'est la NOTE qu'on prive de sa marque : sans elle, aucune lecture
+    de la page, donc aucune affirmation."""
+    xml = TEI_STAR.replace("* Deus dixit", "Deus dixit")
     root = etree.fromstring(xml)
     link_notes_to_lines(root)
-    assert root.find(".//note").get("subtype") is None
+    note = root.find(".//note")
+    assert note.get("subtype") is None
+    assert note.get("cert") is None
+    assert note.get("target").startswith("#zoneLine_a")  # ancre par defaut
+
+
+def test_a_call_mark_that_changes_nothing_asserts_nothing():
+    """Quand la ligne etoilee est deja celle que la regle par defaut
+    aurait prise, l'etoile peut n'etre qu'une scorie d'OCR — le corpus en
+    est plein — et ne prouve rien."""
+    xml = TEI_STAR.replace(
+        "<line xml:id=\"l_a\">premiere ligne sans appel</line>",
+        "<line xml:id=\"l_a\">premiere ligne * avec appel</line>",
+    ).replace("* la ligne avec l appel", "la ligne sans appel")
+    root = etree.fromstring(xml)
+    link_notes_to_lines(root)
+    note = root.find(".//note")
+    assert note.get("target").startswith("#zoneLine_a")
+    assert note.get("subtype") is None

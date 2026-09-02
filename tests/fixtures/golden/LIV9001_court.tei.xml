@@ -45,14 +45,15 @@
         </author>
       </titleStmt>
       <extent>
-        <measure unit="images" n="8" quantity="8">8 images</measure>
-        <measure unit="words" quantity="198">198 words</measure>
+        <measure unit="images" quantity="8">8 images</measure>
+        <measure unit="words" quantity="183">183 words</measure>
       </extent>
       <publicationStmt>
         <publisher>Projet Grand Siècle</publisher>
         <authority>Université de Lausanne - UNIL, Université de Genève - UNIGE</authority>
         <availability status="free">
-          <licence target="https://creativecommons.org/licenses/by/4.0/">Encodage TEI diffuse sous licence Creative Commons Attribution 4.0 International (CC BY 4.0). Les images et le texte source relevent de leur etablissement de conservation.</licence>
+          <licence target="https://creativecommons.org/licenses/by/4.0/">Encodage TEI diffusé sous licence Creative Commons Attribution 4.0 International (CC BY 4.0).</licence>
+          <p>Les images numérisées auxquelles renvoient les @facs et les URL IIIF restent soumises aux conditions d'utilisation de leur établissement de conservation.</p>
         </availability>
         <date when="DATE-GENERATION"/>
       </publicationStmt>
@@ -98,8 +99,8 @@
     </fileDesc>
     <profileDesc>
       <langUsage>
-        <language ident="fra" usage="91" n="21">French</language>
-        <language ident="lat" usage="9" n="2">Latin</language>
+        <language ident="fra" usage="88" n="161 words">French</language>
+        <language ident="lat" usage="12" n="22 words">Latin</language>
       </langUsage>
       <textClass>
         <keywords scheme="#catalogue-subjects">
@@ -244,7 +245,7 @@
           </category>
         </taxonomy>
         <taxonomy xml:id="catalogue-subjects">
-          <bibl>Sujets et matieres des notices de catalogue (colonnes Sujet et Matiere du CSV local)</bibl>
+          <bibl>Sujets et matières des notices de catalogue (colonnes Sujet et Matiere du CSV local)</bibl>
         </taxonomy>
       </classDecl>
     </encodingDesc>

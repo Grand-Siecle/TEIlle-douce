@@ -177,7 +177,7 @@ class DefaultTree:
         # fin de chaine par finalize_extent(), quand elle est connue.
         extent = etree.SubElement(fileDesc, "extent")
         images = etree.SubElement(
-            extent, "measure", unit="images", n=self.count, quantity=self.count
+            extent, "measure", unit="images", quantity=self.count
         )
         images.text = f"{self.count} images"
 
@@ -194,6 +194,14 @@ class DefaultTree:
             availability, "licence", self.config["responsibility"]["licence"]
         )
         licence.text = self.config["responsibility"].get("licence_text")
+        source_rights = self.config["responsibility"].get("source_rights")
+        if source_rights:
+            # status="free" porte sur ce que le fichier contient — la
+            # transcription et son encodage. Les images n'y sont pas :
+            # elles sont pointees. Sans cette precision, un agregateur
+            # lisant le statut rediffuserait des images qui ne sont pas
+            # a nous.
+            etree.SubElement(availability, "p").text = source_rights
         today = datetime.today().strftime("%Y-%m-%d")
         etree.SubElement(publicationStmt, "date", when=today)
 

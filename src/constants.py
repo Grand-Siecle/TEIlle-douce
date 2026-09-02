@@ -88,6 +88,15 @@ SEGMONTO_ZONES = {
 # zone stops at one of these.
 TEXT_CONTAINERS = ("ab", "note", "fw", "head", "titlePart")
 
+# Zones that carry the page apparatus rather than the text: folio
+# numbers, quire signatures, running titles. They are transcribed and
+# they belong to the edition, but a volume's extent — the figure a
+# catalogue asks for — means the running text, and a running title
+# repeated over 600 pages would add thousands of words to it.
+APPARATUS_ZONES = frozenset({
+    "NumberingZone", "QuireMarksZone", "RunningTitleZone",
+})
+
 # SegmOnto line types and their documentation URLs
 SEGMONTO_LINES = {
     "CustomLine": "https://segmonto.github.io/gd/gdL/CustomLine/",

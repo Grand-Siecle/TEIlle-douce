@@ -102,29 +102,107 @@ def _langues(root):
     ]
 
 
-def test_usage_is_a_percentage_not_a_raw_count():
-    """usage="1716" se lisait 1716 % : n'importe quel outil qui somme
-    l'attribut, ou le lecteur, y voyait une valeur impossible."""
-    root = _entete()
+def _document(containers, lignes=()):
+    """TEI minimal : sourceDoc transcrit, corps typé par langue."""
+    zones = "\n".join(
+        f'<zone xml:id="b{i}" type="{"RunningTitleZone" if lid.startswith("l2") else "MainZone"}">'
+        f'<zone xml:id="{lid}" type="DefaultLine"><line>{texte}</line></zone></zone>'
+        for i, (lid, texte) in enumerate(lignes)
+    )
+    return etree.fromstring(f"""<TEI>
+  <teiHeader><profileDesc/></teiHeader>
+  <sourceDoc><surface xml:id="f1">{zones}</surface></sourceDoc>
+  <text><body><div>{containers}</div></body></text>
+</TEI>""".encode("utf-8"))
 
-    build_langusage(root, {"fra": 1716, "lat": 38})
 
-    assert _langues(root) == [("fra", "98", "1716"), ("lat", "2", "38")]
+def test_usage_is_a_percentage_measured_by_volume():
+    """usage="1716" se lisait 1716 %. Et le compte du detecteur ne peut
+    pas fonder un pourcentage : il compte UN par conteneur pour la langue
+    principale et UN par SEGMENT etranger pour les autres. Une page
+    francaise citant trente courts passages latins ferait 1 contre 30 —
+    publie en 97 % de latin."""
+    lignes = [("l1", " ".join(["mot"] * 500))] + [
+        (f"n{i}", "breve citation latine") for i in range(30)
+    ]
+    corps = (
+        '<ab xml:lang="fra"><lb corresp="#l1"/>' + " ".join(["mot"] * 500) + "</ab>"
+        + "".join(
+            f'<note xml:lang="lat"><lb corresp="#n{i}"/>breve citation latine</note>'
+            for i in range(30)
+        )
+    )
+    root = _document(corps, lignes)
+
+    build_langusage(root, {"fra": 1, "lat": 30})
+
+    # par conteneur : 1 contre 30, soit 97 % de latin. Par volume :
+    # 500 mots francais contre 90 latins.
+    parts = dict((ident, int(usage)) for ident, usage, _ in _langues(root))
+    assert parts["fra"] > parts["lat"], parts
+    assert 80 <= parts["fra"] <= 90, parts
+
+
+def test_a_foreign_span_is_credited_to_its_own_language():
+    """Un passage plus court qu'une ligne : ses mots vont a sa langue et
+    sont retires de celle du conteneur."""
+    root = _document(
+        '<ab xml:lang="fra"><lb corresp="#l1"/>le peintre a ecrit '
+        '<foreign xml:lang="lat">ars longa vita brevis</foreign></ab>',
+        [("l1", "le peintre a ecrit ars longa vita brevis")],
+    )
+
+    build_langusage(root, {})
+
+    parts = dict((ident, int(usage)) for ident, usage, _ in _langues(root))
+    assert parts == {"fra": 50, "lat": 50}, parts
 
 
 def test_a_language_actually_present_never_rounds_down_to_zero():
     """0 % declarerait absente une langue dont les segments <foreign>
     sont pourtant dans le texte."""
-    root = _entete()
+    lignes = [("l1", " ".join(["mot"] * 500)), ("l2", "graece")]
+    root = _document(
+        '<ab xml:lang="fra"><lb corresp="#l1"/>' + " ".join(["mot"] * 500) + "</ab>"
+        '<ab xml:lang="grc"><lb corresp="#l2"/>graece</ab>',
+        lignes,
+    )
 
-    build_langusage(root, {"fra": 5000, "grc": 3})
+    build_langusage(root, {})
 
     parts = dict((ident, usage) for ident, usage, _ in _langues(root))
     assert parts["grc"] == "1"
     assert parts["fra"] == "100"
 
 
-def test_the_measured_count_survives_in_n():
-    root = _entete()
-    build_langusage(root, {"fra": 7})
-    assert _langues(root) == [("fra", "100", "7")]
+def test_the_measured_volume_and_its_unit_survive_in_n():
+    root = _document(
+        '<ab xml:lang="fra"><lb corresp="#l1"/>sept mots dans cette ligne precise ici</ab>',
+        [("l1", "sept mots dans cette ligne precise ici")],
+    )
+    build_langusage(root, {})
+    assert _langues(root) == [("fra", "100", "7 words")]
+
+
+def test_without_any_xml_lang_the_detector_stats_are_the_fallback():
+    """Un run sans detection de langue : la part est par conteneur, faute
+    de mieux, et @n le dit."""
+    root = _document('<ab><lb corresp="#l1"/>texte sans langue</ab>', [("l1", "texte")])
+    build_langusage(root, {"fra": 3, "lat": 1})
+    assert _langues(root) == [("fra", "75", "3 containers"), ("lat", "25", "1 containers")]
+
+
+def test_the_language_volumes_add_up_to_the_extent():
+    """Deux chiffres dans le meme header ne peuvent pas etre tous les deux
+    la longueur du texte : la somme des @n doit faire l'<extent>."""
+    from src.volumetry import language_volume, text_volume
+
+    root = _document(
+        '<ab xml:lang="fra"><lb corresp="#l1"/>quatre mots en francais</ab>'
+        '<fw xml:lang="lat" type="RunningTitleZone"><lb corresp="#l2"/>DE PICTVRA</fw>',
+        [("l1", "quatre mots en francais"), ("l2", "DE PICTVRA")],
+    )
+
+    # le titre courant est de l'apparat : hors du texte des deux cotes
+    assert language_volume(root) == {"fra": 4}
+    assert sum(language_volume(root).values()) == text_volume(root)

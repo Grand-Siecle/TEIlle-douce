@@ -237,6 +237,23 @@ def test_court_le_header_est_alimente_par_le_csv(tei_court):
 
 
 @pytest.mark.e2e
+def test_court_la_volumetrie_est_coherente_entre_extent_et_langusage(tei_court):
+    """Deux chiffres dans le meme header ne peuvent pas etre tous les deux
+    la longueur du texte."""
+    arbre = etree.parse(str(tei_court))
+    mots = [
+        int(m.get("quantity"))
+        for m in arbre.iter("{*}measure")
+        if m.get("unit") == "words"
+    ]
+    par_langue = [
+        int((l.get("n") or "0").split()[0]) for l in arbre.iter("{*}language")
+    ]
+    assert mots, "aucune mesure de mots dans <extent>"
+    assert sum(par_langue) == mots[0], (par_langue, mots)
+
+
+@pytest.mark.e2e
 def test_court_detecte_le_multilinguisme(tei_court):
     """La fixture melange francais et latin : langUsage doit refleter les deux."""
     arbre = etree.parse(str(tei_court))
