@@ -21,7 +21,7 @@ from lxml import etree
 
 from ..constants import TEXT_CONTAINERS, XML_ID, XML_LANG
 from ..lang import get_detector
-from ..utils.xml import content_root, declare_responsibility
+from ..utils.xml import content_root, declare_responsibility, local_tag
 from .text import GRAPHIC_ZONES
 
 logger = logging.getLogger(__name__)
@@ -63,7 +63,7 @@ def _walk_sentence_children(parent, foreign_lang=None):
     for child in parent:
         if not isinstance(child.tag, str):
             continue
-        ctag = child.tag
+        ctag = local_tag(child.tag)
         if ctag == "lb":
             yield ("lb", child, foreign_lang)
         elif ctag in ("w", "pc"):
@@ -98,7 +98,7 @@ def _parse_line_groups(container):
         if not isinstance(s_elem.tag, str):
             continue
 
-        tag = s_elem.tag
+        tag = local_tag(s_elem.tag)
         if tag == "s":
             s_id = s_elem.get(XML_ID, "")
             segment_for_this_s = None
@@ -157,8 +157,10 @@ def _parse_line_groups(container):
     for group in groups:
         if group.lb_corresp is None and group.segments:
             logger.warning(
-                "Line group in <%s> has no <lb> to anchor it: its text "
-                "cannot be modernized", container.tag,
+                "Line group in <%s> %s: its text cannot be modernized",
+                local_tag(container.tag),
+                "has no <lb> to anchor it" if group.lb_element is None
+                else "has an <lb> with no @corresp",
             )
             break
 
@@ -246,6 +248,23 @@ def _rebuild_with_modernization(container, groups, corresp_to_mod):
     Returns:
         int: Number of lines wrapped in <choice>.
     """
+    # _parse_line_groups only collects <s> and <lb>; anything else a
+    # container holds is not in *groups* and would be dropped by the
+    # clearing below. A container already carrying <choice> has been
+    # modernized once — rebuilding it would delete the readings written
+    # then, keeping only what the groups hold.
+    unhandled = [
+        local_tag(child.tag) for child in container
+        if local_tag(child.tag) not in ("s", "lb")
+    ]
+    if unhandled:
+        logger.warning(
+            "<%s> holds %s outside the <s>/<lb> structure: leaving it "
+            "untouched rather than rebuilding it without them",
+            local_tag(container.tag), ", ".join(sorted(set(unhandled))),
+        )
+        return 0
+
     # Phase 1: Build fragment mapping for sentences split across lines
     s_occurrences = {}
     for i, group in enumerate(groups):
@@ -374,6 +393,23 @@ def _make_pb(line):
     if line.page_n:
         atts["n"] = line.page_n
     return etree.Element("pb", atts)
+
+
+def _continues_zone(element, zone_atts):
+    """True when *element* is an open container for the SAME source zone.
+
+    Merging consecutive lines is right within one zone and wrong across
+    two: a container's @corresp names one zone of the sourceDoc, and
+    everything downstream resolves it back — note anchoring, IIIF crops,
+    entity references. Two marginal glosses stacked on a page, or the two
+    columns of a page, are two zones; welding them made the second
+    disappear behind the first one's identity.
+    """
+    return (
+        element is not None
+        and element.tag == zone_atts["tag"]
+        and element.get("corresp") == zone_atts["corresp"]
+    )
 
 
 def _figure_caption(figure):
@@ -535,7 +571,7 @@ def build_body(root, data, detect_lang=True, graphics=None, front_pages=None):
             # and <note> already did: a running title set on two lines is
             # one running title, and splitting it left each half as a
             # separate piece of apparatus (audit 6.2).
-            if last_tag == "fw" and last_element.get("corresp") == zone_atts["corresp"]:
+            if _continues_zone(last_element, {**zone_atts, "tag": "fw"}):
                 last_element.append(lb)
                 register(last_element, line.text)
             else:
@@ -547,15 +583,15 @@ def build_body(root, data, detect_lang=True, graphics=None, front_pages=None):
             # Margin text -> <note place="margin">. Without @place a
             # reader cannot tell a marginal gloss from a footnote or an
             # editorial remark: the zone knows, the note did not say.
-            if last_tag != "note":
+            if _continues_zone(last_element, {**zone_atts, "tag": "note"}):
+                last_element.append(lb)
+                register(last_element, line.text)
+            else:
                 note = etree.SubElement(
                     container, "note", {**zone_atts, "place": "margin"}
                 )
                 note.append(lb)
                 register(note, line.text)
-            else:
-                last_element.append(lb)
-                register(last_element, line.text)
 
         elif line.zone_type in GRAPHIC_ZONES and line.zone_id in figures:
             # Text transcribed inside an illustration stays inside its
@@ -613,9 +649,10 @@ def build_body(root, data, detect_lang=True, graphics=None, front_pages=None):
                 body_div = new_div
                 continue
 
-            # Main text -> <ab>. The type check keeps Main text out of the
-            # fallback <ab> a preceding unhandled zone may have opened.
-            if last_tag != "ab" or not (last_element.get("type") or "").startswith("Main"):
+            # Main text -> <ab>, one per source zone: two columns of a
+            # page are two MainZones, and merging them left the second
+            # inside an <ab> claiming to be the first.
+            if not _continues_zone(last_element, {**zone_atts, "tag": "ab"}):
                 last_element = etree.SubElement(container, "ab", zone_atts)
             register(last_element, line.text)
 
@@ -798,7 +835,7 @@ def apply_modernization_enriched(root, corresp_to_mod):
     # for VieuxParler round-trips whose readings nothing consumed —
     # the title page came back modernized and was dropped on the floor.
     for container in body.iter(*TEXT_CONTAINERS):
-        has_sentences = any(c.tag == "s" for c in container)
+        has_sentences = any(local_tag(c.tag) == "s" for c in container)
 
         if has_sentences:
             # Enriched container: parse and rebuild
@@ -927,6 +964,20 @@ def _build_offset_to_line(line_texts):
     return offset_to_line
 
 
+def _word_start_at_or_after(text, pos):
+    """First word start at or after *pos*, or None if there is none."""
+    if pos <= 0 or pos >= len(text):
+        return pos if pos < len(text) else None
+    if text[pos - 1].isspace():
+        return pos
+    space = next((i for i in range(pos, len(text)) if text[i].isspace()), None)
+    if space is None:
+        return None
+    while space < len(text) and text[space].isspace():
+        space += 1
+    return space if space < len(text) else None
+
+
 def _splice_lb_tail(lb, splice_ops):
     """
     Splice a <lb/>'s tail with one or more <foreign> elements.
@@ -949,22 +1000,32 @@ def _splice_lb_tail(lb, splice_ops):
     for s, e, lang in sorted(splice_ops, key=lambda x: x[0]):
         s = max(0, min(s, len(tail)))
         e = max(s, min(e, len(tail)))
+        if s >= e:
+            logger.debug(
+                "Foreign segment (%s) ignored: empty or outside the line %r",
+                lang, tail[:40],
+            )
+            continue
         if s < prev_end:
             # Overlap: keep the part the previous segment left free
             # rather than losing the language of the whole segment. The
             # detector returns character ranges over a joined text, and
             # two ranges can meet on a word boundary it read twice.
+            start = _word_start_at_or_after(tail, prev_end)
+            if start is None or start >= e:
+                logger.warning(
+                    "Foreign segment (%s) dropped: the previous segment "
+                    "leaves no whole word free on line %r", lang, tail[:40],
+                )
+                continue
+            # Snapped to a word boundary: cutting at the raw offset would
+            # open a <foreign> mid-word, and the two halves would then be
+            # tagged by two different language models.
             logger.debug(
                 "Foreign segments overlap on %r: %r trimmed from %d to %d",
-                tail[:40], lang, s, prev_end,
+                tail[:40], lang, s, start,
             )
-            s = prev_end
-        if s >= e:
-            logger.warning(
-                "Foreign segment (%s) dropped: fully covered by another "
-                "language on line %r", lang, tail[:40],
-            )
-            continue
+            s = start
         clean_ops.append((s, e, lang))
         prev_end = e
 

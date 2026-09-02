@@ -426,3 +426,23 @@ def test_a_line_group_without_lb_is_reported_not_silently_skipped(caplog):
 
     assert [g.lb_corresp for g in groups] == [None, "#l1"]
     assert "cannot be modernized" in caplog.text
+
+
+def test_a_container_already_modernized_is_not_rebuilt_without_its_readings():
+    """_parse_line_groups ne collecte que <s> et <lb> : un second passage
+    supprimerait tous les <choice> ecrits au premier, <orig> et <reg>
+    compris, pour ne garder que ce que les groupes portent."""
+    from src.body.builder import _rebuild_with_modernization, _parse_line_groups
+
+    container = etree.fromstring(
+        b'<ab><lb corresp="#l1"/><choice><orig><s><w>Roy</w></s></orig>'
+        b'<reg type="modernized">Roi</reg></choice></ab>'
+    )
+    avant = etree.tostring(container)
+
+    compte = _rebuild_with_modernization(
+        container, _parse_line_groups(container), {"#l1": "Roi"}
+    )
+
+    assert compte == 0
+    assert etree.tostring(container) == avant

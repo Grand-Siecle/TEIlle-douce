@@ -646,3 +646,31 @@ def test_rebuild_container_token_with_empty_form_produces_no_stray_text():
     assert w_empty.text == ""
     assert w_mot.text == "mot"
     assert texte_total(s) == "" + "mot"
+
+
+def test_a_line_that_contributes_only_its_hyphen_keeps_its_break():
+    """L'aligneur n'ajoute un fragment que s'il est non vide, mais un
+    saut par ligne traversee : une ligne ne portant que le trait d'union
+    donne 2 fragments et 2 sauts. Aucun ne doit disparaitre, sinon deux
+    lignes sont soudees en une."""
+    lb_a, lb_b = etree.Element("lb"), etree.Element("lb")
+    lb_a.set("corresp", "#zoneLine_a")
+    lb_b.set("corresp", "#zoneLine_b")
+    at = mk_aligned(
+        mk_token("redaction"),
+        spans=[mk_span(line_index=i) for i in range(3)],
+        lb_elements=[lb_a, lb_b],
+        is_cross_line=True,
+        original_parts=["re", "tion"],   # la ligne du milieu n'apporte rien
+    )
+    parent = etree.Element("s")
+    consommes = set()
+
+    _create_cross_line_w(parent, at, consommes)
+
+    assert [qlocal(c) for c in parent] == ["w", "lb", "lb", "w"]
+    assert [c.get("corresp") for c in parent if qlocal(c) == "lb"] == [
+        "#zoneLine_a", "#zoneLine_b",
+    ]
+    # les deux sauts source sont marques consommes : rien ne sera reinsere
+    assert consommes == {id(lb_a), id(lb_b)}

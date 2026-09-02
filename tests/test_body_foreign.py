@@ -413,33 +413,62 @@ def test_insert_foreign_inline_line_index_beyond_available_lb_is_ignored():
 
 
 def test_two_overlapping_segments_keep_both_languages():
-    """Deux segments ne peuvent pas couvrir les memes caracteres — un
-    element XML n'a qu'une langue — mais le second etait perdu en
-    entier, sa langue avec (audit 6.1). Il est rogne a ce qui reste
-    libre. L'invariant tient dans les deux cas : aucun texte perdu ni
-    duplique."""
-    line = "abcdefgh"
+    """Le second segment etait perdu en entier, sa langue avec (audit
+    6.1). Il est rogne a ce que le premier laisse libre — au mot pres :
+    couper a l'offset brut ouvrirait un <foreign> au milieu d'un mot, et
+    les deux moities partiraient a deux modeles de langue differents.
+    L'invariant tient dans tous les cas : aucun texte perdu ni duplique."""
+    line = "verba latina parole italiane"
     container = make_container("ab", [line])
     original_total = texte_total(container)
 
-    _insert_foreign_inline(container, [line], [(0, 5, "la"), (3, 8, "it")])
+    debut_it = line.index("parole")
+    _insert_foreign_inline(
+        container, [line],
+        [(0, debut_it + 3, "la"), (line.index("latina"), len(line), "it")],
+    )
 
     assert [qlocal(c) for c in container] == ["lb", "foreign", "foreign"]
     lb, premier, second = container
-    assert not lb.tail
-    assert (premier.text, premier.get(XML_LANG_ATT)) == ("abcde", "la")
-    assert (second.text, second.get(XML_LANG_ATT)) == ("fgh", "it")
+    assert premier.get(XML_LANG_ATT) == "la"
+    assert (second.text, second.get(XML_LANG_ATT)) == ("italiane", "it")
+    # aucun mot coupe en deux
+    assert second.text in line.split(" ")
     assert texte_total(container) == original_total
 
 
-def test_a_segment_entirely_covered_by_another_is_dropped_with_a_warning(caplog):
-    """Rien ne reste a lui donner : le perdre est le seul choix, mais il
-    doit se voir dans les logs."""
+def test_a_segment_with_no_whole_word_left_is_dropped_with_a_warning(caplog):
+    """Rien de complet ne reste a lui donner : le perdre est le seul
+    choix, mais il doit se voir dans les logs."""
     line = "abcdefgh"
     container = make_container("ab", [line])
 
     with caplog.at_level("WARNING"):
-        _insert_foreign_inline(container, [line], [(0, 8, "la"), (2, 5, "it")])
+        _insert_foreign_inline(container, [line], [(0, 5, "la"), (3, 8, "it")])
 
     assert [qlocal(c) for c in container] == ["lb", "foreign"]
     assert "it" in caplog.text and "dropped" in caplog.text
+
+
+def test_a_degenerate_segment_is_ignored_without_claiming_an_overlap(caplog):
+    """Un segment vide ou hors de la ligne n'a rien a voir avec un
+    chevauchement : le dire enverrait un lecteur chercher un conflit qui
+    n'existe pas."""
+    line = "verba latina"
+    container = make_container("ab", [line])
+
+    with caplog.at_level("WARNING"):
+        _insert_foreign_inline(container, [line], [(3, 3, "la"), (99, 120, "it")])
+
+    assert [qlocal(c) for c in container] == ["lb"]
+    assert "dropped" not in caplog.text
+
+
+def test_word_start_at_or_after_boundaries():
+    from src.body.builder import _word_start_at_or_after as debut
+
+    assert debut("un deux trois", 0) == 0
+    assert debut("un deux trois", 3) == 3        # deja sur un debut de mot
+    assert debut("un deux trois", 4) == 8        # au milieu de "deux"
+    assert debut("un deux trois", 9) is None     # plus aucun mot entier apres
+    assert debut("un deux", 99) is None          # hors de la chaine

@@ -212,6 +212,16 @@ def _create_cross_line_w(parent, at, inserted_lbs):
     if at.token.morph:
         shared_attrs["msd"] = at.token.morph
 
+    # A line the word crosses without contributing any text — one
+    # holding just the hyphen — produces an lb_element but no part, so
+    # there can be MORE breaks than gaps between fragments. Every one of
+    # them is a real line break of the page: the surplus is emitted at
+    # the last gap, which is where an empty line sits (between the
+    # fragment before it and the one after).
+    gaps = len(parts) - 1
+    surplus = max(0, len(lb_elems) - gaps)
+    next_lb = 0
+
     for i, part_text in enumerate(parts):
         w = etree.SubElement(parent, "w")
         w.text = part_text
@@ -239,26 +249,30 @@ def _create_cross_line_w(parent, at, inserted_lbs):
         if i == 0 and at.token.treated and at.token.treated != at.token.form:
             w.set("norm", at.token.treated)
 
-        # Insert <lb/> between parts (after each part except the last).
-        # One per BOUNDARY, not one per available source <lb>: a word cut
-        # over three lines with a single lb_element used to lose a line
-        # break silently, welding two lines into one (audit 6.5). A
-        # boundary with no source <lb> still gets one — the line break
-        # exists in the page, only its zone id is unknown.
-        if i < len(parts) - 1:
+        # Insert <lb/> between parts: one per BOUNDARY, not one per
+        # available source <lb>. A word cut over three lines with a
+        # single lb_element used to lose a line break silently, welding
+        # two lines into one (audit 6.5).
+        if i >= gaps:
+            continue
+        breaks_here = 1 + (surplus if i == gaps - 1 else 0)
+        for _ in range(breaks_here):
             lb = etree.SubElement(parent, "lb")
-            lb_orig = lb_elems[i] if i < len(lb_elems) else None
+            lb_orig = lb_elems[next_lb] if next_lb < len(lb_elems) else None
+            next_lb += 1
             if lb_orig is None:
+                # The break exists on the page; only its zone id is
+                # unknown. Emitting nothing would weld the two lines.
                 logger.warning(
-                    "Word %r spans %d lines but carries %d line break(s): "
-                    "boundary %d has no source <lb> to point at",
+                    "Word %r spans %d fragment(s) with %d line break(s) "
+                    "recorded: boundary %d has no source <lb> to point at",
                     at.token.form, len(parts), len(lb_elems), i + 1,
                 )
-            if lb_orig is not None:
-                corresp = lb_orig.get("corresp")
-                if corresp:
-                    lb.set("corresp", corresp)
-                facs = lb_orig.get("facs")
-                if facs:
-                    lb.set("facs", facs)
-                inserted_lbs.add(id(lb_orig))
+                continue
+            corresp = lb_orig.get("corresp")
+            if corresp:
+                lb.set("corresp", corresp)
+            facs = lb_orig.get("facs")
+            if facs:
+                lb.set("facs", facs)
+            inserted_lbs.add(id(lb_orig))
