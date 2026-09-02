@@ -69,7 +69,7 @@
           </author>
           <title>Traite de la peinture et de ses principes, fixture de test</title>
           <pubPlace>Paris</pubPlace>
-          <date>1659/03/12</date>
+          <date when="1659-03-12">1659/03/12</date>
           <respStmt>
             <resp>Imprimeur</resp>
             <persName ref="#PERS9002">
@@ -98,6 +98,9 @@
       </sourceDesc>
     </fileDesc>
     <profileDesc>
+      <creation>
+        <date when="1659-03-12">1659/03/12</date>
+      </creation>
       <langUsage>
         <language ident="fra" usage="88" n="161 words">French</language>
         <language ident="lat" usage="12" n="22 words">Latin</language>
@@ -246,6 +249,24 @@
         </taxonomy>
         <taxonomy xml:id="catalogue-subjects">
           <bibl>Sujets et matières des notices de catalogue (colonnes Sujet et Matiere du CSV local)</bibl>
+        </taxonomy>
+        <taxonomy xml:id="cattex-freem">
+          <bibl>
+            <title>CATTEX (FreEM) — francais pre-classique et classique</title>
+            <ptr target="https://freem-corpora.github.io/"/>
+          </bibl>
+        </taxonomy>
+        <taxonomy xml:id="lasla">
+          <bibl>
+            <title>LASLA — latin</title>
+            <ptr target="https://www.lasla.uliege.be/"/>
+          </bibl>
+        </taxonomy>
+        <taxonomy xml:id="perseus-grc">
+          <bibl>
+            <title>Perseus / Ancient Greek Dependency Treebank — grec ancien</title>
+            <ptr target="https://perseusdl.github.io/treebank_data/"/>
+          </bibl>
         </taxonomy>
       </classDecl>
     </encodingDesc>

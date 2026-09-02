@@ -772,3 +772,38 @@ def test_unusable_date_is_kept_as_text_not_dropped():
     birth = _add_life_event(parent, "birth", "date inconnue", None, None)
     assert birth.attrib == {}
     assert birth.text == "date inconnue"
+
+
+# =============================================================================
+# Quand le texte a ete produit (audit 1.10)
+# =============================================================================
+
+def test_creation_dates_the_work_not_only_the_edition():
+    """<bibl><date> date l'edition decrite dans le sourceDesc ; sans
+    <creation>, rien dans le fichier ne repond a « de quand est ce
+    texte » — et un corpus se lit par periode avant tout."""
+    root = _build_default_root()
+    override_teiheader_from_csv(root, {"BDD": "LIV0001", "Date_01": "1659"}, "LIV0001")
+
+    creation = root.find(".//teiHeader/profileDesc/creation")
+    assert creation is not None
+    assert creation.find("date").get("when") == "1659"
+    assert creation.find("date").text == "1659"
+    # <creation> ouvre le profileDesc, comme TEI le demande
+    assert list(root.find(".//teiHeader/profileDesc"))[0] is creation
+
+
+def test_the_bibl_date_carries_its_normalized_value_too():
+    root = _build_default_root()
+    override_teiheader_from_csv(root, {"BDD": "LIV0001", "Date_01": "1659/03/12"}, "LIV0001")
+
+    date_el = root.find(".//teiHeader/fileDesc/sourceDesc/bibl/date")
+    assert date_el.get("when") == "1659-03-12"
+    assert date_el.text == "1659/03/12"
+
+
+def test_an_unreadable_date_leaves_no_creation_rather_than_a_false_one():
+    root = _build_default_root()
+    override_teiheader_from_csv(root, {"BDD": "LIV0001", "Date_01": "sans date"}, "LIV0001")
+
+    assert root.find(".//teiHeader/profileDesc/creation") is None

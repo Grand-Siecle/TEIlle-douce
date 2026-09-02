@@ -321,6 +321,29 @@ ENRICHMENT_MAX_MISALIGNED_RATIO = 0.2
 # Mapping from TEI language ident to PyHellen model name
 PYHELLEN_MODELS = {"fra": "freem", "lat": "lasla", "grc": "grc"}
 
+# Jeu d'etiquettes morphosyntaxiques de chaque modele. Les <w> portent
+# @pos="NOMcom" et @msd="NOMB.=s|GENRE=m" sans dire de quel referentiel
+# ces valeurs viennent : un lecteur qui ne connait pas CATTEX ne peut ni
+# les interpreter ni les convertir (audit 1.11). Declare une fois dans
+# l'encodingDesc, pointe par @ana sur chaque <w> annote.
+POS_TAGSETS = {
+    "freem": {
+        "id": "cattex-freem",
+        "label": "CATTEX (FreEM) — francais pre-classique et classique",
+        "url": "https://freem-corpora.github.io/",
+    },
+    "lasla": {
+        "id": "lasla",
+        "label": "LASLA — latin",
+        "url": "https://www.lasla.uliege.be/",
+    },
+    "grc": {
+        "id": "perseus-grc",
+        "label": "Perseus / Ancient Greek Dependency Treebank — grec ancien",
+        "url": "https://perseusdl.github.io/treebank_data/",
+    },
+}
+
 # TEI container elements to enrich
 # Elements whose text goes through PyHellen. <head> and <titlePart>
 # joined the list when headings and title pages got their own container:
@@ -431,6 +454,10 @@ NER_ENTITY_TYPES = {
     },
     "date": {
         "tei_element": "date",
+        # Lire la valeur machine quand le texte la porte clairement
+        # ("1659", "M.DC.LIX") : sans @when, une <date> ne se trie pas,
+        # ne se filtre pas et ne se place sur aucune frise (audit 1.10).
+        "normalize": "date",
         "tei_list": None,
         "tei_item": None,
         "tei_parent": None,

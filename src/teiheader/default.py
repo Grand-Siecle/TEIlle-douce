@@ -17,6 +17,7 @@ from lxml import etree
 
 from config import (
     KEYWORDS_TAXONOMY,
+    POS_TAGSETS,
     SEGMONTO,
     PLACEHOLDER_INFO_UNAVAILABLE,
     PLACEHOLDER_NO_METADATA,
@@ -312,3 +313,15 @@ class DefaultTree:
         )
         kw_bibl = etree.SubElement(keywords_tax, "bibl")
         kw_bibl.text = KEYWORDS_TAXONOMY["label"]
+
+        # Third taxonomy: the morphosyntactic tagsets. <w pos="NOMcom"
+        # msd="NOMB.=s|GENRE=m"> names values from a reference a reader
+        # cannot guess; each annotated <w> points here through @ana.
+        for tagset in POS_TAGSETS.values():
+            pos_tax = etree.SubElement(
+                classDecl, "taxonomy", {XML_ID: tagset["id"]}
+            )
+            pos_bibl = etree.SubElement(pos_tax, "bibl")
+            pos_title = etree.SubElement(pos_bibl, "title")
+            pos_title.text = tagset["label"]
+            etree.SubElement(pos_bibl, "ptr", target=tagset["url"])

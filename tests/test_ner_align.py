@@ -519,3 +519,53 @@ def test_align_and_inject_full_pipeline(monkeypatch):
 
     # The dropped place entity never made it into the tree.
     assert not list(ab.iter(f"{{{NS}}}placeName"))
+
+
+# =============================================================================
+# Dates : la valeur machine, quand le texte la porte (audit 1.10)
+# =============================================================================
+
+def test_a_date_entity_carries_its_machine_readable_value():
+    """Une <date> qui ne dit que « M.DC.LIX » ne se trie pas, ne se
+    filtre pas et ne se place sur aucune frise — ce pour quoi on extrait
+    une date."""
+    from src.enrichment.ner_align import _make_entity_element
+    from config import NER_ENTITY_TYPES
+
+    elem = _make_entity_element("date", "high", NER_ENTITY_TYPES, text="M.DC.LIX")
+
+    assert qlocal(elem) == "date"
+    assert elem.get("when") == "1659"
+    assert elem.get("cert") == "high"
+
+
+def test_a_date_the_parser_cannot_read_gets_no_value():
+    from src.enrichment.ner_align import _make_entity_element
+    from config import NER_ENTITY_TYPES
+
+    elem = _make_entity_element("date", "medium", NER_ENTITY_TYPES,
+                                text="le 23 juin 1652")
+
+    assert elem.get("when") is None
+    assert elem.get("notBefore") is None
+
+
+def test_the_ner_certainty_survives_a_date_read_with_low_confidence():
+    """Le @cert vient de la confiance du modele NER ; une date lue avec
+    une inference basse ne doit pas le remonter."""
+    from src.enrichment.ner_align import _make_entity_element
+    from config import NER_ENTITY_TYPES
+
+    elem = _make_entity_element("date", "low", NER_ENTITY_TYPES, text="159")
+
+    assert elem.get("cert") == "low"
+    assert (elem.get("notBefore"), elem.get("notAfter")) == ("1590", "1599")
+
+
+def test_other_entity_types_are_untouched_by_the_date_reader():
+    from src.enrichment.ner_align import _make_entity_element
+    from config import NER_ENTITY_TYPES
+
+    elem = _make_entity_element("person", "high", NER_ENTITY_TYPES, text="1659")
+
+    assert elem.get("when") is None

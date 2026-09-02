@@ -689,3 +689,20 @@ def test_a_foreign_span_in_the_container_language_is_not_double_counted():
       <foreign xml:lang="fra">mots ici</foreign></ab></div></body></text></TEI>""")
 
     assert language_volume(root) == {"fra": 3}
+
+
+def test_pos_tagsets_are_declared_with_a_pointer_to_their_reference():
+    """<w pos="NOMcom" msd="NOMB.=s|GENRE=m"> nomme des valeurs d'un
+    referentiel qu'un lecteur ne peut pas deviner (audit 1.11)."""
+    from config import POS_TAGSETS
+
+    root, _ = make_default_tree()
+    ids = [t.get(XML_ID) for t in root.findall(".//classDecl/taxonomy")]
+    for tagset in POS_TAGSETS.values():
+        assert tagset["id"] in ids, ids
+        declaration = [
+            t for t in root.findall(".//classDecl/taxonomy")
+            if t.get(XML_ID) == tagset["id"]
+        ][0]
+        assert declaration.find("bibl/title").text == tagset["label"]
+        assert declaration.find("bibl/ptr").get("target") == tagset["url"]

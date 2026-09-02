@@ -27,6 +27,7 @@ from dataclasses import dataclass, field
 
 from lxml import etree
 
+from ..dates import text_date_attributes
 from ..constants import UUID_NAMESPACE, XML_ID, tag_like
 from ..utils.xml import local_tag as _local
 from .ner_filter import filter_aligned_by_pos
@@ -475,7 +476,8 @@ def _confidence_to_cert(confidence, thresholds):
     return min(thresholds.items(), key=lambda kv: kv[1])[0] if thresholds else "unknown"
 
 
-def _make_entity_element(entity_type, cert, entity_types_config, anchor=None):
+def _make_entity_element(entity_type, cert, entity_types_config, anchor=None,
+                         text=None):
     """
     Create a TEI entity element (e.g., <persName>, <rs type="event">).
 
@@ -483,6 +485,11 @@ def _make_entity_element(entity_type, cert, entity_types_config, anchor=None):
     own tree is bare in memory, a TEI file read back from disk is
     namespaced, and injecting one fixed convention leaves the two
     coexisting in a single tree (audit 4.2).
+
+    When the type declares `normalize: "date"`, *text* is read for a
+    machine-readable value (audit 1.10): a <date> saying only "M.DC.LIX"
+    cannot be sorted, filtered or put on a timeline, which is most of
+    what a date entity is extracted for.
     """
     cfg = entity_types_config.get(entity_type, {})
     tag = cfg.get("tei_element", "rs")
@@ -491,6 +498,13 @@ def _make_entity_element(entity_type, cert, entity_types_config, anchor=None):
     # Extra attributes for <rs type="..."> elements
     extra = cfg.get("tei_element_attrs", {})
     attrs.update(extra)
+
+    if cfg.get("normalize") == "date" and text:
+        normalized = text_date_attributes(text)
+        # @cert is already set from the NER confidence; a date read with
+        # a low certainty must not overwrite it with a higher one.
+        normalized.pop("cert", None)
+        attrs.update(normalized)
 
     elem = etree.Element(tag_like(anchor, tag), **attrs)
     return elem
@@ -540,7 +554,8 @@ def _inject_tokenized_entities(entities, cert_thresholds, entity_types_config):
 
             # Create entity wrapper element
             wrapper = _make_entity_element(
-                ent.entity_type, cert, entity_types_config, anchor=parent
+                ent.entity_type, cert, entity_types_config, anchor=parent,
+                text=" ".join((w.text or "") for w in group),
             )
 
             # Insert wrapper before the first <w> in the group
@@ -658,7 +673,8 @@ def _inject_reg_entities(entities, cert_thresholds, entity_types_config):
                 prev_elem.tail = (prev_elem.tail or "") + before
 
             wrapper = _make_entity_element(
-                ent.entity_type, cert, entity_types_config, anchor=reg_elem
+                ent.entity_type, cert, entity_types_config, anchor=reg_elem,
+                text=original_text[task["start"]:task["end"]],
             )
             wrapper.text = original_text[task["start"]:task["end"]]
             wrapper.tail = ""
@@ -728,7 +744,8 @@ def _inject_raw_text_entities(entities, cert_thresholds, entity_types_config):
 
             # Entity element
             elem = _make_entity_element(
-                ent.entity_type, cert, entity_types_config, anchor=container
+                ent.entity_type, cert, entity_types_config, anchor=container,
+                text=full_text[ent.text_start : ent.text_end],
             )
             elem.text = full_text[ent.text_start : ent.text_end]
             elem.tail = ""
