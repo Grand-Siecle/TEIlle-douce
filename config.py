@@ -184,12 +184,6 @@ APP_VERSIONS = {
 }
 
 # SegmOnto taxonomy identifier and URL
-SEGMONTO = {
-    "id": "SegmOnto",
-    "url": "https://github.com/segmonto",
-    "zones_category_id": "SegmOntoZones",
-    "lines_category_id": "SegmOntoLines",
-}
 
 # =============================================================================
 # CSV CONFIGURATION

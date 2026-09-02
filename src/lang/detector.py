@@ -36,7 +36,7 @@ _DELETE_CHARS = frozenset("|¦")
 # Vowels that trigger word-initial i/I → j/J (Ramist rule).
 _J_VOWELS = frozenset("aeiouyàâéèêëîïôùûœAEIOUYÀÂÉÈÊËÎÏÔÙÛŒ")
 
-from ..utils.hyphen import HYPHEN_CHARS, joins_words
+from ..utils.hyphen import HYPHEN_CHARS, SOFT_HYPHEN, joins_words
 from config import (
     SUPPORTED_LANGUAGES,
     LANG_CONFIDENCE_THRESHOLD,
@@ -196,16 +196,22 @@ class LinguaDetector:
             # is also a letter. Falls through to normal handling otherwise.
             if c in HYPHEN_CHARS:
                 prev_kept = out[-1] if out else ""
-                j = i + 1
-                while j < n and src[j].isspace():
-                    j += 1
-                if joins_words(prev_kept, src[j:j + 1]):
-                    i = j
-                    word_just_started = False
-                    continue
-                # Not a word-splitting hyphen; fall through to keep "-"
-                # (but drop bare ¬ — same behaviour as the old cleaner).
-                if c == "¬":
+                # The whitespace scan only matters when a letter precedes
+                # the mark: a dash used as punctuation or a rule would
+                # otherwise walk its whole following run for nothing, on
+                # every character of every page.
+                if prev_kept and prev_kept.isalpha():
+                    j = i + 1
+                    while j < n and src[j].isspace():
+                        j += 1
+                    if joins_words(prev_kept, src[j:j + 1]):
+                        i = j
+                        word_just_started = False
+                        continue
+                # Not a word-splitting hyphen; keep "-", which can be a
+                # genuine compound, and drop the soft hyphen, which is
+                # never part of a word (src/utils/hyphen.py).
+                if c == SOFT_HYPHEN:
                     i += 1
                     continue
 

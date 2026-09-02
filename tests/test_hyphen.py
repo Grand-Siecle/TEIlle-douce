@@ -60,14 +60,39 @@ def test_the_two_marks_are_declared_once():
     assert HYPHEN_CHARS == ("¬", "-")
 
 
-def test_the_three_phases_agree_on_a_plain_hyphen():
-    """La fixture porte les deux formes (f1 en « ¬ », f7 en « - ») : les
-    trois phases doivent recoller les deux."""
+@pytest.mark.parametrize("marque", ["¬", "-"])
+def test_the_three_phases_rejoin_both_marks(marque):
+    """La fixture porte les deux formes (f1 en « ¬ », f7 en « - »). Les
+    trois phases nommees dans le module doivent recoller les deux — c'est
+    l'accord que ce module existe pour garantir."""
     from src.modernize import dehyphenate_lines
     from src.lang.detector import LinguaDetector
+    from src.enrichment.extractor import TextSpan
+    from src.enrichment.dehyphenation import dehyphenate
 
-    joined, _ = dehyphenate_lines(["mainte-", "nant"])
+    # 1. modernisation : recolle les lignes d'une meme zone
+    joined, _ = dehyphenate_lines([f"mainte{marque}", "nant"])
     assert joined[0] == "maintenant"
 
-    nettoye, _ = LinguaDetector()._clean_with_map("mainte- nant")
+    # 2. detection de langue : efface la marque sans rien recoller d'autre
+    nettoye, _ = LinguaDetector()._clean_with_map(f"mainte{marque} nant")
     assert "maintenant" in nettoye
+
+    # 3. enrichissement : recolle ET garde la carte des offsets
+    # la seconde portion porte son separateur, comme l'extracteur le pose
+    brut = f"mainte{marque} nant"
+    def _span(texte, debut, fin, ligne, hyphen=False):
+        return TextSpan(
+            text=texte, offset_start=debut, offset_end=fin, line_index=ligne,
+            lb_element=None, lb_corresp=None, hi_element=None, hi_rend=None,
+            has_hyphen=hyphen,
+        )
+
+    spans = [
+        _span(f"mainte{marque}", 0, 7, 0, hyphen=True),
+        _span(" nant", 7, 12, 1),
+    ]
+    texte, offsets, joins = dehyphenate(brut, spans)
+    assert "maintenant" in texte
+    assert len(offsets) == len(texte)
+    assert [j.hyphen_char for j in joins] == [marque]

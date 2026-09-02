@@ -11,9 +11,8 @@
 import pytest
 from lxml import etree
 
-from src.constants import KEYWORDS_TAXONOMY, POS_TAGSETS
+from src.constants import KEYWORDS_TAXONOMY, POS_TAGSETS, SEGMONTO
 from config import (
-    SEGMONTO,
     PLACEHOLDER_INFO_UNAVAILABLE,
     PLACEHOLDER_NO_METADATA,
     RESPONSIBILITY,

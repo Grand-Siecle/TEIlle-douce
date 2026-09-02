@@ -16,12 +16,11 @@ from collections import defaultdict
 from lxml import etree
 
 from config import (
-    SEGMONTO,
     PLACEHOLDER_INFO_UNAVAILABLE,
     PLACEHOLDER_NO_METADATA,
     PLACEHOLDER_ORCID,
 )
-from ..constants import KEYWORDS_TAXONOMY
+from ..constants import KEYWORDS_TAXONOMY, SEGMONTO
 from .prose import EDITORIAL_DECLARATIONS, LANG_USAGE_DESCRIPTION
 from ..constants import XML_ID
 from ..utils.files import canonical_document_id

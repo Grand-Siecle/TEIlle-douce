@@ -11,6 +11,7 @@ their source XML elements using the offset_map and TextSpan data.
 from dataclasses import dataclass, field
 from .client import NLPToken
 from .extractor import TextSpan
+from ..utils.hyphen import strip_trailing_hyphen
 from .dehyphenation import HyphenJoin
 
 
@@ -79,9 +80,13 @@ def align_tokens(tokens, spans, offset_map, hyphen_joins):
                 span = spans[si]
                 # Extract the portion of this span's text that belongs to this token
                 part = _extract_part(span, raw_start, raw_end)
-                # Strip hyphen character from the end of non-last parts
+                # Strip THE hyphen from the end of non-last parts. The
+                # old rstrip("¬").rstrip("-") removed a whole run of
+                # marks — "compte--" came back as "compte", one character
+                # short of what the page holds — and in an order that
+                # left a "¬" behind on "ab¬-".
                 if part and idx_pos < len(sorted_indices) - 1:
-                    part = part.rstrip("¬").rstrip("-")
+                    part = strip_trailing_hyphen(part)
                 if part:
                     original_parts.append(part)
                 # Collect lb elements between parts (not the first one)

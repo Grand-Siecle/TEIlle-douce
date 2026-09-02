@@ -63,10 +63,6 @@ SEGMONTO_TAG_RE = re.compile(r"(\w+):?(\w+)?#?(\d?)?")
 # SEGMONTO TAXONOMY
 # =============================================================================
 
-# =============================================================================
-# SEGMONTO TAXONOMY CONFIGURATION
-# =============================================================================
-
 # Referentiel des mots-cles du header. Les sujets viennent des colonnes
 # Sujet et Matiere du CSV, elles-memes reprises des notices du catalogue :
 # sans @scheme pointant vers cette declaration, <keywords> n'indique pas
@@ -102,6 +98,18 @@ POS_TAGSETS = {
     },
 }
 
+
+# SegmOnto taxonomy identifier and URL. Here rather than in config.py
+# for the same reason as its zone and line tables: full.py reads
+# zones_category_id and lines_category_id structurally, and default.py
+# writes this taxonomy and the keywords one in twelve consecutive lines
+# — importing them from two files was the confusion, not the fix.
+SEGMONTO = {
+    "id": "SegmOnto",
+    "url": "https://github.com/segmonto",
+    "zones_category_id": "SegmOntoZones",
+    "lines_category_id": "SegmOntoLines",
+}
 
 # SegmOnto zone types and their documentation URLs
 SEGMONTO_ZONES = {

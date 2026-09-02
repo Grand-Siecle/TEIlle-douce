@@ -26,6 +26,13 @@ def _recharger_modernize():
     return importlib.reload(src.modernize)
 
 
+def _recharger_prose():
+    """La prose de l'editorialDecl lit le seuil a SON import, comme
+    src.modernize : elle doit etre rendue dans le meme etat."""
+    import src.teiheader.prose
+    return importlib.reload(src.teiheader.prose)
+
+
 @pytest.fixture(autouse=True)
 def _config_propre():
     """Rendre a la suite un config non pollue par les surcharges."""
@@ -33,6 +40,7 @@ def _config_propre():
     import config
     importlib.reload(config)
     _recharger_modernize()
+    _recharger_prose()
 
 
 def test_service_urls_are_overridable(monkeypatch):
@@ -119,9 +127,7 @@ def test_divergence_threshold_has_a_single_home(monkeypatch):
 
     # la prose vit desormais dans src/teiheader/prose.py, mais elle lit
     # toujours la meme valeur : c'est la seule chose qui compte ici
-    import src.teiheader.prose
-    prose_mod = importlib.reload(src.teiheader.prose)
-    prose = prose_mod.EDITORIAL_DECLARATIONS["normalization"]["text"]
+    prose = _recharger_prose().EDITORIAL_DECLARATIONS["normalization"]["text"]
     assert "0.93" in prose, prose
 
     # et le rejet des hallucinations bascule bien sur cette valeur : la

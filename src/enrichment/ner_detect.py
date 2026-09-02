@@ -473,7 +473,7 @@ def detect_entities(blocks, models, entity_types_config, models_config, threshol
     Args:
         blocks: List of NERBlock from extract_ner_blocks().
         models: NERModels instance (lazy-loading).
-        entity_types_config: NER_ENTITY_TYPES from config.
+        entity_types_config: NER_ENTITY_TYPES from src/enrichment/entity_schema.py.
         models_config: NER_MODELS from config.
         threshold: Minimum confidence score.
 

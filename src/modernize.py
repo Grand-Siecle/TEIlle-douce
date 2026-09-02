@@ -329,11 +329,12 @@ def dehyphenate_lines(texts, zone_types=None):
         line = joined[i]
         if not line:
             continue
-        if not ends_with_hyphen(line):
+        stripped = line.rstrip()
+        if not ends_with_hyphen(stripped):
             continue
 
         # Find the word fragment before the hyphen
-        before_hyphen = strip_trailing_hyphen(line)
+        before_hyphen = strip_trailing_hyphen(stripped)
         last_space = before_hyphen.rfind(" ")
         if last_space == -1:
             suffix = before_hyphen

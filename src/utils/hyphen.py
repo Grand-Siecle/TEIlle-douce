@@ -17,10 +17,13 @@ different from it (audit 4.7):
   the language detector only needs a clean string.
 
 They cannot be merged — they answer different questions — but they must
-agree on WHAT a line-break hyphen is. They did not: one accepted "-" and
-another only "¬", one looked at the following line and another at the
-following character. This module holds the predicate; each phase keeps
-its own way of acting on it.
+agree on WHAT a line-break hyphen is, and they did not. The alignment
+phase stripped a whole RUN of marks in a fixed order, so "compte--" came
+back one character shorter than the page and "ab¬-" kept its soft
+hyphen; the extraction phase decided on its own, in three copies,
+whether a span was hyphenated at all. Any fix to one left the others as
+they were. This module holds the predicate; each phase keeps its own way
+of acting on it.
 """
 
 # The two characters an early-modern line break is marked with in this
@@ -30,14 +33,30 @@ its own way of acting on it.
 # decide.
 HYPHEN_CHARS = ("¬", "-")
 
+# The mark that is never part of a word, whatever surrounds it: it exists
+# only to say "this line ends mid-word". "-" is not one of these — it can
+# be a genuine compound ("Saint-Germain"), which is why the two are told
+# apart everywhere.
+SOFT_HYPHEN = "¬"
+
 
 def ends_with_hyphen(text):
-    """True when *text* ends on a line-break hyphen, spaces ignored."""
+    """True when *text* ends on a line-break hyphen, trailing spaces ignored.
+
+    Every entry of HYPHEN_CHARS is ONE character: callers slice with
+    ``[:-1]`` and test membership per character, so a two-character mark
+    would be accepted here and mishandled three lines later.
+    """
     return bool(text) and text.rstrip().endswith(HYPHEN_CHARS)
 
 
 def strip_trailing_hyphen(text):
-    """*text* without its trailing line-break hyphen, spaces kept."""
+    """*text* without its trailing line-break hyphen.
+
+    Trailing whitespace goes too — the hyphen is the last thing the line
+    holds, and what follows it is the next line's business. A caller that
+    needs the spaces must keep them itself.
+    """
     stripped = text.rstrip()
     if stripped.endswith(HYPHEN_CHARS):
         return stripped[:-1]
