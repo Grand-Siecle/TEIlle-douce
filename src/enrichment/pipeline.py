@@ -276,8 +276,10 @@ def _finish_container(job, stats):
 
     # The scope of the deterministic sentence ids (audit 2.8) pairs the
     # container's @corresp with its document-order index: @corresp alone
-    # is NOT unique (consecutive <fw> lines of one zone each get their
-    # own container with the same @corresp).
+    # is NOT unique — one source zone can be reached through more than
+    # one container (a figure's caption <ab> carries the zone of the
+    # <figure> around it), and nothing forbids a document from repeating
+    # a zone reference.
     scope_ref = container.get("corresp") or container.get(XML_ID) or ""
     sentences = segment_sentences(
         aligned, id_scope=f"{job.index}\x1f{scope_ref}"

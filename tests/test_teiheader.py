@@ -653,3 +653,39 @@ def test_update_extent_reads_a_namespaced_tree():
         etree.tostring(root).replace(b"<TEI>", b'<TEI xmlns="http://www.tei-c.org/ns/1.0">')
     )
     assert update_extent(relu) == {"words": 2}
+
+
+# -----------------------------------------------------------------------------
+# volumetry : les cas degrades
+# -----------------------------------------------------------------------------
+
+def test_volumetry_ignores_lines_it_cannot_place():
+    """Une <line> sans zone parente identifiee ne peut etre creditee ni a
+    une langue ni a un type de zone : elle ne doit pas non plus faire
+    planter la mesure."""
+    from src.volumetry import line_word_counts, text_volume, token_count
+
+    root = etree.fromstring(b"""<TEI><sourceDoc><surface>
+      <zone type="MainZone"><zone><line>sans identifiant</line></zone></zone>
+      <zone type="MainZone"><zone xml:id="l1"><line>deux mots</line></zone></zone>
+    </surface></sourceDoc><text><body/></text></TEI>""")
+
+    assert line_word_counts(root) == {"l1": (2, "MainZone")}
+    assert text_volume(root) == 2
+    assert token_count(root) == 0
+    # sans <text> du tout, la mesure vaut zero plutot que lever
+    assert token_count(etree.fromstring(b"<TEI/>")) == 0
+
+
+def test_a_foreign_span_in_the_container_language_is_not_double_counted():
+    """<foreign> dans la meme langue que son conteneur : ses mots ne
+    doivent pas etre retires puis re-ajoutes ailleurs."""
+    from src.volumetry import language_volume
+
+    root = etree.fromstring(b"""<TEI><sourceDoc><surface>
+      <zone type="MainZone"><zone xml:id="l1"><line>trois mots ici</line></zone></zone>
+    </surface></sourceDoc>
+    <text><body><div><ab xml:lang="fra"><lb corresp="#l1"/>trois
+      <foreign xml:lang="fra">mots ici</foreign></ab></div></body></text></TEI>""")
+
+    assert language_volume(root) == {"fra": 3}

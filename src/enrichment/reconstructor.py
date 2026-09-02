@@ -8,6 +8,7 @@ Rebuilds TEI container elements with <w>, <pc>, <s>, and <lb/> elements
 based on aligned and segmented NLP tokens.
 """
 
+import logging
 import uuid
 
 from lxml import etree
@@ -15,6 +16,8 @@ from lxml import etree
 from ..constants import UUID_NAMESPACE, XML_ID, XML_LANG
 from .segmenter import Sentence
 from .aligner import AlignedToken
+
+logger = logging.getLogger(__name__)
 
 # Punctuation join rules
 JOIN_LEFT = {".", ",", ";", ":", "!", "?", ")", "]", "»"}
@@ -37,6 +40,17 @@ def rebuild_container(container, sentences, primary_lang=None):
     """
     if primary_lang is None:
         primary_lang = container.get(XML_LANG) or ""
+
+    if not sentences:
+        # Not a no-op if we went on: the clearing below would strip the
+        # container of the text it holds and give nothing back, leaving
+        # an element with attributes and no content (audit 6.7). An
+        # empty tagging result must leave the transcription alone.
+        logger.debug(
+            "No sentence to rebuild in <%s>; leaving its content untouched",
+            container.tag,
+        )
+        return
 
     # Clear everything (including any <foreign> still sitting around
     # from the language-detection phase — they are recreated inline
@@ -198,6 +212,16 @@ def _create_cross_line_w(parent, at, inserted_lbs):
     if at.token.morph:
         shared_attrs["msd"] = at.token.morph
 
+    # A line the word crosses without contributing any text — one
+    # holding just the hyphen — produces an lb_element but no part, so
+    # there can be MORE breaks than gaps between fragments. Every one of
+    # them is a real line break of the page: the surplus is emitted at
+    # the last gap, which is where an empty line sits (between the
+    # fragment before it and the one after).
+    gaps = len(parts) - 1
+    surplus = max(0, len(lb_elems) - gaps)
+    next_lb = 0
+
     for i, part_text in enumerate(parts):
         w = etree.SubElement(parent, "w")
         w.text = part_text
@@ -225,15 +249,30 @@ def _create_cross_line_w(parent, at, inserted_lbs):
         if i == 0 and at.token.treated and at.token.treated != at.token.form:
             w.set("norm", at.token.treated)
 
-        # Insert <lb/> between parts (after each part except the last)
-        if i < len(lb_elems):
+        # Insert <lb/> between parts: one per BOUNDARY, not one per
+        # available source <lb>. A word cut over three lines with a
+        # single lb_element used to lose a line break silently, welding
+        # two lines into one (audit 6.5).
+        if i >= gaps:
+            continue
+        breaks_here = 1 + (surplus if i == gaps - 1 else 0)
+        for _ in range(breaks_here):
             lb = etree.SubElement(parent, "lb")
-            lb_orig = lb_elems[i]
-            if lb_orig is not None:
-                corresp = lb_orig.get("corresp")
-                if corresp:
-                    lb.set("corresp", corresp)
-                facs = lb_orig.get("facs")
-                if facs:
-                    lb.set("facs", facs)
-                inserted_lbs.add(id(lb_orig))
+            lb_orig = lb_elems[next_lb] if next_lb < len(lb_elems) else None
+            next_lb += 1
+            if lb_orig is None:
+                # The break exists on the page; only its zone id is
+                # unknown. Emitting nothing would weld the two lines.
+                logger.warning(
+                    "Word %r spans %d fragment(s) with %d line break(s) "
+                    "recorded: boundary %d has no source <lb> to point at",
+                    at.token.form, len(parts), len(lb_elems), i + 1,
+                )
+                continue
+            corresp = lb_orig.get("corresp")
+            if corresp:
+                lb.set("corresp", corresp)
+            facs = lb_orig.get("facs")
+            if facs:
+                lb.set("facs", facs)
+            inserted_lbs.add(id(lb_orig))

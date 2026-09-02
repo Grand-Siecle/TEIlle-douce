@@ -62,10 +62,8 @@ def test_build_body_dispatches_zone_types_to_expected_elements():
     div = root.find(".//div")
     tags = [qlocal(el) for el in div]
     # une seule <pb> (page unique), puis un element par ligne rencontree.
-    # NumberingZone/QuireMarksZone/RunningTitleZone produisent chacun leur
-    # PROPRE <fw> -- contrairement a <ab>/<note>, ces trois types ne
-    # fusionnent jamais entre lignes consecutives : le code ne teste jamais
-    # `last_element.tag != "fw"` avant d'en creer un nouveau.
+    # Trois zones DIFFERENTES -> trois <fw> distincts (la fusion se fait
+    # par zone, voir le test suivant).
     assert tags == ["pb", "ab", "note", "fw", "fw", "fw"]
 
     ab = div[1]
@@ -715,3 +713,56 @@ def test_build_body_accepts_the_text_object_whole():
 
     assert root.find(".//front") is not None
     assert root.find(".//figure/graphic") is not None
+
+
+def test_a_running_title_on_two_lines_is_one_fw():
+    """Un titre courant sur deux lignes est UN titre courant : le
+    fragmenter laissait chaque moitie en piece d'apparat separee."""
+    lines = [
+        make_line("l1", "RunningTitleZone", "zone_rt", "p1", text="DE LAMOVR,"),
+        make_line("l2", "RunningTitleZone", "zone_rt", "p1", text="LIVRE VII."),
+        make_line("l3", "NumberingZone", "zone_num", "p1", text="805"),
+    ]
+    root = etree.Element("TEI")
+
+    build_body(root, lines, detect_lang=False)
+
+    div = root.find(".//div")
+    assert [qlocal(el) for el in div] == ["pb", "fw", "fw"]
+    titre = div[1]
+    assert [c.tail for c in titre] == ["DE LAMOVR,", "LIVRE VII."]
+    # une zone differente ouvre bien son propre <fw>
+    assert div[2].get("corresp") == "#zone_num"
+
+
+def test_two_margin_zones_are_two_notes():
+    """Deux gloses empilees dans la marge sont deux zones : soudees, la
+    seconde disparaissait derriere l'identite de la premiere, et
+    link_notes_to_lines ancrait tout sur la geometrie de la premiere."""
+    lines = [
+        make_line("l1", "MarginTextZone", "zone_m1", "p1", text="premiere glose"),
+        make_line("l2", "MarginTextZone", "zone_m2", "p1", text="seconde glose"),
+    ]
+    root = etree.Element("TEI")
+
+    build_body(root, lines, detect_lang=False)
+
+    notes = [el for el in root.find(".//div") if qlocal(el) == "note"]
+    assert [n.get("corresp") for n in notes] == ["#zone_m1", "#zone_m2"]
+
+
+def test_two_main_zones_are_two_ab():
+    """Les deux colonnes d'une page sont deux MainZones : fusionnees, la
+    colonne de droite se retrouvait dans un <ab> qui se declare etre
+    celle de gauche."""
+    lines = [
+        make_line("l1", "MainZone", "zone_col1", "p1", text="colonne de gauche"),
+        make_line("l2", "MainZone", "zone_col2", "p1", text="colonne de droite"),
+    ]
+    root = etree.Element("TEI")
+
+    build_body(root, lines, detect_lang=False)
+
+    abs_ = [el for el in root.find(".//div") if qlocal(el) == "ab"]
+    assert [a.get("corresp") for a in abs_] == ["#zone_col1", "#zone_col2"]
+    assert [a[0].tail for a in abs_] == ["colonne de gauche", "colonne de droite"]
