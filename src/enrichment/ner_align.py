@@ -878,7 +878,7 @@ def inject_entities(aligned_entities, cert_thresholds, entity_types_config):
     Args:
         aligned_entities: List of AlignedEntity (overlaps already resolved).
         cert_thresholds: NER_CERT_THRESHOLDS from config.
-        entity_types_config: NER_ENTITY_TYPES from config.
+        entity_types_config: NER_ENTITY_TYPES from src/enrichment/entity_schema.py.
     """
     reg_inj = [e for e in aligned_entities if e.reg_fragments]
     tokenized = [e for e in aligned_entities if e.w_elements]
@@ -912,7 +912,7 @@ def align_and_inject(blocks, all_spans, entity_types_config, cert_thresholds):
     Args:
         blocks: List of NERBlock from Phase 7.
         all_spans: List of list of NERSpan from Phase 7 (parallel to blocks).
-        entity_types_config: NER_ENTITY_TYPES from config.
+        entity_types_config: NER_ENTITY_TYPES from src/enrichment/entity_schema.py.
         cert_thresholds: NER_CERT_THRESHOLDS from config.
 
     Returns:

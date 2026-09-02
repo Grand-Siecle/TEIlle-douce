@@ -23,6 +23,11 @@ from difflib import SequenceMatcher
 
 import httpx
 
+from .utils.hyphen import (
+    ends_with_hyphen,
+    remove_soft_hyphens,
+    strip_trailing_hyphen,
+)
 from config import (
     DEBUG,
     HEALTH_TIMEOUT,
@@ -50,7 +55,7 @@ _MIN_ALPHA = 3
 
 def _normalize_for_comparison(text):
     """Normalize text for similarity comparison: long-s, accents, case."""
-    text = text.replace("ſ", "s").replace("¬", "").lower()
+    text = remove_soft_hyphens(text.replace("ſ", "s")).lower()
     nfkd = unicodedata.normalize("NFKD", text)
     return "".join(c for c in nfkd if unicodedata.category(c) != "Mn")
 
@@ -325,11 +330,11 @@ def dehyphenate_lines(texts, zone_types=None):
         if not line:
             continue
         stripped = line.rstrip()
-        if not stripped.endswith("¬") and not stripped.endswith("-"):
+        if not ends_with_hyphen(stripped):
             continue
 
         # Find the word fragment before the hyphen
-        before_hyphen = stripped[:-1]
+        before_hyphen = strip_trailing_hyphen(stripped)
         last_space = before_hyphen.rfind(" ")
         if last_space == -1:
             suffix = before_hyphen
@@ -354,11 +359,7 @@ def dehyphenate_lines(texts, zone_types=None):
                 j = None
                 break
             cand_words = cand.split()
-            cand_stripped = cand.rstrip()
-            is_single_fragment = (
-                len(cand_words) == 1
-                and (cand_stripped.endswith("¬") or cand_stripped.endswith("-"))
-            )
+            is_single_fragment = len(cand_words) == 1 and ends_with_hyphen(cand)
             if not is_single_fragment:
                 break
             fragment += cand_words[0][:-1]

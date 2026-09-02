@@ -11,9 +11,8 @@
 import pytest
 from lxml import etree
 
+from src.constants import KEYWORDS_TAXONOMY, POS_TAGSETS, SEGMONTO
 from config import (
-    KEYWORDS_TAXONOMY,
-    SEGMONTO,
     PLACEHOLDER_INFO_UNAVAILABLE,
     PLACEHOLDER_NO_METADATA,
     RESPONSIBILITY,
@@ -697,7 +696,6 @@ def test_only_the_tagsets_actually_used_are_declared():
     run sans enrichissement n'annote rien, et annoncer CATTEX, LASLA et
     Perseus dans un fichier qui n'a pas un seul @pos serait la meme
     fausse declaration que l'on vient de corriger ailleurs."""
-    from config import POS_TAGSETS
     from src.teiheader import declare_pos_tagsets
 
     root, _ = make_default_tree()
@@ -717,7 +715,6 @@ def test_only_the_tagsets_actually_used_are_declared():
 
 
 def test_declaring_a_tagset_twice_writes_it_once():
-    from config import POS_TAGSETS
     from src.teiheader import declare_pos_tagsets
 
     root, _ = make_default_tree()

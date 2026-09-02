@@ -16,6 +16,7 @@ from lxml import etree
 
 from .constants import NS_TEI, TEXT_CONTAINERS, XML_ID, tag_like
 from .utils.files import canonical_document_id
+from .utils.hyphen import remove_soft_hyphens
 from .utils.xml import content_root, declare_responsibility
 
 logger = logging.getLogger(__name__)
@@ -30,7 +31,7 @@ from .enrichment import enrich_body as _enrich_body
 def strip_residual_hyphens(modernized):
     """A modernized reg must never contain the soft hyphen ¬: whatever the
     API returned, joining the fragments is always the right repair."""
-    return [m.replace("¬", "") if m else m for m in modernized]
+    return [remove_soft_hyphens(m) for m in modernized]
 
 
 def declare_modernization_responsibility(root):

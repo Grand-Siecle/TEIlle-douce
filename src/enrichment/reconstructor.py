@@ -13,7 +13,8 @@ import uuid
 
 from lxml import etree
 
-from config import POS_TAGSETS, PYHELLEN_MODELS
+from config import PYHELLEN_MODELS
+from ..constants import POS_TAGSETS
 from ..constants import UUID_NAMESPACE, XML_ID, XML_LANG
 from .segmenter import Sentence
 from .aligner import AlignedToken

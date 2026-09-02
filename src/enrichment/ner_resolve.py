@@ -18,7 +18,8 @@ from pathlib import Path
 
 from lxml import etree
 
-from config import NER_CERT_THRESHOLDS, NER_VOCABULARIES
+from config import NER_CERT_THRESHOLDS
+from .entity_schema import NER_VOCABULARIES
 from ..constants import UUID_NAMESPACE, XML_ID, tag_like
 from .ner_align import _confidence_to_cert
 from ..utils.xml import content_root, declare_responsibility, local_tag as _local
@@ -257,7 +258,7 @@ def write_entity_csvs(entities, entity_types_config, output_dir, document_name):
 
     Args:
         entities: List of ResolvedEntity.
-        entity_types_config: NER_ENTITY_TYPES from config.
+        entity_types_config: NER_ENTITY_TYPES from src/enrichment/entity_schema.py.
         output_dir: Path to the root entities directory.
         document_name: Document folder name; used as the subfolder name, so
             that re-running a single document rewrites only its own files.
@@ -401,7 +402,7 @@ def inject_header_entities(root, entities, entity_types_config,
     Args:
         root: TEI root element.
         entities: List of ResolvedEntity.
-        entity_types_config: NER_ENTITY_TYPES from config.
+        entity_types_config: NER_ENTITY_TYPES from src/enrichment/entity_schema.py.
         cert_thresholds: score -> @cert mapping. Travels with the type
             config: read from the module default instead, an override
             given to run_ner would grade the mentions one way and the
@@ -517,7 +518,7 @@ def add_refs_to_body(root, entities, entity_types_config):
     Args:
         root: TEI root element.
         entities: List of ResolvedEntity.
-        entity_types_config: NER_ENTITY_TYPES from config.
+        entity_types_config: NER_ENTITY_TYPES from src/enrichment/entity_schema.py.
     """
     # Build lookup: (entity_type, frozenset of w_ids) → xml_id
     # and (entity_type, text) → xml_id for raw text entities
@@ -638,7 +639,7 @@ def inject_editorial_declaration(root):
     <titleStmt> if absent).
 
     The methodology description itself lives in
-    config.EDITORIAL_DECLARATIONS and is injected by the header builder.
+    src/teiheader/prose.py and is injected by the header builder.
 
     Args:
         root: TEI root element.
@@ -678,7 +679,7 @@ def resolve_entities(
     Args:
         root: TEI root element.
         aligned_entities: List of AlignedEntity from Phase 8.
-        entity_types_config: NER_ENTITY_TYPES from config.
+        entity_types_config: NER_ENTITY_TYPES from src/enrichment/entity_schema.py.
         person_db: PersonDatabase instance or None.
         output_dir: Root directory for entity CSV files.
         document_name: Document folder name; entity CSVs go into a

@@ -63,6 +63,54 @@ SEGMONTO_TAG_RE = re.compile(r"(\w+):?(\w+)?#?(\d?)?")
 # SEGMONTO TAXONOMY
 # =============================================================================
 
+# Referentiel des mots-cles du header. Les sujets viennent des colonnes
+# Sujet et Matiere du CSV, elles-memes reprises des notices du catalogue :
+# sans @scheme pointant vers cette declaration, <keywords> n'indique pas
+# d'ou vient son vocabulaire, et rien ne distingue un descripteur
+# controle d'un mot-cle libre (audit 1.15).
+KEYWORDS_TAXONOMY = {
+    "id": "catalogue-subjects",
+    "label": "Sujets et matières des notices de catalogue "
+             "(colonnes Sujet et Matiere du CSV local)",
+}
+
+
+# Jeu d'etiquettes morphosyntaxiques de chaque modele. Les <w> portent
+# @pos="NOMcom" et @msd="NOMB.=s|GENRE=m" sans dire de quel referentiel
+# ces valeurs viennent : un lecteur qui ne connait pas CATTEX ne peut ni
+# les interpreter ni les convertir (audit 1.11). Declare une fois dans
+# l'encodingDesc, pointe par @ana sur chaque <w> annote.
+POS_TAGSETS = {
+    "freem": {
+        "id": "cattex-freem",
+        "label": "CATTEX (FreEM) — francais pre-classique et classique",
+        "url": "https://freem-corpora.github.io/",
+    },
+    "lasla": {
+        "id": "lasla",
+        "label": "LASLA — latin",
+        "url": "https://www.lasla.uliege.be/",
+    },
+    "grc": {
+        "id": "perseus-grc",
+        "label": "Perseus / Ancient Greek Dependency Treebank — grec ancien",
+        "url": "https://perseusdl.github.io/treebank_data/",
+    },
+}
+
+
+# SegmOnto taxonomy identifier and URL. Here rather than in config.py
+# for the same reason as its zone and line tables: full.py reads
+# zones_category_id and lines_category_id structurally, and default.py
+# writes this taxonomy and the keywords one in twelve consecutive lines
+# — importing them from two files was the confusion, not the fix.
+SEGMONTO = {
+    "id": "SegmOnto",
+    "url": "https://github.com/segmonto",
+    "zones_category_id": "SegmOntoZones",
+    "lines_category_id": "SegmOntoLines",
+}
+
 # SegmOnto zone types and their documentation URLs
 SEGMONTO_ZONES = {
     "CustomZone": "https://segmonto.github.io/gd/gdZ/CustomZone/",

@@ -13,7 +13,8 @@ This module orchestrates the creation of the <teiHeader> element by:
 
 from lxml import etree
 
-from config import POS_TAGSETS, PYHELLEN_MODELS
+from config import PYHELLEN_MODELS
+from ..constants import POS_TAGSETS
 from ..constants import XML_ID, tag_like
 from ..utils.xml import local_tag
 from ..volumetry import text_volume, token_count

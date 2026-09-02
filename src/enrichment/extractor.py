@@ -12,6 +12,7 @@ to their source XML elements.
 from dataclasses import dataclass
 
 from ..constants import XML_LANG
+from ..utils.hyphen import ends_with_hyphen
 from ..utils.xml import local_tag as _local
 
 
@@ -113,7 +114,7 @@ def _process_lb(lb_elem, hi_elem, hi_rend, spans, state):
 
     text = _maybe_prepend_separator(text, state.line_index, spans)
 
-    has_hyphen = text.rstrip().endswith("¬") or text.rstrip().endswith("-")
+    has_hyphen = ends_with_hyphen(text)
 
     spans.append(TextSpan(
         text=text,
@@ -148,7 +149,7 @@ def _process_foreign(foreign_elem, hi_elem, hi_rend, spans, state):
 
     if foreign_elem.text:
         text = _maybe_prepend_separator(foreign_elem.text, anchor_line_idx, spans)
-        has_hyphen = text.rstrip().endswith("¬") or text.rstrip().endswith("-")
+        has_hyphen = ends_with_hyphen(text)
         spans.append(TextSpan(
             text=text,
             offset_start=state.offset,
@@ -166,7 +167,7 @@ def _process_foreign(foreign_elem, hi_elem, hi_rend, spans, state):
 
     if foreign_elem.tail:
         text = _maybe_prepend_separator(foreign_elem.tail, anchor_line_idx, spans)
-        has_hyphen = text.rstrip().endswith("¬") or text.rstrip().endswith("-")
+        has_hyphen = ends_with_hyphen(text)
         spans.append(TextSpan(
             text=text,
             offset_start=state.offset,
