@@ -45,13 +45,14 @@
         </author>
       </titleStmt>
       <extent>
-        <measure unit="images" n="8"/>
+        <measure unit="images" n="8" quantity="8">8 images</measure>
+        <measure unit="words" quantity="198">198 words</measure>
       </extent>
       <publicationStmt>
         <publisher>Projet Grand Siècle</publisher>
         <authority>Université de Lausanne - UNIL, Université de Genève - UNIGE</authority>
-        <availability status="restricted">
-          <licence target="https://creativecommons.org/licenses/by/4.0/"/>
+        <availability status="free">
+          <licence target="https://creativecommons.org/licenses/by/4.0/">Encodage TEI diffuse sous licence Creative Commons Attribution 4.0 International (CC BY 4.0). Les images et le texte source relevent de leur etablissement de conservation.</licence>
         </availability>
         <date when="DATE-GENERATION"/>
       </publicationStmt>
@@ -97,11 +98,11 @@
     </fileDesc>
     <profileDesc>
       <langUsage>
-        <language ident="fra" usage="21">French</language>
-        <language ident="lat" usage="2">Latin</language>
+        <language ident="fra" usage="91" n="21">French</language>
+        <language ident="lat" usage="9" n="2">Latin</language>
       </langUsage>
       <textClass>
-        <keywords>
+        <keywords scheme="#catalogue-subjects">
           <term>Peinture</term>
           <term>Theorie de l'art</term>
           <term>Papier</term>
@@ -241,6 +242,9 @@
               <ptr target="https://segmonto.github.io/gd/gdL/MusicLine"/>
             </catDesc>
           </category>
+        </taxonomy>
+        <taxonomy xml:id="catalogue-subjects">
+          <bibl>Sujets et matieres des notices de catalogue (colonnes Sujet et Matiere du CSV local)</bibl>
         </taxonomy>
       </classDecl>
     </encodingDesc>
@@ -532,7 +536,7 @@
         <fw corresp="#zone_c038da228e4d56989463de66524294d4" type="RunningTitleZone" xml:lang="fra"><lb corresp="#zoneLine_d36ddedd21b852009cfe7b94b068f880" facs="#zoneLine_d36ddedd21b852009cfe7b94b068f880"/>DE LAMOVR, LIVRE VII.</fw>
         <fw corresp="#zone_5d9211258488547f9391ef6d8c5c139c" type="NumberingZone" xml:lang="fra"><lb corresp="#zoneLine_8441d075d7285fc0bc906a63d306ef8b" facs="#zoneLine_8441d075d7285fc0bc906a63d306ef8b"/>805</fw>
         <ab corresp="#zone_46be43d8544b51c3bd9b5457048772fd" type="MainZone" xml:lang="fra"><lb corresp="#zoneLine_2b4f6dfa7e7a594db469aaa0e99a32be" facs="#zoneLine_2b4f6dfa7e7a594db469aaa0e99a32be"/>CHAPTPKEPREMIER.<lb corresp="#zoneLine_b317012829e95282a4b8965fcbe8981b" facs="#zoneLine_b317012829e95282a4b8965fcbe8981b"/>Des raisons qui nous obligent à sanctifier<lb corresp="#zoneLine_10bfa7ad330350c6bbc52da58a3aaeff" facs="#zoneLine_10bfa7ad330350c6bbc52da58a3aaeff"/>que nostre soin principal doit estre de le pu¬<lb corresp="#zoneLine_5c52a7bf858056758aa38e4f677e6bbf" facs="#zoneLine_5c52a7bf858056758aa38e4f677e6bbf"/>IVn Philosophe a donné sa male¬4imus<lb corresp="#zoneLine_20869192b9b556db85fce59217bfe383" facs="#zoneLine_20869192b9b556db85fce59217bfe383"/><lb corresp="#zoneLine_0ec5392d192e531dac38859c79c53bcc" facs="#zoneLine_0ec5392d192e531dac38859c79c53bcc"/>y</ab>
-        <note corresp="#zone_b9348f2492f153999022f05507143e85" type="MarginTextZone" xml:lang="lat"><lb corresp="#zoneLine_bf7767d1b0c05ad481e91da7109bd9d7" facs="#zoneLine_bf7767d1b0c05ad481e91da7109bd9d7"/>diuinis<lb corresp="#zoneLine_36d1d022a39f5f1a88dd403885510216" facs="#zoneLine_36d1d022a39f5f1a88dd403885510216"/>nom, c.4¬</note>
+        <note corresp="#zone_b9348f2492f153999022f05507143e85" type="MarginTextZone" place="margin" xml:lang="lat"><lb corresp="#zoneLine_bf7767d1b0c05ad481e91da7109bd9d7" facs="#zoneLine_bf7767d1b0c05ad481e91da7109bd9d7"/>diuinis<lb corresp="#zoneLine_36d1d022a39f5f1a88dd403885510216" facs="#zoneLine_36d1d022a39f5f1a88dd403885510216"/>nom, c.4¬</note>
         <ab corresp="#zone_a7472911c26e5c7e9370dd304a6a7380" type="MainZone" xml:lang="fra"><lb corresp="#zoneLine_0c2a9214822f51d199a82ffdb0a975a6" facs="#zoneLine_0c2a9214822f51d199a82ffdb0a975a6"/>CHAPTPKEPREMIER.<lb corresp="#zoneLine_9a4bb5e6105e5954b3964106ea691fcd" facs="#zoneLine_9a4bb5e6105e5954b3964106ea691fcd"/>Des raisons qui nous obligent à sanctifier<lb corresp="#zoneLine_43b243165fa25c7399e13a182d5ea935" facs="#zoneLine_43b243165fa25c7399e13a182d5ea935"/>que nostre soin principal doit estre de le pu¬<lb corresp="#zoneLine_ec785f8207f95e4b948f4edded86d867" facs="#zoneLine_ec785f8207f95e4b948f4edded86d867"/>IVn Philosophe a donné sa male¬4imus<lb corresp="#zoneLine_8b2654e8f2c5504dae9b69849dd35383" facs="#zoneLine_8b2654e8f2c5504dae9b69849dd35383"/><lb corresp="#zoneLine_7c73f186d71759bbafc3352f4033c1a5" facs="#zoneLine_7c73f186d71759bbafc3352f4033c1a5"/>y</ab>
         <fw corresp="#zone_4a24a152034357058dfd8e64d425ae78" type="QuireMarksZone" xml:lang="fra"><lb corresp="#zoneLine_0c7fbbafb4775e02a8d32c0e3cc0993f" facs="#zoneLine_0c7fbbafb4775e02a8d32c0e3cc0993f"/>1I111 iij</fw>
         <pb corresp="#f2" facs="#f2" n="2"/>
@@ -542,7 +546,7 @@
         </figure>
         <pb corresp="#f4" facs="#f4" n="4"/>
         <ab corresp="#zone_e0923738fb305aed9ab2e434cae69686" type="MainZone" xml:lang="lat"><lb corresp="#zoneLine_566a769b0f4c5ed5be1b96e9417f921b" facs="#zoneLine_566a769b0f4c5ed5be1b96e9417f921b"/><foreign xml:lang="fra">Censure de la</foreign><lb corresp="#zoneLine_dadbbc04cc165e149f1668215ce31e45" facs="#zoneLine_dadbbc04cc165e149f1668215ce31e45"/>Fœtibus infamis semper damnosáque munde<lb corresp="#zoneLine_1a6a80341e39553f8ea3975ec29528af" facs="#zoneLine_1a6a80341e39553f8ea3975ec29528af"/>Humani, quibus &amp; Diuúm contemnere cul¬<lb corresp="#zoneLine_69a57439265558e0916264e64f310232" facs="#zoneLine_69a57439265558e0916264e64f310232"/>Greg. Mos fuit, &amp;* mactare suos sine vindice</ab>
-        <note corresp="#zone_7da06e45b1255fedbfe252e6e056a59f" type="MarginTextZone" xml:lang="fra" target="#zoneLine_69a57439265558e0916264e64f310232"><lb corresp="#zoneLine_167c80f0062c57358856eaab8a8d6a9d" facs="#zoneLine_167c80f0062c57358856eaab8a8d6a9d"/>Tuton<lb corresp="#zoneLine_9289764d84005e6886b72ff58fd4b8be" facs="#zoneLine_9289764d84005e6886b72ff58fd4b8be"/>.c<lb corresp="#zoneLine_b16da6eb4c525d79aa784f00e44c1c37" facs="#zoneLine_b16da6eb4c525d79aa784f00e44c1c37"/>**e</note>
+        <note corresp="#zone_7da06e45b1255fedbfe252e6e056a59f" type="MarginTextZone" place="margin" xml:lang="fra" target="#zoneLine_69a57439265558e0916264e64f310232"><lb corresp="#zoneLine_167c80f0062c57358856eaab8a8d6a9d" facs="#zoneLine_167c80f0062c57358856eaab8a8d6a9d"/>Tuton<lb corresp="#zoneLine_9289764d84005e6886b72ff58fd4b8be" facs="#zoneLine_9289764d84005e6886b72ff58fd4b8be"/>.c<lb corresp="#zoneLine_b16da6eb4c525d79aa784f00e44c1c37" facs="#zoneLine_b16da6eb4c525d79aa784f00e44c1c37"/>**e</note>
         <pb corresp="#f5" facs="#f5" n="5"/>
         <ab corresp="#zone_f0e7c506a6a756ec82c9f83d7a9cddb1" type="MainZone" xml:lang="fra"><lb corresp="#zoneLine_a8394bb8d6b857c88857290580eccf79" facs="#zoneLine_a8394bb8d6b857c88857290580eccf79"/>Censure de la Doctrine Curieuse.<lb corresp="#zoneLine_5d496e4909a05c14b77f64f4b7ad9e57" facs="#zoneLine_5d496e4909a05c14b77f64f4b7ad9e57"/>Quare age, dum Sorbona silet, dum Curia</ab>
         <pb corresp="#f6" facs="#f6" n="6"/>

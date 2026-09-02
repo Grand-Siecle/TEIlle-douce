@@ -122,18 +122,37 @@ class LangUsageBuilder:
         for child in list(langUsage):
             langUsage.remove(child)
 
-    def _add_language(self, langUsage, ident, count):
+    def _add_language(self, langUsage, ident, count, total):
         """
         Add a `<language>` element to `<langUsage>`.
+
+        @usage is a PERCENTAGE in TEI ("the approximate percentage, by
+        volume, of the text which uses this language"), and we were
+        writing raw container counts: a reader — or any tool summing the
+        attribute — read usage="1716" as 1716 %. The count itself is
+        kept in @n, where an arbitrary label is allowed, because it is
+        the measured quantity and the percentage is derived from it.
+
+        The datatype is nonNegativeInteger, so the percentage is rounded;
+        a language present in the document never rounds down to 0, which
+        would declare it absent while its <foreign> segments sit in the
+        text. Rounding up the rare languages can push the total to 101 %
+        — TEI asks for an approximate share, and "1 % of Greek" is a
+        truer statement than "0 % of a language that is there".
 
         Args:
             langUsage (etree.Element): Parent `<langUsage>` element.
             ident (str): ISO 639 language code (e.g., "fra", "lat").
-            count (int): Number of text elements in this language.
+            count (int): Number of text containers in this language.
+            total (int): Total across all languages, i.e. the 100 %.
         """
+        share = round(100 * count / total) if total else 0
+        if count and share < 1:
+            share = 1
         lang_el = etree.SubElement(langUsage, "language")
         lang_el.attrib["ident"] = ident
-        lang_el.attrib["usage"] = str(count)
+        lang_el.attrib["usage"] = str(share)
+        lang_el.attrib["n"] = str(count)
         lang_el.text = self.lang_names.get(ident, ident)
 
     def update(self, lang_stats):
@@ -167,8 +186,9 @@ class LangUsageBuilder:
         self._clear_langusage(langUsage)
 
         # Sort by count descending and add each language
+        total = sum(lang_stats.values())
         for ident, count in sorted(lang_stats.items(), key=lambda x: -x[1]):
-            self._add_language(langUsage, ident, count)
+            self._add_language(langUsage, ident, count, total)
 
         return True
 

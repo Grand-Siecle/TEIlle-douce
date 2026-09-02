@@ -75,6 +75,9 @@ def test_build_body_dispatches_zone_types_to_expected_elements():
     note = div[2]
     assert note.get("corresp") == "#zone_margin"
     assert note.get("type") == "MarginTextZone"
+    # sans @place, rien ne distingue une glose marginale d'une note de bas
+    # de page ou d'une remarque editoriale : la zone le sait, la note non
+    assert note.get("place") == "margin"
 
     fw_num, fw_quire, fw_running = div[3], div[4], div[5]
     assert (fw_num.get("type"), fw_quire.get("type"), fw_running.get("type")) == (

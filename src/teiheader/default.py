@@ -16,6 +16,7 @@ from collections import defaultdict
 from lxml import etree
 
 from config import (
+    KEYWORDS_TAXONOMY,
     SEGMONTO,
     PLACEHOLDER_INFO_UNAVAILABLE,
     PLACEHOLDER_NO_METADATA,
@@ -171,9 +172,14 @@ class DefaultTree:
             if resp_ptr and PLACEHOLDER_ORCID not in (resp_ptr.get("target") or ""):
                 etree.SubElement(persName, "ptr", resp_ptr)
 
-        # <extent>
+        # <extent>. @quantity porte le nombre, @n ne le portait que sous
+        # forme d'etiquette libre ; la volumetrie du texte est ajoutee en
+        # fin de chaine par finalize_extent(), quand elle est connue.
         extent = etree.SubElement(fileDesc, "extent")
-        etree.SubElement(extent, "measure", unit="images", n=self.count)
+        images = etree.SubElement(
+            extent, "measure", unit="images", n=self.count, quantity=self.count
+        )
+        images.text = f"{self.count} images"
 
         # <publicationStmt>
         publicationStmt = etree.SubElement(fileDesc, "publicationStmt")
@@ -184,7 +190,10 @@ class DefaultTree:
         availability = etree.SubElement(
             publicationStmt, "availability", self.config["responsibility"]["availability"]
         )
-        etree.SubElement(availability, "licence", self.config["responsibility"]["licence"])
+        licence = etree.SubElement(
+            availability, "licence", self.config["responsibility"]["licence"]
+        )
+        licence.text = self.config["responsibility"].get("licence_text")
         today = datetime.today().strftime("%Y-%m-%d")
         etree.SubElement(publicationStmt, "date", when=today)
 
@@ -286,3 +295,12 @@ class DefaultTree:
         tax_title.text = SEGMONTO["id"]
         tax_ptr = etree.SubElement(tax_bibl, "ptr")
         tax_ptr.attrib["target"] = SEGMONTO["url"]
+
+        # Second taxonomy: what <keywords scheme="..."> points at. The
+        # subjects come from catalogue records; saying so is the
+        # difference between a controlled descriptor and a loose tag.
+        keywords_tax = etree.SubElement(
+            classDecl, "taxonomy", {XML_ID: KEYWORDS_TAXONOMY["id"]}
+        )
+        kw_bibl = etree.SubElement(keywords_tax, "bibl")
+        kw_bibl.text = KEYWORDS_TAXONOMY["label"]

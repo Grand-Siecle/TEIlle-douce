@@ -153,6 +153,16 @@ def link_notes_to_lines(root):
                     if starred[0][0] != anchor[0]:
                         refined += 1
                     anchor = starred[0]
+                    # The call mark is printed in the text AND repeated in
+                    # the margin: the note comments on that passage. That
+                    # is a gloss, and it is the only case where the
+                    # relation is asserted by the page itself rather than
+                    # inferred from a vertical overlap.
+                    # @subtype, not @type: every body container is typed
+                    # by its SegmOnto zone, and the pipeline reads that
+                    # back (extract_line_data groups lines by zone type
+                    # before dehyphenation).
+                    note.set("subtype", "gloss")
 
             rest = [c for c in candidates if c[0] != anchor[0]]
             targets = [anchor] + rest

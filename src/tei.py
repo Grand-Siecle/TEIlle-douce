@@ -19,7 +19,7 @@ from .utils.files import canonical_document_id
 from .utils.xml import content_root, declare_responsibility
 
 logger = logging.getLogger(__name__)
-from .teiheader import build_header
+from .teiheader import build_header, update_extent
 from .sourcedoc import build_sourcedoc
 from .body import build_body, apply_modernization, apply_modernization_enriched, Text
 from .metadata import IIIFMapping
@@ -277,6 +277,19 @@ class TEI:
             dict: Enrichment statistics.
         """
         return _enrich_body(self.root, progress_callback=progress_callback)
+
+    def finalize_extent(self):
+        """
+        Record the text's volumetry in <extent>.
+
+        The header is built before a single line is read, so <extent>
+        could only declare a number of images. Call this last: the word
+        count needs the body, and the token count needs enrichment.
+
+        Returns:
+            dict: The measures written, keyed by unit.
+        """
+        return update_extent(self.root)
 
     def finalize_langusage(self):
         """

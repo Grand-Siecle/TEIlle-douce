@@ -78,3 +78,53 @@ def test_detect_foreign_segments_passes_given_primary_through(monkeypatch):
 
     assert det.detect_foreign_segments(TEXTE, primary_lang="fra") == []
     assert vus == ["fra"]
+
+
+# =============================================================================
+# <langUsage> : @usage est un POURCENTAGE en TEI (audit 1.13)
+# =============================================================================
+
+from lxml import etree
+
+from src.lang.header import build_langusage
+
+
+def _entete():
+    return etree.fromstring(
+        b"<TEI><teiHeader><profileDesc/></teiHeader><text><body/></text></TEI>"
+    )
+
+
+def _langues(root):
+    return [
+        (el.get("ident"), el.get("usage"), el.get("n"))
+        for el in root.iter("language")
+    ]
+
+
+def test_usage_is_a_percentage_not_a_raw_count():
+    """usage="1716" se lisait 1716 % : n'importe quel outil qui somme
+    l'attribut, ou le lecteur, y voyait une valeur impossible."""
+    root = _entete()
+
+    build_langusage(root, {"fra": 1716, "lat": 38})
+
+    assert _langues(root) == [("fra", "98", "1716"), ("lat", "2", "38")]
+
+
+def test_a_language_actually_present_never_rounds_down_to_zero():
+    """0 % declarerait absente une langue dont les segments <foreign>
+    sont pourtant dans le texte."""
+    root = _entete()
+
+    build_langusage(root, {"fra": 5000, "grc": 3})
+
+    parts = dict((ident, usage) for ident, usage, _ in _langues(root))
+    assert parts["grc"] == "1"
+    assert parts["fra"] == "100"
+
+
+def test_the_measured_count_survives_in_n():
+    root = _entete()
+    build_langusage(root, {"fra": 7})
+    assert _langues(root) == [("fra", "100", "7")]

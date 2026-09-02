@@ -12,6 +12,7 @@ import pytest
 from lxml import etree
 
 from config import (
+    KEYWORDS_TAXONOMY,
     SEGMONTO,
     PLACEHOLDER_INFO_UNAVAILABLE,
     PLACEHOLDER_NO_METADATA,
@@ -21,7 +22,7 @@ from config import (
 from src.constants import NS_ALTO, NS_TEI, XML_ID
 from src.teiheader.default import DefaultTree
 from src.teiheader.full import FullTree, _extract_labels
-from src.teiheader.builder import build_header
+from src.teiheader.builder import build_header, update_extent
 from src.utils.files import canonical_document_id
 
 
@@ -500,3 +501,96 @@ def test_revision_desc_has_one_change_per_pipeline_phase(tmp_path):
     # modernisation, NER).
     assert len(changes) == 4
     assert all(c.text for c in changes)
+
+
+# =============================================================================
+# Ce que le header affirmait de travers (audit 1.13 a 1.15)
+# =============================================================================
+
+def test_availability_status_agrees_with_the_declared_licence():
+    """status="restricted" sous une licence CC-BY : une chaine d'edition
+    qui lit le statut refuse de rediffuser un texte pourtant libre."""
+    root, _ = make_default_tree()
+    availability = root.find(".//availability")
+    licence = availability.find("licence")
+    assert availability.get("status") == "free"
+    assert "creativecommons.org/licenses/by/4.0" in licence.get("target")
+    assert (licence.text or "").strip(), "<licence> vide : la licence n'est pas lisible"
+
+
+def test_extent_measures_carry_a_quantity():
+    root, _ = make_default_tree(count_pages=12)
+    images = root.find(".//extent/measure")
+    assert images.get("unit") == "images"
+    assert images.get("quantity") == "12"
+    assert images.text == "12 images"
+
+
+def test_keywords_taxonomy_is_declared_next_to_segmonto():
+    """<keywords scheme="#..."> a besoin d'une cible : sans elle, rien ne
+    distingue un descripteur controle d'un mot-cle libre."""
+    root, _ = make_default_tree()
+    taxonomies = root.findall(".//classDecl/taxonomy")
+    ids = [t.get(XML_ID) for t in taxonomies]
+    assert KEYWORDS_TAXONOMY["id"] in ids, ids
+    declaration = [t for t in taxonomies if t.get(XML_ID) == KEYWORDS_TAXONOMY["id"]][0]
+    assert declaration.find("bibl").text == KEYWORDS_TAXONOMY["label"]
+
+
+# -----------------------------------------------------------------------------
+# update_extent : la volumetrie, connue seulement en fin de chaine
+# -----------------------------------------------------------------------------
+
+def _tei_avec_corps(corps):
+    return etree.fromstring(f"""<TEI>
+  <teiHeader><fileDesc>
+    <extent><measure unit="images" n="2" quantity="2">2 images</measure></extent>
+  </fileDesc></teiHeader>
+  <text><body><div>{corps}</div></body></text>
+</TEI>""".encode("utf-8"))
+
+
+def test_update_extent_counts_words_without_enrichment():
+    root = _tei_avec_corps(
+        '<ab><lb/>trois mots ici</ab><note><lb/>deux mots</note>'
+    )
+    mesures = update_extent(root)
+    assert mesures == {"words": 5}
+    unites = [(m.get("unit"), m.get("quantity")) for m in root.find(".//extent")]
+    assert unites == [("images", "2"), ("words", "5")]
+
+
+def test_update_extent_reports_tokens_separately_when_enriched():
+    """Le tokenizer separe l'article elide et la ponctuation : compter des
+    <w> n'est pas compter des mots separes par des espaces, les deux
+    mesures ne doivent pas se confondre."""
+    root = _tei_avec_corps(
+        '<ab><s><lb/><w>l</w><w>art</w><pc>,</pc><w>peinture</w></s></ab>'
+    )
+    mesures = update_extent(root)
+    assert mesures == {"words": 3, "tokens": 3}
+
+
+def test_update_extent_is_idempotent():
+    root = _tei_avec_corps("<ab><lb/>deux mots</ab>")
+    update_extent(root)
+    update_extent(root)
+    unites = [m.get("unit") for m in root.find(".//extent")]
+    assert unites == ["images", "words"], unites
+
+
+def test_update_extent_without_extent_or_text_does_nothing():
+    assert update_extent(etree.fromstring(b"<TEI><text><body/></text></TEI>")) == {}
+    assert update_extent(etree.fromstring(
+        b"<TEI><teiHeader><fileDesc><extent/></fileDesc></teiHeader></TEI>"
+    )) == {}
+
+
+def test_update_extent_counts_a_modernized_line_once():
+    """<choice> ecrit le meme passage deux fois : sans garde, chaque ligne
+    modernisee comptait double dans la volumetrie."""
+    root = _tei_avec_corps(
+        '<ab><lb/><choice><orig>Le Roy de France</orig>'
+        '<reg type="modernized">Le Roi de France</reg></choice></ab>'
+    )
+    assert update_extent(root) == {"words": 4}
