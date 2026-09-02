@@ -102,10 +102,17 @@ EDITORIAL_DECLARATIONS = {
 }
 
 
-# Description of the language-detection methodology, rendered as a <p>
-# inside <profileDesc>/<langUsage>. Kept separate from EDITORIAL_DECLARATIONS
-# because <langUsage> is not a valid child of <editorialDecl> in TEI P5.
-LANG_USAGE_DESCRIPTION = (
+# Description of the language-detection methodology, written as a <p>
+# inside <encodingDesc>/<editorialDecl>/<interpretation> -- identifying a
+# language is analytic information added to the transcription. It is kept
+# out of EDITORIAL_DECLARATIONS because that table is keyed by element
+# name and gated on a pipeline flag, and this paragraph shares
+# <interpretation> with NER while running unconditionally.
+#
+# It lived in <langUsage> until finalize_langusage() was found to erase
+# it there, and it cannot go back: <langUsage> takes paragraphs OR
+# <language> elements, never both.
+LANGUAGE_DETECTION_DESCRIPTION = (
     "Language detection uses Lingua (statistical n-gram model) at "
     f"the container level ({', '.join(TEXT_CONTAINERS)}). "
     "Mixed-language containers "

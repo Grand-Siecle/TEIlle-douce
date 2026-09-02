@@ -150,7 +150,7 @@ def test_config_holds_settings_and_not_the_encoding_schema():
     import config
 
     for schema in ("NER_ENTITY_TYPES", "NER_VOCABULARIES", "EDITORIAL_DECLARATIONS",
-                   "POS_TAGSETS", "KEYWORDS_TAXONOMY", "LANG_USAGE_DESCRIPTION"):
+                   "POS_TAGSETS", "KEYWORDS_TAXONOMY", "LANGUAGE_DETECTION_DESCRIPTION"):
         assert not hasattr(config, schema), f"{schema} est reste dans config.py"
 
     # et il garde bien les vrais reglages
@@ -162,13 +162,13 @@ def test_config_holds_settings_and_not_the_encoding_schema():
 def test_the_moved_blocks_are_reachable_where_they_now_live():
     from src.constants import KEYWORDS_TAXONOMY, POS_TAGSETS
     from src.enrichment.entity_schema import NER_ENTITY_TYPES, NER_VOCABULARIES
-    from src.teiheader.prose import EDITORIAL_DECLARATIONS, LANG_USAGE_DESCRIPTION
+    from src.teiheader.prose import EDITORIAL_DECLARATIONS, LANGUAGE_DETECTION_DESCRIPTION
 
     assert "person" in NER_ENTITY_TYPES
     assert "materials" in NER_VOCABULARIES["art-vocabulary"]["categories"]
     assert "normalization" in EDITORIAL_DECLARATIONS
     assert POS_TAGSETS["freem"]["id"] and KEYWORDS_TAXONOMY["id"]
-    assert LANG_USAGE_DESCRIPTION
+    assert LANGUAGE_DETECTION_DESCRIPTION
 
 
 def test_ner_certainty_prose_has_a_single_home(monkeypatch):
@@ -204,5 +204,5 @@ def test_the_langusage_prose_lists_the_containers_actually_scanned():
     reste) sans que la phrase publiee le dise."""
     from src.constants import TEXT_CONTAINERS
 
-    prose = _recharger_prose().LANG_USAGE_DESCRIPTION
+    prose = _recharger_prose().LANGUAGE_DETECTION_DESCRIPTION
     assert ", ".join(TEXT_CONTAINERS) in prose, prose

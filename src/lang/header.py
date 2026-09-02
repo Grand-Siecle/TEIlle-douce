@@ -115,7 +115,15 @@ class LangUsageBuilder:
 
     def _clear_langusage(self, langUsage):
         """
-        Remove all existing `<language>` children from `<langUsage>`.
+        Empty `<langUsage>` of every child before the measured languages
+        are posted.
+
+        Every child, not only the `<language>` elements the docstring
+        used to promise: TEI gives `<langUsage>` a content model by
+        choice, (model.pLike+ | language+), so anything surviving next
+        to the `<language>` elements would make the document invalid.
+        Prose about the languages belongs in `<encodingDesc>`, where
+        src/teiheader/default.py writes it.
 
         Args:
             langUsage (etree.Element): The `<langUsage>` element to clear.

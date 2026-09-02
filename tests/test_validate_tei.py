@@ -263,3 +263,27 @@ def test_zone_graphique_sans_xml_id_ne_fait_pas_planter_la_validation(tmp_path):
     errors, warnings = validate(_ecrire(tmp_path, contenu))
     assert errors == []
     assert any("sans xml:id" in w for w in warnings), warnings
+
+
+def test_prose_dans_langusage_est_une_erreur(tmp_path):
+    """TEI donne a <langUsage> un modele de contenu par choix,
+    (model.pLike+ | language+) : y remettre le paragraphe de methode a
+    cote des <language> produirait un document invalide. Le garde-fou
+    doit le dire sans qu'un tei_all.rng soit fourni."""
+    contenu = TEI_OK.replace(
+        "<category xml:id=\"MainZone\"/>",
+        "<category xml:id=\"MainZone\"/>"
+        "<langUsage><p>Methode.</p><language ident=\"fra\">French</language></langUsage>",
+    )
+    errors, _ = validate(_ecrire(tmp_path, contenu))
+    assert any("langUsage" in e for e in errors), errors
+
+
+def test_langusage_de_langues_seules_ne_leve_rien(tmp_path):
+    contenu = TEI_OK.replace(
+        "<category xml:id=\"MainZone\"/>",
+        "<category xml:id=\"MainZone\"/>"
+        "<langUsage><language ident=\"fra\">French</language></langUsage>",
+    )
+    errors, warnings = validate(_ecrire(tmp_path, contenu))
+    assert errors == [] and warnings == []
