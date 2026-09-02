@@ -172,30 +172,41 @@ def link_local(entities, person_db):
     if not person_db or len(person_db) == 0:
         return
 
+    if not any(e.entity_type == "person" for e in entities):
+        # Nothing to link: normalizing 478 people to discover it would
+        # cost more than the old code did in this case.
+        return
+
+    # The database is normalized ONCE. It was re-normalized for every
+    # entity — 478 people times every person entity of the document, the
+    # same lowercasing and accent-stripping over and over (audit 3.9).
+    catalogue = []
+    for pid in person_db:
+        person = person_db.get(pid)
+        if not person:
+            continue
+        surname = _normalize(person.get("surname") or "")
+        if not surname:
+            continue
+        forename = _normalize(person.get("forename") or "")
+        catalogue.append((
+            pid, person, surname, f"{forename} {surname}".strip(),
+            surname.split(),
+        ))
+
     linked = 0
     for ent in entities:
         if ent.entity_type != "person":
             continue
 
         norm_name = _normalize(ent.canonical_name)
+        name_words = set(norm_name.split())
 
-        # Try matching against all persons in the database
-        for pid in person_db:
-            person = person_db.get(pid)
-            if not person:
-                continue
-
-            surname = _normalize(person.get("surname") or "")
-            forename = _normalize(person.get("forename") or "")
-            full = f"{forename} {surname}".strip()
-
-            if not surname:
-                continue
-
+        for pid, person, surname, full, surname_words in catalogue:
             # Match: full name, surname only, or surname as whole word in canonical
-            surname_words = surname.split()
-            name_words = norm_name.split()
-            surname_in_name = all(sw in name_words for sw in surname_words) if surname_words else False
+            surname_in_name = (
+                bool(surname_words) and all(sw in name_words for sw in surname_words)
+            )
             if norm_name == full or norm_name == surname or surname_in_name:
                 ent.local_match = pid
                 linked += 1

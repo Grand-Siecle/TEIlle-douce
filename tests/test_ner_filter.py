@@ -625,3 +625,58 @@ class TestFuzzyMergeGroupDirect:
         assert "Jo" in names
         merged = [e for e in result if e.canonical_name != "Jo"][0]
         assert len(merged.mentions) == 2
+
+
+# =============================================================================
+# Le prefiltre ne doit rien changer aux decisions (audit 3.8)
+# =============================================================================
+
+def test_the_prefilters_reproduce_the_reference_decisions():
+    """ratio() n'est pas symetrique — « parramsius » contre
+    « prlrhasius » vaut 0.60 dans un sens et 0.80 dans l'autre — donc
+    l'ordre des arguments fait partie du resultat, pas de la mise en
+    oeuvre. Ce test compare les fusions obtenues a celles qu'un calcul
+    naif produit, sur des variantes d'OCR realistes."""
+    import random
+    from difflib import SequenceMatcher
+    from src.enrichment.ner_filter import _fuzzy_merge_group, _normalize
+
+    bases = ["tertulus", "raphael", "le sueur", "poussin", "michelange"]
+    random.seed(7)
+    noms = []
+    for base in bases:
+        noms.append(base)
+        for _ in range(12):
+            lettres = list(base)
+            for _ in range(random.randint(1, 3)):
+                pos = random.randrange(len(lettres))
+                lettres[pos] = random.choice("abcdefghilmnoprstu")
+            noms.append("".join(lettres))
+
+    from src.enrichment.ner_resolve import ResolvedEntity
+
+    seuil, minimum = 0.78, 4
+    entites = [
+        ResolvedEntity(entity_type="person", canonical_name=n,
+                       xml_id=f"pers-{k}", mentions=[])
+        for k, n in enumerate(noms)
+    ]
+    obtenu = _fuzzy_merge_group(entites, seuil, minimum)
+
+    # reference : toutes les paires, sans prefiltre, dans l'ordre d'origine
+    normes = [_normalize(n) for n in noms]
+    attendues = {
+        (i, j)
+        for i in range(len(normes)) for j in range(i + 1, len(normes))
+        if len(normes[i]) >= minimum and len(normes[j]) >= minimum
+        and SequenceMatcher(None, normes[i], normes[j]).ratio() >= seuil
+    }
+    assert attendues, "le jeu de donnees doit contenir des fusions"
+
+    # chaque paire de la reference doit se retrouver dans un meme groupe
+    groupe_de = {}
+    for numero, ent in enumerate(obtenu):
+        groupe_de.setdefault(ent.canonical_name, numero)
+    for i, j in attendues:
+        if noms[i] in groupe_de and noms[j] in groupe_de:
+            assert groupe_de[noms[i]] == groupe_de[noms[j]], (noms[i], noms[j])

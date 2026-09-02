@@ -45,6 +45,12 @@ def load_metadata(csv_path):
     """
     csv_path = Path(csv_path)
     if not csv_path.exists():
+        # The whole corpus then gets placeholder headers, one uniform
+        # "OK" per line and no explanation (audit 2.14).
+        logger.warning(
+            "Metadata CSV not found at %s: every header will keep its "
+            "placeholders", csv_path,
+        )
         return None
 
     try:
@@ -73,7 +79,17 @@ def find_metadata_row(df, doc_name):
     Returns:
         pd.Series or None: Matching row or None if not found.
     """
-    if df is None or "BDD" not in df.columns:
+    if df is None:
+        logger.warning(
+            "No metadata table loaded: %r keeps a header of placeholders",
+            doc_name,
+        )
+        return None
+    if "BDD" not in df.columns:
+        logger.warning(
+            "The metadata table has no BDD column: %r keeps a header of "
+            "placeholders", doc_name,
+        )
         return None
 
     # Extract prefix from document name (letters followed by digits)
@@ -81,7 +97,36 @@ def find_metadata_row(df, doc_name):
 
     # Find matching rows
     matches = df[df["BDD"].astype(str).str.startswith(prefix)]
-    return None if matches.empty else matches.iloc[0]
+    if matches.empty:
+        # The header will stay full of placeholders, and nothing said so
+        # (audit 2.14): a run over 54 documents produced 54 files, some
+        # of them describing nothing, with a uniform "OK" per line.
+        logger.warning(
+            "No metadata row for %r (BDD prefix %r): the header keeps its "
+            "placeholders", doc_name, prefix,
+        )
+        return None
+    if len(matches) == 1:
+        return matches.iloc[0]
+
+    # startswith is a prefix test: LIV004 matches LIV0040..LIV0049. An
+    # exact identifier among the candidates is not a guess — take it.
+    exact = matches[matches["BDD"].astype(str) == prefix]
+    if not exact.empty:
+        return exact.iloc[0]
+
+    # No exact one: say which rows collide and which was taken. Silence
+    # here handed a document another book's title, author and shelfmark —
+    # a header that is not empty but wrong, which is worse.
+    noms = [str(b) for b in matches["BDD"].head(4)]
+    if len(matches) > len(noms):
+        noms.append("...")
+    logger.warning(
+        "%d metadata rows match the BDD prefix %r (%s) and none is exact: "
+        "using %r", len(matches), prefix, ", ".join(noms),
+        str(matches.iloc[0]["BDD"]),
+    )
+    return matches.iloc[0]
 
 
 def _extract_bdd_prefix(doc_folder_name):

@@ -35,4 +35,4 @@ precision = 1
 # Baseline mesuree le 2026-08-26 : 28 %. Lot 1 (teiheader, sourcedoc, metadata) : 44 %. Lot 2 (body, reconstructor) : 54 %. Fixture E2E (main.py mesure) : 61 %. Lot 3 (pile NER) : 80 %. PR fiabilite des runs + correctifs de review : 81 %. PR ids deterministes (golden strict, pipeline.py entre en mesure) : 82.7 %. PR validateur (validate_tei.py couvert) : 83.9 %. PR perf + suppressions de code mort : 84.7 %. PR enrichissement async : 86.3 %. PR consolidation architecture : 87 %. PR csv_book + validite tei_all : 87.2 %. PR modernisation + correctifs de review : 87.3 %. PR dependances epinglees et surcharges d env : 87.4 %. Correctifs de review (validation des valeurs d env) : 87.7 %. PR front/figures/heads : 87.9 %. PR notes marginales + verite du header : 88.1 %. PR pertes silencieuses corps/reconstructeur : 88.2 %. PR dates normalisees + jeu d etiquettes : 88.3 %. PR standOff : 88.3 %. PR cesure partagee + decoupe de config : 88.45 %.
 # Le seuil se compare a l'affichage ARRONDI (precision = 1) : un seuil a
 # deux decimales est inatteignable — 88.31 refuse un total affiche 88.3.
-fail_under = 88.4
+fail_under = 88.7

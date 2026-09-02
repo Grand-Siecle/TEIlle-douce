@@ -805,3 +805,77 @@ def test_an_unreadable_date_leaves_no_creation_rather_than_a_false_one():
     override_teiheader_from_csv(root, {"BDD": "LIV0001", "Date_01": "sans date"}, "LIV0001")
 
     assert root.find(".//teiHeader/profileDesc/creation") is None
+
+
+# =============================================================================
+# Metadonnees absentes ou ambigues : le silence etait le defaut (audit 2.14)
+# =============================================================================
+
+def test_a_document_without_metadata_says_so(caplog):
+    """Le header reste en placeholders et rien ne le signalait : un run
+    sur 54 documents produisait 54 fichiers, dont certains ne decrivent
+    rien, avec un « OK » uniforme par ligne."""
+    df = pd.DataFrame({"BDD": ["LIV0001"], "Titre_long": ["Un titre"]})
+
+    with caplog.at_level("WARNING"):
+        assert find_metadata_row(df, "LIV9999_reconciled") is None
+
+    assert "LIV9999" in caplog.text and "placeholder" in caplog.text
+
+
+def test_an_ambiguous_prefix_names_the_row_it_took(caplog):
+    """startswith est un test de prefixe : LIV004 attrape LIV0040 a
+    LIV0049. Prendre la premiere ligne etait silencieux, et la premiere
+    n'est que la premiere du CSV."""
+    df = pd.DataFrame({
+        "BDD": ["LIV00401", "LIV00402"],
+        "Titre_long": ["Premier", "Second"],
+    })
+
+    # le nom de dossier donne le prefixe LIV0040, qui attrape les deux
+    with caplog.at_level("WARNING"):
+        row = find_metadata_row(df, "LIV0040_t1_reconciled")
+
+    assert row["Titre_long"] == "Premier"
+    assert "2 metadata rows" in caplog.text
+    assert "LIV00401" in caplog.text and "LIV00402" in caplog.text
+
+
+def test_a_single_match_stays_quiet(caplog):
+    df = pd.DataFrame({"BDD": ["LIV0001"], "Titre_long": ["Un titre"]})
+    with caplog.at_level("WARNING"):
+        row = find_metadata_row(df, "LIV0001_reconciled")
+    assert row is not None
+    assert caplog.text == ""
+
+
+def test_an_exact_identifier_wins_over_the_first_csv_row():
+    """Prendre la premiere ligne donnait a un document le titre, l'auteur
+    et la cote d'un autre livre : un header non pas vide mais faux, ce
+    qui est pire. Un identifiant exact parmi les candidats n'est pas une
+    devinette."""
+    df = pd.DataFrame({
+        "BDD": ["LIV0041", "LIV004"],
+        "Titre_long": ["Un autre livre", "Le bon livre"],
+    })
+
+    row = find_metadata_row(df, "LIV004_reconciled")
+
+    assert row["Titre_long"] == "Le bon livre"
+
+
+def test_without_a_metadata_table_the_document_says_so(caplog):
+    with caplog.at_level("WARNING"):
+        assert find_metadata_row(None, "LIV0001_reconciled") is None
+    assert "placeholder" in caplog.text
+
+    caplog.clear()
+    with caplog.at_level("WARNING"):
+        assert find_metadata_row(pd.DataFrame({"Titre": ["x"]}), "LIV0001") is None
+    assert "BDD" in caplog.text
+
+
+def test_a_missing_csv_file_is_reported(tmp_path, caplog):
+    with caplog.at_level("WARNING"):
+        assert load_metadata(tmp_path / "absent.csv") is None
+    assert "not found" in caplog.text

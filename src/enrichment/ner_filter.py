@@ -477,15 +477,36 @@ def _fuzzy_merge_group(entities, threshold, min_length):
         if ra != rb:
             parent[ra] = rb
 
+    # Every pair of a type went through a full SequenceMatcher.ratio()
+    # — some 125 000 calls for 500 entities (audit 3.8). Two cheap tests
+    # come first, and neither can hide a merge:
+    #   - two strings whose LENGTHS differ by more than (1 - threshold)
+    #     cannot reach the threshold, since ratio() is bounded by
+    #     2*min/(len(a)+len(b));
+    #   - quick_ratio() is an upper bound of ratio(), so a pair it puts
+    #     under the threshold is under it for real.
+    # set_seq1/set_seq2 in THIS order: ratio() is not symmetric —
+    # "parramsius" against "prlrhasius" scores 0.60 one way and 0.80 the
+    # other — so swapping the arguments to reuse the cached index would
+    # change which entities merge, and with them their xml:id, their
+    # mention counts and the @ref written into the body.
+    matcher = SequenceMatcher(None)
     for i in range(len(entities)):
         if len(norms[i]) < min_length:
             continue
+        matcher.set_seq1(norms[i])
         for j in range(i + 1, len(entities)):
             if len(norms[j]) < min_length:
                 continue
             if find(i) == find(j):
                 continue
-            if SequenceMatcher(None, norms[i], norms[j]).ratio() >= threshold:
+            shorter, longer = sorted((len(norms[i]), len(norms[j])))
+            if 2 * shorter < threshold * (shorter + longer):
+                continue
+            matcher.set_seq2(norms[j])
+            if matcher.quick_ratio() < threshold:
+                continue
+            if matcher.ratio() >= threshold:
                 union(i, j)
 
     # ── Collect groups ──────────────────────────────────────────────
