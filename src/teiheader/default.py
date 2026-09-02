@@ -16,6 +16,7 @@ from collections import defaultdict
 from lxml import etree
 
 from config import (
+    KEYWORDS_TAXONOMY,
     SEGMONTO,
     PLACEHOLDER_INFO_UNAVAILABLE,
     PLACEHOLDER_NO_METADATA,
@@ -171,9 +172,14 @@ class DefaultTree:
             if resp_ptr and PLACEHOLDER_ORCID not in (resp_ptr.get("target") or ""):
                 etree.SubElement(persName, "ptr", resp_ptr)
 
-        # <extent>
+        # <extent>. @quantity porte le nombre, @n ne le portait que sous
+        # forme d'etiquette libre ; la volumetrie du texte est ajoutee en
+        # fin de chaine par finalize_extent(), quand elle est connue.
         extent = etree.SubElement(fileDesc, "extent")
-        etree.SubElement(extent, "measure", unit="images", n=self.count)
+        images = etree.SubElement(
+            extent, "measure", unit="images", quantity=self.count
+        )
+        images.text = f"{self.count} images"
 
         # <publicationStmt>
         publicationStmt = etree.SubElement(fileDesc, "publicationStmt")
@@ -184,7 +190,18 @@ class DefaultTree:
         availability = etree.SubElement(
             publicationStmt, "availability", self.config["responsibility"]["availability"]
         )
-        etree.SubElement(availability, "licence", self.config["responsibility"]["licence"])
+        licence = etree.SubElement(
+            availability, "licence", self.config["responsibility"]["licence"]
+        )
+        licence.text = self.config["responsibility"].get("licence_text")
+        source_rights = self.config["responsibility"].get("source_rights")
+        if source_rights:
+            # status="free" porte sur ce que le fichier contient — la
+            # transcription et son encodage. Les images n'y sont pas :
+            # elles sont pointees. Sans cette precision, un agregateur
+            # lisant le statut rediffuserait des images qui ne sont pas
+            # a nous.
+            etree.SubElement(availability, "p").text = source_rights
         today = datetime.today().strftime("%Y-%m-%d")
         etree.SubElement(publicationStmt, "date", when=today)
 
@@ -286,3 +303,12 @@ class DefaultTree:
         tax_title.text = SEGMONTO["id"]
         tax_ptr = etree.SubElement(tax_bibl, "ptr")
         tax_ptr.attrib["target"] = SEGMONTO["url"]
+
+        # Second taxonomy: what <keywords scheme="..."> points at. The
+        # subjects come from catalogue records; saying so is the
+        # difference between a controlled descriptor and a loose tag.
+        keywords_tax = etree.SubElement(
+            classDecl, "taxonomy", {XML_ID: KEYWORDS_TAXONOMY["id"]}
+        )
+        kw_bibl = etree.SubElement(keywords_tax, "bibl")
+        kw_bibl.text = KEYWORDS_TAXONOMY["label"]

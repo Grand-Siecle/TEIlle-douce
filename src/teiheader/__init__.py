@@ -13,6 +13,6 @@ Usage:
     root, zones, lines = build_header(metadata, document, root, page_count, config, versions, filepaths)
 """
 
-from .builder import build_header
+from .builder import build_header, update_extent
 
-__all__ = ["build_header"]
+__all__ = ["build_header", "update_extent"]

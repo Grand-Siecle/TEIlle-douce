@@ -28,6 +28,7 @@ Example TEI output:
 from lxml import etree
 
 from config import SUPPORTED_LANGUAGES, LANG_DEFAULT
+from ..volumetry import language_volume
 
 # TEI namespace
 NS_TEI = "http://www.tei-c.org/ns/1.0"
@@ -122,18 +123,38 @@ class LangUsageBuilder:
         for child in list(langUsage):
             langUsage.remove(child)
 
-    def _add_language(self, langUsage, ident, count):
+    def _add_language(self, langUsage, ident, count, total, unit="words"):
         """
         Add a `<language>` element to `<langUsage>`.
+
+        @usage is a PERCENTAGE in TEI ("the approximate percentage, by
+        volume, of the text which uses this language"), and we were
+        writing raw container counts: a reader — or any tool summing the
+        attribute — read usage="1716" as 1716 %. The measured quantity
+        is kept in @n, where an arbitrary label is allowed, with the
+        unit it was counted in — because "by volume" is a claim about
+        words, and a count of containers cannot support it.
+
+        The datatype is nonNegativeInteger, so the percentage is rounded;
+        a language present in the document never rounds down to 0, which
+        would declare it absent while its <foreign> segments sit in the
+        text. Rounding up the rare languages can push the total to 101 %
+        — TEI asks for an approximate share, and "1 % of Greek" is a
+        truer statement than "0 % of a language that is there".
 
         Args:
             langUsage (etree.Element): Parent `<langUsage>` element.
             ident (str): ISO 639 language code (e.g., "fra", "lat").
-            count (int): Number of text elements in this language.
+            count (int): Number of text containers in this language.
+            total (int): Total across all languages, i.e. the 100 %.
         """
+        share = round(100 * count / total) if total else 0
+        if count and share < 1:
+            share = 1
         lang_el = etree.SubElement(langUsage, "language")
         lang_el.attrib["ident"] = ident
-        lang_el.attrib["usage"] = str(count)
+        lang_el.attrib["usage"] = str(share)
+        lang_el.attrib["n"] = f"{count} {unit}"
         lang_el.text = self.lang_names.get(ident, ident)
 
     def update(self, lang_stats):
@@ -143,6 +164,18 @@ class LangUsageBuilder:
         Replaces any existing language declarations with new ones based
         on the provided statistics. Languages are sorted by usage count
         in descending order.
+
+        The share is measured on the built text, in words. The
+        detector's own statistics cannot support a percentage: they
+        count ONE unit per text container for the primary language and
+        one per <foreign> SEGMENT for the others, so a French page
+        quoting thirty short Latin passages counts 1 against 30 — and
+        would be published as 97 % Latin. Words are the volume TEI asks
+        about, so words are what is counted (src/volumetry.py).
+
+        *lang_stats* remains the fallback for a tree with no xml:lang at
+        all — a run with language detection disabled — where the share
+        is by container for want of anything better, and @n says so.
 
         Args:
             lang_stats (dict): Language statistics from LanguageDetector.
@@ -156,7 +189,9 @@ class LangUsageBuilder:
             >>> builder.update({"fra": 1716, "lat": 38})
             True
         """
-        if not lang_stats:
+        volume = language_volume(self.root)
+        stats, unit = (volume, "words") if volume else (lang_stats, "containers")
+        if not stats:
             return False
 
         langUsage = self._find_or_create_langusage()
@@ -166,9 +201,10 @@ class LangUsageBuilder:
         # Clear existing and add new language elements
         self._clear_langusage(langUsage)
 
-        # Sort by count descending and add each language
-        for ident, count in sorted(lang_stats.items(), key=lambda x: -x[1]):
-            self._add_language(langUsage, ident, count)
+        # Sort by volume descending and add each language
+        total = sum(stats.values())
+        for ident, count in sorted(stats.items(), key=lambda x: -x[1]):
+            self._add_language(langUsage, ident, count, total, unit)
 
         return True
 

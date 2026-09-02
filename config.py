@@ -187,6 +187,17 @@ APP_VERSIONS = {
 # SEGMONTO TAXONOMY CONFIGURATION
 # =============================================================================
 
+# Referentiel des mots-cles du header. Les sujets viennent des colonnes
+# Sujet et Matiere du CSV, elles-memes reprises des notices du catalogue :
+# sans @scheme pointant vers cette declaration, <keywords> n'indique pas
+# d'ou vient son vocabulaire, et rien ne distingue un descripteur
+# controle d'un mot-cle libre (audit 1.15).
+KEYWORDS_TAXONOMY = {
+    "id": "catalogue-subjects",
+    "label": "Sujets et matières des notices de catalogue "
+             "(colonnes Sujet et Matiere du CSV local)",
+}
+
 # SegmOnto taxonomy identifier and URL
 SEGMONTO = {
     "id": "SegmOnto",
@@ -643,6 +654,19 @@ RESPONSIBILITY = {
     ],
     "publisher": "Projet Grand Siècle",
     "authority": "Université de Lausanne - UNIL, Université de Genève - UNIGE",
-    "availability": {"status": "restricted"},
+    # status="free" : le texte source est du domaine public (Gallica) et
+    # l'encodage est publie sous CC-BY. "restricted" disait le contraire
+    # de la licence declaree deux lignes plus bas, et une chaine
+    # d'edition qui lit le statut aurait refuse de rediffuser (audit 1.14).
+    "availability": {"status": "free"},
     "licence": {"target": "https://creativecommons.org/licenses/by/4.0/"},
+    "licence_text": "Encodage TEI diffusé sous licence Creative Commons "
+                    "Attribution 4.0 International (CC BY 4.0).",
+    # Les images ne sont pas dans le fichier : il y renvoie par IIIF. Le
+    # dire ici plutôt que dans <licence> évite d'annoncer status="free"
+    # au-dessus d'une phrase qui restreint une partie du materiau.
+    "source_rights": "Les images numérisées auxquelles renvoient les "
+                     "@facs et les URL IIIF restent soumises aux "
+                     "conditions d'utilisation de leur établissement de "
+                     "conservation.",
 }

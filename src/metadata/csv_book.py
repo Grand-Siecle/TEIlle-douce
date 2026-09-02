@@ -21,6 +21,7 @@ from lxml import etree
 from config import (
     CSV_DELIMITER,
     BDD_PREFIX_PATTERN,
+    KEYWORDS_TAXONOMY,
     METADATA_PERSON_CSV,
     PLACEHOLDER_INFO_UNAVAILABLE,
 )
@@ -659,7 +660,10 @@ def override_teiheader_from_csv(root, row, document_name=None):
             text_class = prof.find("textClass")
             if text_class is None:
                 text_class = etree.SubElement(prof, "textClass")
-            keywords = etree.SubElement(text_class, "keywords")
+            keywords = etree.SubElement(
+                text_class, "keywords",
+                scheme=f"#{KEYWORDS_TAXONOMY['id']}",
+            )
             for sujet in all_sujets:
                 term = etree.SubElement(keywords, "term")
                 term.text = sujet

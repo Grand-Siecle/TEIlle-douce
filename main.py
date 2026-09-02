@@ -419,6 +419,9 @@ def _process_document(doc_name, filepaths, doc_dir, df_meta, config,
     # Finalize langUsage with detected languages (after CSV override)
     tree.finalize_langusage()
 
+    # Volumetry, once every phase that could add tokens has run
+    tree.finalize_extent()
+
     # Write output file
     out_path = _out_path(doc_name)
     write_xml(tree.root, out_path)

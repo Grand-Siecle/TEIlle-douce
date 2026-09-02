@@ -34,6 +34,13 @@ When two or more notes on the same surface end up sharing the same
 anchor line, they are numbered @n="1", "2", ... in the vertical order of
 their own margin zones (uly ascending); notes with a unique anchor are
 left without @n.
+
+A note whose call mark MOVED the anchor also gets subtype="gloss" with
+cert="medium": there the page itself tied the note to that line, and we
+only followed. When the starred line is the one the default rule would
+have picked anyway, nothing is asserted — the asterisk may be a speck on
+the scan, and @subtype reads as an editorial claim, not as a pointer a
+reader can second-guess.
 """
 import logging
 
@@ -152,6 +159,20 @@ def link_notes_to_lines(root):
                 if starred:
                     if starred[0][0] != anchor[0]:
                         refined += 1
+                        # The mark moved the anchor: the page tied this
+                        # note to that line itself, and we followed. Only
+                        # then is "gloss" a reading of the page rather
+                        # than of a vertical overlap — when the starred
+                        # line is the one the default rule picked anyway,
+                        # the mark may just be OCR noise (the corpus is
+                        # full of stray asterisks) and says nothing.
+                        # @subtype, not @type: every body container is
+                        # typed by its SegmOnto zone and the pipeline
+                        # reads that back (extract_line_data groups lines
+                        # by zone type before dehyphenation).
+                        # @cert: the mark is matched on noisy OCR text.
+                        note.set("subtype", "gloss")
+                        note.set("cert", "medium")
                     anchor = starred[0]
 
             rest = [c for c in candidates if c[0] != anchor[0]]

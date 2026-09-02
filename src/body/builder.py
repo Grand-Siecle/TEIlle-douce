@@ -522,9 +522,13 @@ def build_body(root, data, detect_lang=True, graphics=None, front_pages=None):
             register(fw, line.text)
 
         elif line.zone_type == "MarginTextZone":
-            # Margin text -> <note>
+            # Margin text -> <note place="margin">. Without @place a
+            # reader cannot tell a marginal gloss from a footnote or an
+            # editorial remark: the zone knows, the note did not say.
             if last_tag != "note":
-                note = etree.SubElement(container, "note", zone_atts)
+                note = etree.SubElement(
+                    container, "note", {**zone_atts, "place": "margin"}
+                )
                 note.append(lb)
                 register(note, line.text)
             else:
