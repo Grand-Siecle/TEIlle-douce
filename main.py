@@ -376,15 +376,32 @@ def _process_document(doc_name, filepaths, doc_dir, df_meta, config,
         def _mod_progress(current, total):
             progress.update(task_mod, completed=current, total=total)
 
-        mod_count = tree.modernize_body(
+        mod_stats = tree.modernize_body(
             line_data=line_data,
             enriched=do_enrich,
             progress_callback=_mod_progress,
         )
         progress.update(task_mod, visible=False)
 
-        if mod_count > 0:
-            console.print(f"  [dim]Modernisation: {mod_count} lines[/dim]")
+        if mod_stats.get("lines_modernized", 0) > 0:
+            console.print(
+                f"  [dim]Modernisation: {mod_stats['lines_modernized']} lines[/dim]"
+            )
+        # Same hole as enrichment had (audit 2.7): a document whose
+        # containers were left untouched looked like a success.
+        if mod_stats.get("containers_failed", 0) > 0:
+            console.print(
+                f"  [yellow]Warning: {mod_stats['containers_failed']} "
+                f"container(s) left unmodernized — see log[/yellow]"
+            )
+        # A service that died mid-run leaves every counter at zero, and
+        # nothing under it was printed: the document was written without
+        # a single <choice> and reported as converted.
+        if mod_stats.get("server_unavailable"):
+            console.print(
+                "  [yellow]Warning: VieuxParler returned nothing for this "
+                "document — no modernization[/yellow]"
+            )
 
     # Step 5: Named Entity Recognition (after enrichment + modernization)
     if NER_ENABLED:

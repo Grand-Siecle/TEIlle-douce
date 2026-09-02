@@ -229,7 +229,7 @@ def _new_sentence_fragment(parent, seg, line_index, fragment_ids, s_occurrences)
     return s_new
 
 
-def _rebuild_with_modernization(container, groups, corresp_to_mod):
+def _rebuild_with_modernization(container, groups, corresp_to_mod, stats=None):
     """
     Rebuild an enriched container with <choice> wrapping for modernized lines.
 
@@ -244,6 +244,9 @@ def _rebuild_with_modernization(container, groups, corresp_to_mod):
         container: The lxml Element to rebuild.
         groups: list[_LineGroup] from _parse_line_groups().
         corresp_to_mod: Dict mapping corresp values to modernized text.
+        stats: Optional dict to report into, as the enrichment phase does
+            (audit 2.7): a container left untouched increments
+            "containers_failed" so the run can say its readings were lost.
 
     Returns:
         int: Number of lines wrapped in <choice>.
@@ -263,6 +266,11 @@ def _rebuild_with_modernization(container, groups, corresp_to_mod):
             "untouched rather than rebuilding it without them",
             local_tag(container.tag), ", ".join(sorted(set(unhandled))),
         )
+        # Leaving it alone is the right call, but its modernization IS
+        # lost: counted, so the console does not report the document as
+        # simply having had nothing to modernize.
+        if stats is not None:
+            stats["containers_failed"] = stats.get("containers_failed", 0) + 1
         return 0
 
     # Phase 1: Build fragment mapping for sentences split across lines
@@ -805,7 +813,7 @@ def apply_modernization(root, modernized_texts):
     return count
 
 
-def apply_modernization_enriched(root, corresp_to_mod):
+def apply_modernization_enriched(root, corresp_to_mod, stats=None):
     """
     Post-process an enriched body to insert <choice><orig>/<reg> per line.
 
@@ -821,6 +829,8 @@ def apply_modernization_enriched(root, corresp_to_mod):
     Args:
         root: TEI root element (body must already be enriched).
         corresp_to_mod: Dict mapping corresp values to modernized text strings.
+        stats: Optional dict to report into; "containers_failed" counts
+            the containers whose readings could not be applied.
 
     Returns:
         int: Number of lines wrapped in <choice>.
@@ -849,7 +859,9 @@ def apply_modernization_enriched(root, corresp_to_mod):
             if not has_mod:
                 continue
 
-            count += _rebuild_with_modernization(container, groups, corresp_to_mod)
+            count += _rebuild_with_modernization(
+                container, groups, corresp_to_mod, stats=stats
+            )
         else:
             # Non-enriched container: wrap <lb> tails directly
             count += _wrap_plain_lines(container, corresp_to_mod)
