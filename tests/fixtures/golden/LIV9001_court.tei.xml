@@ -250,24 +250,6 @@
         <taxonomy xml:id="catalogue-subjects">
           <bibl>Sujets et matières des notices de catalogue (colonnes Sujet et Matiere du CSV local)</bibl>
         </taxonomy>
-        <taxonomy xml:id="cattex-freem">
-          <bibl>
-            <title>CATTEX (FreEM) — francais pre-classique et classique</title>
-            <ptr target="https://freem-corpora.github.io/"/>
-          </bibl>
-        </taxonomy>
-        <taxonomy xml:id="lasla">
-          <bibl>
-            <title>LASLA — latin</title>
-            <ptr target="https://www.lasla.uliege.be/"/>
-          </bibl>
-        </taxonomy>
-        <taxonomy xml:id="perseus-grc">
-          <bibl>
-            <title>Perseus / Ancient Greek Dependency Treebank — grec ancien</title>
-            <ptr target="https://perseusdl.github.io/treebank_data/"/>
-          </bibl>
-        </taxonomy>
       </classDecl>
     </encodingDesc>
     <revisionDesc>

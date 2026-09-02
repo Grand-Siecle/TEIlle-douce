@@ -61,8 +61,6 @@ def rebuild_container(container, sentences, primary_lang=None):
     if primary_lang is None:
         primary_lang = container.get(XML_LANG) or ""
 
-    _declare_tagset(container, primary_lang)
-
     if not sentences:
         # Not a no-op if we went on: the clearing below would strip the
         # container of the text it holds and give nothing back, leaving
@@ -73,6 +71,8 @@ def rebuild_container(container, sentences, primary_lang=None):
             container.tag,
         )
         return
+
+    _declare_tagset(container, primary_lang)
 
     # Clear everything (including any <foreign> still sitting around
     # from the language-detection phase — they are recreated inline

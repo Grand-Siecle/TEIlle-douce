@@ -27,6 +27,7 @@ from ..constants import XML_ID, XML_LANG
 from ..utils.xml import content_root, local_tag as _local
 from .extractor import extract_spans
 from .dehyphenation import dehyphenate
+from ..teiheader import declare_pos_tagsets
 from .client import tag_texts, get_model, check_server
 from .aligner import align_tokens
 from .segmenter import segment_sentences, chain_cross_container
@@ -129,6 +130,11 @@ def enrich_body(root, progress_callback=None):
 
     # Cross-container sentence chaining
     chain_cross_container(all_sentences)
+
+    # The header can only name the tagsets once it knows which models
+    # ran: declared with the skeleton, they would announce annotations a
+    # run with enrichment disabled does not carry.
+    declare_pos_tagsets(root, sorted(stats.get("languages_tagged", ())))
 
     logger.debug(
         "Enrichment complete: %d enriched, %d tokens, %d sentences",
@@ -290,6 +296,11 @@ def _finish_container(job, stats):
     stats["containers_enriched"] += 1
     stats["tokens_total"] += len(tokens)
     stats["sentences_total"] += len(sentences)
+    # Which tagsets the header will have to declare: the languages a
+    # model actually tagged, not the ones the pipeline could tag.
+    stats.setdefault("languages_tagged", set()).update(
+        tok.origin_lang for tok in tokens if tok.origin_lang
+    )
 
     return sentences
 

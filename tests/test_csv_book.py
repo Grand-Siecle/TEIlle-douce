@@ -20,12 +20,12 @@ from lxml import etree
 
 from src.metadata import csv_person
 from src.metadata.csv_person import load_person_database
+from src.dates import date_attributes, normalize_date
 from src.metadata.csv_book import (
     load_metadata,
     find_metadata_row,
     build_metadata_dict,
     override_teiheader_from_csv,
-    _normalize_date,
     _volume_index,
     _safe_value,
     _safe_value_list,
@@ -540,20 +540,20 @@ def test_find_metadata_row_none_df():
 
 
 # ---------------------------------------------------------------------------
-# 5. _normalize_date + _volume_index (NONREG)
+# 5. normalize_date + _volume_index (NONREG)
 # ---------------------------------------------------------------------------
 
 def test_normalize_date_slash_to_dash():
-    assert _normalize_date("1590/05/22") == "1590-05-22"
+    assert normalize_date("1590/05/22") == "1590-05-22"
 
 
 def test_normalize_date_empty_or_none():
-    assert _normalize_date("") == ""
-    assert _normalize_date(None) == ""
+    assert normalize_date("") == ""
+    assert normalize_date(None) == ""
 
 
 def test_normalize_date_no_slash_unchanged():
-    assert _normalize_date("1590") == "1590"
+    assert normalize_date("1590") == "1590"
 
 
 def test_volume_index_none_or_empty():
@@ -725,8 +725,7 @@ def test_date_attributes_maps_each_corpus_shape():
     """Le corpus ne contient pas des dates ISO : 126 des 327 valeurs de
     naissance sont autre chose. La forme de la cellule decide des
     attributs, car @when n'accepte qu'une date xsd (teidata.temporal.w3c)."""
-    from src.metadata.csv_book import date_attributes
-
+    
     # dates completes, quelle que soit l'ecriture
     assert date_attributes("1590/05/22") == {"when": "1590-05-22"}
     assert date_attributes("16520623") == {"when": "1652-06-23"}
@@ -756,8 +755,7 @@ def test_date_attributes_maps_each_corpus_shape():
 def test_approximate_dates_keep_their_year_and_say_so():
     """Les catalogues historiques ecrivent "circa 1600", "vers 1650" :
     l'annee est exploitable, l'approximation doit rester visible."""
-    from src.metadata.csv_book import date_attributes
-
+    
     assert date_attributes("circa 1600") == {"when": "1600", "cert": "low"}
     assert date_attributes("vers 1650") == {"when": "1650", "cert": "low"}
     assert date_attributes("1650") == {"when": "1650"}

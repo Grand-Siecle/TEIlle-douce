@@ -476,6 +476,9 @@ def _confidence_to_cert(confidence, thresholds):
     return min(thresholds.items(), key=lambda kv: kv[1])[0] if thresholds else "unknown"
 
 
+_CERT_ORDER = {"unknown": 0, "low": 1, "medium": 2, "high": 3}
+
+
 def _make_entity_element(entity_type, cert, entity_types_config, anchor=None,
                          text=None):
     """
@@ -501,9 +504,15 @@ def _make_entity_element(entity_type, cert, entity_types_config, anchor=None,
 
     if cfg.get("normalize") == "date" and text:
         normalized = text_date_attributes(text)
-        # @cert is already set from the NER confidence; a date read with
-        # a low certainty must not overwrite it with a higher one.
-        normalized.pop("cert", None)
+        # Two certainties, two meanings: the model's confidence in having
+        # found a date, and the parser's confidence in the value it read.
+        # One attribute holds both, so it holds the weaker — asserting
+        # the stronger would claim more than either source supports.
+        value_cert = normalized.pop("cert", None)
+        if value_cert:
+            attrs["cert"] = min(
+                (attrs["cert"], value_cert), key=_CERT_ORDER.__getitem__
+            )
         attrs.update(normalized)
 
     elem = etree.Element(tag_like(anchor, tag), **attrs)
@@ -547,15 +556,20 @@ def _inject_tokenized_entities(entities, cert_thresholds, entity_types_config):
                 current_group = [w]
         groups.append(current_group)
 
-        for group in groups:
+        for group_index, group in enumerate(groups):
             parent = group[0].getparent()
             if parent is None:
                 continue
 
-            # Create entity wrapper element
+            # The value is read on the WHOLE entity, once. A tokenized
+            # "M.DC.LIX" is three <w> split by <pc>, so three wrappers:
+            # reading each on its own turned one date into "1000",
+            # "0600" and "0059", three years the text never says. The
+            # wrappers are linked by @next/@prev, so the value belongs on
+            # the first — repeating it would read as several dates.
             wrapper = _make_entity_element(
                 ent.entity_type, cert, entity_types_config, anchor=parent,
-                text=" ".join((w.text or "") for w in group),
+                text=ent.text if group_index == 0 else None,
             )
 
             # Insert wrapper before the first <w> in the group
@@ -674,7 +688,12 @@ def _inject_reg_entities(entities, cert_thresholds, entity_types_config):
 
             wrapper = _make_entity_element(
                 ent.entity_type, cert, entity_types_config, anchor=reg_elem,
-                text=original_text[task["start"]:task["end"]],
+                # Same rule as the tokenized path: one value, read on the
+                # whole entity, carried by its FIRST fragment — a date
+                # cut across two lines would otherwise carry two
+                # contradictory years on elements that @next/@prev
+                # declare to be one date.
+                text=ent.text if not task.get("prev_id") else None,
             )
             wrapper.text = original_text[task["start"]:task["end"]]
             wrapper.tail = ""

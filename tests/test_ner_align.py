@@ -550,16 +550,21 @@ def test_a_date_the_parser_cannot_read_gets_no_value():
     assert elem.get("notBefore") is None
 
 
-def test_the_ner_certainty_survives_a_date_read_with_low_confidence():
-    """Le @cert vient de la confiance du modele NER ; une date lue avec
-    une inference basse ne doit pas le remonter."""
+def test_the_weaker_of_the_two_certainties_is_the_one_written():
+    """Deux certitudes, deux sens : la confiance du modele a AVOIR TROUVE
+    une date, et celle du parseur dans la VALEUR qu'il a lue. Un seul
+    attribut les porte, donc il porte la plus faible — affirmer la plus
+    forte revendiquerait plus qu'aucune des deux ne soutient."""
     from src.enrichment.ner_align import _make_entity_element
     from config import NER_ENTITY_TYPES
 
-    elem = _make_entity_element("date", "low", NER_ENTITY_TYPES, text="159")
+    # valeur incertaine (« vers »), detection sure
+    elem = _make_entity_element("date", "high", NER_ENTITY_TYPES, text="vers 1650")
+    assert (elem.get("when"), elem.get("cert")) == ("1650", "low")
 
-    assert elem.get("cert") == "low"
-    assert (elem.get("notBefore"), elem.get("notAfter")) == ("1590", "1599")
+    # valeur sure, detection incertaine
+    elem = _make_entity_element("date", "low", NER_ENTITY_TYPES, text="1650")
+    assert (elem.get("when"), elem.get("cert")) == ("1650", "low")
 
 
 def test_other_entity_types_are_untouched_by_the_date_reader():
@@ -569,3 +574,28 @@ def test_other_entity_types_are_untouched_by_the_date_reader():
     elem = _make_entity_element("person", "high", NER_ENTITY_TYPES, text="1659")
 
     assert elem.get("when") is None
+
+
+def test_a_tokenized_date_is_read_whole_not_token_by_token():
+    """« M.DC.LIX » tokenise donne trois <w> separes par des <pc>, donc
+    trois enveloppes. Lire chacune pour elle-meme transformait une date
+    en 1000, 0600 et 0059 — trois annees que le texte ne dit pas."""
+    from src.enrichment.ner_align import _inject_tokenized_entities
+    from config import NER_ENTITY_TYPES, NER_CERT_THRESHOLDS
+
+    s = etree.fromstring(
+        b"<s><w>M</w><pc>.</pc><w>DC</w><pc>.</pc><w>LIX</w></s>"
+    )
+    ws = [w for w in s if qlocal(w) == "w"]
+
+    class _Ent:
+        entity_type = "date"
+        confidence = 0.99
+        text = "M.DC.LIX"
+        w_elements = ws
+
+    _inject_tokenized_entities([_Ent()], NER_CERT_THRESHOLDS, NER_ENTITY_TYPES)
+
+    dates = [el for el in s.iter() if qlocal(el) == "date"]
+    assert [d.get("when") for d in dates] == ["1659", None, None]
+    assert "".join(w.text for d in dates for w in d) == "MDCLIX"

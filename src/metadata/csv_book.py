@@ -18,7 +18,7 @@ from collections import defaultdict
 import pandas as pd
 from lxml import etree
 
-from ..dates import date_attributes, _normalize_date
+from ..dates import date_attributes
 from config import (
     CSV_DELIMITER,
     BDD_PREFIX_PATTERN,
@@ -480,7 +480,7 @@ def create_bibl_respstmt(parent, person_id, resp_label, person_db):
     return respstmt
 
 
-def _set_creation(root, date_raw):
+def _set_creation(root, date_raw, attrs):
     """Record in <profileDesc> when the text was produced.
 
     <bibl><date> dates the edition described in the sourceDesc; TEI's
@@ -489,10 +489,7 @@ def _set_creation(root, date_raw):
     description — and a corpus is queried by period before anything else.
     """
     profile = root.find(".//teiHeader/profileDesc")
-    if profile is None or not date_raw:
-        return None
-    attrs = date_attributes(date_raw)
-    if not attrs:
+    if profile is None or not date_raw or not attrs:
         return None
 
     creation = profile.find("creation")
@@ -612,12 +609,19 @@ def override_teiheader_from_csv(root, row, document_name=None):
     # what a diachronic query reads (audit 1.10) — and it is the same
     # cell, so both are normalized by the same parser.
     date_raw = row.get("Date_01") or row.get("Date_02")
+    date_attrs = date_attributes(date_raw)  # parsed once: an unusable
+    # value must not log its warning twice per document
     set_text(".//teiHeader/fileDesc/sourceDesc/bibl/date", date_raw)
     date_el = root.find(".//teiHeader/fileDesc/sourceDesc/bibl/date")
     if date_el is not None:
-        for key, value in date_attributes(date_raw).items():
+        # Clear what a previous pass asserted: a run over the same tree
+        # with a differently-shaped date would otherwise leave @when
+        # beside a @notBefore/@notAfter span that excludes it.
+        for key in ("when", "notBefore", "notAfter", "cert"):
+            date_el.attrib.pop(key, None)
+        for key, value in date_attrs.items():
             date_el.set(key, value)
-    _set_creation(root, date_raw)
+    _set_creation(root, date_raw, date_attrs)
 
     # Repository info - support multiple.
     # Localisation is stored as "Ville, Institution" (e.g. "Munich, Bayerische

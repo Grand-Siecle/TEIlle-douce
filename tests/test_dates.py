@@ -66,12 +66,45 @@ def test_the_text_keeps_what_cannot_be_read_as_a_value(texte):
     assert text_date_attributes(texte) == {}
 
 
-def test_a_truncated_year_in_the_text_stays_a_span():
-    """Meme regle que pour une cellule : « 159 » est une decennie, et le
-    dit avec @cert."""
-    assert text_date_attributes("159") == {
+def test_a_bare_three_digit_run_in_the_text_is_not_a_date():
+    """Dans du texte courant, « 159 » est bien plus souvent une page, un
+    folio ou un article qu'une annee tronquee. Une cellule de CSV est un
+    champ date et se lit comme tel ; un passage de texte ne l'est que
+    s'il le dit clairement."""
+    assert text_date_attributes("159") == {}
+    # la meme valeur dans une cellule reste une decennie
+    assert date_attributes("159") == {
         "notBefore": "1590", "notAfter": "1599", "cert": "low",
     }
+
+
+def test_an_approximation_marker_is_read_the_same_way_by_both():
+    """« vers 1650 » ne peut pas etre une estimation dans une cellule et
+    une certitude dans le texte."""
+    assert text_date_attributes("vers 1650") == date_attributes("vers 1650")
+    assert text_date_attributes("vers 1650")["cert"] == "low"
+
+
+def test_a_lowercase_word_is_never_read_as_a_roman_year():
+    """« dix » vaut 509 en chiffres romains si l'on plie la casse."""
+    for mot in ("dix", "vi", "ci", "li"):
+        assert roman_year(mot) is None
+        assert text_date_attributes(f"l'an {mot}") == {}
+
+
+def test_year_zero_is_not_a_date():
+    """XSD 1.0 n'a pas d'annee zero : l'ecrire fait echouer tei_all,
+    exactement ce que ce controle de forme evite. « 0 » et « 0000 » sont
+    des remplissages d'inconnu."""
+    for cellule in ("0", "00", "0000"):
+        assert date_attributes(cellule) == {}
+
+
+def test_a_bce_span_reads_in_the_right_order():
+    """-1599 est ANTERIEUR a -1590 : garder l'ordre des dates de notre
+    ere affirmerait un intervalle qu'aucun instant ne satisfait."""
+    attrs = date_attributes("-159")
+    assert (attrs["notBefore"], attrs["notAfter"]) == ("-1599", "-1590")
 
 
 def test_the_csv_parser_and_the_text_parser_agree_on_a_plain_year():

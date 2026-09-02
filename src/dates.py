@@ -22,6 +22,17 @@ import re
 
 logger = logging.getLogger(__name__)
 
+def _is_uncertain(text):
+    """True when the value announces itself as an estimate.
+
+    "?" anywhere, or a circa marker: historical catalogues write
+    "? 1666", "circa 1600", "vers 1650". Shared by both readers — the
+    same marker cannot mean an estimate in a CSV cell and a certainty in
+    the text.
+    """
+    return bool(re.search(r"\?|\b(ca|circa|vers|env)\b\.?", str(text or ""), re.I))
+
+
 def date_attributes(raw):
     """
     TEI date attributes for one CSV date cell.
@@ -53,9 +64,7 @@ def date_attributes(raw):
     if not text:
         return {}
 
-    # "?" anywhere, or a circa marker, means the value is an estimate —
-    # historical catalogues write "? 1666", "circa 1600", "vers 1650".
-    uncertain = bool(re.search(r"\?|\b(ca|circa|vers|env)\b\.?", text, re.I))
+    uncertain = _is_uncertain(text)
     bce = text.lstrip("? ").startswith("-")
     digits = re.sub(r"\D", "", text)
     sign = "-" if bce else ""
@@ -90,6 +99,12 @@ def date_attributes(raw):
         # to the unusable branch rather than assert a wrong one.
         logger.warning("Unusable date %r — impossible month or day", text)
         return {}
+    if int(digits or 0) == 0:
+        # "0", "00", "0000" : un remplissage d'inconnu, pas une date. XSD
+        # 1.0 n'a pas d'annee zero, et l'ecrire fait echouer tei_all —
+        # exactement ce que ce controle de forme existe pour eviter.
+        logger.warning("Unusable date %r — year zero is not a date", text)
+        return {}
     if len(digits) == 4:
         return with_cert({"when": year(digits)})
     if 1 <= len(digits) <= 3:
@@ -100,8 +115,13 @@ def date_attributes(raw):
         # 1700s): such rows are better fixed in the CSV.
         span = 10 ** (4 - len(digits))
         start = int(digits) * span
+        first, last = start, start + span - 1
+        if bce:
+            # -1599 is EARLIER than -1590: keeping the CE order would
+            # assert an interval no instant can satisfy.
+            first, last = last, first
         return with_cert(
-            {"notBefore": f"{sign}{start:04d}", "notAfter": f"{sign}{start + span - 1:04d}"},
+            {"notBefore": f"{sign}{first:04d}", "notAfter": f"{sign}{last:04d}"},
             cert="low",
         )
 
@@ -109,13 +129,8 @@ def date_attributes(raw):
     return {}
 
 
-def _normalize_date(date_str):
-    """
-    ISO form of a date cell, or "" when it has none.
-
-    Thin wrapper over date_attributes for callers that only want a
-    @when value.
-    """
+def normalize_date(date_str):
+    """ISO form of a date cell, or "" when it has none."""
     return date_attributes(date_str).get("when", "")
 
 # Canonical Roman numeral, the form printed on title pages
@@ -129,28 +144,43 @@ _ROMAN_VALUES = {"I": 1, "V": 5, "X": 10, "L": 50, "C": 100, "D": 500, "M": 1000
 
 # Words a date is introduced by, in French and in Latin, that carry no
 # value of their own.
+# Words a date is introduced by, in French and in Latin, that carry no
+# value of their own. The circa markers are stripped for the SHAPE test
+# only: the original string is what goes to date_attributes, so "vers
+# 1650" still comes back as an estimate.
 _DATE_PREFIX_RE = re.compile(
-    r"^(l\s*'\s*an|en|le|la|vers|anno|aetatis)\b[\s.]*", re.I
+    r"^[?\s]*(l\s*['\u2019]\s*an|en|le|la|anno|aetatis|vers|circa|ca|env(iron)?)"
+    r"\b[\s.]*", re.I
 )
+
+# Un millesime imprime est un nombre a quatre chiffres. En dessous, une
+# suite de lettres romaines est presque toujours autre chose : DIX vaut
+# 509, VI vaut 6, CI vaut 101 — des mots, des initiales, une numerotation.
+_ROMAN_MIN_YEAR = 1000
 
 
 def roman_year(text):
     """
     Year written as a Roman numeral, or None.
 
+    Reads what a title page prints — capitals — and nothing else. Folding
+    case would turn ordinary words into years: "dix" is 509, "vi" is 6,
+    "ci" is 101, and a stray capital "M" is 1000. A printed millesime is
+    a four-figure number, so anything under 1000 is refused as well.
+
     Returns:
         int or None: the year, when *text* is a canonical Roman numeral
-        within the range a printed date can plausibly hold.
+        a printed date can plausibly hold.
     """
-    letters = re.sub(r"[.\s]", "", str(text)).upper()
-    if not letters or not _ROMAN_RE.match(letters):
+    letters = re.sub(r"[.\s]", "", str(text))
+    if not letters or letters != letters.upper() or not _ROMAN_RE.match(letters):
         return None
     total = 0
     for i, char in enumerate(letters):
         value = _ROMAN_VALUES[char]
         following = (_ROMAN_VALUES[c] for c in letters[i + 1:])
         total += -value if any(v > value for v in following) else value
-    return total if 1 <= total <= 2100 else None
+    return total if _ROMAN_MIN_YEAR <= total <= 2100 else None
 
 
 def text_date_attributes(text):
@@ -170,16 +200,24 @@ def text_date_attributes(text):
     """
     if not text:
         return {}
-    cleaned = str(text).strip().strip(".,;:()[]«»\"' \t\n")
+    cleaned = str(text).strip().strip(".,;:()[]«»?\"' \t\n")
     cleaned = _DATE_PREFIX_RE.sub("", cleaned).strip()
     if not cleaned:
         return {}
 
     year = roman_year(cleaned)
     if year is not None:
-        return {"when": f"{year:04d}"}
+        attrs = {"when": f"{year:04d}"}
+        if _is_uncertain(text):
+            attrs["cert"] = "low"
+        return attrs
 
-    if re.fullmatch(r"-?\d{3,4}", cleaned):
-        return date_attributes(cleaned)
+    # Four figures, not three: in running text a bare "159" is a page, a
+    # folio, an article or a paragraph far more often than a truncated
+    # year, and a span of text is a date only when it says so plainly.
+    # The original string goes back to date_attributes so its circa
+    # markers ("vers 1650") are read there rather than stripped here.
+    if re.fullmatch(r"-?\d{4}", cleaned):
+        return date_attributes(text)
 
     return {}
