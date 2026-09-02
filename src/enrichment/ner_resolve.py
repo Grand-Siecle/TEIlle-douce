@@ -172,6 +172,11 @@ def link_local(entities, person_db):
     if not person_db or len(person_db) == 0:
         return
 
+    if not any(e.entity_type == "person" for e in entities):
+        # Nothing to link: normalizing 478 people to discover it would
+        # cost more than the old code did in this case.
+        return
+
     # The database is normalized ONCE. It was re-normalized for every
     # entity — 478 people times every person entity of the document, the
     # same lowercasing and accent-stripping over and over (audit 3.9).

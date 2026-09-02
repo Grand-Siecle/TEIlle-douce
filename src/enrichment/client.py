@@ -199,7 +199,10 @@ def _align_tokens(raw_tokens, text):
     result = []
     cursor = 0
     misaligned = 0
-    text_lower = text.lower()
+    # Computed on the first miss only: a container whose tokens all match
+    # exactly — the normal case — never needs it, and the win is not
+    # paying for it twice on each of the ones that do.
+    text_lower = None
 
     for t in raw_tokens:
         form = t["form"]
@@ -210,6 +213,8 @@ def _align_tokens(raw_tokens, text):
         # per container, not once per token (audit 3.11) — it is the same
         # string for every token of the block.
         if idx == -1:
+            if text_lower is None:
+                text_lower = text.lower()
             idx = text_lower.find(form.lower(), cursor)
 
         # Fallback: small window around cursor

@@ -331,8 +331,7 @@ def dehyphenate_lines(texts, zone_types=None):
             next_same[idx] = seen.get(zone_types[idx])
             seen[zone_types[idx]] = idx
 
-    def next_same_zone(idx, zone):
-        return next_same[idx]
+
 
     for i in range(len(joined) - 1):
         line = joined[i]
@@ -352,8 +351,7 @@ def dehyphenate_lines(texts, zone_types=None):
             suffix = before_hyphen[last_space + 1:]
             prefix_line = before_hyphen[:last_space + 1]
 
-        my_zone = zone_types[i] if zone_types else None
-        j = next_same_zone(i, my_zone)
+        j = next_same[i]
         if j is None:
             continue
 
@@ -373,7 +371,7 @@ def dehyphenate_lines(texts, zone_types=None):
                 break
             fragment += cand_words[0][:-1]
             chain.append(j)
-            nxt = next_same_zone(j, my_zone)
+            nxt = next_same[j]
             if nxt is None:
                 j = None
                 break

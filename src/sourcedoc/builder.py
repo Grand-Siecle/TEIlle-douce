@@ -130,11 +130,13 @@ def _build_surface_fragment(args):
         the whole pool, losing the already-processed pages (audit 5.5).
     """
     filepath, num = args
-    document_name = _JOB_CONTEXT["document_name"]
 
     try:
+        # Inside the try like everything else: this function must never
+        # raise (audit 2.3/5.5), and a worker whose initializer did not
+        # run would otherwise take the whole document down with it.
         num_out, xml_bytes, warning = _build_surface_fragment_inner(
-            document_name, filepath, num,
+            _JOB_CONTEXT["document_name"], filepath, num,
             _JOB_CONTEXT["segmonto_zones"], _JOB_CONTEXT["segmonto_lines"],
             _JOB_CONTEXT["config"], _JOB_CONTEXT["iiif_mapping_dict"],
         )
@@ -312,8 +314,11 @@ def build_sourcedoc(
     # One job carries only what changes from page to page.
     jobs = [(f.filepath, f.num) for f in ordered_files]
 
-    # Limit workers to avoid resource exhaustion
-    workers = min(cpu_count(), MAX_WORKERS)
+    # Limit workers to avoid resource exhaustion — and never more than
+    # there are pages: each worker now unpickles the document's
+    # invariants once, so eight of them for a two-page document would
+    # send the IIIF mapping eight times to do two pages' work.
+    workers = max(1, min(cpu_count(), MAX_WORKERS, len(jobs)))
 
     results = {}
 
