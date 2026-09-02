@@ -771,3 +771,169 @@ def test_link_mentions_keeps_an_identifier_a_mention_already_has():
 
     lien = next(c for c in root.iter() if qlocal(c) == "link")
     assert lien.get("target") == "#pers-a #ent-deja"
+
+
+def test_a_mention_written_on_both_layers_counts_once():
+    """L'ancrage double injecte la meme occurrence dans <orig> et dans
+    <reg> : compter les elements donnerait deux passages la ou la page en
+    porte un."""
+    from src.enrichment.ner_resolve import link_mentions
+
+    root = etree.fromstring(
+        b'<TEI><text><body><div><ab><choice>'
+        b'<orig><persName resp="#ner-auto" ref="#pers-a">Poussin</persName></orig>'
+        b'<reg><persName resp="#ner-auto" ref="#pers-a">Poussin</persName></reg>'
+        b'</choice></ab></div></body></text></TEI>'
+    )
+
+    link_mentions(root)
+
+    lien = next(c for c in root.iter() if qlocal(c) == "link")
+    assert lien.get("target") == "#pers-a #pers-a-m1"
+
+
+def test_a_mention_cut_by_a_line_break_counts_once():
+    """Une mention coupee par une ligne donne une enveloppe par fragment,
+    chainees par @next/@prev : c'est un passage, pas deux."""
+    from src.enrichment.ner_resolve import link_mentions
+
+    root = etree.fromstring(
+        b'<TEI><text><body><div><ab>'
+        b'<persName xml:id="e1" resp="#ner-auto" ref="#pers-a" next="#e2">Pous</persName>'
+        b'<lb/>'
+        b'<persName xml:id="e2" resp="#ner-auto" ref="#pers-a" prev="#e1">sin</persName>'
+        b'</ab></div></body></text></TEI>'
+    )
+
+    link_mentions(root)
+
+    lien = next(c for c in root.iter() if qlocal(c) == "link")
+    assert lien.get("target") == "#pers-a #e1"
+
+
+def test_a_ref_pointer_list_does_not_leak_into_an_xml_id():
+    """@ref est une liste de pointeurs en TEI, et csv_book en ecrit
+    d'externes (geonames) a cote des notres."""
+    from src.enrichment.ner_resolve import link_mentions
+
+    root = etree.fromstring(
+        b'<TEI><text><body><div><ab>'
+        b'<placeName resp="#ner-auto" ref="#place-a https://geonames.org/1">Rome</placeName>'
+        b'</ab></div></body></text></TEI>'
+    )
+
+    link_mentions(root)
+
+    mention = next(e for e in root.iter() if e.get("resp") == "#ner-auto")
+    assert mention.get(XML_ID) == "place-a-m1"
+    assert " " not in mention.get(XML_ID)
+
+
+def test_the_materials_and_techniques_lists_do_not_delete_each_other():
+    """Les deux sont une <list> nue, distinguees par @type seul : matcher
+    sur le nom d'element supprimait celle qu'on venait de construire, et
+    laissait les @ref de ses entites pointer vers rien."""
+    root, header = _header_root()
+    material = ResolvedEntity(
+        entity_type="material", canonical_name="huile", xml_id="mat-a",
+        mentions=[_mention("material", "huile", 0.9)],
+    )
+    technique = ResolvedEntity(
+        entity_type="technique", canonical_name="glacis", xml_id="tech-a",
+        mentions=[_mention("technique", "glacis", 0.9)],
+    )
+
+    inject_header_entities(root, [material, technique], NER_ENTITY_TYPES)
+    inject_header_entities(root, [material, technique], NER_ENTITY_TYPES)
+
+    standoff = next(c for c in root if qlocal(c) == "standOff")
+    listes = {c.get("type"): c for c in standoff if qlocal(c) == "list"}
+    assert set(listes) == {"materials", "techniques"}
+    assert [el.get(XML_ID) for el in listes["materials"]] == ["mat-a"]
+    assert [el.get(XML_ID) for el in listes["techniques"]] == ["tech-a"]
+
+
+def test_the_open_vocabularies_are_declared_where_they_are_used():
+    """<list type="materials"> nommait un vocabulaire que rien ne
+    decrivait : un lecteur ne pouvait pas distinguer un terme infere d'un
+    descripteur controle."""
+    root, header = _header_root()
+    etree.SubElement(header, "encodingDesc")
+    material = ResolvedEntity(
+        entity_type="material", canonical_name="huile", xml_id="mat-a",
+        mentions=[_mention("material", "huile", 0.9)],
+    )
+
+    inject_header_entities(root, [material], NER_ENTITY_TYPES)
+
+    taxonomies = [e for e in root.iter() if qlocal(e) == "taxonomy"]
+    assert [t.get(XML_ID) for t in taxonomies] == ["art-vocabulary"]
+    categories = [c for c in taxonomies[0] if qlocal(c) == "category"]
+    assert [c.get(XML_ID) for c in categories] == ["materials"]
+    assert "ouvert" in categories[0][0].text
+    # la liste designe la categorie qui la decrit
+    liste = next(e for e in root.iter() if qlocal(e) == "list")
+    assert liste.get("ana") == "#materials"
+    # rien n'est declare pour une categorie que le document ne porte pas
+    assert "techniques" not in [c.get(XML_ID) for c in categories]
+
+
+def test_declaring_a_vocabulary_twice_writes_it_once():
+    root, header = _header_root()
+    etree.SubElement(header, "encodingDesc")
+    material = ResolvedEntity(
+        entity_type="material", canonical_name="huile", xml_id="mat-a",
+        mentions=[_mention("material", "huile", 0.9)],
+    )
+    technique = ResolvedEntity(
+        entity_type="technique", canonical_name="glacis", xml_id="tech-a",
+        mentions=[_mention("technique", "glacis", 0.9)],
+    )
+
+    inject_header_entities(root, [material, technique], NER_ENTITY_TYPES)
+    inject_header_entities(root, [material, technique], NER_ENTITY_TYPES)
+
+    taxonomies = [e for e in root.iter() if qlocal(e) == "taxonomy"]
+    assert len(taxonomies) == 1
+    categories = [c.get(XML_ID) for c in taxonomies[0] if qlocal(c) == "category"]
+    assert sorted(categories) == ["materials", "techniques"]
+
+
+def test_a_vocabulary_cannot_be_declared_without_an_encoding_desc():
+    """Le header d'un arbre construit a la main peut ne pas en avoir :
+    la liste doit sortir quand meme, sans declaration."""
+    root, header = _header_root()
+    material = ResolvedEntity(
+        entity_type="material", canonical_name="huile", xml_id="mat-a",
+        mentions=[_mention("material", "huile", 0.9)],
+    )
+
+    inject_header_entities(root, [material], NER_ENTITY_TYPES)
+
+    assert not [e for e in root.iter() if qlocal(e) == "taxonomy"]
+    assert [e for e in root.iter() if qlocal(e) == "list"]
+
+
+def test_an_unknown_vocabulary_pointer_declares_nothing():
+    from src.enrichment.ner_resolve import _declare_vocabulary
+
+    root, header = _header_root()
+    etree.SubElement(header, "encodingDesc")
+    assert _declare_vocabulary(root, None) is None
+    assert _declare_vocabulary(root, "#inconnu") is None
+
+
+def test_inject_header_entities_without_a_header_does_nothing():
+    root = etree.Element("TEI")
+    person = ResolvedEntity(
+        entity_type="person", canonical_name="Poussin", xml_id="pers-z",
+        mentions=[],
+    )
+    inject_header_entities(root, [person], NER_ENTITY_TYPES)
+    assert len(root) == 0
+
+
+def test_resolve_entities_without_entities_returns_early(tmp_path):
+    assert resolve_entities(
+        etree.Element("TEI"), [], NER_ENTITY_TYPES, None, tmp_path, "LIV0001"
+    ) == []

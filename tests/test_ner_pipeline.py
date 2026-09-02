@@ -76,8 +76,10 @@ def test_run_ner_chains_the_three_phases(monkeypatch):
         vus["align"] = (blocks, spans, entity_types, cert_thresholds)
         return ALIGNED
 
-    def faux_resolve(root, aligned, entity_types, db, out_dir, document_name):
+    def faux_resolve(root, aligned, entity_types, db, out_dir, document_name,
+                     cert_thresholds=None):
         vus["resolve"] = (root, aligned, out_dir, document_name)
+        vus["resolve_cert"] = cert_thresholds
         return [_ent("person", "Poussin")]
 
     monkeypatch.setattr(detect_mod, "extract_ner_blocks", faux_extract)
@@ -104,7 +106,27 @@ def test_run_ner_chains_the_three_phases(monkeypatch):
     # les surcharges du appelant priment sur la config du module
     assert vus["detect"][2] == {"person": {}} and vus["detect"][3] == 0.7
     assert vus["align"][3] == {"high": 0.9}
+    # le meme seuil doit atteindre la phase 9 : sans lui, les mentions
+    # sont graduees d'un cote et les entites de l'autre
+    assert vus["resolve_cert"] == {"high": 0.9}
     assert vus["resolve"][2] == "/tmp/entities"
     assert vus["resolve"][3] == "LIV0001"
 
     assert [e.canonical_name for e in resolved] == ["Poussin"]
+
+
+def test_the_cert_thresholds_reach_the_entity_as_well_as_its_mentions():
+    """Un seuil passe a run_ner graduait les mentions d'un cote et les
+    entites de l'autre : le fichier portait deux certitudes pour une
+    meme lecture."""
+    from src.enrichment.ner_resolve import _entity_cert
+    from src.enrichment.ner_align import AlignedEntity
+
+    mention = AlignedEntity(
+        entity_type="person", text="Poussin", confidence=0.6,
+        model="camembert", w_elements=[],
+    )
+    entite = type("E", (), {"mentions": [mention]})()
+
+    assert _entity_cert(entite, {"low": 0.0, "high": 0.5}) == "high"
+    assert _entity_cert(entite, {"low": 0.0, "high": 0.9}) == "low"

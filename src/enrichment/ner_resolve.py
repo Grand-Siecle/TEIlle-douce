@@ -18,7 +18,7 @@ from pathlib import Path
 
 from lxml import etree
 
-from config import NER_CERT_THRESHOLDS
+from config import NER_CERT_THRESHOLDS, NER_VOCABULARIES
 from ..constants import UUID_NAMESPACE, XML_ID, tag_like
 from .ner_align import _confidence_to_cert
 from ..utils.xml import content_root, declare_responsibility, local_tag as _local
@@ -325,7 +325,59 @@ def _find_or_create(parent, tag):
     return _sub(parent, tag)
 
 
-def _entity_cert(entity):
+def _declare_vocabulary(root, ana):
+    """Declare the open vocabulary a generic <list> points at.
+
+    <list type="materials"> names a vocabulary nothing described, and a
+    reader had no way to tell an inferred term from a controlled
+    descriptor. The categories are declared where the SegmOnto taxonomy
+    already lives, and only for the lists a document actually carries.
+    """
+    category_id = (ana or "").lstrip("#")
+    if not category_id:
+        return None
+    for tax_id, vocabulary in NER_VOCABULARIES.items():
+        description = vocabulary["categories"].get(category_id)
+        if description is None:
+            continue
+
+        encoding_desc = None
+        for el in root.iter():
+            if _local(el.tag) == "encodingDesc":
+                encoding_desc = el
+                break
+        if encoding_desc is None:
+            return None
+        # `or` would be wrong here: an empty <classDecl> is falsy, so a
+        # freshly created one would be discarded and a second appended
+        # beside it — the trap lxml's FutureWarning is about.
+        class_decl = next(
+            (c for c in encoding_desc if _local(c.tag) == "classDecl"),
+            None,
+        )
+        if class_decl is None:
+            class_decl = _sub(encoding_desc, "classDecl")
+
+        taxonomy = next(
+            (t for t in class_decl
+             if _local(t.tag) == "taxonomy" and t.get(XML_ID) == tax_id),
+            None,
+        )
+        if taxonomy is None:
+            taxonomy = _sub(class_decl, "taxonomy")
+            taxonomy.set(XML_ID, tax_id)
+            _sub(taxonomy, "bibl").text = vocabulary["label"]
+        if any(c.get(XML_ID) == category_id for c in taxonomy):
+            return taxonomy
+
+        category = _sub(taxonomy, "category")
+        category.set(XML_ID, category_id)
+        _sub(category, "catDesc").text = description
+        return taxonomy
+    return None
+
+
+def _entity_cert(entity, cert_thresholds=None):
     """Certainty of the entity itself, from its best-read mention.
 
     An entity exists as surely as its most confident mention: reading
@@ -338,10 +390,11 @@ def _entity_cert(entity):
     ]
     if not scores:
         return None
-    return _confidence_to_cert(max(scores), NER_CERT_THRESHOLDS)
+    return _confidence_to_cert(max(scores), cert_thresholds or NER_CERT_THRESHOLDS)
 
 
-def inject_header_entities(root, entities, entity_types_config):
+def inject_header_entities(root, entities, entity_types_config,
+                           cert_thresholds=None):
     """
     Inject entity lists (<listPerson>, <listPlace>, etc.) into the TEI header.
 
@@ -349,8 +402,13 @@ def inject_header_entities(root, entities, entity_types_config):
         root: TEI root element.
         entities: List of ResolvedEntity.
         entity_types_config: NER_ENTITY_TYPES from config.
+        cert_thresholds: score -> @cert mapping. Travels with the type
+            config: read from the module default instead, an override
+            given to run_ner would grade the mentions one way and the
+            entities another, and the file would carry two certainties
+            for one reading.
     """
-    # Find or create profileDesc
+    # Find the header
     tei_header = None
     for elem in root.iter():
         if _local(elem.tag) == "teiHeader":
@@ -358,8 +416,6 @@ def inject_header_entities(root, entities, entity_types_config):
             break
     if tei_header is None:
         return
-
-    profile_desc = _find_or_create(tei_header, "profileDesc")
 
     # Group entities by type
     by_type = {}
@@ -376,28 +432,45 @@ def inject_header_entities(root, entities, entity_types_config):
             continue
 
         # Find or create parent container. <standOff> is a sibling of
-        # the header — everything else named by a type is a child of
-        # profileDesc, which is where a curated list would go if one were
-        # ever configured there again.
+        # the header; the two profileDesc containers are named because
+        # anything else would be created verbatim — a typo in the config
+        # would then produce <profileDesc><particDes/> and fail the
+        # schema with nothing said. profileDesc itself is only created
+        # when something is actually routed under it: appending an empty
+        # one after <revisionDesc> is invalid TEI.
         if parent_tag == "standOff":
             parent = _find_or_create(root, "standOff")
-        elif parent_tag:
-            parent = _find_or_create(profile_desc, parent_tag)
+        elif parent_tag in ("particDesc", "settingDesc"):
+            parent = _find_or_create(
+                _find_or_create(tei_header, "profileDesc"), parent_tag
+            )
         else:
-            parent = profile_desc
+            if parent_tag:
+                logger.warning(
+                    "Entity type %r asks for an unknown container %r; "
+                    "its list goes to <profileDesc>", etype, parent_tag,
+                )
+            parent = _find_or_create(tei_header, "profileDesc")
 
         # Replace-not-append (audit 6.13, same re-entry class as the
         # editorial declaration): a second pass over the same tree must
         # regenerate the auto-built list, not add a sibling whose items
         # carry the same xml:ids — that would be an invalid TEI.
+        #
+        # The element name alone does NOT identify a list: materials and
+        # techniques are both a plain <list>, told apart by @type only,
+        # so matching on the name deleted the one built a moment before
+        # and left its entities' @ref pointing at nothing.
+        list_attrs = dict(cfg.get("tei_list_attrs") or {})
         for old_list in list(parent):
-            if _local(old_list.tag) == list_tag and old_list.get("source") == "#ner-auto":
+            if _local(old_list.tag) != list_tag or old_list.get("source") != "#ner-auto":
+                continue
+            if all(old_list.get(k) == v for k, v in list_attrs.items()):
                 parent.remove(old_list)
 
         # Create the list element with source="#ner-auto"
-        list_elem = _sub(parent, list_tag, source="#ner-auto")
-        for key, value in (cfg.get("tei_list_attrs") or {}).items():
-            list_elem.set(key, value)
+        list_elem = _sub(parent, list_tag, source="#ner-auto", **list_attrs)
+        _declare_vocabulary(root, list_attrs.get("ana"))
 
         for ent in sorted(ents, key=lambda e: len(e.mentions), reverse=True):
             item = _sub(list_elem, item_tag)
@@ -406,7 +479,7 @@ def inject_header_entities(root, entities, entity_types_config):
             # only of each mention (audit 1.9): a reader of the standOff
             # alone had no way to tell a name read once with a shaky
             # score from one found thirty times.
-            cert = _entity_cert(ent)
+            cert = _entity_cert(ent, cert_thresholds)
             if cert:
                 item.set("cert", cert)
 
@@ -461,10 +534,11 @@ def add_refs_to_body(root, entities, entity_types_config):
     reg_lookup = {}  # id(reg_elem) → {(start, end): xml_id}
 
     for ent in entities:
-        # Types explicitly configured without a header list (tei_list: None,
-        # e.g. material/technique/date) have no xml:id target in the document:
-        # a @ref would dangle. Their body annotations stay, identified by CSV
-        # export only. Configs lacking the key keep the default behavior.
+        # Types explicitly configured without a header list (tei_list:
+        # None — only "date" now, whose @when IS its identity) have no
+        # xml:id target in the document: a @ref would dangle. Their body
+        # annotations stay, identified by CSV export only. Configs
+        # lacking the key keep the default behavior.
         cfg = entity_types_config.get(ent.entity_type, {})
         if "tei_list" in cfg and cfg["tei_list"] is None:
             continue
@@ -487,12 +561,16 @@ def add_refs_to_body(root, entities, entity_types_config):
     if body is None:
         return
 
-    # Reverse map: TEI element name → entity type (e.g. "persName" → "person")
-    tag_to_etype = {
-        cfg["tei_element"]: etype
-        for etype, cfg in entity_types_config.items()
-        if cfg.get("tei_element")
-    }
+    # Reverse map: (element name, @type) → entity type. The element name
+    # alone is not a key: <rs> is shared by event and technique, and a
+    # last-wins dict made every <rs> an event — technique mentions then
+    # matched nothing and stayed without @ref.
+    tag_to_etype = {}
+    for etype, cfg in entity_types_config.items():
+        tag = cfg.get("tei_element")
+        if not tag:
+            continue
+        tag_to_etype[(tag, (cfg.get("tei_element_attrs") or {}).get("type"))] = etype
 
     ref_count = 0
     for elem in body.iter():
@@ -536,7 +614,9 @@ def add_refs_to_body(root, entities, entity_types_config):
                     continue
 
         # Try to match by text content (raw text injection)
-        etype = tag_to_etype.get(_local(elem.tag))
+        etype = tag_to_etype.get((_local(elem.tag), elem.get("type")))
+        if etype is None:
+            etype = tag_to_etype.get((_local(elem.tag), None))
         if etype:
             xml_id = text_lookup.get((etype, elem.text or ""))
             if xml_id:
@@ -590,6 +670,7 @@ def resolve_entities(
     person_db,
     output_dir,
     document_name,
+    cert_thresholds=None,
 ):
     """
     Phase 9 orchestrator: group, link, CSV, header, @ref.
@@ -631,7 +712,9 @@ def resolve_entities(
     inject_editorial_declaration(root)
 
     # Step 5: Inject entity lists into header
-    inject_header_entities(root, entities, entity_types_config)
+    inject_header_entities(
+        root, entities, entity_types_config, cert_thresholds=cert_thresholds
+    )
 
     # Step 6: Add @ref to body annotations
     add_refs_to_body(root, entities, entity_types_config)
@@ -651,6 +734,19 @@ def resolve_entities(
         logger.info("NER: %d linked to local metadata", local_count)
 
     return entities
+
+
+def _in_reg(elem):
+    """True when *elem* sits in the modernized layer of a <choice>."""
+    parent = elem.getparent()
+    while parent is not None:
+        name = _local(parent.tag)
+        if name == "reg":
+            return True
+        if name in ("choice", "ab", "note", "head", "titlePart", "fw"):
+            return False
+        parent = parent.getparent()
+    return False
 
 
 def link_mentions(root):
@@ -684,7 +780,22 @@ def link_mentions(root):
     for elem in body.iter():
         if elem.get("resp") != "#ner-auto":
             continue
-        ref = (elem.get("ref") or "").lstrip("#")
+        # One passage, not one element. A mention is injected on BOTH
+        # layers of a <choice> — the diplomatic reading and the
+        # modernized one — and a mention cut by a line break is one
+        # wrapper per fragment, chained by @next/@prev. Counting elements
+        # would report two or three passages where the page has one.
+        if elem.get("prev"):
+            continue
+        if _in_reg(elem):
+            continue
+        # @ref is a pointer LIST in TEI, and csv_book already writes
+        # external ones (geonames URLs) beside ours. Take the first
+        # local pointer: anything else would end up inside an xml:id.
+        ref = next(
+            (r[1:] for r in (elem.get("ref") or "").split() if r.startswith("#")),
+            None,
+        )
         if not ref:
             continue
         found = mentions.setdefault(ref, [])

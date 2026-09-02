@@ -422,6 +422,22 @@ MODERNIZE_SIMILARITY_MIN = _env_float(
 # Enable/disable automatic NER pipeline (runs after modernization)
 NER_ENABLED = _env_bool("ALTO2TEI_NER", True)
 
+# Vocabulaires que le header declare pour les listes sans element TEI
+# dedie. Ouverts : ce sont les termes qu'un modele a releves dans le
+# texte, pas une nomenclature fermee — le dire evite qu'un lecteur prenne
+# <list type="materials"> pour un referentiel controle (audit 1.9).
+NER_VOCABULARIES = {
+    "art-vocabulary": {
+        "label": "Vocabulaire des oeuvres relevé dans le texte",
+        "categories": {
+            "materials": "Matériaux, tels que nommés par le texte "
+                         "(vocabulaire ouvert, issu de l'inférence)",
+            "techniques": "Techniques artistiques, telles que nommées par "
+                          "le texte (vocabulaire ouvert, issu de l'inférence)",
+        },
+    },
+}
+
 # Entity types to detect — add/remove entries to customize
 # Each key maps to a TEI annotation strategy.
 #
@@ -502,7 +518,7 @@ NER_ENTITY_TYPES = {
         # corpus (audit 1.9). TEI n'a pas de <listMaterial> : une <list
         # type="materials"> dans le standOff en tient lieu.
         "tei_list": "list",
-        "tei_list_attrs": {"type": "materials"},
+        "tei_list_attrs": {"type": "materials", "ana": "#materials"},
         "tei_item": "item",
         "tei_parent": "standOff",
         "gliner_label": "material",
@@ -512,7 +528,7 @@ NER_ENTITY_TYPES = {
     "technique": {
         "tei_element": "rs",
         "tei_list": "list",
-        "tei_list_attrs": {"type": "techniques"},
+        "tei_list_attrs": {"type": "techniques", "ana": "#techniques"},
         "tei_item": "item",
         "tei_parent": "standOff",
         "tei_element_attrs": {"type": "technique"},
