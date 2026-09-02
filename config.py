@@ -423,13 +423,20 @@ MODERNIZE_SIMILARITY_MIN = _env_float(
 NER_ENABLED = _env_bool("ALTO2TEI_NER", True)
 
 # Entity types to detect — add/remove entries to customize
-# Each key maps to a TEI annotation strategy
+# Each key maps to a TEI annotation strategy.
+#
+# Toutes les listes produites par le NER vivent dans <standOff>, pas
+# dans le profileDesc (audit 1.9) : <particDesc> et <settingDesc>
+# decrivent ce que l'editeur affirme du texte, et y melanger une liste
+# inferee par un modele rendait les deux indistinguables — le header
+# portait deja deux <listPerson>, l'une curee depuis le CSV, l'autre
+# devinee. Le standOff est l'endroit TEI de l'annotation detachee.
 NER_ENTITY_TYPES = {
     "person": {
         "tei_element": "persName",
         "tei_list": "listPerson",
         "tei_item": "person",
-        "tei_parent": "particDesc",
+        "tei_parent": "standOff",
         "gliner_label": "person name",
         "camembert_label": "PER",
         "csv_file": "entities_persons.csv",
@@ -438,7 +445,7 @@ NER_ENTITY_TYPES = {
         "tei_element": "placeName",
         "tei_list": "listPlace",
         "tei_item": "place",
-        "tei_parent": "settingDesc",
+        "tei_parent": "standOff",
         "gliner_label": "place name",
         "camembert_label": "LOC",
         "csv_file": "entities_places.csv",
@@ -447,7 +454,7 @@ NER_ENTITY_TYPES = {
         "tei_element": "orgName",
         "tei_list": "listOrg",
         "tei_item": "org",
-        "tei_parent": "particDesc",
+        "tei_parent": "standOff",
         "gliner_label": "organization",
         "camembert_label": "ORG",
         "csv_file": "entities_orgs.csv",
@@ -489,19 +496,26 @@ NER_ENTITY_TYPES = {
     },
     "material": {
         "tei_element": "material",
-        "tei_list": None,
-        "tei_item": None,
-        "tei_parent": None,
+        # Sans liste cible, une annotation <material> ne pointait vers
+        # rien : deux occurrences de « marbre » restaient deux chaines
+        # sans lien, et rien ne permettait de compter les materiaux d'un
+        # corpus (audit 1.9). TEI n'a pas de <listMaterial> : une <list
+        # type="materials"> dans le standOff en tient lieu.
+        "tei_list": "list",
+        "tei_list_attrs": {"type": "materials"},
+        "tei_item": "item",
+        "tei_parent": "standOff",
         "gliner_label": "material",
         "camembert_label": None,
         "csv_file": "entities_materials.csv",
     },
     "technique": {
         "tei_element": "rs",
+        "tei_list": "list",
+        "tei_list_attrs": {"type": "techniques"},
+        "tei_item": "item",
+        "tei_parent": "standOff",
         "tei_element_attrs": {"type": "technique"},
-        "tei_list": None,
-        "tei_item": None,
-        "tei_parent": None,
         "gliner_label": "artistic technique",
         "camembert_label": None,
         "csv_file": "entities_techniques.csv",

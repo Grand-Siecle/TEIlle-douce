@@ -18,7 +18,9 @@ from pathlib import Path
 
 from lxml import etree
 
+from config import NER_CERT_THRESHOLDS
 from ..constants import UUID_NAMESPACE, XML_ID, tag_like
+from .ner_align import _confidence_to_cert
 from ..utils.xml import content_root, declare_responsibility, local_tag as _local
 from .ner_filter import (
     _normalize,
@@ -323,6 +325,22 @@ def _find_or_create(parent, tag):
     return _sub(parent, tag)
 
 
+def _entity_cert(entity):
+    """Certainty of the entity itself, from its best-read mention.
+
+    An entity exists as surely as its most confident mention: reading
+    "Poussin" thirty times with one shaky occurrence does not make the
+    painter doubtful. Falls back to None when no mention carries a score.
+    """
+    scores = [
+        m.confidence for m in entity.mentions
+        if getattr(m, "confidence", None) is not None
+    ]
+    if not scores:
+        return None
+    return _confidence_to_cert(max(scores), NER_CERT_THRESHOLDS)
+
+
 def inject_header_entities(root, entities, entity_types_config):
     """
     Inject entity lists (<listPerson>, <listPlace>, etc.) into the TEI header.
@@ -357,13 +375,14 @@ def inject_header_entities(root, entities, entity_types_config):
         if not list_tag or not item_tag:
             continue
 
-        # Find or create parent container
+        # Find or create parent container. <standOff> is a sibling of
+        # the header — everything else named by a type is a child of
+        # profileDesc, which is where a curated list would go if one were
+        # ever configured there again.
         if parent_tag == "standOff":
             parent = _find_or_create(root, "standOff")
-        elif parent_tag == "settingDesc":
-            parent = _find_or_create(profile_desc, "settingDesc")
-        elif parent_tag == "particDesc":
-            parent = _find_or_create(profile_desc, "particDesc")
+        elif parent_tag:
+            parent = _find_or_create(profile_desc, parent_tag)
         else:
             parent = profile_desc
 
@@ -377,10 +396,19 @@ def inject_header_entities(root, entities, entity_types_config):
 
         # Create the list element with source="#ner-auto"
         list_elem = _sub(parent, list_tag, source="#ner-auto")
+        for key, value in (cfg.get("tei_list_attrs") or {}).items():
+            list_elem.set(key, value)
 
         for ent in sorted(ents, key=lambda e: len(e.mentions), reverse=True):
             item = _sub(list_elem, item_tag)
             item.set(XML_ID, ent.xml_id)
+            # The entity carries the certainty of its own existence, not
+            # only of each mention (audit 1.9): a reader of the standOff
+            # alone had no way to tell a name read once with a shaky
+            # score from one found thirty times.
+            cert = _entity_cert(ent)
+            if cert:
+                item.set("cert", cert)
 
             # Add the name element
             name_tag = cfg.get("tei_element", "name")
@@ -608,6 +636,9 @@ def resolve_entities(
     # Step 6: Add @ref to body annotations
     add_refs_to_body(root, entities, entity_types_config)
 
+    # Step 7: Write the way back, entity -> the passages that name it
+    link_mentions(root)
+
     # Summary stats
     by_type = {}
     for ent in entities:
@@ -620,3 +651,61 @@ def resolve_entities(
         logger.info("NER: %d linked to local metadata", local_count)
 
     return entities
+
+
+def link_mentions(root):
+    """
+    Write the way back: from an entity to the passages that name it.
+
+    The body points at the standOff — every annotation carries
+    @ref="#ent-x" — but nothing pointed the other way (audit 1.9), so a
+    reader of the entity list had to scan the whole text to find where a
+    name occurs. A <linkGrp type="mentions"> in the standOff states it
+    directly, one <link> per entity.
+
+    Each annotated passage gets an xml:id derived from its entity's,
+    which keeps the identifiers deterministic and readable
+    (``pers-…-m1``), and gives the mention itself something to be
+    referred to by — a note, a correction, an external alignment.
+
+    Idempotent: the linkGrp is rebuilt, not appended to.
+
+    Args:
+        root: TEI root element.
+
+    Returns:
+        int: number of entities that got a link.
+    """
+    body = content_root(root)
+    if body is None:
+        return 0
+
+    mentions = {}  # entity xml:id -> [mention xml:id]
+    for elem in body.iter():
+        if elem.get("resp") != "#ner-auto":
+            continue
+        ref = (elem.get("ref") or "").lstrip("#")
+        if not ref:
+            continue
+        found = mentions.setdefault(ref, [])
+        mention_id = elem.get(XML_ID)
+        if not mention_id:
+            mention_id = f"{ref}-m{len(found) + 1}"
+            elem.set(XML_ID, mention_id)
+        found.append(mention_id)
+
+    if not mentions:
+        return 0
+
+    standoff = _find_or_create(root, "standOff")
+    for old in list(standoff):
+        if _local(old.tag) == "linkGrp" and old.get("type") == "mentions":
+            standoff.remove(old)
+
+    link_grp = _sub(standoff, "linkGrp", type="mentions")
+    for entity_id, mention_ids in sorted(mentions.items()):
+        targets = " ".join([f"#{entity_id}"] + [f"#{mid}" for mid in mention_ids])
+        _sub(link_grp, "link", target=targets)
+
+    logger.info("NER: linked %d entities to their mentions", len(mentions))
+    return len(mentions)

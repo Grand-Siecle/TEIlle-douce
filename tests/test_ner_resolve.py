@@ -276,7 +276,12 @@ def _header_root():
     return root, header
 
 
-def test_inject_header_entities_routes_particdesc_and_settingdesc():
+def test_every_inferred_list_lands_in_standoff():
+    """Audit 1.9 : <particDesc> et <settingDesc> disent ce que l'editeur
+    affirme du texte. Y ranger une liste devinee par un modele rendait
+    les deux indistinguables — le header portait deux <listPerson>, une
+    curee depuis le CSV et une inferee. Le standOff est l'endroit TEI de
+    l'annotation detachee."""
     root, header = _header_root()
     person = ResolvedEntity(
         entity_type="person", canonical_name="Nicolas Poussin", xml_id="pers-j",
@@ -289,10 +294,13 @@ def test_inject_header_entities_routes_particdesc_and_settingdesc():
 
     inject_header_entities(root, [person, place], NER_ENTITY_TYPES)
 
-    profile_desc = next(c for c in header if qlocal(c) == "profileDesc")
+    standoff = next(c for c in root if qlocal(c) == "standOff")
+    # rien d'infere ne s'est glisse dans le profileDesc
+    profile_desc = next((c for c in header if qlocal(c) == "profileDesc"), None)
+    if profile_desc is not None:
+        assert not [c for c in profile_desc if qlocal(c) in ("particDesc", "settingDesc")]
 
-    partic_desc = next(c for c in profile_desc if qlocal(c) == "particDesc")
-    list_person = next(c for c in partic_desc if qlocal(c) == "listPerson")
+    list_person = next(c for c in standoff if qlocal(c) == "listPerson")
     assert list_person.get("source") == "#ner-auto"
     person_item = list_person[0]
     assert qlocal(person_item) == "person"
@@ -300,8 +308,7 @@ def test_inject_header_entities_routes_particdesc_and_settingdesc():
     pers_name = next(c for c in person_item if qlocal(c) == "persName")
     assert pers_name.text == "Nicolas Poussin"
 
-    setting_desc = next(c for c in profile_desc if qlocal(c) == "settingDesc")
-    list_place = next(c for c in setting_desc if qlocal(c) == "listPlace")
+    list_place = next(c for c in standoff if qlocal(c) == "listPlace")
     place_item = list_place[0]
     assert place_item.get(XML_ID) == "place-a"
     place_name = next(c for c in place_item if qlocal(c) == "placeName")
@@ -322,9 +329,8 @@ def test_inject_header_entities_second_pass_replaces_not_appends():
     inject_header_entities(root, [person], NER_ENTITY_TYPES)
     inject_header_entities(root, [person], NER_ENTITY_TYPES)
 
-    profile_desc = next(c for c in header if qlocal(c) == "profileDesc")
-    partic_desc = next(c for c in profile_desc if qlocal(c) == "particDesc")
-    lists = [c for c in partic_desc if qlocal(c) == "listPerson"]
+    standoff = next(c for c in root if qlocal(c) == "standOff")
+    lists = [c for c in standoff if qlocal(c) == "listPerson"]
     assert len(lists) == 1, f"attendu une seule listPerson auto, obtenu {len(lists)}"
 
     ids = [el.get(XML_ID) for el in root.iter() if el.get(XML_ID)]
@@ -369,10 +375,11 @@ def test_inject_header_entities_event_uses_label_element():
     assert label.text == "Le Sac de Rome"
 
 
-def test_inject_header_entities_ignores_type_without_target_list():
-    """material (tei_list=None in config) has no header target: it must be
-    silently skipped, without disturbing entities of other types in the
-    same call."""
+def test_materials_get_the_target_list_they_lacked():
+    """Audit 1.9 : sans liste cible, une annotation <material> ne pointait
+    vers rien — deux occurrences de « marbre » restaient deux chaines sans
+    lien. TEI n'a pas de <listMaterial> : une <list type="materials"> du
+    standOff en tient lieu."""
     root, header = _header_root()
     material = ResolvedEntity(
         entity_type="material", canonical_name="huile sur toile", xml_id="mat-a",
@@ -385,12 +392,30 @@ def test_inject_header_entities_ignores_type_without_target_list():
 
     inject_header_entities(root, [material, person], NER_ENTITY_TYPES)
 
-    for elem in root.iter():
-        assert qlocal(elem) not in ("listMaterial", "material")
+    standoff = next(c for c in root if qlocal(c) == "standOff")
+    materials = [
+        c for c in standoff
+        if qlocal(c) == "list" and c.get("type") == "materials"
+    ]
+    assert len(materials) == 1
+    item = materials[0][0]
+    assert item.get(XML_ID) == "mat-a"
+    assert "huile" in "".join(item.itertext())
+    assert any(qlocal(c) == "listPerson" for c in standoff)
 
-    profile_desc = next(c for c in header if qlocal(c) == "profileDesc")
-    partic_desc = next(c for c in profile_desc if qlocal(c) == "particDesc")
-    assert any(qlocal(c) == "listPerson" for c in partic_desc)
+
+def test_a_type_without_a_target_list_is_still_skipped():
+    """date reste sans liste : sa valeur EST son identite (@when), une
+    entree de liste n'ajouterait rien a pointer."""
+    root, header = _header_root()
+    date = ResolvedEntity(
+        entity_type="date", canonical_name="1659", xml_id="date-a",
+        mentions=[_mention("date", "1659", 0.9)],
+    )
+
+    inject_header_entities(root, [date], NER_ENTITY_TYPES)
+
+    assert not [e for e in root.iter() if e.get(XML_ID) == "date-a"]
 
 
 # =============================================================================
@@ -537,15 +562,13 @@ def test_resolve_entities_end_to_end_integration(tmp_path):
         place_rows = list(csv.DictReader(f, delimiter=";"))
     assert place_rows[0]["canonical_name"] == "Rome"
 
-    # --- header populated ---
+    # --- standOff populated ---
     header = next(e for e in root.iter() if qlocal(e) == "teiHeader")
-    profile_desc = next(c for c in header if qlocal(c) == "profileDesc")
-    partic_desc = next(c for c in profile_desc if qlocal(c) == "particDesc")
-    list_person = next(c for c in partic_desc if qlocal(c) == "listPerson")
+    standoff = next(c for c in root if qlocal(c) == "standOff")
+    list_person = next(c for c in standoff if qlocal(c) == "listPerson")
     assert list_person[0].get(XML_ID) == person_ent.xml_id
 
-    setting_desc = next(c for c in profile_desc if qlocal(c) == "settingDesc")
-    list_place = next(c for c in setting_desc if qlocal(c) == "listPlace")
+    list_place = next(c for c in standoff if qlocal(c) == "listPlace")
     assert list_place[0].get(XML_ID) == place_ent.xml_id
 
     # editorial declaration injected exactly once
@@ -627,3 +650,124 @@ def test_make_xml_id_is_deterministic_and_scoped():
     assert a.startswith("pers-")
     assert a != _make_xml_id("place", "jean dupont")
     assert a != _make_xml_id("person", "jeanne dupont")
+
+
+# =============================================================================
+# Le chemin de retour : de l'entite aux passages qui la nomment (audit 1.9)
+# =============================================================================
+
+def test_link_mentions_writes_the_way_back():
+    """Le corps pointait vers le standOff ; rien ne pointait en sens
+    inverse, donc lire la liste d'entites obligeait a parcourir tout le
+    texte pour savoir ou un nom apparait."""
+    from src.enrichment.ner_resolve import link_mentions
+
+    root = etree.fromstring(
+        b'<TEI><text><body><div>'
+        b'<ab><persName resp="#ner-auto" ref="#pers-a">Poussin</persName>'
+        b' et <persName resp="#ner-auto" ref="#pers-a">le Poussin</persName>'
+        b' a <placeName resp="#ner-auto" ref="#place-b">Rome</placeName></ab>'
+        b'</div></body></text></TEI>'
+    )
+
+    assert link_mentions(root) == 2
+
+    standoff = next(c for c in root if qlocal(c) == "standOff")
+    link_grp = next(c for c in standoff if qlocal(c) == "linkGrp")
+    assert link_grp.get("type") == "mentions"
+    cibles = sorted(l.get("target") for l in link_grp)
+    assert cibles == ["#pers-a #pers-a-m1 #pers-a-m2", "#place-b #place-b-m1"]
+
+    # chaque mention porte l'identifiant par lequel on la designe
+    mentions = [e for e in root.iter() if e.get("resp") == "#ner-auto"]
+    assert [m.get(XML_ID) for m in mentions] == [
+        "pers-a-m1", "pers-a-m2", "place-b-m1",
+    ]
+
+
+def test_link_mentions_rebuilds_rather_than_appends():
+    from src.enrichment.ner_resolve import link_mentions
+
+    root = etree.fromstring(
+        b'<TEI><text><body><div><ab>'
+        b'<persName resp="#ner-auto" ref="#pers-a">Poussin</persName>'
+        b'</ab></div></body></text></TEI>'
+    )
+    link_mentions(root)
+    link_mentions(root)
+
+    standoff = next(c for c in root if qlocal(c) == "standOff")
+    groupes = [c for c in standoff if qlocal(c) == "linkGrp"]
+    assert len(groupes) == 1
+    assert len(groupes[0]) == 1
+
+
+def test_an_entity_carries_the_certainty_of_its_own_existence():
+    """Un lecteur du standOff seul ne pouvait pas distinguer un nom lu une
+    fois avec un score fragile d'un nom trouve trente fois."""
+    root, header = _header_root()
+    sure = ResolvedEntity(
+        entity_type="person", canonical_name="Nicolas Poussin", xml_id="pers-sur",
+        mentions=[_mention("person", "Poussin", 0.95), _mention("person", "Poussin", 0.4)],
+    )
+    fragile = ResolvedEntity(
+        entity_type="person", canonical_name="Titi", xml_id="pers-fragile",
+        mentions=[_mention("person", "Titi", 0.3)],
+    )
+
+    inject_header_entities(root, [sure, fragile], NER_ENTITY_TYPES)
+
+    items = {
+        el.get(XML_ID): el.get("cert")
+        for el in root.iter() if qlocal(el) == "person"
+    }
+    assert items["pers-sur"] == "high"
+    assert items["pers-fragile"] == "low"
+
+
+def test_a_type_configured_under_the_profile_desc_still_lands_there():
+    """Le standOff est le defaut des listes inferees, pas une contrainte :
+    un type configure vers le profileDesc doit continuer d'y aller."""
+    root, header = _header_root()
+    config = dict(NER_ENTITY_TYPES)
+    config["person"] = {**config["person"], "tei_parent": "particDesc"}
+    person = ResolvedEntity(
+        entity_type="person", canonical_name="Nicolas Poussin", xml_id="pers-p",
+        mentions=[_mention("person", "Poussin", 0.9)],
+    )
+
+    inject_header_entities(root, [person], config)
+
+    profile_desc = next(c for c in header if qlocal(c) == "profileDesc")
+    partic = next(c for c in profile_desc if qlocal(c) == "particDesc")
+    assert [qlocal(c) for c in partic] == ["listPerson"]
+
+
+def test_link_mentions_on_a_document_without_annotations():
+    from src.enrichment.ner_resolve import link_mentions
+
+    sans_corps = etree.fromstring(b"<TEI><teiHeader/></TEI>")
+    assert link_mentions(sans_corps) == 0
+
+    sans_entites = etree.fromstring(
+        b"<TEI><text><body><div><ab>texte nu</ab></div></body></text></TEI>"
+    )
+    assert link_mentions(sans_entites) == 0
+    assert not [c for c in sans_entites if qlocal(c) == "standOff"]
+
+
+def test_link_mentions_keeps_an_identifier_a_mention_already_has():
+    """Les fragments d'une entite coupee par une ligne portent deja un
+    xml:id, pose a l'ancrage : le lien doit designer celui-la."""
+    from src.enrichment.ner_resolve import link_mentions
+
+    root = etree.fromstring(
+        b'<TEI><text><body><div><ab>'
+        b'<persName xml:id="ent-deja" resp="#ner-auto" ref="#pers-a">Poussin</persName>'
+        b'</ab></div></body></text></TEI>'
+    )
+
+    link_mentions(root)
+
+    lien = next(c for c in root.iter() if qlocal(c) == "link")
+    assert lien.get("target") == "#pers-a #ent-deja"

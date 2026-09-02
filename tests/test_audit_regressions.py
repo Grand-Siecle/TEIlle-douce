@@ -208,5 +208,16 @@ def test_ner_and_csv_share_a_single_particdesc(tmp_path, monkeypatch):
 
     partic = [e for e in root.iter() if qlocal(e) == "particDesc"]
     assert len(partic) == 1, f"{len(partic)} particDesc — les deux conventions coexistent"
-    listes = [e for e in partic[0] if qlocal(e) == "listPerson"]
-    assert len(listes) == 2, "les deux listes (NER et CSV) doivent vivre sous le meme particDesc"
+
+    # Les deux listes ne se melangent plus (audit 1.9) : ce que l'editeur
+    # affirme reste dans le particDesc, ce qu'un modele a devine va dans
+    # le standOff. Le constat de depart — deux <listPerson> impossibles a
+    # distinguer — est traite par la separation, pas par la cohabitation.
+    curee = [e for e in partic[0] if qlocal(e) == "listPerson"]
+    assert len(curee) == 1
+    assert curee[0].get("source") != "#ner-auto"
+
+    standoff = [e for e in root if qlocal(e) == "standOff"]
+    assert len(standoff) == 1
+    inferee = [e for e in standoff[0] if qlocal(e) == "listPerson"]
+    assert len(inferee) == 1 and inferee[0].get("source") == "#ner-auto"
