@@ -169,3 +169,40 @@ def test_the_moved_blocks_are_reachable_where_they_now_live():
     assert "normalization" in EDITORIAL_DECLARATIONS
     assert POS_TAGSETS["freem"]["id"] and KEYWORDS_TAXONOMY["id"]
     assert LANG_USAGE_DESCRIPTION
+
+
+def test_ner_certainty_prose_has_a_single_home(monkeypatch):
+    """Meme classe de defaut que l'audit 2.13, cote NER : la prose tapait
+    « mid 0.6-0.85 » a la main quand le code emet @cert="medium" — chaque
+    document annote documentait une valeur qu'aucun element ne porte. Les
+    bandes se construisent desormais depuis NER_CERT_THRESHOLDS."""
+    import config
+
+    monkeypatch.setattr(
+        config, "NER_CERT_THRESHOLDS", {"low": 0.0, "medium": 0.5, "high": 0.9}
+    )
+    prose = _recharger_prose().EDITORIAL_DECLARATIONS["interpretation"]["text"]
+    assert "low < 0.5" in prose, prose
+    assert "medium 0.5–0.9" in prose, prose
+    assert "high >= 0.9" in prose, prose
+
+
+def test_the_prose_names_the_cert_values_the_code_emits():
+    """Les cles de la table SONT les valeurs emises (teidata.certainty) :
+    la prose doit nommer celles-la, et pas une etiquette inventee."""
+    from config import NER_CERT_THRESHOLDS
+
+    prose = _recharger_prose().EDITORIAL_DECLARATIONS["interpretation"]["text"]
+    for etiquette in NER_CERT_THRESHOLDS:
+        assert etiquette in prose, f"{etiquette} absent de la prose : {prose}"
+    assert "mid " not in prose, prose
+
+
+def test_the_langusage_prose_lists_the_containers_actually_scanned():
+    """La detection de langue tourne sur TEXT_CONTAINERS : <head> et
+    <titlePart> l'ont rejointe (une page de titre est detectee comme le
+    reste) sans que la phrase publiee le dise."""
+    from src.constants import TEXT_CONTAINERS
+
+    prose = _recharger_prose().LANG_USAGE_DESCRIPTION
+    assert ", ".join(TEXT_CONTAINERS) in prose, prose
