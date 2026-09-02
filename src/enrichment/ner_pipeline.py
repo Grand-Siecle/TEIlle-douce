@@ -18,11 +18,11 @@ unlike the enrichment and modernization phases which go through the
 import logging
 from collections import Counter
 
+from .entity_schema import NER_ENTITY_TYPES
 from config import (
     NER_CERT_THRESHOLDS,
     NER_CONFIDENCE_THRESHOLD,
     NER_CONTAINERS,
-    NER_ENTITY_TYPES,
     NER_MODELS,
     NER_OUTPUT_DIR,
 )

@@ -117,7 +117,11 @@ def test_divergence_threshold_has_a_single_home(monkeypatch):
     cfg = _recharger_config(monkeypatch, ALTO2TEI_MODERNIZE_SIMILARITY_MIN="0.93")
     assert cfg.MODERNIZE_SIMILARITY_MIN == 0.93
 
-    prose = cfg.EDITORIAL_DECLARATIONS["normalization"]["text"]
+    # la prose vit desormais dans src/teiheader/prose.py, mais elle lit
+    # toujours la meme valeur : c'est la seule chose qui compte ici
+    import src.teiheader.prose
+    prose_mod = importlib.reload(src.teiheader.prose)
+    prose = prose_mod.EDITORIAL_DECLARATIONS["normalization"]["text"]
     assert "0.93" in prose, prose
 
     # et le rejet des hallucinations bascule bien sur cette valeur : la
@@ -130,3 +134,32 @@ def test_divergence_threshold_has_a_single_home(monkeypatch):
     monkeypatch.delenv("ALTO2TEI_MODERNIZE_SIMILARITY_MIN")
     _recharger_config(monkeypatch)
     assert _recharger_modernize()._is_divergent(ancien, modernise) is False
+
+
+def test_config_holds_settings_and_not_the_encoding_schema():
+    """Audit 4.10 : config.py melait des reglages, un schema d'encodage
+    dont le code depend structurellement, et la prose editoriale. Un
+    lecteur venu changer un repertoire de sortie ne doit pas enjamber
+    cent lignes de correspondance TEI."""
+    import config
+
+    for schema in ("NER_ENTITY_TYPES", "NER_VOCABULARIES", "EDITORIAL_DECLARATIONS",
+                   "POS_TAGSETS", "KEYWORDS_TAXONOMY", "LANG_USAGE_DESCRIPTION"):
+        assert not hasattr(config, schema), f"{schema} est reste dans config.py"
+
+    # et il garde bien les vrais reglages
+    for reglage in ("OCR_DIR", "OUTPUT_DIR", "PYHELLEN_URL", "MODERNIZE_TIMEOUT",
+                    "NER_ENABLED", "RESPONSIBILITY"):
+        assert hasattr(config, reglage), f"{reglage} a disparu de config.py"
+
+
+def test_the_moved_blocks_are_reachable_where_they_now_live():
+    from src.constants import KEYWORDS_TAXONOMY, POS_TAGSETS
+    from src.enrichment.entity_schema import NER_ENTITY_TYPES, NER_VOCABULARIES
+    from src.teiheader.prose import EDITORIAL_DECLARATIONS, LANG_USAGE_DESCRIPTION
+
+    assert "person" in NER_ENTITY_TYPES
+    assert "materials" in NER_VOCABULARIES["art-vocabulary"]["categories"]
+    assert "normalization" in EDITORIAL_DECLARATIONS
+    assert POS_TAGSETS["freem"]["id"] and KEYWORDS_TAXONOMY["id"]
+    assert LANG_USAGE_DESCRIPTION

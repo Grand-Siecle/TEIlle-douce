@@ -18,11 +18,11 @@ from collections import defaultdict
 import pandas as pd
 from lxml import etree
 
+from ..constants import KEYWORDS_TAXONOMY
 from ..dates import date_attributes
 from config import (
     CSV_DELIMITER,
     BDD_PREFIX_PATTERN,
-    KEYWORDS_TAXONOMY,
     METADATA_PERSON_CSV,
     PLACEHOLDER_INFO_UNAVAILABLE,
 )

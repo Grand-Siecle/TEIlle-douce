@@ -18,7 +18,8 @@ from pathlib import Path
 
 from lxml import etree
 
-from config import NER_CERT_THRESHOLDS, NER_VOCABULARIES
+from config import NER_CERT_THRESHOLDS
+from .entity_schema import NER_VOCABULARIES
 from ..constants import UUID_NAMESPACE, XML_ID, tag_like
 from .ner_align import _confidence_to_cert
 from ..utils.xml import content_root, declare_responsibility, local_tag as _local

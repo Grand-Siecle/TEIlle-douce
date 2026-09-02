@@ -18,6 +18,8 @@ Usage:
 """
 
 from .files import Files, parse_document_id, canonical_document_id
+from .hyphen import HYPHEN_CHARS, ends_with_hyphen, strip_trailing_hyphen
 from .xml import write_xml, local_tag, content_root
 
-__all__ = ["Files", "parse_document_id", "canonical_document_id", "write_xml", "local_tag", "content_root"]
+__all__ = ["Files", "parse_document_id", "canonical_document_id", "write_xml", "local_tag", "content_root",
+           "HYPHEN_CHARS", "ends_with_hyphen", "strip_trailing_hyphen"]

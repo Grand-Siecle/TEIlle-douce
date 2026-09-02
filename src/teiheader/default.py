@@ -16,14 +16,13 @@ from collections import defaultdict
 from lxml import etree
 
 from config import (
-    KEYWORDS_TAXONOMY,
     SEGMONTO,
     PLACEHOLDER_INFO_UNAVAILABLE,
     PLACEHOLDER_NO_METADATA,
     PLACEHOLDER_ORCID,
-    EDITORIAL_DECLARATIONS,
-    LANG_USAGE_DESCRIPTION,
 )
+from ..constants import KEYWORDS_TAXONOMY
+from .prose import EDITORIAL_DECLARATIONS, LANG_USAGE_DESCRIPTION
 from ..constants import XML_ID
 from ..utils.files import canonical_document_id
 

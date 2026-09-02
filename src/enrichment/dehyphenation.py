@@ -4,12 +4,15 @@
 """
 Dehyphenation module (Phase 2).
 
-Handles hyphenation marks (¬ and -) that split words across lines.
+Handles the hyphenation marks that split words across lines (see
+src/utils/hyphen.py for what counts as one).
 Produces a dehyphenated text and an offset map to trace positions
 back to the original raw_text.
 """
 
 from dataclasses import dataclass
+
+from ..utils.hyphen import ends_with_hyphen
 
 
 @dataclass
@@ -56,14 +59,10 @@ def dehyphenate(raw_text, spans):
             text = span.text.rstrip()
             # Find the hyphen position in raw_text
             # The hyphen is the last non-space character of this span
-            if text.endswith("¬"):
-                hyphen_raw_pos = span.offset_start + len(text) - 1
-                hyphen_char = "¬"
-            elif text.endswith("-"):
-                hyphen_raw_pos = span.offset_start + len(text) - 1
-                hyphen_char = "-"
-            else:
+            if not ends_with_hyphen(text):
                 continue
+            hyphen_raw_pos = span.offset_start + len(text) - 1
+            hyphen_char = text[-1]
 
             # Mark the hyphen for removal
             skip_positions.add(hyphen_raw_pos)

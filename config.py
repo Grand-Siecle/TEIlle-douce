@@ -183,21 +183,6 @@ APP_VERSIONS = {
     },
 }
 
-# =============================================================================
-# SEGMONTO TAXONOMY CONFIGURATION
-# =============================================================================
-
-# Referentiel des mots-cles du header. Les sujets viennent des colonnes
-# Sujet et Matiere du CSV, elles-memes reprises des notices du catalogue :
-# sans @scheme pointant vers cette declaration, <keywords> n'indique pas
-# d'ou vient son vocabulaire, et rien ne distingue un descripteur
-# controle d'un mot-cle libre (audit 1.15).
-KEYWORDS_TAXONOMY = {
-    "id": "catalogue-subjects",
-    "label": "Sujets et matières des notices de catalogue "
-             "(colonnes Sujet et Matiere du CSV local)",
-}
-
 # SegmOnto taxonomy identifier and URL
 SEGMONTO = {
     "id": "SegmOnto",
@@ -321,29 +306,6 @@ ENRICHMENT_MAX_MISALIGNED_RATIO = 0.2
 # Mapping from TEI language ident to PyHellen model name
 PYHELLEN_MODELS = {"fra": "freem", "lat": "lasla", "grc": "grc"}
 
-# Jeu d'etiquettes morphosyntaxiques de chaque modele. Les <w> portent
-# @pos="NOMcom" et @msd="NOMB.=s|GENRE=m" sans dire de quel referentiel
-# ces valeurs viennent : un lecteur qui ne connait pas CATTEX ne peut ni
-# les interpreter ni les convertir (audit 1.11). Declare une fois dans
-# l'encodingDesc, pointe par @ana sur chaque <w> annote.
-POS_TAGSETS = {
-    "freem": {
-        "id": "cattex-freem",
-        "label": "CATTEX (FreEM) — francais pre-classique et classique",
-        "url": "https://freem-corpora.github.io/",
-    },
-    "lasla": {
-        "id": "lasla",
-        "label": "LASLA — latin",
-        "url": "https://www.lasla.uliege.be/",
-    },
-    "grc": {
-        "id": "perseus-grc",
-        "label": "Perseus / Ancient Greek Dependency Treebank — grec ancien",
-        "url": "https://perseusdl.github.io/treebank_data/",
-    },
-}
-
 # TEI container elements to enrich
 # Elements whose text goes through PyHellen. <head> and <titlePart>
 # joined the list when headings and title pages got their own container:
@@ -422,132 +384,6 @@ MODERNIZE_SIMILARITY_MIN = _env_float(
 # Enable/disable automatic NER pipeline (runs after modernization)
 NER_ENABLED = _env_bool("ALTO2TEI_NER", True)
 
-# Vocabulaires que le header declare pour les listes sans element TEI
-# dedie. Ouverts : ce sont les termes qu'un modele a releves dans le
-# texte, pas une nomenclature fermee — le dire evite qu'un lecteur prenne
-# <list type="materials"> pour un referentiel controle (audit 1.9).
-NER_VOCABULARIES = {
-    "art-vocabulary": {
-        "label": "Vocabulaire des oeuvres relevé dans le texte",
-        "categories": {
-            "materials": "Matériaux, tels que nommés par le texte "
-                         "(vocabulaire ouvert, issu de l'inférence)",
-            "techniques": "Techniques artistiques, telles que nommées par "
-                          "le texte (vocabulaire ouvert, issu de l'inférence)",
-        },
-    },
-}
-
-# Entity types to detect — add/remove entries to customize
-# Each key maps to a TEI annotation strategy.
-#
-# Toutes les listes produites par le NER vivent dans <standOff>, pas
-# dans le profileDesc (audit 1.9) : <particDesc> et <settingDesc>
-# decrivent ce que l'editeur affirme du texte, et y melanger une liste
-# inferee par un modele rendait les deux indistinguables — le header
-# portait deja deux <listPerson>, l'une curee depuis le CSV, l'autre
-# devinee. Le standOff est l'endroit TEI de l'annotation detachee.
-NER_ENTITY_TYPES = {
-    "person": {
-        "tei_element": "persName",
-        "tei_list": "listPerson",
-        "tei_item": "person",
-        "tei_parent": "standOff",
-        "gliner_label": "person name",
-        "camembert_label": "PER",
-        "csv_file": "entities_persons.csv",
-    },
-    "place": {
-        "tei_element": "placeName",
-        "tei_list": "listPlace",
-        "tei_item": "place",
-        "tei_parent": "standOff",
-        "gliner_label": "place name",
-        "camembert_label": "LOC",
-        "csv_file": "entities_places.csv",
-    },
-    "organization": {
-        "tei_element": "orgName",
-        "tei_list": "listOrg",
-        "tei_item": "org",
-        "tei_parent": "standOff",
-        "gliner_label": "organization",
-        "camembert_label": "ORG",
-        "csv_file": "entities_orgs.csv",
-    },
-    "date": {
-        "tei_element": "date",
-        # Lire la valeur machine quand le texte la porte clairement
-        # ("1659", "M.DC.LIX") : sans @when, une <date> ne se trie pas,
-        # ne se filtre pas et ne se place sur aucune frise (audit 1.10).
-        "normalize": "date",
-        "tei_list": None,
-        "tei_item": None,
-        "tei_parent": None,
-        "gliner_label": "date",
-        "camembert_label": "DATE",
-        "csv_file": None,
-    },
-    "artwork": {
-        "tei_element": "objectName",
-        "tei_list": "listObject",
-        "tei_item": "object",
-        # TEI requires the name to sit inside an <objectIdentifier>;
-        # emitting <objectName> directly under <object> made every file
-        # carrying an artwork entity fail tei_all validation.
-        "tei_item_wrapper": "objectIdentifier",
-        "tei_parent": "standOff",
-        "gliner_label": "artwork",
-        "camembert_label": None,
-        "csv_file": "entities_artworks.csv",
-    },
-    "literary_work": {
-        "tei_element": "title",
-        "tei_list": "listBibl",
-        "tei_item": "bibl",
-        "tei_parent": "standOff",
-        "gliner_label": "literary work",
-        "camembert_label": None,
-        "csv_file": "entities_works.csv",
-    },
-    "material": {
-        "tei_element": "material",
-        # Sans liste cible, une annotation <material> ne pointait vers
-        # rien : deux occurrences de « marbre » restaient deux chaines
-        # sans lien, et rien ne permettait de compter les materiaux d'un
-        # corpus (audit 1.9). TEI n'a pas de <listMaterial> : une <list
-        # type="materials"> dans le standOff en tient lieu.
-        "tei_list": "list",
-        "tei_list_attrs": {"type": "materials", "ana": "#materials"},
-        "tei_item": "item",
-        "tei_parent": "standOff",
-        "gliner_label": "material",
-        "camembert_label": None,
-        "csv_file": "entities_materials.csv",
-    },
-    "technique": {
-        "tei_element": "rs",
-        "tei_list": "list",
-        "tei_list_attrs": {"type": "techniques", "ana": "#techniques"},
-        "tei_item": "item",
-        "tei_parent": "standOff",
-        "tei_element_attrs": {"type": "technique"},
-        "gliner_label": "artistic technique",
-        "camembert_label": None,
-        "csv_file": "entities_techniques.csv",
-    },
-    "event": {
-        "tei_element": "rs",
-        "tei_element_attrs": {"type": "event"},
-        "tei_list": "listEvent",
-        "tei_item": "event",
-        "tei_parent": "standOff",
-        "gliner_label": "historical event",
-        "camembert_label": None,
-        "csv_file": "entities_events.csv",
-    },
-}
-
 # NER models configuration
 NER_MODELS = {
     "camembert": {
@@ -586,70 +422,6 @@ NER_CONTAINERS = {"ab", "note", "head", "titlePart"}
 # high|medium|low|unknown) — "mid" made every NER output fail
 # tei_all validation.
 NER_CERT_THRESHOLDS = {"low": 0.0, "medium": 0.6, "high": 0.85}
-
-# =============================================================================
-# EDITORIAL DECLARATIONS (encodingDesc/editorialDecl)
-# =============================================================================
-
-# Each entry produces a child element of <editorialDecl> in the TEI header.
-# Only entries whose "enabled" key is True (or whose matching pipeline flag
-# is True) are injected.  Set to None or remove an entry to skip it.
-EDITORIAL_DECLARATIONS = {
-    "normalization": {
-        "enabled": MODERNIZE_ENABLED,
-        "attrs": {"method": "markup"},
-        "text": (
-            "Original historical spelling is preserved in orig elements. "
-            "Modernized spelling is provided in reg elements, generated "
-            "automatically via a translation API (LSTM Fairseq/FreEM model). "
-            "Lines whose modernized form diverges too far from the original "
-            "(word-count ratio or character-level similarity after "
-            f"normalization below {MODERNIZE_SIMILARITY_MIN}) are left unmodified."
-        ),
-    },
-    "segmentation": {
-        "enabled": ENRICHMENT_ENABLED,
-        "attrs": {},
-        "text": (
-            "Linguistic annotation (tokenization, POS tagging, "
-            "lemmatization, sentence segmentation) was produced "
-            "automatically by the PyHellen NLP API. Tokens are "
-            "encoded as w elements with @lemma, @pos and @msd "
-            "attributes; punctuation as pc elements; sentence "
-            "boundaries as s elements."
-        ),
-    },
-    "interpretation": {
-        "enabled": NER_ENABLED,
-        "attrs": {},
-        "text": (
-            "Named entities were automatically detected using a hybrid "
-            "NER pipeline. French text was processed with "
-            "CamemBERT-classical-fr-ner on original orthography and "
-            "GLiNER-multi-v2.1 on modernized text. Non-French text "
-            "was processed with GLiNER only. Annotations carry "
-            '@resp="#ner-auto" and @cert (low < 0.6, mid 0.6\u20130.85, '
-            "high >= 0.85). Identifiers were resolved against local "
-            "authority files."
-        ),
-    },
-}
-
-# Description of the language-detection methodology, rendered as a <p>
-# inside <profileDesc>/<langUsage>. Kept separate from EDITORIAL_DECLARATIONS
-# because <langUsage> is not a valid child of <editorialDecl> in TEI P5.
-LANG_USAGE_DESCRIPTION = (
-    "Language detection uses Lingua (statistical n-gram model) at "
-    "the container level (ab, note, fw). Mixed-language containers "
-    "are segmented by Lingua's detect_multiple_languages_of, which "
-    "identifies contiguous blocks via sliding-window character "
-    "n-gram comparison. Segments classified as foreign are validated "
-    "by rule-based heuristics (character sets, keywords, patterns): "
-    "a segment is rejected if the primary-language heuristic score "
-    "reaches 2, or if the target-language heuristic score is 0. "
-    "Greek is detected reliably through Unicode character ranges; "
-    "Latin relies on distinctive vocabulary not shared with French."
-)
 
 # =============================================================================
 # RESPONSIBILITY STATEMENT

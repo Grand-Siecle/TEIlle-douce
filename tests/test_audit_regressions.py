@@ -181,7 +181,7 @@ def test_ner_and_csv_keep_one_container_each(tmp_path, monkeypatch):
     from src.metadata import csv_person
     from src.metadata.csv_book import override_teiheader_from_csv
     from src.metadata.csv_person import load_person_database
-    from config import NER_ENTITY_TYPES
+    from src.enrichment.entity_schema import NER_ENTITY_TYPES
 
     # arbre nu, comme celui que le pipeline construit en memoire
     root = etree.Element("TEI", nsmap={None: "http://www.tei-c.org/ns/1.0"})

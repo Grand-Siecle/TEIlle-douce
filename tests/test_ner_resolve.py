@@ -21,7 +21,7 @@ import csv
 import pytest
 from lxml import etree
 
-from config import NER_ENTITY_TYPES
+from src.enrichment.entity_schema import NER_ENTITY_TYPES
 from src.constants import XML_ID
 from src.enrichment.ner_align import AlignedEntity, inject_entities
 from src.enrichment.ner_resolve import _make_xml_id

@@ -530,7 +530,7 @@ def test_a_date_entity_carries_its_machine_readable_value():
     filtre pas et ne se place sur aucune frise — ce pour quoi on extrait
     une date."""
     from src.enrichment.ner_align import _make_entity_element
-    from config import NER_ENTITY_TYPES
+    from src.enrichment.entity_schema import NER_ENTITY_TYPES
 
     elem = _make_entity_element("date", "high", NER_ENTITY_TYPES, text="M.DC.LIX")
 
@@ -541,7 +541,7 @@ def test_a_date_entity_carries_its_machine_readable_value():
 
 def test_a_date_the_parser_cannot_read_gets_no_value():
     from src.enrichment.ner_align import _make_entity_element
-    from config import NER_ENTITY_TYPES
+    from src.enrichment.entity_schema import NER_ENTITY_TYPES
 
     elem = _make_entity_element("date", "medium", NER_ENTITY_TYPES,
                                 text="le 23 juin 1652")
@@ -556,7 +556,7 @@ def test_the_weaker_of_the_two_certainties_is_the_one_written():
     attribut les porte, donc il porte la plus faible — affirmer la plus
     forte revendiquerait plus qu'aucune des deux ne soutient."""
     from src.enrichment.ner_align import _make_entity_element
-    from config import NER_ENTITY_TYPES
+    from src.enrichment.entity_schema import NER_ENTITY_TYPES
 
     # valeur incertaine (« vers »), detection sure
     elem = _make_entity_element("date", "high", NER_ENTITY_TYPES, text="vers 1650")
@@ -569,7 +569,7 @@ def test_the_weaker_of_the_two_certainties_is_the_one_written():
 
 def test_other_entity_types_are_untouched_by_the_date_reader():
     from src.enrichment.ner_align import _make_entity_element
-    from config import NER_ENTITY_TYPES
+    from src.enrichment.entity_schema import NER_ENTITY_TYPES
 
     elem = _make_entity_element("person", "high", NER_ENTITY_TYPES, text="1659")
 
@@ -581,7 +581,8 @@ def test_a_tokenized_date_is_read_whole_not_token_by_token():
     trois enveloppes. Lire chacune pour elle-meme transformait une date
     en 1000, 0600 et 0059 — trois annees que le texte ne dit pas."""
     from src.enrichment.ner_align import _inject_tokenized_entities
-    from config import NER_ENTITY_TYPES, NER_CERT_THRESHOLDS
+    from src.enrichment.entity_schema import NER_ENTITY_TYPES
+    from config import NER_CERT_THRESHOLDS
 
     s = etree.fromstring(
         b"<s><w>M</w><pc>.</pc><w>DC</w><pc>.</pc><w>LIX</w></s>"

@@ -36,6 +36,7 @@ _DELETE_CHARS = frozenset("|¦")
 # Vowels that trigger word-initial i/I → j/J (Ramist rule).
 _J_VOWELS = frozenset("aeiouyàâéèêëîïôùûœAEIOUYÀÂÉÈÊËÎÏÔÙÛŒ")
 
+from ..utils.hyphen import HYPHEN_CHARS, joins_words
 from config import (
     SUPPORTED_LANGUAGES,
     LANG_CONFIDENCE_THRESHOLD,
@@ -193,16 +194,15 @@ class LinguaDetector:
             # Consume the hyphen and the whitespace that follows, if the
             # previous kept char was a letter and the next non-space char
             # is also a letter. Falls through to normal handling otherwise.
-            if c in "¬-":
+            if c in HYPHEN_CHARS:
                 prev_kept = out[-1] if out else ""
-                if prev_kept and prev_kept.isalpha():
-                    j = i + 1
-                    while j < n and src[j].isspace():
-                        j += 1
-                    if j < n and src[j].isalpha():
-                        i = j
-                        word_just_started = False
-                        continue
+                j = i + 1
+                while j < n and src[j].isspace():
+                    j += 1
+                if joins_words(prev_kept, src[j:j + 1]):
+                    i = j
+                    word_just_started = False
+                    continue
                 # Not a word-splitting hyphen; fall through to keep "-"
                 # (but drop bare ¬ — same behaviour as the old cleaner).
                 if c == "¬":

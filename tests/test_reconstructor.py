@@ -681,7 +681,7 @@ def test_an_annotated_container_points_at_the_tagset_it_was_tagged_with():
     pas sur chaque <w> : c'est une propriete du modele qui a annote le
     passage, et le repeter cent mille fois par volume ne dirait rien de
     plus."""
-    from config import POS_TAGSETS
+    from src.constants import POS_TAGSETS
 
     sent = mk_sentence("s1", [mk_aligned(mk_token("mot"))])
     container = mk_container()
@@ -696,7 +696,7 @@ def test_a_foreign_run_points_at_its_own_tagset():
     container = mk_container()
     rebuild_container(container, [sent], primary_lang="fra")
 
-    from config import POS_TAGSETS
+    from src.constants import POS_TAGSETS
     foreign = container.find(".//foreign")
     assert foreign is not None
     assert foreign.get("ana") == f"#{POS_TAGSETS['lasla']['id']}"
