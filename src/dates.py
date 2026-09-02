@@ -29,8 +29,15 @@ def _is_uncertain(text):
     "? 1666", "circa 1600", "vers 1650". Shared by both readers — the
     same marker cannot mean an estimate in a CSV cell and a certainty in
     the text.
+
+    The markers are exactly those _DATE_PREFIX_RE strips: a word removed
+    there as an approximation and not seen here would publish the
+    estimate as a certainty ("environ 1650" did — `\benv\b` cannot match
+    "environ", there is no boundary between "env" and "iron").
     """
-    return bool(re.search(r"\?|\b(ca|circa|vers|env)\b\.?", str(text or ""), re.I))
+    return bool(
+        re.search(r"\?|\b(ca|circa|vers|env(?:iron)?)\b\.?", str(text or ""), re.I)
+    )
 
 
 def date_attributes(raw):
