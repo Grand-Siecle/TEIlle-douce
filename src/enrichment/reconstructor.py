@@ -13,11 +13,31 @@ import uuid
 
 from lxml import etree
 
+from config import POS_TAGSETS, PYHELLEN_MODELS
 from ..constants import UUID_NAMESPACE, XML_ID, XML_LANG
 from .segmenter import Sentence
 from .aligner import AlignedToken
 
 logger = logging.getLogger(__name__)
+
+# TEI language ident -> xml:id of the tagset declared in the header.
+# A <w pos="NOMcom" msd="NOMB.=s|GENRE=m"> names values from a reference
+# a reader cannot guess (audit 1.11). The pointer sits on the container
+# and on each <foreign> run rather than on every <w>: it is a property of
+# the model that tagged the passage, and repeating it a hundred thousand
+# times per volume would say nothing more.
+_TAGSET_BY_LANG = {
+    lang: POS_TAGSETS[model]["id"]
+    for lang, model in PYHELLEN_MODELS.items()
+    if model in POS_TAGSETS
+}
+
+
+def _declare_tagset(element, lang):
+    """Point *element* at the tagset its annotations come from."""
+    tagset = _TAGSET_BY_LANG.get(lang)
+    if tagset:
+        element.set("ana", f"#{tagset}")
 
 # Punctuation join rules
 JOIN_LEFT = {".", ",", ";", ":", "!", "?", ")", "]", "»"}
@@ -51,6 +71,8 @@ def rebuild_container(container, sentences, primary_lang=None):
             container.tag,
         )
         return
+
+    _declare_tagset(container, primary_lang)
 
     # Clear everything (including any <foreign> still sitting around
     # from the language-detection phase — they are recreated inline
@@ -105,6 +127,7 @@ def rebuild_container(container, sentences, primary_lang=None):
                 if current_foreign_lang != tok_lang or current_foreign is None or current_foreign.getparent() is not hi_target:
                     current_foreign = etree.SubElement(hi_target, "foreign")
                     current_foreign.set(XML_LANG, tok_lang)
+                    _declare_tagset(current_foreign, tok_lang)
                     current_foreign_lang = tok_lang
                 target = current_foreign
             else:

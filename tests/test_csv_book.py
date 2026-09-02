@@ -20,12 +20,12 @@ from lxml import etree
 
 from src.metadata import csv_person
 from src.metadata.csv_person import load_person_database
+from src.dates import date_attributes, normalize_date
 from src.metadata.csv_book import (
     load_metadata,
     find_metadata_row,
     build_metadata_dict,
     override_teiheader_from_csv,
-    _normalize_date,
     _volume_index,
     _safe_value,
     _safe_value_list,
@@ -540,20 +540,20 @@ def test_find_metadata_row_none_df():
 
 
 # ---------------------------------------------------------------------------
-# 5. _normalize_date + _volume_index (NONREG)
+# 5. normalize_date + _volume_index (NONREG)
 # ---------------------------------------------------------------------------
 
 def test_normalize_date_slash_to_dash():
-    assert _normalize_date("1590/05/22") == "1590-05-22"
+    assert normalize_date("1590/05/22") == "1590-05-22"
 
 
 def test_normalize_date_empty_or_none():
-    assert _normalize_date("") == ""
-    assert _normalize_date(None) == ""
+    assert normalize_date("") == ""
+    assert normalize_date(None) == ""
 
 
 def test_normalize_date_no_slash_unchanged():
-    assert _normalize_date("1590") == "1590"
+    assert normalize_date("1590") == "1590"
 
 
 def test_volume_index_none_or_empty():
@@ -725,8 +725,7 @@ def test_date_attributes_maps_each_corpus_shape():
     """Le corpus ne contient pas des dates ISO : 126 des 327 valeurs de
     naissance sont autre chose. La forme de la cellule decide des
     attributs, car @when n'accepte qu'une date xsd (teidata.temporal.w3c)."""
-    from src.metadata.csv_book import date_attributes
-
+    
     # dates completes, quelle que soit l'ecriture
     assert date_attributes("1590/05/22") == {"when": "1590-05-22"}
     assert date_attributes("16520623") == {"when": "1652-06-23"}
@@ -756,8 +755,7 @@ def test_date_attributes_maps_each_corpus_shape():
 def test_approximate_dates_keep_their_year_and_say_so():
     """Les catalogues historiques ecrivent "circa 1600", "vers 1650" :
     l'annee est exploitable, l'approximation doit rester visible."""
-    from src.metadata.csv_book import date_attributes
-
+    
     assert date_attributes("circa 1600") == {"when": "1600", "cert": "low"}
     assert date_attributes("vers 1650") == {"when": "1650", "cert": "low"}
     assert date_attributes("1650") == {"when": "1650"}
@@ -772,3 +770,38 @@ def test_unusable_date_is_kept_as_text_not_dropped():
     birth = _add_life_event(parent, "birth", "date inconnue", None, None)
     assert birth.attrib == {}
     assert birth.text == "date inconnue"
+
+
+# =============================================================================
+# Quand le texte a ete produit (audit 1.10)
+# =============================================================================
+
+def test_creation_dates_the_work_not_only_the_edition():
+    """<bibl><date> date l'edition decrite dans le sourceDesc ; sans
+    <creation>, rien dans le fichier ne repond a « de quand est ce
+    texte » — et un corpus se lit par periode avant tout."""
+    root = _build_default_root()
+    override_teiheader_from_csv(root, {"BDD": "LIV0001", "Date_01": "1659"}, "LIV0001")
+
+    creation = root.find(".//teiHeader/profileDesc/creation")
+    assert creation is not None
+    assert creation.find("date").get("when") == "1659"
+    assert creation.find("date").text == "1659"
+    # <creation> ouvre le profileDesc, comme TEI le demande
+    assert list(root.find(".//teiHeader/profileDesc"))[0] is creation
+
+
+def test_the_bibl_date_carries_its_normalized_value_too():
+    root = _build_default_root()
+    override_teiheader_from_csv(root, {"BDD": "LIV0001", "Date_01": "1659/03/12"}, "LIV0001")
+
+    date_el = root.find(".//teiHeader/fileDesc/sourceDesc/bibl/date")
+    assert date_el.get("when") == "1659-03-12"
+    assert date_el.text == "1659/03/12"
+
+
+def test_an_unreadable_date_leaves_no_creation_rather_than_a_false_one():
+    root = _build_default_root()
+    override_teiheader_from_csv(root, {"BDD": "LIV0001", "Date_01": "sans date"}, "LIV0001")
+
+    assert root.find(".//teiHeader/profileDesc/creation") is None

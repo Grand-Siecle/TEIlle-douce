@@ -312,3 +312,9 @@ class DefaultTree:
         )
         kw_bibl = etree.SubElement(keywords_tax, "bibl")
         kw_bibl.text = KEYWORDS_TAXONOMY["label"]
+
+        # The morphosyntactic tagsets are NOT declared here: the header
+        # is built before a word is tagged, and a run with enrichment
+        # disabled would announce CATTEX, LASLA and Perseus annotations
+        # the file does not carry. declare_pos_tagsets() adds the ones
+        # actually used, once the annotation exists.

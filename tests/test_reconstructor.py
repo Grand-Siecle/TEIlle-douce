@@ -674,3 +674,37 @@ def test_a_line_that_contributes_only_its_hyphen_keeps_its_break():
     ]
     # les deux sauts source sont marques consommes : rien ne sera reinsere
     assert consommes == {id(lb_a), id(lb_b)}
+
+
+def test_an_annotated_container_points_at_the_tagset_it_was_tagged_with():
+    """Le pointeur va sur le conteneur et sur chaque passage etranger,
+    pas sur chaque <w> : c'est une propriete du modele qui a annote le
+    passage, et le repeter cent mille fois par volume ne dirait rien de
+    plus."""
+    from config import POS_TAGSETS
+
+    sent = mk_sentence("s1", [mk_aligned(mk_token("mot"))])
+    container = mk_container()
+    rebuild_container(container, [sent], primary_lang="fra")
+
+    assert container.get("ana") == f"#{POS_TAGSETS['freem']['id']}"
+
+
+def test_a_foreign_run_points_at_its_own_tagset():
+    latin = mk_aligned(mk_token("ergo", origin_lang="lat"))
+    sent = mk_sentence("s1", [mk_aligned(mk_token("il")), latin])
+    container = mk_container()
+    rebuild_container(container, [sent], primary_lang="fra")
+
+    from config import POS_TAGSETS
+    foreign = container.find(".//foreign")
+    assert foreign is not None
+    assert foreign.get("ana") == f"#{POS_TAGSETS['lasla']['id']}"
+
+
+def test_a_language_with_no_declared_tagset_claims_none():
+    sent = mk_sentence("s1", [mk_aligned(mk_token("mot"))])
+    container = mk_container()
+    rebuild_container(container, [sent], primary_lang="ita")
+
+    assert container.get("ana") is None

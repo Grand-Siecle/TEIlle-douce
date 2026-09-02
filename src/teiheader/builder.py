@@ -13,7 +13,8 @@ This module orchestrates the creation of the <teiHeader> element by:
 
 from lxml import etree
 
-from ..constants import tag_like
+from config import POS_TAGSETS, PYHELLEN_MODELS
+from ..constants import XML_ID, tag_like
 from ..utils.xml import local_tag
 from ..volumetry import text_volume, token_count
 from .default import DefaultTree
@@ -115,3 +116,61 @@ def update_extent(root):
         el.text = f"{quantity} {unit}"
 
     return measures
+
+
+def declare_pos_tagsets(root, idents):
+    """
+    Declare the morphosyntactic tagsets the annotation actually used.
+
+    <w pos="NOMcom" msd="NOMB.=s|GENRE=m"> names values from a reference
+    a reader cannot guess (audit 1.11). The declaration is written here,
+    after the tagging, rather than in the header skeleton: built with the
+    skeleton it would announce CATTEX, LASLA and Perseus in every file,
+    including the runs made with enrichment disabled, which carry no
+    annotation at all.
+
+    Idempotent: a tagset already declared is left as it is.
+
+    Args:
+        root (etree.Element): TEI root element.
+        idents (iterable): TEI language idents that were tagged.
+
+    Returns:
+        list: the xml:id of the tagsets declared.
+    """
+    tagsets = [
+        POS_TAGSETS[PYHELLEN_MODELS[ident]]
+        for ident in dict.fromkeys(idents)
+        if ident in PYHELLEN_MODELS and PYHELLEN_MODELS[ident] in POS_TAGSETS
+    ]
+    if not tagsets:
+        return []
+
+    class_decl = root.find(".//{*}classDecl")
+    if class_decl is None:
+        encoding_desc = root.find(".//{*}encodingDesc")
+        if encoding_desc is None:
+            return []
+        class_decl = etree.SubElement(
+            encoding_desc, tag_like(encoding_desc, "classDecl")
+        )
+
+    declared = {
+        el.get(XML_ID) for el in class_decl
+        if local_tag(el.tag) == "taxonomy"
+    }
+    written = []
+    for tagset in tagsets:
+        if tagset["id"] in declared:
+            continue
+        taxonomy = etree.SubElement(
+            class_decl, tag_like(class_decl, "taxonomy"), {XML_ID: tagset["id"]}
+        )
+        bibl = etree.SubElement(taxonomy, tag_like(class_decl, "bibl"))
+        title = etree.SubElement(bibl, tag_like(class_decl, "title"))
+        title.text = tagset["label"]
+        etree.SubElement(
+            bibl, tag_like(class_decl, "ptr"), target=tagset["url"]
+        )
+        written.append(tagset["id"])
+    return written

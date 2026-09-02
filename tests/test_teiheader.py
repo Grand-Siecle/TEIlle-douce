@@ -689,3 +689,46 @@ def test_a_foreign_span_in_the_container_language_is_not_double_counted():
       <foreign xml:lang="fra">mots ici</foreign></ab></div></body></text></TEI>""")
 
     assert language_volume(root) == {"fra": 3}
+
+
+def test_only_the_tagsets_actually_used_are_declared():
+    """<w pos="NOMcom" msd="NOMB.=s|GENRE=m"> nomme des valeurs d'un
+    referentiel qu'un lecteur ne peut pas deviner (audit 1.11) — mais un
+    run sans enrichissement n'annote rien, et annoncer CATTEX, LASLA et
+    Perseus dans un fichier qui n'a pas un seul @pos serait la meme
+    fausse declaration que l'on vient de corriger ailleurs."""
+    from config import POS_TAGSETS
+    from src.teiheader import declare_pos_tagsets
+
+    root, _ = make_default_tree()
+    ids = lambda: [t.get(XML_ID) for t in root.findall(".//classDecl/taxonomy")]
+    assert POS_TAGSETS["freem"]["id"] not in ids()
+
+    ecrits = declare_pos_tagsets(root, ["fra", "lat"])
+
+    assert ecrits == [POS_TAGSETS["freem"]["id"], POS_TAGSETS["lasla"]["id"]]
+    assert POS_TAGSETS["grc"]["id"] not in ids(), "le grec n'a rien annote"
+    declaration = [
+        t for t in root.findall(".//classDecl/taxonomy")
+        if t.get(XML_ID) == POS_TAGSETS["freem"]["id"]
+    ][0]
+    assert declaration.find("bibl/title").text == POS_TAGSETS["freem"]["label"]
+    assert declaration.find("bibl/ptr").get("target") == POS_TAGSETS["freem"]["url"]
+
+
+def test_declaring_a_tagset_twice_writes_it_once():
+    from config import POS_TAGSETS
+    from src.teiheader import declare_pos_tagsets
+
+    root, _ = make_default_tree()
+    declare_pos_tagsets(root, ["fra"])
+    assert declare_pos_tagsets(root, ["fra"]) == []
+    ids = [t.get(XML_ID) for t in root.findall(".//classDecl/taxonomy")]
+    assert ids.count(POS_TAGSETS["freem"]["id"]) == 1
+
+
+def test_a_language_with_no_model_declares_nothing():
+    from src.teiheader import declare_pos_tagsets
+
+    root, _ = make_default_tree()
+    assert declare_pos_tagsets(root, ["ita", ""]) == []
