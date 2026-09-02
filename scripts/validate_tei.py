@@ -73,6 +73,17 @@ def validate(path, relaxng=None):
                 errors.append(f"points mal formés sur <{tag}>: {bad[:2]}")
             elif len(pairs) > 2 and all(p.split(",")[0] == "0" for p in pairs):
                 errors.append(f"points suspects (tous x=0) sur <{tag} xml:id={xid}>")
+        # <langUsage> prend des paragraphes OU des <language>, jamais les
+        # deux : son modele de contenu TEI est un choix. La prose sur la
+        # methode de detection a longtemps ete ecrite la, puis effacee par
+        # finalize_langusage() ; l'y remettre rendrait le fichier invalide.
+        if tag == "langUsage":
+            intrus = sorted({local(c) for c in el if local(c) != "language"})
+            if intrus and any(local(c) == "language" for c in el):
+                errors.append(
+                    f"<langUsage> melange <language> et {intrus} : "
+                    "son modele de contenu est (model.pLike+ | language+)"
+                )
         if tag == "idno" and el.get("type") == "iiif" and el.text and "|" in el.text:
             errors.append(f"idno iiif non splitté: {el.text[:60]}")
         if tag == "reg" and el.text and "¬" in el.text:

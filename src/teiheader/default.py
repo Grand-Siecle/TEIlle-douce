@@ -21,7 +21,7 @@ from config import (
     PLACEHOLDER_ORCID,
 )
 from ..constants import KEYWORDS_TAXONOMY, SEGMONTO
-from .prose import EDITORIAL_DECLARATIONS, LANG_USAGE_DESCRIPTION
+from .prose import EDITORIAL_DECLARATIONS, LANGUAGE_DETECTION_DESCRIPTION
 from ..constants import XML_ID
 from ..utils.files import canonical_document_id
 
@@ -259,11 +259,19 @@ class DefaultTree:
         self.children["p"].text = default_text
 
     def _build_profile_desc(self, profileDesc):
-        """Build the <profileDesc> section with language info."""
+        """Build the <profileDesc> section with language info.
+
+        <langUsage> carries <language> elements and nothing else: TEI
+        gives it a content model by choice, (model.pLike+ | language+),
+        so a paragraph next to a <language> is invalid. The prose
+        describing how the languages were identified is written into
+        <encodingDesc><editorialDecl><interpretation> instead - see
+        _build_encoding_desc(). It used to be written here, and
+        finalize_langusage() erased it on its way to posting the
+        measured languages: the paragraph never reached a published
+        file.
+        """
         langUsage = etree.SubElement(profileDesc, "langUsage")
-        if LANG_USAGE_DESCRIPTION:
-            p = etree.SubElement(langUsage, "p")
-            p.text = LANG_USAGE_DESCRIPTION
         self.children["language"] = etree.SubElement(langUsage, "language")
         self.children["language"].attrib["ident"] = ""
 
@@ -271,12 +279,28 @@ class DefaultTree:
         """Build the <encodingDesc> section with application info and taxonomy."""
         # <editorialDecl> from config declarations
         enabled = {k: v for k, v in EDITORIAL_DECLARATIONS.items() if v.get("enabled")}
+        editorialDecl = None
         if enabled:
             editorialDecl = etree.SubElement(encodingDesc, "editorialDecl")
             for key, decl in enabled.items():
                 child = etree.SubElement(editorialDecl, key, **(decl.get("attrs") or {}))
                 p = etree.SubElement(child, "p")
                 p.text = decl["text"]
+
+        # Identifying a language is analytic information added to the
+        # transcription, which is what <interpretation> declares. It
+        # joins the paragraph NER writes there rather than opening a
+        # second <interpretation> beside it, and it is written whatever
+        # the pipeline flags say: the other declarations describe phases
+        # that can be switched off, language detection always runs.
+        if LANGUAGE_DETECTION_DESCRIPTION:
+            if editorialDecl is None:
+                editorialDecl = etree.SubElement(encodingDesc, "editorialDecl")
+            interpretation = editorialDecl.find("interpretation")
+            if interpretation is None:
+                interpretation = etree.SubElement(editorialDecl, "interpretation")
+            p = etree.SubElement(interpretation, "p")
+            p.text = LANGUAGE_DETECTION_DESCRIPTION
 
         # <appInfo>
         appInfo = etree.SubElement(encodingDesc, "appInfo")

@@ -142,6 +142,11 @@
       </particDesc>
     </profileDesc>
     <encodingDesc>
+      <editorialDecl>
+        <interpretation>
+          <p>Language detection uses Lingua (statistical n-gram model) at the container level (ab, note, fw, head, titlePart). Mixed-language containers are segmented by Lingua's detect_multiple_languages_of, which identifies contiguous blocks via sliding-window character n-gram comparison. Segments classified as foreign are validated by rule-based heuristics (character sets, keywords, patterns): a segment is rejected if the primary-language heuristic score reaches 2, or if the target-language heuristic score is 0. Greek is detected reliably through Unicode character ranges; Latin relies on distinctive vocabulary not shared with French.</p>
+        </interpretation>
+      </editorialDecl>
       <appInfo>
         <application ident="Kraken" version="4.3">
           <label>Kraken</label>

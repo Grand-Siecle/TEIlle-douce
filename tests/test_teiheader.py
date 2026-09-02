@@ -19,7 +19,10 @@ from config import (
     APP_VERSIONS,
 )
 from src.constants import NS_ALTO, NS_TEI, XML_ID
+from src.lang import build_langusage
+from src.teiheader import default as teiheader_default
 from src.teiheader.default import DefaultTree
+from src.teiheader.prose import LANGUAGE_DETECTION_DESCRIPTION
 from src.teiheader.full import FullTree, _extract_labels
 from src.teiheader.builder import build_header, update_extent
 from src.utils.files import canonical_document_id
@@ -149,18 +152,25 @@ def test_default_tree_editorial_decl_present_when_enabled(monkeypatch):
     root, tree = make_default_tree()
     editorial_decl = root.find(".//encodingDesc/editorialDecl")
     assert editorial_decl is not None
-    assert [ln(c) for c in editorial_decl] == ["normalization"]
     assert editorial_decl.find("./normalization/p").text == "norm text"
+    # <interpretation> s'y ajoute toujours : c'est la ou la methode de
+    # detection de langue est declaree, phases coupees ou non.
+    assert [ln(c) for c in editorial_decl] == ["normalization", "interpretation"]
 
 
-def test_default_tree_editorial_decl_absent_when_all_disabled(monkeypatch):
+def test_default_tree_editorial_decl_keeps_the_language_prose_when_all_disabled(monkeypatch):
+    """Sans declaration activee il n'y avait pas d'<editorialDecl> du
+    tout ; il en faut un desormais, la detection de langue tournant quoi
+    qu'il arrive."""
     monkeypatch.setattr(
         "src.teiheader.default.EDITORIAL_DECLARATIONS",
         {"normalization": {"enabled": False, "attrs": {}, "text": "norm text"}},
     )
     root, tree = make_default_tree()
     editorial_decl = root.find(".//encodingDesc/editorialDecl")
-    assert editorial_decl is None
+    assert editorial_decl is not None
+    assert [ln(c) for c in editorial_decl] == ["interpretation"]
+    assert editorial_decl.find("./interpretation/p").text == LANGUAGE_DETECTION_DESCRIPTION
 
 
 # =============================================================================
@@ -729,3 +739,51 @@ def test_a_language_with_no_model_declares_nothing():
 
     root, _ = make_default_tree()
     assert declare_pos_tagsets(root, ["ita", ""]) == []
+
+
+# =============================================================================
+# La prose que le header ecrivait puis effacait
+# =============================================================================
+
+def test_the_language_detection_prose_survives_finalize_langusage():
+    """Elle etait ecrite dans <langUsage>, que finalize_langusage() vide
+    entierement avant d'y poser les <language> : une vingtaine de lignes
+    decrivant la methode de detection n'atteignaient jamais un fichier
+    publie. Et l'y remettre ne repare rien : TEI donne a langUsage un
+    modele de contenu par choix, (model.pLike+ | language+), donc un <p>
+    a cote d'un <language> est invalide. La prose doit vivre ailleurs."""
+    root, _ = make_default_tree()
+    build_langusage(root, {"fra": 10, "lat": 2})
+
+    serialise = etree.tostring(root, encoding="unicode")
+    assert serialise.count(LANGUAGE_DETECTION_DESCRIPTION) == 1, \
+        "la description de la detection de langue n'est pas dans la sortie"
+
+    encodingDesc = root.find(".//encodingDesc")
+    assert LANGUAGE_DETECTION_DESCRIPTION in etree.tostring(encodingDesc, encoding="unicode"), \
+        "elle doit etre declaree dans <encodingDesc>, la ou le header dit sa methode"
+
+
+def test_langusage_holds_languages_and_nothing_else():
+    """Le modele de contenu est un choix : le moindre <p> voisin d'un
+    <language> rend le document invalide contre tei_all.rng."""
+    root, _ = make_default_tree()
+    build_langusage(root, {"fra": 10, "lat": 2})
+
+    langUsage = root.find(".//langUsage")
+    assert [ln(c) for c in langUsage] == ["language", "language"], \
+        [ln(c) for c in langUsage]
+
+
+def test_the_language_prose_is_written_even_with_every_editorial_decl_off(monkeypatch):
+    """Les declarations editoriales sont conditionnees aux phases
+    (modernisation, enrichissement, NER) ; la detection de langue, elle,
+    tourne toujours. Une execution ou les trois phases sont coupees doit
+    quand meme publier la methode qui a produit les xml:lang."""
+    monkeypatch.setattr(teiheader_default, "EDITORIAL_DECLARATIONS", {})
+    root, _ = make_default_tree()
+    build_langusage(root, {"fra": 10})
+
+    editorialDecl = root.find(".//editorialDecl")
+    assert editorialDecl is not None, "<editorialDecl> absent quand tout est coupe"
+    assert LANGUAGE_DETECTION_DESCRIPTION in etree.tostring(editorialDecl, encoding="unicode")
