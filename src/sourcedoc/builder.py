@@ -90,6 +90,26 @@ def extract_labels(source):
     return labels
 
 
+# What every page of one document shares. Sent to each worker ONCE, by
+# the Pool initializer, instead of riding in every job: the IIIF mapping
+# of a 850-page volume was pickled 850 times, which is O(N²) bytes of
+# pure repetition for a dict that never changes within a document
+# (audit 3.7).
+_JOB_CONTEXT = {}
+
+
+def _init_worker(document_name, segmonto_zones, segmonto_lines, config,
+                 iiif_mapping_dict):
+    """Store one document's invariants in the worker process."""
+    _JOB_CONTEXT.update(
+        document_name=document_name,
+        segmonto_zones=segmonto_zones,
+        segmonto_lines=segmonto_lines,
+        config=config,
+        iiif_mapping_dict=iiif_mapping_dict,
+    )
+
+
 def _build_surface_fragment(args):
     """
     Build a <surface> fragment for a single ALTO page.
@@ -98,14 +118,8 @@ def _build_surface_fragment(args):
     It processes one ALTO file and returns a serialized surface element.
 
     Args:
-        args (tuple): Contains:
-            - document_name (str): Name of the document
-            - filepath (Path): Path to the ALTO file
-            - num (int): Page number
-            - segmonto_zones (list): List of valid zone types
-            - segmonto_lines (list): List of valid line types
-            - config (dict): IIIF configuration
-            - iiif_mapping_dict (dict): IIIF URL mapping or None
+        args (tuple): (filepath, num) — everything else is the document's
+            invariants, set once per worker by _init_worker.
 
     Returns:
         tuple: (num, xml_bytes, error, warning) - page number, serialized
@@ -115,20 +129,14 @@ def _build_surface_fragment(args):
         and used to come back as an opaque MaybeEncodingError that killed
         the whole pool, losing the already-processed pages (audit 5.5).
     """
-    (
-        document_name,
-        filepath,
-        num,
-        segmonto_zones,
-        segmonto_lines,
-        config,
-        iiif_mapping_dict,
-    ) = args
+    filepath, num = args
+    document_name = _JOB_CONTEXT["document_name"]
 
     try:
         num_out, xml_bytes, warning = _build_surface_fragment_inner(
-            document_name, filepath, num, segmonto_zones, segmonto_lines,
-            config, iiif_mapping_dict,
+            document_name, filepath, num,
+            _JOB_CONTEXT["segmonto_zones"], _JOB_CONTEXT["segmonto_lines"],
+            _JOB_CONTEXT["config"], _JOB_CONTEXT["iiif_mapping_dict"],
         )
         return num_out, xml_bytes, None, warning
     except Exception as e:  # audit 2.3: one bad page must not kill the run
@@ -301,19 +309,8 @@ def build_sourcedoc(
     if iiif_mapping and iiif_mapping.has_mapping():
         iiif_mapping_dict = iiif_mapping.mapping.copy()
 
-    # Prepare job arguments
-    jobs = [
-        (
-            document_name,
-            f.filepath,
-            f.num,
-            segmonto_zones,
-            segmonto_lines,
-            config,
-            iiif_mapping_dict,
-        )
-        for f in ordered_files
-    ]
+    # One job carries only what changes from page to page.
+    jobs = [(f.filepath, f.num) for f in ordered_files]
 
     # Limit workers to avoid resource exhaustion
     workers = min(cpu_count(), MAX_WORKERS)
@@ -329,7 +326,14 @@ def build_sourcedoc(
     # forever (observed as intermittent 15-minute CI timeouts). Results
     # are fully consumed first, then close()+join() lets workers exit
     # cleanly; terminate() only on an actual error.
-    pool = _MP_CONTEXT.Pool(workers)
+    pool = _MP_CONTEXT.Pool(
+        workers,
+        initializer=_init_worker,
+        initargs=(
+            document_name, segmonto_zones, segmonto_lines, config,
+            iiif_mapping_dict,
+        ),
+    )
     try:
         for idx, (num, xml_bytes, error, warning) in enumerate(
             pool.imap_unordered(_build_surface_fragment, jobs), start=1

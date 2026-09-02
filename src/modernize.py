@@ -317,13 +317,22 @@ def dehyphenate_lines(texts, zone_types=None):
     # (see the docstring): the caller needs them to undo the repetition.
     carried = set()
 
+    # Next line of the same zone, precomputed in one backward pass. It
+    # was a forward scan per hyphen, which on a page whose last zone is
+    # long walked to the end of the document for every one of them
+    # (audit 3.10).
+    next_same = [None] * len(joined)
+    if zone_types is None:
+        for idx in range(len(joined) - 1):
+            next_same[idx] = idx + 1
+    else:
+        seen = {}
+        for idx in range(len(joined) - 1, -1, -1):
+            next_same[idx] = seen.get(zone_types[idx])
+            seen[zone_types[idx]] = idx
+
     def next_same_zone(idx, zone):
-        for j in range(idx + 1, len(joined)):
-            if zone_types is None:
-                return j
-            if zone_types[j] == zone:
-                return j
-        return None
+        return next_same[idx]
 
     for i in range(len(joined) - 1):
         line = joined[i]

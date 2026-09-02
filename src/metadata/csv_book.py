@@ -81,7 +81,26 @@ def find_metadata_row(df, doc_name):
 
     # Find matching rows
     matches = df[df["BDD"].astype(str).str.startswith(prefix)]
-    return None if matches.empty else matches.iloc[0]
+    if matches.empty:
+        # The header will stay full of placeholders, and nothing said so
+        # (audit 2.14): a run over 54 documents produced 54 files, some
+        # of them describing nothing, with a uniform "OK" per line.
+        logger.warning(
+            "No metadata row for %r (BDD prefix %r): the header keeps its "
+            "placeholders", doc_name, prefix,
+        )
+        return None
+    if len(matches) > 1:
+        # startswith is a prefix test: LIV004 matches LIV0040..LIV0049.
+        # Taking the first was silent, and the first is only the first
+        # line of the CSV — not a decision anyone made.
+        logger.warning(
+            "%d metadata rows match the BDD prefix %r (%s): using %r",
+            len(matches), prefix,
+            ", ".join(str(b) for b in matches["BDD"].head(4)),
+            str(matches.iloc[0]["BDD"]),
+        )
+    return matches.iloc[0]
 
 
 def _extract_bdd_prefix(doc_folder_name):
