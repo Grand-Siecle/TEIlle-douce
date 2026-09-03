@@ -1,6 +1,9 @@
 # -----------------------------------------------------------
 # Validates TEI outputs against the known failure modes of this
 # pipeline. Usage: venv/bin/python scripts/validate_tei.py tei_test/*.xml
+# Optional: --odd valide contre le schema du projet (schema/alto2tei.rng
+# et schema/alto2tei.svrl.xsl, tous deux versionnes, derives de
+# schema/alto2tei.odd) : le TEI que cette chaine emet, et rien d'autre.
 # Optional: --schema chemin/vers/tei_all.rng ajoute la validation RelaxNG
 # complete (les violations sont des ERROR). Le schema n'est pas versionne
 # ici (~1 Mo, https://tei-c.org/release/xml/tei/custom/schema/relaxng/) ;
@@ -12,8 +15,14 @@
 import argparse
 import re
 import sys
+from pathlib import Path
 
 from lxml import etree
+
+SVRL = "http://purl.oclc.org/dsdl/svrl"
+RACINE = Path(__file__).resolve().parent.parent
+ODD_RNG = RACINE / "schema" / "alto2tei.rng"
+ODD_SVRL = RACINE / "schema" / "alto2tei.svrl.xsl"
 
 XML_ID = "{http://www.w3.org/XML/1998/namespace}id"
 NCNAME = re.compile(r"^[A-Za-z_][A-Za-z0-9._\-]*$")
@@ -28,7 +37,47 @@ POINTS_PAIR = re.compile(r"^-?\d+,-?\d+$")
 PARSER = etree.XMLParser(collect_ids=False, huge_tree=True)
 
 
-def validate(path, relaxng=None):
+def erreurs_svrl(rapport):
+    """Les violations d'un rapport SVRL, en messages d'une ligne.
+
+    Schematron distingue l'assertion non tenue (`failed-assert`) du rapport
+    declenche (`successful-report`) ; l'ODD emploie les deux selon qu'il est
+    plus clair d'affirmer ce qui doit etre ou de signaler ce qui ne doit pas.
+    Pour un controle de sortie, les deux sont des violations."""
+    if isinstance(rapport, str):
+        rapport = etree.fromstring(rapport.encode())
+    erreurs = []
+    for balise in ("failed-assert", "successful-report"):
+        for el in rapport.iter(f"{{{SVRL}}}{balise}"):
+            texte = " ".join("".join(el.itertext()).split())
+            lieu = el.get("location", "")
+            erreurs.append(f"{texte} [{lieu}]" if lieu else texte)
+    return erreurs
+
+
+def schematron_du_projet():
+    """La feuille SVRL compilee depuis l'ODD, prete a etre appliquee.
+
+    Elle est en XSLT 2.0 -- c'est ce que la TEI produit -- donc lxml ne
+    peut pas l'executer : il faut saxonche, qui est une dependance de
+    developpement et non du pipeline."""
+    try:
+        from saxonche import PySaxonProcessor
+    except ImportError:
+        raise SystemExit(
+            "--odd demande saxonche pour appliquer le Schematron :\n"
+            "  pip install -r requirements-dev.txt"
+        )
+    if not ODD_SVRL.exists():
+        raise SystemExit(
+            f"{ODD_SVRL} est absent : venv/bin/python scripts/build_odd.py"
+        )
+    processeur = PySaxonProcessor(license=False)
+    return processeur, processeur.new_xslt30_processor().compile_stylesheet(
+        stylesheet_file=str(ODD_SVRL))
+
+
+def validate(path, relaxng=None, schematron=None):
     errors, warnings = [], []
     tree = etree.parse(path, parser=PARSER)
     root = tree.getroot()
@@ -37,6 +86,11 @@ def validate(path, relaxng=None):
     if relaxng is not None and not relaxng.validate(tree):
         for err in relaxng.error_log[:20]:
             errors.append(f"RelaxNG L{err.line}: {err.message}")
+
+    # Contraintes de l'ODD, si la feuille SVRL est fournie
+    if schematron is not None:
+        for message in erreurs_svrl(schematron.transform_to_string(source_file=path))[:20]:
+            errors.append(f"Schematron: {message}")
 
     def local(el):
         return etree.QName(el).localname if isinstance(el.tag, str) else ""
@@ -182,19 +236,39 @@ def main(paths=None):
     )
     parser.add_argument("fichiers", nargs="+", help="fichiers TEI à contrôler")
     parser.add_argument(
+        "--odd", action="store_true",
+        help="valide contre le schema du projet (schema/alto2tei.{rng,svrl.xsl})",
+    )
+    parser.add_argument(
         "--schema", metavar="RNG",
         help="chemin d'un tei_all.rng : ajoute la validation RelaxNG complète",
     )
     args = parser.parse_args(sys.argv[1:] if paths is None else list(paths))
 
     relaxng = etree.RelaxNG(etree.parse(args.schema)) if args.schema else None
+    schematron = processeur = None
+    odd_rng = None
+    if args.odd:
+        if not ODD_RNG.exists():
+            raise SystemExit(
+                f"{ODD_RNG} est absent : venv/bin/python scripts/build_odd.py")
+        odd_rng = etree.RelaxNG(etree.parse(str(ODD_RNG)))
+        processeur, schematron = schematron_du_projet()
 
     total_err = 0
     for path in args.fichiers:
         # Un fichier illisible est un échec de CE fichier, pas du script :
         # les suivants sont quand même contrôlés.
         try:
-            errors, warnings = validate(path, relaxng=relaxng)
+            errors, warnings = validate(path, relaxng=relaxng,
+                                        schematron=schematron)
+            if odd_rng is not None:
+                arbre = etree.parse(path, parser=PARSER)
+                if not odd_rng.validate(arbre):
+                    errors.extend(
+                        f"alto2tei.rng L{e.line}: {e.message}"
+                        for e in list(odd_rng.error_log)[:20]
+                    )
         except (etree.XMLSyntaxError, OSError) as e:
             errors, warnings = [f"fichier invalide: {e}"], []
         status = "FAIL" if errors else "ok"

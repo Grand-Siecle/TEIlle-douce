@@ -287,3 +287,52 @@ def test_langusage_de_langues_seules_ne_leve_rien(tmp_path):
     )
     errors, warnings = validate(_ecrire(tmp_path, contenu))
     assert errors == [] and warnings == []
+
+
+# =============================================================================
+# Validation contre le schema du projet (schema/alto2tei.odd)
+# =============================================================================
+
+SVRL_NS = "http://purl.oclc.org/dsdl/svrl"
+
+
+def _rapport_svrl(corps):
+    return (f'<svrl:schematron-output xmlns:svrl="{SVRL_NS}">'
+            f"{corps}</svrl:schematron-output>")
+
+
+def test_un_rapport_svrl_sans_echec_ne_donne_aucune_erreur():
+    from scripts.validate_tei import erreurs_svrl
+    assert erreurs_svrl(_rapport_svrl(
+        '<svrl:fired-rule context="tei:zone"/>')) == []
+
+
+def test_un_echec_svrl_devient_une_erreur_situee():
+    """Schematron distingue l'assertion non tenue du rapport declenche ;
+    les deux sont des violations pour nous, et le message doit dire ou."""
+    from scripts.validate_tei import erreurs_svrl
+    corps = (
+        '<svrl:failed-assert location="/tei:TEI/tei:text[1]">'
+        "<svrl:text>A figure must carry @corresp.</svrl:text>"
+        "</svrl:failed-assert>"
+        '<svrl:successful-report location="/tei:TEI/tei:teiHeader[1]">'
+        "<svrl:text>langUsage mixes prose and language elements.</svrl:text>"
+        "</svrl:successful-report>"
+    )
+    erreurs = erreurs_svrl(_rapport_svrl(corps))
+    assert len(erreurs) == 2
+    assert "figure must carry @corresp" in erreurs[0]
+    assert "tei:text[1]" in erreurs[0]
+    assert "langUsage mixes prose" in erreurs[1]
+
+
+def test_le_texte_svrl_est_ramene_sur_une_ligne():
+    """Les messages ecrits dans l'ODD sont indentes sur plusieurs lignes ;
+    tels quels ils casseraient l'affichage en une erreur par ligne."""
+    from scripts.validate_tei import erreurs_svrl
+    corps = ('<svrl:failed-assert location="/tei:TEI">'
+             "<svrl:text>\n     un message\n     coupe en trois\n   </svrl:text>"
+             "</svrl:failed-assert>")
+    (erreur,) = erreurs_svrl(_rapport_svrl(corps))
+    assert "un message coupe en trois" in erreur
+    assert "\n" not in erreur

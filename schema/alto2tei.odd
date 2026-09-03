@@ -1,0 +1,561 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<TEI xmlns="http://www.tei-c.org/ns/1.0"
+     xmlns:sch="http://purl.oclc.org/dsdl/schematron">
+  <teiHeader>
+    <fileDesc>
+      <titleStmt>
+        <title>ALTO2TEI — personnalisation TEI de la chaîne de conversion</title>
+        <title type="sub" xml:lang="en">A TEI customization describing what the
+        ALTO2TEI pipeline emits</title>
+        <respStmt>
+          <resp>Conception et encodage</resp>
+          <name>Projet ALTO2TEI, Université de Genève</name>
+        </respStmt>
+      </titleStmt>
+      <publicationStmt>
+        <publisher>Université de Genève</publisher>
+        <availability status="free">
+          <licence target="https://creativecommons.org/licenses/by/4.0/">Cette
+          personnalisation est diffusée sous licence Creative Commons
+          Attribution 4.0 International (CC BY 4.0), comme les éditions qu'elle
+          décrit.</licence>
+        </availability>
+      </publicationStmt>
+      <sourceDesc>
+        <p>Rédigé à partir du code de la chaîne — les appels de construction
+        d'éléments dans <ref target="../src/">src/</ref>, la taxonomie SegmOnto
+        de <ref target="../src/constants.py">src/constants.py</ref> et la table
+        d'entités de
+        <ref target="../src/enrichment/entity_schema.py">entity_schema.py</ref> —
+        puis recoupé sur les sorties réelles du corpus.</p>
+      </sourceDesc>
+    </fileDesc>
+    <encodingDesc>
+      <appInfo>
+        <application ident="TEI-P5" version="4.12.0">
+          <label>TEI P5</label>
+          <desc>Version des Guidelines contre laquelle cette personnalisation
+          est compilée. Elle est épinglée dans
+          <ref target="../scripts/build_odd.py">scripts/build_odd.py</ref> :
+          la remonter est un changement délibéré, qui demande de recompiler et
+          de relire le diff des schémas produits.</desc>
+        </application>
+      </appInfo>
+    </encodingDesc>
+    <revisionDesc>
+      <change when="2026-09-03">Première rédaction : inventaire fermé, listes
+      de valeurs fermées, contraintes Schematron locales.</change>
+    </revisionDesc>
+  </teiHeader>
+
+  <text>
+    <body>
+
+      <div xml:id="propos" xml:lang="fr">
+        <head>Ce que dit cette personnalisation</head>
+
+        <p>ALTO2TEI convertit des fichiers ALTO issus d'OCR/HTR en TEI. Le
+        schéma de référence du projet était jusqu'ici <code>tei_all</code>,
+        c'est-à-dire la totalité des Guidelines : six cents éléments, dont la
+        chaîne en émet quatre-vingt-dix-huit. Valider contre <code>tei_all</code>
+        ne dit donc presque rien de l'édition produite — un type de zone
+        inventé par erreur, une <gi>figure</gi> orpheline ou une entité sans
+        indice de certitude y passent tous.</p>
+
+        <p>Cet ODD dit ce que la chaîne produit, et rien d'autre. Il se lit sur
+        trois couches, de la plus mécanique à la plus normative :</p>
+
+        <list type="ordered">
+          <item><label>Inventaire fermé</label> — les <gi>moduleRef</gi>
+          ci-dessous n'importent que les éléments effectivement émis, et la
+          contrainte <ident type="constraint">inventaire-ferme</ident>
+          referme la porte que l'import entier de <code>core</code> laisse
+          ouverte (la raison de cet import est commentée à sa ligne). Un
+          élément nouveau fait échouer la validation tant qu'il n'est pas
+          déclaré : la chaîne ne peut pas élargir sa sortie en
+          silence.</item>
+          <item><label>Listes de valeurs fermées</label> — les attributs dont
+          le vocabulaire est décidé par le projet (types de zone et de ligne,
+          types d'entités, responsabilités) sont énumérés, avec la source de
+          vérité dont ils sont tirés.</item>
+          <item><label>Contraintes Schematron</label> — ce qu'un modèle de
+          contenu ne peut pas exprimer : les invariants que la chaîne doit
+          respecter d'une phase à l'autre.</item>
+        </list>
+
+        <p>Ce que cet ODD ne fait pas : décrire du TEI que la chaîne n'émet
+        pas, ni remplacer la validation contre <code>tei_all</code>, qui
+        répond à une autre question — « est-ce du TEI ? » plutôt que « est-ce
+        cette édition-ci ? ».</p>
+
+        <p><hi rend="bold">Portée des contraintes Schematron.</hi> Elles sont
+        toutes <hi rend="italic">locales</hi> : chacune s'évalue sur un élément
+        et ses voisins immédiats. Les invariants qui demandent de parcourir le
+        document entier — vérifier que chaque <att>corresp</att> pointe sur un
+        <att>xml:id</att> existant, que chaque <val>GraphicZone</val> a bien sa
+        <gi>figure</gi> — restent en Python dans
+        <ref target="../scripts/validate_tei.py">validate_tei.py</ref>, qui les
+        fait en un seul passage avec des ensembles. Écrits en Schematron, ils
+        seraient quadratiques sur des documents de cent mille éléments.</p>
+      </div>
+
+      <div xml:id="phases" xml:lang="fr">
+        <head>Les phases, et ce qu'elles ajoutent</head>
+
+        <p>Trois phases sont facultatives, pilotées par des variables
+        d'environnement. Le schéma décrit donc une sortie <hi rend="italic">au
+        plus</hi> annotée : un document produit sans elles est valide, et il ne
+        porte simplement pas les éléments qu'elles apportent.</p>
+
+        <table>
+          <row role="label">
+            <cell>Phase</cell><cell>Drapeau</cell><cell>Ce qu'elle ajoute</cell>
+          </row>
+          <row>
+            <cell>Enrichissement linguistique</cell>
+            <cell><code>ALTO2TEI_ENRICHMENT</code></cell>
+            <cell><gi>s</gi>, <gi>w</gi>, <gi>pc</gi>, <gi>c</gi> et leurs
+            attributs morphosyntaxiques</cell>
+          </row>
+          <row>
+            <cell>Modernisation</cell>
+            <cell><code>ALTO2TEI_MODERNIZE</code></cell>
+            <cell><gi>choice</gi>, <gi>orig</gi>, <gi>reg</gi></cell>
+          </row>
+          <row>
+            <cell>Entités nommées</cell>
+            <cell><code>ALTO2TEI_NER</code></cell>
+            <cell><gi>persName</gi>, <gi>placeName</gi>, <gi>orgName</gi>,
+            <gi>objectName</gi>, <gi>material</gi>, <gi>rs</gi> dans le corps,
+            et <gi>listPerson</gi> dans l'en-tête</cell>
+          </row>
+        </table>
+      </div>
+
+      <div xml:id="schema">
+        <head xml:lang="fr">La spécification</head>
+
+        <schemaSpec ident="alto2tei" prefix="tei_" start="TEI">
+
+          <desc xml:lang="fr">Le TEI qu'émet la chaîne ALTO2TEI : structure de
+          page issue d'ALTO, corps du texte, en-tête construit depuis les
+          métadonnées locales, et les annotations linguistiques et
+          onomastiques des phases facultatives.</desc>
+          <desc xml:lang="en">The TEI emitted by the ALTO2TEI pipeline: page
+          structure carried over from ALTO, running text, a header built from
+          local metadata, and the linguistic and onomastic annotation added by
+          the optional phases.</desc>
+
+          <!-- ============================================================
+               Couche 1 — inventaire fermé
+               Un module sans @include apporte tout ce qu'il définit ; c'est
+               le cas du seul module `tei`, qui porte les classes et les
+               types de données dont tout le reste dépend.
+               ============================================================ -->
+
+          <moduleRef key="tei"/>
+
+          <moduleRef key="textstructure"
+                     include="TEI body div front text titlePage titlePart"/>
+
+          <moduleRef key="header"
+                     include="appInfo application authority availability
+                              catDesc category change classDecl creation
+                              editorialDecl encodingDesc extent fileDesc idno
+                              interpretation keywords langUsage language
+                              licence profileDesc publicationStmt revisionDesc
+                              sourceDesc taxonomy teiHeader textClass
+                              titleStmt"/>
+
+          <!-- `core` est le seul module importe entier, et c'est un
+               contournement mesure, pas un choix de modelisation. Elaguer
+               core rend le RelaxNG produit incompilable par libxml2 : la
+               compilation tournait encore apres dix minutes, contre 0,1 s
+               avec core entier et 4,9 s pour tei_all. Ni la simplification
+               des motifs impossibles (scripts/rng_simplify.py) ni le
+               retrait des classes videes n'y changent quoi que ce soit ;
+               seul l'import entier de ce module precis y remedie. Les
+               elements de core que la chaine n'emet pas restent interdits,
+               par la contrainte `inventaire-ferme` ci-dessous. -->
+          <moduleRef key="core"/>
+
+          <moduleRef key="transcr"
+                     include="fw line path sourceDoc surface zone"/>
+
+          <moduleRef key="linking" include="ab"/>
+
+          <moduleRef key="figures" include="figure"/>
+
+          <moduleRef key="analysis" include="c pc s w"/>
+
+          <moduleRef key="namesdates"
+                     include="addName birth country death education faith
+                              forename genName listPerson nameLink objectName
+                              occupation orgName persName person placeName
+                              roleName settlement surname"/>
+
+          <moduleRef key="msdescription"
+                     include="altIdentifier material msDesc msIdentifier
+                              objectDesc physDesc repository"/>
+
+          <moduleRef key="corpus" include="particDesc"/>
+
+          <!-- ============================================================
+               Couche 2 — listes de valeurs fermées
+               ============================================================ -->
+
+          <elementSpec ident="zone" mode="change" module="transcr">
+            <desc xml:lang="fr">Une zone de la page. Son <att>type</att> vient
+            du TAGREFS SegmOnto de l'ALTO ; à défaut de TAGREFS, il reprend le
+            nom de l'élément ALTO — c'est ce que veulent dire les valeurs
+            <val>TextBlock</val> et <val>Space</val>, qui signalent une zone
+            que la segmentation n'a pas étiquetée.</desc>
+            <desc xml:lang="en">A zone of the page. Its <att>type</att> comes
+            from the ALTO SegmOnto TAGREFS; with no TAGREFS it falls back to
+            the ALTO element name — which is what <val>TextBlock</val> and
+            <val>Space</val> mean: a zone segmentation never labelled.</desc>
+            <attList>
+              <attDef ident="type" mode="change" usage="req">
+                <desc xml:lang="fr">Étiquette SegmOnto de la zone, ou nom de
+                l'élément ALTO quand la zone n'est pas étiquetée. Vocabulaire
+                tenu par <code>SEGMONTO_ZONES</code> dans
+                <code>src/constants.py</code>.</desc>
+                <desc xml:lang="en">SegmOnto label of the zone, or the ALTO
+                element name where the zone carries no label. Vocabulary held
+                by <code>SEGMONTO_ZONES</code> in
+                <code>src/constants.py</code>.</desc>
+                <valList type="closed">
+                  <valItem ident="CustomZone"/>
+                  <valItem ident="DamageZone"/>
+                  <valItem ident="DecorationZone"/>
+                  <valItem ident="DigitizationArtefactzone"/>
+                  <valItem ident="DropCapitalZone"/>
+                  <valItem ident="GraphicZone"/>
+                  <valItem ident="MainZone"/>
+                  <valItem ident="MarginTextZone"/>
+                  <valItem ident="MusicZone"/>
+                  <valItem ident="NumberingZone"/>
+                  <valItem ident="QuireMarksZone"/>
+                  <valItem ident="RunningTitleZone"/>
+                  <valItem ident="SealZone"/>
+                  <valItem ident="StampZone"/>
+                  <valItem ident="TableZone"/>
+                  <valItem ident="TitlePageZone"/>
+                  <!-- Les zones de ligne (zoneLine_*) portent une etiquette
+                       de LIGNE : dans le corpus, DefaultLine est la valeur
+                       la plus frequente de zone/@type. Le vocabulaire des
+                       lignes appartient donc aussi a cet attribut. -->
+                  <valItem ident="CustomLine"/>
+                  <valItem ident="DefaultLine"/>
+                  <valItem ident="DropCapitalLine"/>
+                  <valItem ident="HeadingLine"/>
+                  <valItem ident="InterlinearLine"/>
+                  <valItem ident="MusicLine"/>
+                  <valItem ident="TextLine">
+                    <desc xml:lang="fr">Ligne ALTO sans etiquette SegmOnto.</desc>
+                    <desc xml:lang="en">An ALTO line with no SegmOnto label.</desc>
+                  </valItem>
+                  <valItem ident="TextBlock">
+                    <desc xml:lang="fr">Bloc ALTO sans étiquette
+                    SegmOnto.</desc>
+                    <desc xml:lang="en">An ALTO block with no SegmOnto
+                    label.</desc>
+                  </valItem>
+                  <valItem ident="Space">
+                    <desc xml:lang="fr">Élément ALTO <code>SP</code>, sans
+                    étiquette SegmOnto.</desc>
+                    <desc xml:lang="en">An ALTO <code>SP</code> element, with
+                    no SegmOnto label.</desc>
+                  </valItem>
+                </valList>
+              </attDef>
+            </attList>
+          </elementSpec>
+
+          <elementSpec ident="line" mode="change" module="transcr">
+            <desc xml:lang="fr">Une ligne de texte. Elle ne porte pas
+            d'etiquette SegmOnto : la chaine la place sur la <gi>zone</gi>
+            qui enveloppe la ligne, pas sur la ligne elle-meme. Un
+            <gi>line</gi> ne porte donc qu'un identifiant et son rang dans
+            la zone.</desc>
+            <desc xml:lang="en">A line of text. It carries no SegmOnto
+            label: the pipeline puts that on the <gi>zone</gi> wrapping the
+            line, not on the line itself. A <gi>line</gi> therefore carries
+            only an identifier and its rank within the zone.</desc>
+          </elementSpec>
+
+          <elementSpec ident="rs" mode="change" module="core">
+            <desc xml:lang="fr">Entité désignée sans élément TEI dédié. La
+            chaîne n'en produit que deux sortes, tenues par
+            <code>NER_ENTITY_TYPES</code> dans
+            <code>src/enrichment/entity_schema.py</code>.</desc>
+            <desc xml:lang="en">A referencing string, for entity kinds TEI has
+            no dedicated element for. The pipeline emits exactly two, held by
+            <code>NER_ENTITY_TYPES</code> in
+            <code>src/enrichment/entity_schema.py</code>.</desc>
+            <attList>
+              <attDef ident="type" mode="change" usage="req">
+                <valList type="closed">
+                  <valItem ident="technique">
+                    <desc xml:lang="fr">Technique artistique.</desc>
+                    <desc xml:lang="en">An artistic technique.</desc>
+                  </valItem>
+                  <valItem ident="event">
+                    <desc xml:lang="fr">Événement.</desc>
+                    <desc xml:lang="en">An event.</desc>
+                  </valItem>
+                </valList>
+              </attDef>
+            </attList>
+          </elementSpec>
+
+          <classSpec ident="att.global.responsibility" mode="change"
+                     type="atts" module="tei">
+            <desc xml:lang="fr">La chaîne ne connaît qu'un agent automatique :
+            le repérage d'entités nommées. Toute autre responsabilité est
+            humaine et passe par le <gi>respStmt</gi> de l'en-tête.</desc>
+            <desc xml:lang="en">The pipeline knows one automatic agent: named
+            entity recognition. Every other responsibility is human and goes
+            through the header's <gi>respStmt</gi>.</desc>
+            <attList>
+              <attDef ident="resp" mode="change">
+                <valList type="closed">
+                  <valItem ident="#ner-auto">
+                    <desc xml:lang="fr">Annotation produite par la phase de
+                    reconnaissance d'entités nommées.</desc>
+                    <desc xml:lang="en">Annotation produced by the named
+                    entity recognition phase.</desc>
+                  </valItem>
+                </valList>
+              </attDef>
+            </attList>
+          </classSpec>
+
+          <!-- ============================================================
+               Couche 3 — contraintes Schematron
+               Chacune est locale : elle s'évalue sur un élément et son
+               voisinage immédiat, jamais sur le document entier.
+               ============================================================ -->
+
+          <constraintSpec ident="langUsage-langues-seules" scheme="schematron">
+            <desc xml:lang="fr">TEI donne à <gi>langUsage</gi> un modèle de
+            contenu par choix : des paragraphes ou des <gi>language</gi>,
+            jamais les deux. La chaîne y écrivait sa méthode de détection avant
+            de la faire effacer par la phase qui pose les langues mesurées ; la
+            prose vit désormais dans l'<gi>encodingDesc</gi>.</desc>
+            <desc xml:lang="en">TEI gives <gi>langUsage</gi> a content model by
+            choice: paragraphs or <gi>language</gi> elements, never both. The
+            pipeline used to write its detection method there, only to have it
+            erased by the phase that posts the measured languages; the prose
+            now lives in <gi>encodingDesc</gi>.</desc>
+            <constraint>
+              <sch:rule context="tei:langUsage">
+                <sch:report test="tei:language and (tei:p or tei:ab)">
+                  langUsage mixes prose and language elements; its content
+                  model is (model.pLike+ | language+). Prose about the
+                  languages belongs in encodingDesc.
+                </sch:report>
+              </sch:rule>
+            </constraint>
+          </constraintSpec>
+
+          <constraintSpec ident="language-quantite" scheme="schematron">
+            <desc xml:lang="fr">Un <gi>language</gi> déclare une part
+            (<att>usage</att>, un pourcentage) et la quantité mesurée dont
+            elle est tirée (<att>n</att>), avec son unité — parce que « par
+            volume » est une affirmation sur des mots, et qu'un compte de
+            conteneurs ne la soutient pas.</desc>
+            <desc xml:lang="en">A <gi>language</gi> declares a share
+            (<att>usage</att>, a percentage) and the measured quantity it is
+            drawn from (<att>n</att>), with its unit — because "by volume" is
+            a claim about words, and a count of containers cannot support
+            it.</desc>
+            <constraint>
+              <sch:rule context="tei:langUsage/tei:language">
+                <sch:assert test="@ident and normalize-space(@ident)">
+                  A language element must carry a non-empty @ident.
+                </sch:assert>
+                <sch:assert test="matches(@n, '^[0-9]+ (words|containers)$')">
+                  @n on language must be a count and its unit, e.g. "1716
+                  words" or "38 containers"; found "<sch:value-of select="@n"/>".
+                </sch:assert>
+              </sch:rule>
+            </constraint>
+          </constraintSpec>
+
+          <constraintSpec ident="choice-orig-reg" scheme="schematron">
+            <desc xml:lang="fr">La modernisation encode chaque forme en
+            regard : une graphie d'origine et une seule, une forme modernisée
+            et une seule. Un <gi>choice</gi> incomplet ferait disparaître
+            l'une ou l'autre de la lecture.</desc>
+            <desc xml:lang="en">Modernization encodes each form side by side:
+            exactly one original spelling, exactly one modernized form. An
+            incomplete <gi>choice</gi> would drop one of them from
+            reading.</desc>
+            <constraint>
+              <sch:rule context="tei:choice">
+                <sch:assert test="count(tei:orig) = 1 and count(tei:reg) = 1">
+                  A choice produced by modernization holds exactly one orig
+                  and one reg.
+                </sch:assert>
+              </sch:rule>
+            </constraint>
+          </constraintSpec>
+
+          <constraintSpec ident="pas-de-cesure-residuelle" scheme="schematron">
+            <desc xml:lang="fr">Le signe de césure des lignes ne doit pas
+            survivre dans une forme modernisée : la déhyphénation le retire
+            avant d'envoyer le mot au service, et un <hi rend="bold">¬</hi>
+            résiduel dans un <gi>reg</gi> signale un mot recollé de
+            travers.</desc>
+            <desc xml:lang="en">The line-break hyphen must not survive into a
+            modernized form: dehyphenation strips it before the word reaches
+            the service, and a residual <hi rend="bold">¬</hi> in a
+            <gi>reg</gi> marks a word rejoined wrongly.</desc>
+            <constraint>
+              <sch:rule context="tei:reg">
+                <sch:report test="contains(., '&#xAC;')">
+                  A residual line-break hyphen (¬) in a modernized form:
+                  "<sch:value-of select="normalize-space(.)"/>".
+                </sch:report>
+              </sch:rule>
+            </constraint>
+          </constraintSpec>
+
+          <constraintSpec ident="entite-automatique-datee" scheme="schematron">
+            <desc xml:lang="fr">Une annotation portée par un agent automatique
+            dit avec quelle confiance : sans <att>cert</att>, rien ne
+            distingue une entité sûre d'une reconnaissance
+            hasardeuse.</desc>
+            <desc xml:lang="en">An annotation attributed to an automatic agent
+            says how confident it is: with no <att>cert</att>, nothing tells a
+            certain entity from a lucky guess.</desc>
+            <constraint>
+              <sch:rule context="*[@resp = '#ner-auto']">
+                <sch:assert test="@cert">
+                  An automatically detected entity must carry @cert
+                  (high, medium or low).
+                </sch:assert>
+              </sch:rule>
+            </constraint>
+          </constraintSpec>
+
+          <constraintSpec ident="graphiczone-identifiee" scheme="schematron">
+            <desc xml:lang="fr">Une zone graphique est reprise dans le corps
+            par une <gi>figure</gi> qui la désigne par son identifiant : sans
+            <att>xml:id</att>, l'illustration redevient introuvable.</desc>
+            <desc xml:lang="en">A graphic zone is picked up in the text by a
+            <gi>figure</gi> that names it by identifier: with no
+            <att>xml:id</att>, the illustration becomes unreachable.</desc>
+            <constraint>
+              <sch:rule context="tei:zone[@type = 'GraphicZone']">
+                <sch:assert test="@xml:id">
+                  A GraphicZone must carry an xml:id: its figure in the text
+                  refers to it by that identifier.
+                </sch:assert>
+              </sch:rule>
+            </constraint>
+          </constraintSpec>
+
+          <constraintSpec ident="figure-ancree" scheme="schematron">
+            <desc xml:lang="fr">Une <gi>figure</gi> dit toujours de quelle
+            zone de la page elle provient.</desc>
+            <desc xml:lang="en">A <gi>figure</gi> always says which zone of
+            the page it comes from.</desc>
+            <constraint>
+              <sch:rule context="tei:figure">
+                <sch:assert test="@corresp">
+                  A figure must carry @corresp naming the GraphicZone it comes
+                  from.
+                </sch:assert>
+              </sch:rule>
+            </constraint>
+          </constraintSpec>
+
+          <constraintSpec ident="idno-iiif-unique" scheme="schematron">
+            <desc xml:lang="fr">Les identifiants IIIF sont lus dans un CSV où
+            plusieurs valeurs peuvent partager une cellule ; ils doivent en
+            ressortir séparés, un <gi>idno</gi> par manifeste.</desc>
+            <desc xml:lang="en">IIIF identifiers are read from a CSV where
+            several values may share one cell; they must come out separated,
+            one <gi>idno</gi> per manifest.</desc>
+            <constraint>
+              <sch:rule context="tei:idno[@type = 'iiif']">
+                <sch:report test="contains(., '|')">
+                  An unsplit IIIF idno: several manifests share one element.
+                </sch:report>
+              </sch:rule>
+            </constraint>
+          </constraintSpec>
+
+          <constraintSpec ident="pas-de-gabarit-publie" scheme="schematron">
+            <desc xml:lang="fr">Un ORCID de gabarit publié tel quel attribue
+            le travail à personne, et de façon crédible : c'est un identifiant
+            bien formé qui ne désigne rien.</desc>
+            <desc xml:lang="en">A placeholder ORCID published as is credits
+            the work to nobody, credibly: it is a well-formed identifier that
+            designates no one.</desc>
+            <constraint>
+              <sch:rule context="tei:ptr[@target] | tei:idno">
+                <sch:report test="contains(@target, '0000-0000-0000-0000')
+                                  or contains(., '0000-0000-0000-0000')">
+                  A placeholder ORCID reached the output.
+                </sch:report>
+              </sch:rule>
+            </constraint>
+          </constraintSpec>
+
+
+          <constraintSpec ident="inventaire-ferme" scheme="schematron">
+            <desc xml:lang="fr">La chaine emet ces 98 elements TEI, et
+            eux seuls. C'est la couche 1 de cet ODD, l'inventaire ferme. Les
+            <gi>moduleRef</gi> ci-dessus la portent pour tous les modules sauf
+            <code>core</code>, qui doit etre importe entier pour que le
+            RelaxNG produit reste compilable ; cette regle referme la porte
+            que cet import laisse ouverte, et donne au passage un message
+            lisible la ou un modele de contenu dirait seulement « element
+            inattendu ». Un element nouveau echoue ici tant qu'il n'est pas
+            ajoute a la liste : la chaine ne peut pas elargir sa sortie en
+            silence.</desc>
+            <desc xml:lang="en">The pipeline emits these 98 TEI elements
+            and no others. This is the first layer of this ODD, the closed
+            inventory. The <gi>moduleRef</gi> declarations above carry it for
+            every module but <code>core</code>, which has to be imported whole
+            for the generated RelaxNG to stay compilable; this rule closes the
+            door that import leaves open, and says why in words where a
+            content model would only say "unexpected element". A new element
+            fails here until it is added to the list: the pipeline cannot
+            widen its output in silence.</desc>
+            <constraint>
+              <sch:rule context="tei:*">
+                <sch:assert test="local-name() = (
+                    'TEI', 'ab', 'addName', 'altIdentifier', 'appInfo', 'application',
+                    'author', 'authority', 'availability', 'bibl', 'birth', 'body',
+                    'c', 'catDesc', 'category', 'change', 'choice', 'classDecl',
+                    'country', 'creation', 'date', 'death', 'div', 'editorialDecl',
+                    'education', 'encodingDesc', 'extent', 'faith', 'fileDesc', 'figure',
+                    'foreign', 'forename', 'front', 'fw', 'genName', 'graphic',
+                    'head', 'hi', 'idno', 'interpretation', 'keywords', 'label',
+                    'langUsage', 'language', 'lb', 'licence', 'line', 'listPerson',
+                    'material', 'measure', 'msDesc', 'msIdentifier', 'name', 'nameLink',
+                    'note', 'objectDesc', 'objectName', 'occupation', 'orgName', 'orig',
+                    'p', 'particDesc', 'path', 'pb', 'pc', 'persName',
+                    'person', 'physDesc', 'placeName', 'profileDesc', 'ptr', 'pubPlace',
+                    'publicationStmt', 'publisher', 'reg', 'repository', 'resp', 'respStmt',
+                    'revisionDesc', 'roleName', 'rs', 's', 'settlement', 'sourceDesc',
+                    'sourceDoc', 'surface', 'surname', 'taxonomy', 'teiHeader', 'term',
+                    'text', 'textClass', 'title', 'titlePage', 'titlePart', 'titleStmt',
+                    'w', 'zone')">
+                  Element "<sch:value-of select="local-name()"/>" is not part of
+                  the ALTO2TEI inventory. Either the pipeline gained an element
+                  and schema/alto2tei.odd has not caught up, or this is a stray.
+                </sch:assert>
+              </sch:rule>
+            </constraint>
+          </constraintSpec>
+
+        </schemaSpec>
+      </div>
+    </body>
+  </text>
+</TEI>
