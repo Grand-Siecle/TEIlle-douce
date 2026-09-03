@@ -1,56 +1,59 @@
-# Schéma TEI du projet
+# The project's TEI schema
 
-`alto2tei.odd` est la personnalisation TEI d'ALTO2TEI : la description
-normative des documents que la chaîne produit. Les trois autres fichiers en
-sont dérivés par `scripts/build_odd.py` et ne doivent jamais être modifiés
-directement.
+`alto2tei.odd` is the TEI customization of ALTO2TEI: the normative description
+of the documents the pipeline produces. The three other files are derived from
+it by `scripts/build_odd.py` and must never be edited directly.
 
-| Fichier | Rôle | Appliqué par |
+| File | Role | Applied by |
 |---|---|---|
-| `alto2tei.odd` | Source. Document TEI décrivant la personnalisation. | — |
-| `alto2tei.rng` | Modèle de contenu (RELAX NG). | `lxml` |
-| `alto2tei.sch` | Contraintes Schematron, forme lisible. | — |
-| `alto2tei.svrl.xsl` | Contraintes Schematron, forme exécutable. | `saxonche` |
+| `alto2tei.odd` | Source. A TEI document describing the customization. | — |
+| `alto2tei.rng` | Content model (RELAX NG). | `lxml` |
+| `alto2tei.sch` | Schematron constraints, readable form. | — |
+| `alto2tei.svrl.xsl` | Schematron constraints, executable form. | `saxonche` |
 
-## Portée
+For the practical side — what each rule catches, how to validate, how to change
+the schema — see [`docs/schema.md`](../docs/schema.md). This file documents the
+compilation chain and the two implementation constraints that shape it.
 
-Le schéma de référence était jusqu'ici `tei_all`, soit l'intégralité des
-Guidelines : environ six cents éléments, dont la chaîne en émet 118. Une
-validation contre `tei_all` établit la conformité TEI, mais ne détecte ni un
-type de zone inexistant, ni une `<figure>` sans ancrage, ni une entité
-automatique dépourvue d'indice de certitude.
+## Scope
 
-`alto2tei.odd` répond à la question complémentaire : le document est-il une
-sortie conforme de *cette* chaîne. Les deux validations restent disponibles et
-répondent à des questions distinctes.
+The reference schema used to be `tei_all`, that is the whole Guidelines: about
+six hundred elements, of which the pipeline emits 118. Validating against
+`tei_all` establishes TEI conformance, but detects neither a zone type that does
+not exist, nor a `<figure>` with no anchor, nor an automatic entity carrying no
+indication of certainty.
 
-La personnalisation contraint sur trois niveaux.
+`alto2tei.odd` answers the complementary question: is this document a conformant
+output of *this* pipeline. Both validations remain available and answer distinct
+questions.
 
-1. **Inventaire fermé.** Les `<moduleRef include="…">` n'importent que les
-   éléments effectivement émis. La contrainte `inventaire-ferme` couvre le
-   module `core`, importé entier pour les raisons exposées en
-   [Contraintes d'implémentation](#contraintes-dimplémentation).
-2. **Listes de valeurs fermées.** `zone/@type` reprend la taxonomie SegmOnto
-   de `src/constants.py`, `rs/@type` la table d'entités de
+The customization constrains on three levels.
+
+1. **A closed inventory.** The `<moduleRef include="…">` elements import only
+   what is actually emitted. The `inventaire-ferme` constraint covers the `core`
+   module, which is imported whole for the reasons set out under
+   [Implementation constraints](#implementation-constraints).
+2. **Closed value lists.** `zone/@type` mirrors the SegmOnto taxonomy in
+   `src/constants.py`, `rs/@type` the entity table in
    `src/enrichment/entity_schema.py`.
-3. **Contraintes Schematron.** Dix règles portant sur ce qu'un modèle de
-   contenu ne peut pas exprimer : complétude d'un `<choice>`, présence de
-   `@cert` sur toute annotation automatique, unité de mesure sur `@n` d'un
-   `<language>`, absence de césure résiduelle dans un `<reg>`, absence de
-   prose dans `<langUsage>`.
+3. **Schematron constraints.** Eleven specifications covering what a content
+   model cannot express: the completeness of a `<choice>`, the presence of
+   `@cert` on every automatic annotation, the unit of measure on a
+   `<language>`'s `@n`, the absence of a residual line-break hyphen in a
+   `<reg>`, the absence of prose in `<langUsage>`.
 
-Ces contraintes sont toutes locales : chacune s'évalue sur un élément et son
-voisinage immédiat. Les invariants exigeant un parcours complet du document —
-résolution des `@corresp`, présence d'une `<figure>` par `GraphicZone` —
-restent implémentés en Python dans `scripts/validate_tei.py`, qui les traite
-en un seul passage. Exprimés en Schematron, ils seraient quadratiques sur des
-documents de cent mille éléments.
+These constraints are all local: each evaluates on an element and its immediate
+neighbourhood. Invariants requiring a full traversal of the document — resolving
+`@corresp`, checking that each `GraphicZone` has a `<figure>` — stay implemented
+in Python in `scripts/validate_tei.py`, which handles them in a single pass.
+Expressed in Schematron they would be quadratic over documents of a hundred
+thousand elements.
 
-## Chaîne de compilation
+## Compilation chain
 
 ```mermaid
 flowchart TB
-    subgraph outils["Boîte à outils · .odd-toolchain/ · versions épinglées · non versionnée"]
+    subgraph outils["Toolchain · .odd-toolchain/ · pinned versions · not versioned"]
         direction LR
         P5["TEI P5 4.12.0<br/>p5subset.xml"]
         STY["TEI Stylesheets<br/>v7.61.0"]
@@ -58,26 +61,26 @@ flowchart TB
     end
 
     ODD["<b>alto2tei.odd</b><br/>source"]
-    COMP["ODD compilé<br/><i>temporaire, ~2 Mo</i>"]
+    COMP["compiled ODD<br/><i>temporary, ~2 MB</i>"]
 
     ODD --> A1["odd2odd.xsl"]
-    P5 -. "résolution des moduleRef" .-> A1
+    P5 -. "moduleRef resolution" .-> A1
     A1 --> COMP
 
     COMP --> B1["odd2relax.xsl"]
     COMP --> C1["extract-isosch.xsl<br/>lang=en"]
 
-    B1 --> B2["rng_simplify.py<br/>RELAX NG §4.19 et §4.20<br/><i>281 motifs éliminés</i>"]
-    B2 --> RNG["<b>alto2tei.rng</b><br/>384 Ko · compilation 0,1 s"]
+    B1 --> B2["rng_simplify.py<br/>RELAX NG §4.19 and §4.20<br/><i>279 patterns eliminated</i>"]
+    B2 --> RNG["<b>alto2tei.rng</b><br/>383 KB · compiles in 0.1 s"]
 
-    C1 --> SCH["<b>alto2tei.sch</b><br/>16 Ko"]
+    C1 --> SCH["<b>alto2tei.sch</b><br/>17 KB"]
     SCH --> D1["pipeline-for-svrl.xsl"]
-    D1 --> SVRL["<b>alto2tei.svrl.xsl</b><br/>139 Ko"]
+    D1 --> SVRL["<b>alto2tei.svrl.xsl</b><br/>143 KB"]
 
     STY -. " " .-> B1
     SCHX -. " " .-> D1
 
-    RNG --> USE["validate_tei.py --odd<br/>tests E2E"]
+    RNG --> USE["validate_tei.py --odd<br/>end-to-end tests"]
     SVRL --> USE
 
     classDef source fill:#1f6feb22,stroke:#1f6feb,stroke-width:2px
@@ -90,145 +93,140 @@ flowchart TB
     class P5,STY,SCHX,COMP outil
 ```
 
-Le moteur XSLT est SaxonC-HE, distribué comme roue pip (`saxonche`) : XSLT 2.0
-sans JVM ni ant, contrairement aux scripts shell fournis avec les Stylesheets.
-La compilation complète s'exécute en moins d'une seconde.
+The XSLT engine is SaxonC-HE, distributed as a pip wheel (`saxonche`): XSLT 2.0
+with neither JVM nor ant, unlike the shell scripts shipped with the Stylesheets.
+A full compilation runs in under a second.
 
-Les versions de la boîte à outils sont épinglées en tête de
-`scripts/build_odd.py`. Les relever constitue une modification délibérée : il
-faut alors recompiler et examiner le diff des schémas produits.
+The toolchain versions are pinned at the top of `scripts/build_odd.py`. Raising
+them is a deliberate change: recompile, then examine the diff of the generated
+schemas.
 
-## Utilisation
+## Usage
 
 ```bash
-# Validation contre le schéma du projet : RELAX NG puis Schematron
+# Validation against the project schema: RELAX NG, then Schematron
 venv/bin/python scripts/validate_tei.py --odd tei_output/*.xml
 
-# Sur un corpus : les documents sont indépendants
+# Over a corpus: documents are independent
 venv/bin/python scripts/validate_tei.py --odd -j 8 tei_output/*.xml
 
-# Validation contre tei_all, si une copie est disponible (non versionnée, ~1 Mo)
+# Validation against tei_all, if a copy is available (not versioned, ~1 MB)
 venv/bin/python scripts/validate_tei.py --schema tei_all.rng tei_output/*.xml
 ```
 
-Cinq invariants locaux — prose dans `<langUsage>`, `idno` IIIF non découpé,
-césure résiduelle dans un `<reg>`, `GraphicZone` sans `xml:id`, ORCID de
-gabarit — sont énoncés **une seule fois**, dans l'ODD. Ils l'étaient aussi en
-Python, et les deux versions divergeaient : sévérités différentes, portées
-différentes, et la version Python de la césure manquait les `<reg>` enrichis
-dont le texte vit dans des `<w>`. Un appel sans `--odd` ne les vérifie donc
-pas, et le script le dit plutôt que de laisser croire à un contrôle complet.
-Les règles que la TEI marque `role="nonfatal"` restent des avertissements.
+Five local invariants — prose in `<langUsage>`, an unsplit IIIF `idno`, a
+residual hyphen in a `<reg>`, a `GraphicZone` with no `xml:id`, a placeholder
+ORCID — are stated **exactly once**, in the ODD. They used to be stated in
+Python as well, and the two versions had diverged: different severities,
+different scopes, and the Python hyphenation check missed enriched `<reg>`
+elements whose text lives inside `<w>`. A call without `--odd` therefore does not
+check them, and the script says so rather than letting a reader believe the check
+was complete. Rules the TEI marks `role="nonfatal"` remain warnings.
 
-Les tests de bout en bout valident la sortie contre `alto2tei.rng` à chaque
-exécution : le schéma étant versionné, ce contrôle ne peut pas être sauté. La
-partie Schematron est ignorée, avec un motif explicite, lorsque `saxonche`
-n'est pas installé.
+The end-to-end tests validate the output against `alto2tei.rng` on every run:
+the schema being versioned, that check cannot be skipped. The Schematron half is
+skipped, with an explicit reason, when `saxonche` is not installed.
 
-## Régénération
+## Regeneration
 
 ```bash
-venv/bin/python scripts/build_odd.py            # après toute modification de l'ODD
-venv/bin/python scripts/build_odd.py --check    # les dérivés correspondent-ils à la source
-venv/bin/python scripts/build_odd.py --refresh  # re-télécharge la boîte à outils
+venv/bin/python scripts/build_odd.py            # after any change to the ODD
+venv/bin/python scripts/build_odd.py --check    # do the derivatives match the source?
+venv/bin/python scripts/build_odd.py --refresh  # re-download the toolchain
 ```
 
-`--check` recompile dans un répertoire temporaire et compare aux fichiers
-versionnés, en ignorant la seule date de génération que les Stylesheets
-inscrivent dans leur sortie.
+`--check` recompiles into a temporary directory and compares against the
+versioned files, ignoring only the generation date the Stylesheets stamp into
+their output.
 
-## Coût
+## Cost
 
-Environ 0,7 s par Mo, soit une trentaine de secondes pour un document de
-39 Mo et 135 000 éléments. La répartition, mesurée :
+Roughly 0.7 s per MB, so about thirty seconds for a 39 MB document of 135,000
+elements. The measured breakdown:
 
-| Étape | Part |
+| Step | Share |
 |---|---|
-| Analyse XML | 0,2 s |
+| XML parsing | 0.2 s |
 | RELAX NG (lxml) | 16 s |
 | Schematron (Saxon) | 8 s |
-| Contrôles Python | 1 s |
+| Python checks | 1 s |
 
-Deux choses expliquent que ce ne soit pas pire. `@points` a d'abord été
-typé par la TEI comme une **liste** de points, chacun validé contre un
-motif : libxml2 vérifiait ainsi 539 000 coordonnées par document, et la
-seule validation RELAX NG prenait 56 s au lieu de 3. Le type est ramené à
-une chaîne et la forme de la liste énoncée en Schematron
-(`coordonnees-bien-formees`), où Saxon la contrôle en une seconde — même
-exigence, quarante fois moins cher.
+Two things explain why it is not worse. The TEI first typed `@points` as a
+**list** of points, each validated against a pattern: libxml2 was thereby
+checking 539,000 coordinates per document, and RELAX NG validation alone took
+56 s instead of 3. The type is narrowed to a string and the shape of the list is
+stated in Schematron (`coordonnees-bien-formees`), where Saxon checks it in a
+second — the same requirement, forty times cheaper.
 
-Et `-j N` répartit les fichiers sur N cœurs : quatre documents totalisant
-111 Mo passent de 72 s à 30 s sur quatre cœurs, le plancher étant le plus
-gros fichier du lot.
+And `-j N` spreads the files over N cores: four documents totalling 111 MB go
+from 72 s to 30 s on four cores, the floor being the largest file in the batch.
 
-## Contraintes d'implémentation
+## Implementation constraints
 
-Les deux points suivants ne sont pas déductibles de la documentation TEI et
-conditionnent la structure de l'ODD.
+The two points below are not deducible from the TEI documentation, and they
+determine the structure of the ODD.
 
-### Classes de modèle vides et motifs impossibles
+### Empty model classes and impossible patterns
 
-Les modèles de contenu TEI référencent des **classes de modèle** — des groupes
-nommés d'éléments interchangeables — et non des éléments individuels : un
-`<p>` admet « tout membre de `model.phrase` ».
+TEI content models reference **model classes** — named groups of interchangeable
+elements — rather than individual elements: a `<p>` admits "any member of
+`model.phrase`".
 
-Une personnalisation qui n'importe qu'une partie de la TEI vide certaines de
-ces classes : sans encodage de vers, `model.lLike` n'a plus aucun membre.
-`odd2relax` rend une classe vide par `<notAllowed/>`, motif RELAX NG qui ne
-reconnaît rien. La construction est exacte, mais la classe apparaît à
-l'intérieur de séquences, où la spécification impose une réduction (§4.20) :
+A customization importing only part of the TEI empties some of those classes:
+with no verse encoding, `model.lLike` has no members left. `odd2relax` renders
+an empty class as `<notAllowed/>`, a RELAX NG pattern matching nothing. The
+construction is correct, but the class appears inside sequences, where the
+specification requires a reduction (§4.20):
 
 ```
 group(notAllowed, X)   →  notAllowed
 zeroOrMore(notAllowed) →  empty
 ```
 
-libxml2 n'effectue pas ces réductions et construit son automate avec les
-motifs impossibles en place. Deux conséquences ont été observées :
+libxml2 does not perform these reductions and builds its automaton with the
+impossible patterns still in place. Two consequences were observed:
 
-- explosion combinatoire — la compilation du schéma n'aboutissait pas après
-  dix minutes ;
-- contamination des modèles de contenu — sur une variante qui compilait, un
-  `<zone>` n'acceptait plus de `<zone>` imbriqué, et le schéma rejetait des
-  documents conformes.
+- combinatorial explosion — schema compilation had not finished after ten
+  minutes;
+- contamination of content models — on a variant that did compile, a `<zone>`
+  no longer accepted a nested `<zone>`, and the schema rejected conformant
+  documents.
 
-`scripts/rng_simplify.py` applique donc ces réductions avant que lxml ne lise
-le fichier. La langue reconnue par le schéma est inchangée : seule son
-écriture l'est. Effet mesuré : 281 motifs éliminés, compilation ramenée à
-0,1 s.
+`scripts/rng_simplify.py` therefore applies these reductions before lxml reads
+the file. The language the schema recognizes is unchanged; only its writing is.
+Measured effect: 279 patterns eliminated, compilation down to 0.1 s.
 
-Les règles portant sur `<empty/>` (§4.19) sont également nécessaires, la
-réduction d'un `notAllowed` en produisant : un `zeroOrMore(empty)` subsistant
-faisait rejeter les `<person>` d'un `<listPerson>`.
+The rules covering `<empty/>` (§4.19) are necessary too, since reducing a
+`notAllowed` produces one: a surviving `zeroOrMore(empty)` was making the
+`<person>` elements of a `<listPerson>` be rejected.
 
-Le module `core` reste incompilable après simplification et doit être importé
-entier ; la cause n'a pas été identifiée. La contrainte `inventaire-ferme`
-rétablit pour ce module l'inventaire que le modèle de contenu ne porte plus.
+The `core` module remains incompilable after simplification and has to be
+imported whole; the cause has not been identified. The `inventaire-ferme`
+constraint restores for that module the inventory its content model no longer
+carries.
 
-### Sélection linguistique des contraintes
+### Language-based selection of constraints
 
-Un ODD peut documenter ses spécifications en plusieurs langues. À
-l'extraction, `extract-isosch` détermine la langue d'une contrainte en
-remontant à son premier ancêtre déclarant un `@xml:lang`, avec `en` par
-défaut, et écarte celles qui ne correspondent pas à la langue demandée.
+An ODD may document its specifications in several languages. At extraction
+time, `extract-isosch` determines a constraint's language by walking up to its
+nearest ancestor declaring an `@xml:lang`, defaulting to `en`, and discards
+those that do not match the language requested.
 
-Un `xml:lang="fr"` sur l'élément racine de l'ODD suffit donc à écarter la
-totalité des contraintes du projet lors d'une extraction en `en`. L'échec est
-silencieux : la compilation réussit, le fichier `.sch` est produit et contient
-les contraintes propres à la TEI, et la validation passe — les règles
-susceptibles d'échouer en étant absentes.
+An `xml:lang="fr"` on the root element of the ODD is therefore enough to discard
+*every* project constraint during an `en` extraction. The failure is silent:
+compilation succeeds, the `.sch` file is produced and contains the TEI's own
+constraints, and validation passes — the rules liable to fail being absent.
 
-Deux mesures préviennent ce cas : la prose française est marquée sur les
-`<div>` qui la portent, jamais au-dessus du `<schemaSpec>` ; et
-`tests/test_odd.py` échoue si une contrainte déclarée dans l'ODD est absente
-du Schematron produit.
+Two measures prevent this case: French prose is marked on the `<div>` elements
+carrying it, never above the `<schemaSpec>`; and `tests/test_odd.py` fails if a
+constraint declared in the ODD is missing from the generated Schematron.
 
-## Procédure de modification
+## Modification procedure
 
-1. Modifier `alto2tei.odd`.
-2. Recompiler : `venv/bin/python scripts/build_odd.py`.
-3. Vérifier : `venv/bin/python -m pytest tests/test_odd.py tests/test_e2e_pipeline.py`.
-4. Committer la source et les trois fichiers dérivés dans le même commit.
+1. Edit `alto2tei.odd`.
+2. Recompile: `venv/bin/python scripts/build_odd.py`.
+3. Verify: `venv/bin/python -m pytest tests/test_odd.py tests/test_e2e_pipeline.py`.
+4. Commit the source and the three derived files in the same commit.
 
-L'ajout d'un élément à la sortie de la chaîne impose son ajout à l'inventaire
-de l'ODD ; `tests/test_odd.py` échoue tant que ce n'est pas fait.
+Adding an element to the pipeline's output requires adding it to the ODD's
+inventory; `tests/test_odd.py` fails until that is done.
