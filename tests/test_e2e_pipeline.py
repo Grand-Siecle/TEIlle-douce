@@ -130,6 +130,32 @@ def _schema_compile(chemin):
     return etree.RelaxNG(etree.parse(chemin))
 
 
+def _valider_odd(chemin):
+    """Valide contre le schema du projet : le TEI que CETTE chaine emet.
+
+    tei_all repond a « est-ce du TEI ? » et laisse passer un type de zone
+    invente ou une <figure> sans ancrage ; schema/alto2tei.rng repond a
+    « est-ce cette edition-ci ? ». Il est versionne, donc ce controle ne
+    se saute jamais -- contrairement a _valider_schema().
+
+    Le Schematron, lui, est en XSLT 2.0 (c'est ce que la TEI produit) et
+    demande saxonche, qui n'est pas installe partout."""
+    relaxng = _schema_compile(str(RACINE / "schema" / "alto2tei.rng"))
+    doc = etree.parse(str(chemin))
+    assert relaxng.validate(doc), "alto2tei.rng :\n" + "\n".join(
+        f"L{e.line}: {e.message}" for e in list(relaxng.error_log)[:10]
+    )
+
+    try:
+        import saxonche  # noqa: F401
+    except ImportError:
+        pytest.skip("saxonche absent — contraintes Schematron non verifiees")
+    from scripts.validate_tei import erreurs_svrl, schematron_du_projet
+    _, feuille = schematron_du_projet()
+    violations = erreurs_svrl(feuille.transform_to_string(source_file=str(chemin)))
+    assert not violations, "Schematron :\n" + "\n".join(violations[:10])
+
+
 def _valider_schema(chemin):
     """Valide contre tei_all.rng quand il est disponible, sinon skip."""
     demande = os.environ.get("ALTO2TEI_TEI_RNG")
@@ -318,6 +344,10 @@ def test_court_est_valide_selon_tei_all(tei_court):
     (ou pointer ALTO2TEI_TEI_RNG dessus) active le controle. Telechargement :
     https://tei-c.org/release/xml/tei/custom/schema/relaxng/tei_all.rng
     """
+    # L'ODD d'abord : _valider_schema() se saute quand tei_all.rng
+    # manque, et un skip interrompt le test — il emportait avec lui
+    # le seul controle que ce depot puisse toujours faire.
+    _valider_odd(tei_court)
     _valider_schema(tei_court)
 
 
@@ -419,4 +449,5 @@ def test_complet_est_valide_selon_tei_all(tei_complet):
     """Le mode complet produit les @cert et les <persName> automatiques :
     ce sont eux qui, avec "mid" hors vocabulaire TEI, rendaient invalide
     tout fichier annote alors que le TEI de base etait propre."""
+    _valider_odd(tei_complet)
     _valider_schema(tei_complet)

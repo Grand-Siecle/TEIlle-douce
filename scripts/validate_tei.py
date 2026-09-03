@@ -1,6 +1,9 @@
 # -----------------------------------------------------------
 # Validates TEI outputs against the known failure modes of this
 # pipeline. Usage: venv/bin/python scripts/validate_tei.py tei_test/*.xml
+# Optional: --odd valide contre le schema du projet (schema/alto2tei.rng
+# et schema/alto2tei.svrl.xsl, tous deux versionnes, derives de
+# schema/alto2tei.odd) : le TEI que cette chaine emet, et rien d'autre.
 # Optional: --schema chemin/vers/tei_all.rng ajoute la validation RelaxNG
 # complete (les violations sont des ERROR). Le schema n'est pas versionne
 # ici (~1 Mo, https://tei-c.org/release/xml/tei/custom/schema/relaxng/) ;
@@ -12,8 +15,15 @@
 import argparse
 import re
 import sys
+from multiprocessing import Pool, cpu_count
+from pathlib import Path
 
 from lxml import etree
+
+SVRL = "http://purl.oclc.org/dsdl/svrl"
+RACINE = Path(__file__).resolve().parent.parent
+ODD_RNG = RACINE / "schema" / "alto2tei.rng"
+ODD_SVRL = RACINE / "schema" / "alto2tei.svrl.xsl"
 
 XML_ID = "{http://www.w3.org/XML/1998/namespace}id"
 NCNAME = re.compile(r"^[A-Za-z_][A-Za-z0-9._\-]*$")
@@ -28,7 +38,59 @@ POINTS_PAIR = re.compile(r"^-?\d+,-?\d+$")
 PARSER = etree.XMLParser(collect_ids=False, huge_tree=True)
 
 
-def validate(path, relaxng=None):
+def erreurs_svrl(rapport):
+    """Les violations d'un rapport SVRL, en messages d'une ligne.
+
+    Schematron distingue l'assertion non tenue (`failed-assert`) du rapport
+    declenche (`successful-report`) ; l'ODD emploie les deux selon qu'il est
+    plus clair d'affirmer ce qui doit etre ou de signaler ce qui ne doit pas.
+    Pour un controle de sortie, les deux sont des violations.
+
+    Renvoie des couples (message, role) : la TEI marque trois de ses
+    propres regles `role="nonfatal"`, et les traiter comme fatales ferait
+    echouer un document sur un avertissement de sa part."""
+    if isinstance(rapport, str):
+        rapport = etree.fromstring(rapport.encode())
+    violations = []
+    attendus = {f"{{{SVRL}}}failed-assert", f"{{{SVRL}}}successful-report"}
+    # Un seul parcours, dans l'ordre du document : balayer d'abord toutes
+    # les assertions puis tous les rapports mettait les seconds derriere
+    # les premiers, hors de portee du plafond d'affichage. Sur un document
+    # annote, les 63 echecs d'inventaire suffisaient a rendre les quatre
+    # regles ecrites en <sch:report> invisibles.
+    for el in rapport.iter():
+        if not isinstance(el.tag, str) or el.tag not in attendus:
+            continue
+        texte = " ".join("".join(el.itertext()).split())
+        lieu = el.get("location", "")
+        message = f"{texte} [{lieu}]" if lieu else texte
+        violations.append((message, el.get("role") or "fatal"))
+    return violations
+
+
+def schematron_du_projet():
+    """La feuille SVRL compilee depuis l'ODD, prete a etre appliquee.
+
+    Elle est en XSLT 2.0 -- c'est ce que la TEI produit -- donc lxml ne
+    peut pas l'executer : il faut saxonche, qui est une dependance de
+    developpement et non du pipeline."""
+    try:
+        from saxonche import PySaxonProcessor
+    except ImportError:
+        raise SystemExit(
+            "--odd demande saxonche pour appliquer le Schematron :\n"
+            "  pip install -r requirements-dev.txt"
+        )
+    if not ODD_SVRL.exists():
+        raise SystemExit(
+            f"{ODD_SVRL} est absent : venv/bin/python scripts/build_odd.py"
+        )
+    processeur = PySaxonProcessor(license=False)
+    return processeur, processeur.new_xslt30_processor().compile_stylesheet(
+        stylesheet_file=str(ODD_SVRL))
+
+
+def validate(path, relaxng=None, schematron=None):
     errors, warnings = [], []
     tree = etree.parse(path, parser=PARSER)
     root = tree.getroot()
@@ -38,6 +100,15 @@ def validate(path, relaxng=None):
         for err in relaxng.error_log[:20]:
             errors.append(f"RelaxNG L{err.line}: {err.message}")
 
+    # Contraintes de l'ODD, si la feuille SVRL est fournie
+    if schematron is not None:
+        for message, role in erreurs_svrl(
+                schematron.transform_to_string(source_file=path))[:20]:
+            if role == "nonfatal":
+                warnings.append(f"Schematron: {message}")
+            else:
+                errors.append(f"Schematron: {message}")
+
     def local(el):
         return etree.QName(el).localname if isinstance(el.tag, str) else ""
 
@@ -45,7 +116,6 @@ def validate(path, relaxng=None):
     # ci-dessous plutôt qu'en parcours séparés : validate() visite déjà
     # tout l'arbre, sourceDoc compris.
     graphic_sources = {}   # xml:id de la zone -> son crop IIIF (ou None)
-    graphic_sans_id = 0
     figures = []           # (cible de @corresp, a-t-il un <graphic url>)
 
     for el in root.iter():
@@ -56,8 +126,6 @@ def validate(path, relaxng=None):
         if tag == "zone" and el.get("type") == "GraphicZone":
             if xid:
                 graphic_sources[xid] = el.get("source")
-            else:
-                graphic_sans_id += 1
         elif tag == "figure":
             figures.append((
                 (el.get("corresp") or "").lstrip("#"),
@@ -73,21 +141,12 @@ def validate(path, relaxng=None):
                 errors.append(f"points mal formés sur <{tag}>: {bad[:2]}")
             elif len(pairs) > 2 and all(p.split(",")[0] == "0" for p in pairs):
                 errors.append(f"points suspects (tous x=0) sur <{tag} xml:id={xid}>")
-        # <langUsage> prend des paragraphes OU des <language>, jamais les
-        # deux : son modele de contenu TEI est un choix. La prose sur la
-        # methode de detection a longtemps ete ecrite la, puis effacee par
-        # finalize_langusage() ; l'y remettre rendrait le fichier invalide.
-        if tag == "langUsage":
-            intrus = sorted({local(c) for c in el if local(c) != "language"})
-            if intrus and any(local(c) == "language" for c in el):
-                errors.append(
-                    f"<langUsage> melange <language> et {intrus} : "
-                    "son modele de contenu est (model.pLike+ | language+)"
-                )
-        if tag == "idno" and el.get("type") == "iiif" and el.text and "|" in el.text:
-            errors.append(f"idno iiif non splitté: {el.text[:60]}")
-        if tag == "reg" and el.text and "¬" in el.text:
-            warnings.append(f"¬ résiduel dans reg: {el.text[:50]!r}")
+        # Cinq invariants locaux -- prose dans <langUsage>, idno IIIF non
+        # decoupe, ¬ residuel dans un <reg>, GraphicZone sans xml:id,
+        # ORCID de gabarit -- ne sont plus verifies ici : ils sont enonces
+        # une seule fois, dans schema/alto2tei.odd, et appliques par la
+        # validation Schematron ci-dessus. Les redire en Python entretenait
+        # deux versions qui divergeaient sur la severite et la portee.
         src = el.get("source")
         if src and src.startswith("http") and "_reconciled" in src:
             errors.append(f"URL IIIF construite sur le nom de fichier: {src[:70]}")
@@ -102,10 +161,6 @@ def validate(path, relaxng=None):
             f"{len(manquantes)} GraphicZone sans <figure> dans le texte "
             f"(ex.: {sorted(manquantes)[:2]})"
         )
-    if graphic_sans_id:
-        warnings.append(
-            f"{graphic_sans_id} GraphicZone sans xml:id : leur <figure> est invérifiable"
-        )
     # L'image manque seulement si la zone avait un crop IIIF à reprendre :
     # sans mapping IIIF le sourceDoc n'a pas de @source, et une <figure>
     # ancrée par @corresp seul est alors la sortie normale.
@@ -117,10 +172,6 @@ def validate(path, relaxng=None):
     if tei_id.startswith("ark_"):
         errors.append(f"xml:id racine avec préfixe ark hardcodé: {tei_id}")
 
-    # ORCID placeholder et ptr vides
-    text = etree.tostring(root, encoding="unicode")
-    if "0000-0000-0000-0000" in text:
-        errors.append("ORCID placeholder 0000-0000-0000-0000 présent")
 
     # xml:id dupliqués : invalide, et fatal pour toute résolution de liens.
     # (collect_ids=False sur le parseur, donc c'est à nous de le vérifier.)
@@ -176,11 +227,57 @@ def validate(path, relaxng=None):
     return errors, warnings
 
 
+# Chaque processus de travail compile les schemas une fois pour toutes :
+# la compilation coute 0,1 s, la refaire par fichier serait absurde.
+_CONTEXTE = {}
+
+
+def _preparer_worker(chemin_schema, avec_odd):
+    _CONTEXTE["relaxng"] = (etree.RelaxNG(etree.parse(chemin_schema))
+                            if chemin_schema else None)
+    _CONTEXTE["odd_rng"] = etree.RelaxNG(etree.parse(str(ODD_RNG))) if avec_odd else None
+    _CONTEXTE["schematron"] = None
+    if avec_odd:
+        try:
+            _CONTEXTE["processeur"], _CONTEXTE["schematron"] = schematron_du_projet()
+        except SystemExit:
+            pass
+
+
+def _controler(path):
+    """Le verdict d'un fichier : (chemin, erreurs, avertissements).
+
+    Un fichier illisible est un echec de CE fichier, pas du lot. Saxon leve
+    ses propres exceptions sur des documents que lxml accepte -- un DOCTYPE
+    introuvable, un imbriquement trop profond -- et les laisser passer
+    arretait tout au premier fichier fautif."""
+    try:
+        errors, warnings = validate(path, relaxng=_CONTEXTE.get("relaxng"),
+                                    schematron=_CONTEXTE.get("schematron"))
+        odd_rng = _CONTEXTE.get("odd_rng")
+        if odd_rng is not None:
+            arbre = etree.parse(path, parser=PARSER)
+            if not odd_rng.validate(arbre):
+                errors.extend(f"alto2tei.rng L{e.line}: {e.message}"
+                              for e in list(odd_rng.error_log)[:20])
+        return path, errors, warnings
+    except Exception as e:
+        return path, [f"fichier invalide: {type(e).__name__}: {e}"], []
+
+
 def main(paths=None):
     parser = argparse.ArgumentParser(
         description="Contrôle les sorties TEI du pipeline (modes d'échec connus)."
     )
     parser.add_argument("fichiers", nargs="+", help="fichiers TEI à contrôler")
+    parser.add_argument(
+        "--jobs", "-j", type=int, default=1, metavar="N",
+        help="controler N fichiers en parallele (ils sont independants)",
+    )
+    parser.add_argument(
+        "--odd", action="store_true",
+        help="valide contre le schema du projet (schema/alto2tei.{rng,svrl.xsl})",
+    )
     parser.add_argument(
         "--schema", metavar="RNG",
         help="chemin d'un tei_all.rng : ajoute la validation RelaxNG complète",
@@ -188,15 +285,43 @@ def main(paths=None):
     args = parser.parse_args(sys.argv[1:] if paths is None else list(paths))
 
     relaxng = etree.RelaxNG(etree.parse(args.schema)) if args.schema else None
+    schematron = processeur = None
+    odd_rng = None
+    if args.odd:
+        if not ODD_RNG.exists():
+            raise SystemExit(
+                f"{ODD_RNG} est absent : venv/bin/python scripts/build_odd.py")
+        odd_rng = etree.RelaxNG(etree.parse(str(ODD_RNG)))
+        try:
+            # Le processeur n'est plus utilise ensuite, mais il est garde
+            # en vie deliberement : la feuille compilee en depend, et rien
+            # ne garantit ce lien d'une version de SaxonC a l'autre.
+            processeur, schematron = schematron_du_projet()
+        except SystemExit as absent:
+            # saxonche manquant n'emporte pas la validation RelaxNG, qui
+            # ne demande que lxml et un schema versionne.
+            print(f"note: Schematron non applique ({absent}) — "
+                  "seul alto2tei.rng a servi")
+    else:
+        # Cinq invariants locaux ne vivent plus que dans l'ODD ; se taire
+        # ici laisserait croire a un controle complet.
+        print("note: prose dans <langUsage>, idno IIIF non decoupe, ¬ residuel "
+              "dans un <reg>,\n      GraphicZone sans xml:id et ORCID de gabarit "
+              "sont enonces par l'ODD :\n      non verifies sans --odd.")
 
     total_err = 0
-    for path in args.fichiers:
-        # Un fichier illisible est un échec de CE fichier, pas du script :
-        # les suivants sont quand même contrôlés.
-        try:
-            errors, warnings = validate(path, relaxng=relaxng)
-        except (etree.XMLSyntaxError, OSError) as e:
-            errors, warnings = [f"fichier invalide: {e}"], []
+    taches = list(args.fichiers)
+    travailleurs = max(1, min(args.jobs, len(taches), cpu_count()))
+
+    if travailleurs > 1:
+        with Pool(travailleurs, initializer=_preparer_worker,
+                  initargs=(args.schema, bool(args.odd))) as bassin:
+            resultats = bassin.map(_controler, taches)
+    else:
+        _preparer_worker(args.schema, bool(args.odd))
+        resultats = [_controler(p) for p in taches]
+
+    for path, errors, warnings in resultats:
         status = "FAIL" if errors else "ok"
         print(f"[{status}] {path}: {len(errors)} erreurs, {len(warnings)} avertissements")
         for e in errors[:10]:

@@ -30,3 +30,7 @@ htmlcov/
 .pytest_cache/
 # Les fixtures de test doivent etre versionnees malgre la regle *.csv ci-dessus
 !tests/fixtures/**/*.csv
+
+# Boite a outils de compilation de l'ODD (TEI P5, Stylesheets, SchXslt),
+# retelechargeable a versions epinglees par scripts/build_odd.py
+.odd-toolchain/
