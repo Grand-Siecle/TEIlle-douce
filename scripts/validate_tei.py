@@ -115,7 +115,6 @@ def validate(path, relaxng=None, schematron=None):
     # ci-dessous plutôt qu'en parcours séparés : validate() visite déjà
     # tout l'arbre, sourceDoc compris.
     graphic_sources = {}   # xml:id de la zone -> son crop IIIF (ou None)
-    graphic_sans_id = 0
     figures = []           # (cible de @corresp, a-t-il un <graphic url>)
 
     for el in root.iter():
@@ -126,8 +125,6 @@ def validate(path, relaxng=None, schematron=None):
         if tag == "zone" and el.get("type") == "GraphicZone":
             if xid:
                 graphic_sources[xid] = el.get("source")
-            else:
-                graphic_sans_id += 1
         elif tag == "figure":
             figures.append((
                 (el.get("corresp") or "").lstrip("#"),
@@ -143,21 +140,12 @@ def validate(path, relaxng=None, schematron=None):
                 errors.append(f"points mal formés sur <{tag}>: {bad[:2]}")
             elif len(pairs) > 2 and all(p.split(",")[0] == "0" for p in pairs):
                 errors.append(f"points suspects (tous x=0) sur <{tag} xml:id={xid}>")
-        # <langUsage> prend des paragraphes OU des <language>, jamais les
-        # deux : son modele de contenu TEI est un choix. La prose sur la
-        # methode de detection a longtemps ete ecrite la, puis effacee par
-        # finalize_langusage() ; l'y remettre rendrait le fichier invalide.
-        if tag == "langUsage":
-            intrus = sorted({local(c) for c in el if local(c) != "language"})
-            if intrus and any(local(c) == "language" for c in el):
-                errors.append(
-                    f"<langUsage> melange <language> et {intrus} : "
-                    "son modele de contenu est (model.pLike+ | language+)"
-                )
-        if tag == "idno" and el.get("type") == "iiif" and el.text and "|" in el.text:
-            errors.append(f"idno iiif non splitté: {el.text[:60]}")
-        if tag == "reg" and el.text and "¬" in el.text:
-            warnings.append(f"¬ résiduel dans reg: {el.text[:50]!r}")
+        # Cinq invariants locaux -- prose dans <langUsage>, idno IIIF non
+        # decoupe, ¬ residuel dans un <reg>, GraphicZone sans xml:id,
+        # ORCID de gabarit -- ne sont plus verifies ici : ils sont enonces
+        # une seule fois, dans schema/alto2tei.odd, et appliques par la
+        # validation Schematron ci-dessus. Les redire en Python entretenait
+        # deux versions qui divergeaient sur la severite et la portee.
         src = el.get("source")
         if src and src.startswith("http") and "_reconciled" in src:
             errors.append(f"URL IIIF construite sur le nom de fichier: {src[:70]}")
@@ -172,10 +160,6 @@ def validate(path, relaxng=None, schematron=None):
             f"{len(manquantes)} GraphicZone sans <figure> dans le texte "
             f"(ex.: {sorted(manquantes)[:2]})"
         )
-    if graphic_sans_id:
-        warnings.append(
-            f"{graphic_sans_id} GraphicZone sans xml:id : leur <figure> est invérifiable"
-        )
     # L'image manque seulement si la zone avait un crop IIIF à reprendre :
     # sans mapping IIIF le sourceDoc n'a pas de @source, et une <figure>
     # ancrée par @corresp seul est alors la sortie normale.
@@ -187,10 +171,6 @@ def validate(path, relaxng=None, schematron=None):
     if tei_id.startswith("ark_"):
         errors.append(f"xml:id racine avec préfixe ark hardcodé: {tei_id}")
 
-    # ORCID placeholder et ptr vides
-    text = etree.tostring(root, encoding="unicode")
-    if "0000-0000-0000-0000" in text:
-        errors.append("ORCID placeholder 0000-0000-0000-0000 présent")
 
     # xml:id dupliqués : invalide, et fatal pour toute résolution de liens.
     # (collect_ids=False sur le parseur, donc c'est à nous de le vérifier.)
@@ -269,7 +249,19 @@ def main(paths=None):
             raise SystemExit(
                 f"{ODD_RNG} est absent : venv/bin/python scripts/build_odd.py")
         odd_rng = etree.RelaxNG(etree.parse(str(ODD_RNG)))
-        processeur, schematron = schematron_du_projet()
+        try:
+            processeur, schematron = schematron_du_projet()
+        except SystemExit as absent:
+            # saxonche manquant n'emporte pas la validation RelaxNG, qui
+            # ne demande que lxml et un schema versionne.
+            print(f"note: Schematron non applique ({absent}) — "
+                  "seul alto2tei.rng a servi")
+    else:
+        # Cinq invariants locaux ne vivent plus que dans l'ODD ; se taire
+        # ici laisserait croire a un controle complet.
+        print("note: prose dans <langUsage>, idno IIIF non decoupe, ¬ residuel "
+              "dans un <reg>,\n      GraphicZone sans xml:id et ORCID de gabarit "
+              "sont enonces par l'ODD :\n      non verifies sans --odd.")
 
     total_err = 0
     for path in args.fichiers:

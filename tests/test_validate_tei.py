@@ -32,6 +32,19 @@ def _ecrire(tmp_path, contenu, nom="doc.tei.xml"):
     return str(p)
 
 
+def violations_odd(chemin):
+    """Les violations Schematron de l'ODD sur un document.
+
+    Les cinq invariants locaux que ce script verifiait en double sont
+    desormais enonces une seule fois, dans schema/alto2tei.odd. Les tests
+    qui les epinglaient interrogent donc la regle publiee, pas une seconde
+    implementation."""
+    pytest.importorskip("saxonche")
+    from scripts.validate_tei import erreurs_svrl, schematron_du_projet
+    _, feuille = schematron_du_projet()
+    return [m for m, _ in erreurs_svrl(feuille.transform_to_string(source_file=chemin))]
+
+
 def test_document_sain_sans_erreur(tmp_path):
     errors, warnings = validate(_ecrire(tmp_path, TEI_OK))
     assert errors == []
@@ -147,16 +160,6 @@ def test_points_mal_formes_et_suspects(tmp_path):
     assert any("suspects" in e for e in errors), errors
 
 
-def test_idno_iiif_non_splitte_est_une_erreur(tmp_path):
-    """Plusieurs manifestes doivent devenir plusieurs <idno>, jamais une
-    seule valeur separee par des barres."""
-    contenu = TEI_OK.replace(
-        "<category xml:id=\"MainZone\"/>",
-        '<category xml:id="MainZone"/><idno type="iiif">https://a/manifest.json|https://b/manifest.json</idno>',
-    )
-    errors, _ = validate(_ecrire(tmp_path, contenu, nom="iiif.xml"))
-    assert any("idno iiif non split" in e for e in errors), errors
-
 
 def test_url_iiif_construite_sur_le_nom_de_fichier_est_une_erreur(tmp_path):
     """Un @source bati sur le nom de dossier ("_reconciled") ne resout
@@ -169,32 +172,7 @@ def test_url_iiif_construite_sur_le_nom_de_fichier_est_une_erreur(tmp_path):
     assert any("URL IIIF construite" in e for e in errors), errors
 
 
-def test_orcid_placeholder_et_prefixe_ark_racine(tmp_path):
-    contenu = TEI_OK.replace(
-        "<category xml:id=\"MainZone\"/>",
-        '<category xml:id="MainZone"/><ptr target="https://orcid.org/0000-0000-0000-0000"/>',
-    )
-    errors, _ = validate(_ecrire(tmp_path, contenu, nom="orcid.xml"))
-    assert any("ORCID placeholder" in e for e in errors), errors
 
-    racine_ark = TEI_OK.replace(
-        '<TEI xmlns="http://www.tei-c.org/ns/1.0">',
-        '<TEI xmlns="http://www.tei-c.org/ns/1.0" xml:id="ark_12148_bpt6k9001">',
-    )
-    errors, _ = validate(_ecrire(tmp_path, racine_ark, nom="ark.xml"))
-    assert any("prefixe ark hardcode" in e or "ark hardcod" in e for e in errors), errors
-
-
-def test_hyphen_residuel_dans_reg_est_un_avertissement(tmp_path):
-    """Un ¬ survivant dans un <reg> signale une de-hyphenation ratee ;
-    c'est un avertissement, pas une erreur bloquante."""
-    contenu = TEI_OK.replace(
-        "<ab corresp=\"#zone_1\">",
-        '<ab corresp="#zone_1"><choice><orig>mot¬</orig><reg>mot¬ coupe</reg></choice>',
-    )
-    errors, warnings = validate(_ecrire(tmp_path, contenu, nom="reg.xml"))
-    assert any("dans reg" in w for w in warnings), warnings
-    assert errors == []
 
 
 TEI_FIGURE = """<TEI xmlns="http://www.tei-c.org/ns/1.0">
@@ -253,44 +231,6 @@ def test_figure_sans_graphic_est_normale_quand_la_zone_n_a_pas_de_crop(tmp_path)
     assert errors == []
     assert warnings == []
 
-
-def test_zone_graphique_sans_xml_id_ne_fait_pas_planter_la_validation(tmp_path):
-    """Deux zones sans identifiant faisaient lever un TypeError au tri,
-    et la traceback emportait tous les fichiers suivants de la ligne de
-    commande."""
-    contenu = TEI_FIGURE.replace(
-        '<zone xml:id="zone_g" type="GraphicZone" corresp="#GraphicZone"\n            source="https://iiif/f1/crop.jpg"/>',
-        '<zone type="GraphicZone" corresp="#GraphicZone"/>\n'
-        '      <zone type="GraphicZone" corresp="#GraphicZone"/>\n'
-        '      <zone xml:id="zone_g" type="GraphicZone" corresp="#GraphicZone" source="https://iiif/f1/crop.jpg"/>',
-    )
-    errors, warnings = validate(_ecrire(tmp_path, contenu))
-    assert errors == []
-    assert any("sans xml:id" in w for w in warnings), warnings
-
-
-def test_prose_dans_langusage_est_une_erreur(tmp_path):
-    """TEI donne a <langUsage> un modele de contenu par choix,
-    (model.pLike+ | language+) : y remettre le paragraphe de methode a
-    cote des <language> produirait un document invalide. Le garde-fou
-    doit le dire sans qu'un tei_all.rng soit fourni."""
-    contenu = TEI_OK.replace(
-        "<category xml:id=\"MainZone\"/>",
-        "<category xml:id=\"MainZone\"/>"
-        "<langUsage><p>Methode.</p><language ident=\"fra\">French</language></langUsage>",
-    )
-    errors, _ = validate(_ecrire(tmp_path, contenu))
-    assert any("langUsage" in e for e in errors), errors
-
-
-def test_langusage_de_langues_seules_ne_leve_rien(tmp_path):
-    contenu = TEI_OK.replace(
-        "<category xml:id=\"MainZone\"/>",
-        "<category xml:id=\"MainZone\"/>"
-        "<langUsage><language ident=\"fra\">French</language></langUsage>",
-    )
-    errors, warnings = validate(_ecrire(tmp_path, contenu))
-    assert errors == [] and warnings == []
 
 
 # =============================================================================
@@ -405,3 +345,107 @@ def test_odd_valide_une_sortie_du_pipeline(tmp_path, capsys):
     with pytest.raises(SystemExit) as leve:
         vt.main(["--odd", str(doc)])
     assert leve.value.code == 0, capsys.readouterr().out
+
+
+# =============================================================================
+# Les cinq invariants locaux, desormais enonces par l'ODD seul
+# =============================================================================
+
+def test_idno_iiif_non_splitte(tmp_path):
+    """Une cellule CSV peut porter plusieurs manifestes separes par une
+    barre ; non decoupes, ils forment une adresse que rien ne resout."""
+    contenu = TEI_OK.replace(
+        "<category xml:id=\"MainZone\"/>",
+        "<category xml:id=\"MainZone\"/>"
+        "<idno type=\"iiif\">https://a/manifest|https://b/manifest</idno>")
+    violations = violations_odd(_ecrire(tmp_path, contenu))
+    assert any("IIIF idno" in v for v in violations), violations
+
+
+def test_orcid_gabarit(tmp_path):
+    contenu = TEI_OK.replace(
+        "<category xml:id=\"MainZone\"/>",
+        "<category xml:id=\"MainZone\"/>"
+        "<idno type=\"orcid\">0000-0000-0000-0000</idno>")
+    violations = violations_odd(_ecrire(tmp_path, contenu))
+    assert any("placeholder ORCID" in v for v in violations), violations
+
+
+def test_cesure_residuelle_dans_reg(tmp_path):
+    """La regle de l'ODD lit la valeur textuelle entiere : elle voit le ¬
+    d'un <reg> enrichi, dont le texte vit dans des <w> enfants -- ce que
+    le controle Python, qui lisait el.text, manquait."""
+    contenu = TEI_OK.replace(
+        "texte</ab>",
+        "<choice><orig>ma¬in</orig><reg><w>ma¬in</w></reg></choice></ab>")
+    violations = violations_odd(_ecrire(tmp_path, contenu))
+    assert any("line-break hyphen" in v for v in violations), violations
+
+
+def test_prose_dans_langusage(tmp_path):
+    contenu = TEI_OK.replace(
+        "<category xml:id=\"MainZone\"/>",
+        "<category xml:id=\"MainZone\"/><langUsage><p>methode</p>"
+        "<language ident=\"fra\" usage=\"100\" n=\"10 words\">French</language></langUsage>")
+    violations = violations_odd(_ecrire(tmp_path, contenu))
+    assert any("langUsage mixes" in v for v in violations), violations
+
+
+def test_graphiczone_sans_xml_id(tmp_path):
+    contenu = TEI_OK.replace(
+        "<zone xml:id=\"zone_1\" corresp=\"#MainZone\"/>",
+        "<zone type=\"GraphicZone\"/>")
+    violations = violations_odd(_ecrire(tmp_path, contenu))
+    assert any("GraphicZone must carry an xml:id" in v for v in violations), violations
+
+
+def test_un_document_sain_ne_declenche_aucune_regle_de_l_odd(tmp_path):
+    assert violations_odd(_ecrire(tmp_path, TEI_OK)) == []
+
+
+def test_les_invariants_locaux_ne_sont_plus_rediscutes_en_python(tmp_path):
+    """Cinq invariants existaient en double : une fois ici, une fois dans
+    l'ODD. Les deux versions divergeaient — severite differente, portee
+    differente, et la version Python du ¬ manquait les <reg> enrichis. Le
+    meme fichier etait donc « ok », « avec avertissements » ou « en echec »
+    selon la commande tapee. L'ODD est desormais seul a les enoncer."""
+    contenu = TEI_OK.replace(
+        '<category xml:id="MainZone"/>',
+        '<category xml:id="MainZone"/>'
+        '<idno type="iiif">https://a|https://b</idno>'
+        '<idno type="orcid">0000-0000-0000-0000</idno>'
+        '<langUsage><p>methode</p><language ident="fra">French</language></langUsage>'
+    ).replace("texte</ab>", "<reg>ma¬in</reg></ab>")
+    errors, warnings = validate(_ecrire(tmp_path, contenu))
+    tout = " ".join(errors + warnings)
+    for disparu in ("iiif non splitté", "ORCID placeholder", "melange", "¬ résiduel"):
+        assert disparu not in tout, f"controle encore double en Python : {disparu}"
+
+
+def test_sans_odd_le_script_dit_ce_qu_il_n_a_pas_verifie(tmp_path, capsys):
+    """Cinq invariants ne vivent plus que dans l'ODD. Un appel sans --odd
+    ne les verifie donc pas, et se taire la-dessus laisserait croire a un
+    controle complet."""
+    with pytest.raises(SystemExit):
+        main([_ecrire(tmp_path, TEI_OK)])
+    sortie = capsys.readouterr().out
+    assert "--odd" in sortie
+    assert "non verifi" in sortie.lower()
+
+
+def test_odd_sans_saxonche_valide_quand_meme_le_relaxng(tmp_path, capsys, monkeypatch):
+    """saxonche absent ne doit pas emporter la validation RelaxNG, qui ne
+    depend que de lxml et d'un schema versionne."""
+    import scripts.validate_tei as vt
+    if not vt.ODD_RNG.exists():
+        pytest.skip("schema/alto2tei.rng absent — lancer scripts/build_odd.py")
+
+    def pas_de_saxon():
+        raise SystemExit("saxonche absent")
+    monkeypatch.setattr(vt, "schematron_du_projet", pas_de_saxon)
+
+    with pytest.raises(SystemExit):
+        vt.main(["--odd", _ecrire(tmp_path, TEI_OK)])
+    sortie = capsys.readouterr().out
+    assert "Schematron" in sortie and "saxonche" in sortie
+    assert "alto2tei.rng" in sortie, "le RelaxNG doit avoir ete applique"

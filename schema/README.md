@@ -108,10 +108,14 @@ venv/bin/python scripts/validate_tei.py --odd tei_output/*.xml
 venv/bin/python scripts/validate_tei.py --schema tei_all.rng tei_output/*.xml
 ```
 
-`--odd` est plus strict que l'appel nu : cinq contrôles que ce script
-signale comme avertissements sont énoncés par l'ODD et remontent alors en
-erreurs. Les règles que la TEI marque `role="nonfatal"` restent des
-avertissements.
+Cinq invariants locaux — prose dans `<langUsage>`, `idno` IIIF non découpé,
+césure résiduelle dans un `<reg>`, `GraphicZone` sans `xml:id`, ORCID de
+gabarit — sont énoncés **une seule fois**, dans l'ODD. Ils l'étaient aussi en
+Python, et les deux versions divergeaient : sévérités différentes, portées
+différentes, et la version Python de la césure manquait les `<reg>` enrichis
+dont le texte vit dans des `<w>`. Un appel sans `--odd` ne les vérifie donc
+pas, et le script le dit plutôt que de laisser croire à un contrôle complet.
+Les règles que la TEI marque `role="nonfatal"` restent des avertissements.
 
 Les tests de bout en bout valident la sortie contre `alto2tei.rng` à chaque
 exécution : le schéma étant versionné, ce contrôle ne peut pas être sauté. La
