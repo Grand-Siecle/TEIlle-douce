@@ -1,0 +1,45 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "ALTO2TEI: an ALTO-to-TEI pipeline for early modern printed books"
+abstract: >-
+  A Python pipeline converting the ALTO XML produced by OCR/HTR engines into
+  TEI P5 editions of early modern printed books. Layout is preserved in
+  sourceDoc under the SegmOnto taxonomy with IIIF-addressable page images, the
+  reading text is assembled in text, and three optional phases add linguistic
+  annotation (tokens, parts of speech, lemmas), modernized spellings encoded as
+  orig/reg pairs, and named entities resolved against standOff lists. Output is
+  validated against a project TEI customization (ODD) that states what a
+  conformant output of the pipeline is. Developed for the Projet Grand Siècle
+  (Université de Lausanne, Université de Genève) on a corpus of French art
+  theory and art literature printed between 1548 and 1669. The sourceDoc and
+  header construction descend from earlier work by Kelly Christensen.
+type: software
+authors:
+  - family-names: Humeau
+    given-names: Maxime
+    orcid: "https://orcid.org/0000-0001-6860-0916"
+  - family-names: Blanc
+    given-names: Jan
+    orcid: "https://orcid.org/0000-0002-2091-2520"
+  - family-names: Gallay
+    given-names: Antoine
+    orcid: "https://orcid.org/0009-0003-2463-9589"
+  - family-names: Batalla-Lagleyre
+    given-names: Gabriel
+    orcid: "https://orcid.org/0000-0003-4600-0295"
+  - family-names: Randonneix
+    given-names: Pauline
+  - family-names: Marquaille
+    given-names: Léonie
+repository-code: "https://github.com/rayondemiel/test_tei_ouput"
+license: AGPL-3.0-or-later
+keywords:
+  - TEI
+  - ALTO
+  - SegmOnto
+  - IIIF
+  - digital humanities
+  - HTR
+  - named entity recognition
+  - early modern French
+  - art history
