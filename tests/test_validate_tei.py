@@ -470,6 +470,10 @@ INFRACTIONS = {
     "inventaire-ferme": (
         "texte</ab>", "<quote>hors inventaire</quote></ab>",
         "is not part of"),
+    "coordonnees-bien-formees": (
+        '<zone xml:id="zone_1" corresp="#MainZone"/>',
+        '<zone xml:id="zone_1" corresp="#MainZone" points="12,3 pasunpoint"/>',
+        "whitespace-separated x,y pairs"),
 }
 
 
@@ -479,3 +483,32 @@ def test_chaque_regle_de_l_odd_se_declenche_quand_on_l_enfreint(regle, tmp_path)
     contenu = TEI_OK.replace(avant, apres, 1)
     violations = violations_odd(_ecrire(tmp_path, contenu))
     assert any(attendu in v for v in violations), (regle, violations)
+
+
+def test_des_coordonnees_valides_ne_declenchent_rien(tmp_path):
+    """La regle sur @points remplace un type TEI qui coutait 55 des 57
+    secondes de validation d'un document de 20 000 elements : elle doit
+    etre exacte, pas seulement rapide."""
+    for valeur in ("12,3", "12,3 45,6", "-1,-2 3.5,4.25 0,0"):
+        contenu = TEI_OK.replace(
+            '<zone xml:id="zone_1" corresp="#MainZone"/>',
+            f'<zone xml:id="zone_1" corresp="#MainZone" points="{valeur}"/>')
+        assert violations_odd(_ecrire(tmp_path, contenu, "p.xml")) == [], valeur
+
+
+def test_les_fichiers_se_controlent_en_parallele(tmp_path, capsys):
+    """Les documents sont independants et la validation est longue : sur un
+    corpus, le seul levier qui compte est de ne pas les faire l'un apres
+    l'autre. Le resultat doit etre identique, dans le meme ordre."""
+    fichiers = [_ecrire(tmp_path, TEI_OK, f"doc{i}.xml") for i in range(4)]
+    fichiers.append(_ecrire(tmp_path, TEI_OK.replace('xml:id="zone_1"',
+                                                     'xml:id="ark:/12148/x"'),
+                            "fautif.xml"))
+    with pytest.raises(SystemExit):
+        main(["--jobs", "2", *fichiers])
+    parallele = capsys.readouterr().out
+    with pytest.raises(SystemExit):
+        main(fichiers)
+    sequentiel = capsys.readouterr().out
+    assert parallele == sequentiel
+    assert "NCName" in parallele

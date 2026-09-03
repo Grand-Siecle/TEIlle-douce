@@ -1,6 +1,6 @@
 <?xml version='1.0' encoding='UTF-8'?>
 <grammar xmlns="http://relaxng.org/ns/structure/1.0" xmlns:tei="http://www.tei-c.org/ns/1.0" xmlns:teix="http://www.tei-c.org/ns/Examples" xmlns:xlink="http://www.w3.org/1999/xlink" datatypeLibrary="http://www.w3.org/2001/XMLSchema-datatypes" ns="http://www.tei-c.org/ns/1.0"><!--
-Schema generated from ODD source 2026-09-03T10:52:32Z. . 
+Schema generated from ODD source 2026-09-03T13:16:51Z. . 
 TEI Edition: P5 Version 4.12.0. Last updated on 28th July 2026, revision 113e933e2 
 TEI Edition Location: https://www.tei-c.org/Vault/P5/4.12.0/ 
  The TEI emitted by the ALTO2TEI pipeline: page structure carried over from ALTO, running text, a header built from local metadata, and the linguistic and onomastic annotation added by the optional phases. 
@@ -2178,21 +2178,6 @@ Sample values include: 1] duplicate; 2] duplicate-partial; 3] excessStart; 4] ex
       <oneOrMore>
          <ref name="tei_model.pPart.transcriptional_sequenceRepeatable"/>
       </oneOrMore>
-   </define>
-   <define name="tei_model.linePart">
-      <choice>
-         <ref name="tei_model.hiLike"/>
-         <ref name="tei_choice"/>
-         <ref name="tei_add"/>
-         <ref name="tei_del"/>
-         <ref name="tei_unclear"/>
-         <ref name="tei_zone"/>
-         <ref name="tei_path"/>
-         <ref name="tei_line"/>
-         <ref name="tei_w"/>
-         <ref name="tei_c"/>
-         <ref name="tei_pc"/>
-      </choice>
    </define>
    <define name="tei_model.ptrLike">
       <choice>
@@ -6257,22 +6242,7 @@ Suggested values include: 1] ISBN; 2] ISSN; 3] DOI; 4] URI; 5] VIAF; 6] ESTC; 7]
       <optional>
          <attribute name="points">
             <a:documentation xmlns:a="http://relaxng.org/ns/compatibility/annotations/1.0">identifies a two or three dimensional area by means of a series of pairs of numbers, each of which gives the x,y, or z coordinates of a point on a line enclosing the area.</a:documentation>
-            <list>
-               <data type="token">
-                  <param name="pattern">(-?[0-9]+(\.[0-9]+)?,-?[0-9]+(\.[0-9]+)?(,-?[0-9]+(\.[0-9]+)?)?)</param>
-               </data>
-               <data type="token">
-                  <param name="pattern">(-?[0-9]+(\.[0-9]+)?,-?[0-9]+(\.[0-9]+)?(,-?[0-9]+(\.[0-9]+)?)?)</param>
-               </data>
-               <data type="token">
-                  <param name="pattern">(-?[0-9]+(\.[0-9]+)?,-?[0-9]+(\.[0-9]+)?(,-?[0-9]+(\.[0-9]+)?)?)</param>
-               </data>
-               <zeroOrMore>
-                  <data type="token">
-                     <param name="pattern">(-?[0-9]+(\.[0-9]+)?,-?[0-9]+(\.[0-9]+)?(,-?[0-9]+(\.[0-9]+)?)?)</param>
-                  </data>
-               </zeroOrMore>
-            </list>
+            <data type="string"/>
          </attribute>
       </optional>
    </define>
@@ -6292,25 +6262,13 @@ Suggested values include: 1] ISBN; 2] ISSN; 3] DOI; 4] URI; 5] VIAF; 6] ESTC; 7]
    </define>
    <define name="tei_surface">
       <element name="surface">
-         <a:documentation xmlns:a="http://relaxng.org/ns/compatibility/annotations/1.0">defines a written surface as a two-dimensional or three-dimensional coordinate space, optionally grouping one or more graphic representations of that space, zones of interest within that space, and, when using an embedded transcription approach, transcriptions of the writing within them. [12.1. Digital Facsimiles 12.2.2. Embedded Transcription]</a:documentation>
+         <a:documentation xmlns:a="http://relaxng.org/ns/compatibility/annotations/1.0">A page: its full-page IIIF image, then its zones. [12.1. Digital Facsimiles 12.2.2. Embedded Transcription]</a:documentation>
          <group>
+            <optional>
+               <ref name="tei_graphic"/>
+            </optional>
             <zeroOrMore>
-               <choice>
-                  <ref name="tei_model.global"/>
-                  <ref name="tei_model.labelLike"/>
-                  <ref name="tei_model.graphicLike"/>
-               </choice>
-            </zeroOrMore>
-            <zeroOrMore>
-               <choice>
-                  <ref name="tei_zone"/>
-                  <ref name="tei_line"/>
-                  <ref name="tei_path"/>
-                  <ref name="tei_surface"/>
-               </choice>
-               <zeroOrMore>
-                  <ref name="tei_model.global"/>
-               </zeroOrMore>
+               <ref name="tei_zone"/>
             </zeroOrMore>
          </group>
          <ref name="tei_att.global.attributes"/>
@@ -6339,11 +6297,9 @@ Sample values include: 1] glued; 2] pinned; 3] sewn</a:documentation>
          <a:documentation xmlns:a="http://relaxng.org/ns/compatibility/annotations/1.0">A zone of the page. Its <code xmlns="http://www.w3.org/1999/xhtml" xmlns:rng="http://relaxng.org/ns/structure/1.0">@type</code> comes from the ALTO SegmOnto TAGREFS; with no TAGREFS it falls back to the ALTO element name — which is what TextBlock and Space mean: a zone segmentation never labelled. [12.1. Digital Facsimiles 12.2.2. Embedded Transcription]</a:documentation>
          <zeroOrMore>
             <choice>
-               <text/>
-               <ref name="tei_model.graphicLike"/>
-               <ref name="tei_model.global"/>
-               <ref name="tei_surface"/>
-               <ref name="tei_model.linePart"/>
+               <ref name="tei_zone"/>
+               <ref name="tei_path"/>
+               <ref name="tei_line"/>
             </choice>
          </zeroOrMore>
          <ref name="tei_att.global.attributes"/>
@@ -6485,13 +6441,7 @@ Sample values include: 1] header; 2] footer; 3] pageNum (page number); 4] lineNu
    <define name="tei_line">
       <element name="line">
          <a:documentation xmlns:a="http://relaxng.org/ns/compatibility/annotations/1.0">A line of text. It carries no SegmOnto label: the pipeline puts that on the <code xmlns="http://www.w3.org/1999/xhtml" xmlns:rng="http://relaxng.org/ns/structure/1.0">&lt;zone&gt;</code> wrapping the line, not on the line itself. A <code xmlns="http://www.w3.org/1999/xhtml" xmlns:rng="http://relaxng.org/ns/structure/1.0">&lt;line&gt;</code> therefore carries only an identifier and its rank within the zone. [12.2.2. Embedded Transcription]</a:documentation>
-         <zeroOrMore>
-            <choice>
-               <text/>
-               <ref name="tei_model.global"/>
-               <ref name="tei_model.linePart"/>
-            </choice>
-         </zeroOrMore>
+         <text/>
          <ref name="tei_att.global.attributes"/>
          <ref name="tei_att.coordinated.attributes"/>
          <ref name="tei_att.typed.attributes"/>
@@ -8133,6 +8083,13 @@ Sample values include: 1] binding; 2] endband; 3] slipcase; 4] support; 5] tie</
                   Element "<sch:value-of select="local-name()"/>" is not part of
                   the ALTO2TEI inventory. Either the pipeline gained an element
                   and schema/alto2tei.odd has not caught up, or this is a stray.
+                </sch:assert>
+      </sch:rule>
+   </pattern>
+   <pattern xmlns="http://purl.oclc.org/dsdl/schematron" id="alto2tei-coordonnees-bien-formees-constraint-rule-41">
+      <sch:rule xmlns="http://www.tei-c.org/ns/1.0" xmlns:sch="http://purl.oclc.org/dsdl/schematron" context="*[@points]">
+         <sch:assert test="matches(@points,                     '^-?[0-9]+(\.[0-9]+)?,-?[0-9]+(\.[0-9]+)?( -?[0-9]+(\.[0-9]+)?,-?[0-9]+(\.[0-9]+)?)*$')">
+                  @points must be whitespace-separated x,y pairs.
                 </sch:assert>
       </sch:rule>
    </pattern>

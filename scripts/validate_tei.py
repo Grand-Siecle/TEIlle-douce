@@ -15,6 +15,7 @@
 import argparse
 import re
 import sys
+from multiprocessing import Pool, cpu_count
 from pathlib import Path
 
 from lxml import etree
@@ -226,11 +227,53 @@ def validate(path, relaxng=None, schematron=None):
     return errors, warnings
 
 
+# Chaque processus de travail compile les schemas une fois pour toutes :
+# la compilation coute 0,1 s, la refaire par fichier serait absurde.
+_CONTEXTE = {}
+
+
+def _preparer_worker(chemin_schema, avec_odd):
+    _CONTEXTE["relaxng"] = (etree.RelaxNG(etree.parse(chemin_schema))
+                            if chemin_schema else None)
+    _CONTEXTE["odd_rng"] = etree.RelaxNG(etree.parse(str(ODD_RNG))) if avec_odd else None
+    _CONTEXTE["schematron"] = None
+    if avec_odd:
+        try:
+            _CONTEXTE["processeur"], _CONTEXTE["schematron"] = schematron_du_projet()
+        except SystemExit:
+            pass
+
+
+def _controler(path):
+    """Le verdict d'un fichier : (chemin, erreurs, avertissements).
+
+    Un fichier illisible est un echec de CE fichier, pas du lot. Saxon leve
+    ses propres exceptions sur des documents que lxml accepte -- un DOCTYPE
+    introuvable, un imbriquement trop profond -- et les laisser passer
+    arretait tout au premier fichier fautif."""
+    try:
+        errors, warnings = validate(path, relaxng=_CONTEXTE.get("relaxng"),
+                                    schematron=_CONTEXTE.get("schematron"))
+        odd_rng = _CONTEXTE.get("odd_rng")
+        if odd_rng is not None:
+            arbre = etree.parse(path, parser=PARSER)
+            if not odd_rng.validate(arbre):
+                errors.extend(f"alto2tei.rng L{e.line}: {e.message}"
+                              for e in list(odd_rng.error_log)[:20])
+        return path, errors, warnings
+    except Exception as e:
+        return path, [f"fichier invalide: {type(e).__name__}: {e}"], []
+
+
 def main(paths=None):
     parser = argparse.ArgumentParser(
         description="Contrôle les sorties TEI du pipeline (modes d'échec connus)."
     )
     parser.add_argument("fichiers", nargs="+", help="fichiers TEI à contrôler")
+    parser.add_argument(
+        "--jobs", "-j", type=int, default=1, metavar="N",
+        help="controler N fichiers en parallele (ils sont independants)",
+    )
     parser.add_argument(
         "--odd", action="store_true",
         help="valide contre le schema du projet (schema/alto2tei.{rng,svrl.xsl})",
@@ -267,25 +310,18 @@ def main(paths=None):
               "sont enonces par l'ODD :\n      non verifies sans --odd.")
 
     total_err = 0
-    for path in args.fichiers:
-        # Un fichier illisible est un échec de CE fichier, pas du script :
-        # les suivants sont quand même contrôlés.
-        # Saxon leve ses propres exceptions (PySaxonApiError) sur un
-        # fichier que lxml accepte : un DOCTYPE introuvable, un
-        # imbriquement trop profond, une regle TEI qui bute sur une valeur.
-        # Les laisser passer arretait le lot au premier fichier fautif.
-        try:
-            errors, warnings = validate(path, relaxng=relaxng,
-                                        schematron=schematron)
-            if odd_rng is not None:
-                arbre = etree.parse(path, parser=PARSER)
-                if not odd_rng.validate(arbre):
-                    errors.extend(
-                        f"alto2tei.rng L{e.line}: {e.message}"
-                        for e in list(odd_rng.error_log)[:20]
-                    )
-        except Exception as e:
-            errors, warnings = [f"fichier invalide: {type(e).__name__}: {e}"], []
+    taches = list(args.fichiers)
+    travailleurs = max(1, min(args.jobs, len(taches), cpu_count()))
+
+    if travailleurs > 1:
+        with Pool(travailleurs, initializer=_preparer_worker,
+                  initargs=(args.schema, bool(args.odd))) as bassin:
+            resultats = bassin.map(_controler, taches)
+    else:
+        _preparer_worker(args.schema, bool(args.odd))
+        resultats = [_controler(p) for p in taches]
+
+    for path, errors, warnings in resultats:
         status = "FAIL" if errors else "ok"
         print(f"[{status}] {path}: {len(errors)} erreurs, {len(warnings)} avertissements")
         for e in errors[:10]:

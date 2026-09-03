@@ -186,7 +186,7 @@ def test_le_schematron_porte_les_contraintes_de_l_odd():
         f"{sorted(absentes)}")
     # Un plancher laisserait disparaitre une regle sans bruit : c'est le
     # nombre exact qui est verifie.
-    assert len(idents) == 10, sorted(idents)
+    assert len(idents) == 11, sorted(idents)
 
     # Et le contenu, pas seulement l'ident : modifier un XPath en gardant
     # son nom passait inapercu.

@@ -238,6 +238,19 @@
             from the ALTO SegmOnto TAGREFS; with no TAGREFS it falls back to
             the ALTO element name — which is what <val>TextBlock</val> and
             <val>Space</val> mean: a zone segmentation never labelled.</desc>
+            <content>
+              <!-- La TEI autorise dans <zone> des centaines d'elements, par
+                   une longue suite de classes ; la chaine n'y met que trois
+                   choses. Le dire n'est pas seulement plus juste : le modele
+                   de contenu d'origine faisait passer libxml2 de 0,0 s a
+                   55 s sur le seul sourceDoc d'un document de 20 000
+                   elements. -->
+              <alternate minOccurs="0" maxOccurs="unbounded">
+                <elementRef key="zone"/>
+                <elementRef key="path"/>
+                <elementRef key="line"/>
+              </alternate>
+            </content>
             <attList>
               <attDef ident="type" mode="change" usage="req">
                 <desc xml:lang="fr">Étiquette SegmOnto de la zone, ou nom de
@@ -306,6 +319,22 @@
             label: the pipeline puts that on the <gi>zone</gi> wrapping the
             line, not on the line itself. A <gi>line</gi> therefore carries
             only an identifier and its rank within the zone.</desc>
+            <content>
+              <textNode/>
+            </content>
+          </elementSpec>
+
+          <elementSpec ident="surface" mode="change" module="transcr">
+            <desc xml:lang="fr">Une page. Elle porte l'image IIIF de la page
+            entiere, puis ses zones.</desc>
+            <desc xml:lang="en">A page: its full-page IIIF image, then its
+            zones.</desc>
+            <content>
+              <sequence>
+                <elementRef key="graphic" minOccurs="0"/>
+                <elementRef key="zone" minOccurs="0" maxOccurs="unbounded"/>
+              </sequence>
+            </content>
           </elementSpec>
 
           <elementSpec ident="rs" mode="change" module="core">
@@ -559,6 +588,48 @@
               </sch:rule>
             </constraint>
           </constraintSpec>
+
+          <classSpec ident="att.coordinated" mode="change" type="atts">
+            <desc xml:lang="fr">Les coordonnees d'une zone. La TEI type
+            <att>points</att> comme une LISTE de points, chacun valide
+            contre un motif : libxml2 verifie alors les 539 000 coordonnees
+            d'un document une par une, et la validation passe de 1,3 s a
+            56 s. Le type est donc ramene a une chaine, et la forme de la
+            liste est enoncee en Schematron (`coordonnees-bien-formees`),
+            ou Saxon la verifie en une fraction de seconde.</desc>
+            <desc xml:lang="en">The coordinates of a zone. TEI types
+            <att>points</att> as a LIST of points, each matched against a
+            pattern, so libxml2 checks a document's 539,000 coordinates one
+            by one and validation goes from 1.3 s to 56 s. The type is
+            therefore reduced to a string, and the shape of the list is
+            stated in Schematron (`coordonnees-bien-formees`), where Saxon
+            checks it in a fraction of a second.</desc>
+            <attList>
+              <attDef ident="points" mode="change">
+                <datatype maxOccurs="1">
+                  <dataRef key="teidata.text"/>
+                </datatype>
+              </attDef>
+            </attList>
+          </classSpec>
+
+          <constraintSpec ident="coordonnees-bien-formees" scheme="schematron">
+            <desc xml:lang="fr">Une suite de couples x,y separes par des
+            espaces. C'est ce que la TEI dit du type ; le dire ici le rend
+            verifiable a un cout tenable.</desc>
+            <desc xml:lang="en">A whitespace-separated sequence of x,y
+            pairs. This is what TEI's datatype says; stating it here makes
+            it checkable at a bearable cost.</desc>
+            <constraint>
+              <sch:rule context="*[@points]">
+                <sch:assert test="matches(@points,
+                    '^-?[0-9]+(\.[0-9]+)?,-?[0-9]+(\.[0-9]+)?( -?[0-9]+(\.[0-9]+)?,-?[0-9]+(\.[0-9]+)?)*$')">
+                  @points must be whitespace-separated x,y pairs.
+                </sch:assert>
+              </sch:rule>
+            </constraint>
+          </constraintSpec>
+
 
         </schemaSpec>
       </div>

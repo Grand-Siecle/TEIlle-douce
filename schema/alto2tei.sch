@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <schema xmlns="http://purl.oclc.org/dsdl/schematron" queryBinding="xslt2">
    <title>ISO Schematron rules</title>
-   <!-- This file generated 2026-09-03T10:52:33Z by 'extract-isosch.xsl'. -->
+   <!-- This file generated 2026-09-03T13:16:52Z by 'extract-isosch.xsl'. -->
    <!-- ********************* -->
    <!-- namespaces, declared: -->
    <!-- ********************* -->
@@ -12,7 +12,7 @@
    <ns prefix="sch" uri="http://purl.oclc.org/dsdl/schematron"/>
    <ns prefix="sch1x" uri="http://www.ascc.net/xml/schematron"/>
    <!-- ******************************************************* -->
-   <!-- constraints in en, und, mul, zxx, of which there are 58 -->
+   <!-- constraints in en, und, mul, zxx, of which there are 59 -->
    <!-- ******************************************************* -->
    <pattern id="schematron-constraint-CMC_generatedBy_within_post-1">
       <rule context="tei:*[@generatedBy]">
@@ -223,6 +223,11 @@
    <pattern id="schematron-constraint-inventaire-ferme-40">
       <rule context="tei:*">
          <assert test="local-name() = (                     'TEI', 'ab', 'addName', 'altIdentifier', 'appInfo', 'application',                     'author', 'authority', 'availability', 'bibl', 'birth', 'body',                     'c', 'catDesc', 'category', 'change', 'choice', 'classDecl',                     'country', 'creation', 'date', 'death', 'div', 'edition',                     'editionStmt', 'editorialDecl', 'education', 'encodingDesc', 'event', 'extent',                     'faith', 'figure', 'fileDesc', 'foreign', 'forename', 'front',                     'fw', 'genName', 'graphic', 'head', 'hi', 'idno',                     'interpretation', 'item', 'keywords', 'label', 'langUsage', 'language',                     'lb', 'licence', 'line', 'link', 'linkGrp', 'list',                     'listBibl', 'listEvent', 'listObject', 'listOrg', 'listPerson', 'listPlace',                     'material', 'measure', 'msDesc', 'msIdentifier', 'name', 'nameLink',                     'normalization', 'note', 'object', 'objectDesc', 'objectIdentifier', 'objectName',                     'occupation', 'org', 'orgName', 'orig', 'p', 'particDesc',                     'path', 'pb', 'pc', 'persName', 'person', 'physDesc',                     'place', 'placeName', 'profileDesc', 'ptr', 'pubPlace', 'publicationStmt',                     'publisher', 'reg', 'repository', 'resp', 'respStmt', 'revisionDesc',                     'roleName', 'rs', 's', 'segmentation', 'settingDesc', 'settlement',                     'sourceDesc', 'sourceDoc', 'standOff', 'surface', 'surname', 'taxonomy',                     'teiHeader', 'term', 'text', 'textClass', 'title', 'titlePage',                     'titlePart', 'titleStmt', 'w', 'zone')"> Element "<value-of select="local-name()"/>" is not part of the ALTO2TEI inventory. Either the pipeline gained an element and schema/alto2tei.odd has not caught up, or this is a stray.</assert>
+      </rule>
+   </pattern>
+   <pattern id="schematron-constraint-coordonnees-bien-formees-41">
+      <rule context="*[@points]">
+         <assert test="matches(@points,                     '^-?[0-9]+(\.[0-9]+)?,-?[0-9]+(\.[0-9]+)?( -?[0-9]+(\.[0-9]+)?,-?[0-9]+(\.[0-9]+)?)*$')"> @points must be whitespace-separated x,y pairs.</assert>
       </rule>
    </pattern>
 </schema>

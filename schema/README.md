@@ -104,6 +104,9 @@ faut alors recompiler et examiner le diff des schémas produits.
 # Validation contre le schéma du projet : RELAX NG puis Schematron
 venv/bin/python scripts/validate_tei.py --odd tei_output/*.xml
 
+# Sur un corpus : les documents sont indépendants
+venv/bin/python scripts/validate_tei.py --odd -j 8 tei_output/*.xml
+
 # Validation contre tei_all, si une copie est disponible (non versionnée, ~1 Mo)
 venv/bin/python scripts/validate_tei.py --schema tei_all.rng tei_output/*.xml
 ```
@@ -133,6 +136,30 @@ venv/bin/python scripts/build_odd.py --refresh  # re-télécharge la boîte à o
 `--check` recompile dans un répertoire temporaire et compare aux fichiers
 versionnés, en ignorant la seule date de génération que les Stylesheets
 inscrivent dans leur sortie.
+
+## Coût
+
+Environ 0,7 s par Mo, soit une trentaine de secondes pour un document de
+39 Mo et 135 000 éléments. La répartition, mesurée :
+
+| Étape | Part |
+|---|---|
+| Analyse XML | 0,2 s |
+| RELAX NG (lxml) | 16 s |
+| Schematron (Saxon) | 8 s |
+| Contrôles Python | 1 s |
+
+Deux choses expliquent que ce ne soit pas pire. `@points` a d'abord été
+typé par la TEI comme une **liste** de points, chacun validé contre un
+motif : libxml2 vérifiait ainsi 539 000 coordonnées par document, et la
+seule validation RELAX NG prenait 56 s au lieu de 3. Le type est ramené à
+une chaîne et la forme de la liste énoncée en Schematron
+(`coordonnees-bien-formees`), où Saxon la contrôle en une seconde — même
+exigence, quarante fois moins cher.
+
+Et `-j N` répartit les fichiers sur N cœurs : quatre documents totalisant
+111 Mo passent de 72 s à 30 s sur quatre cœurs, le plancher étant le plus
+gros fichier du lot.
 
 ## Contraintes d'implémentation
 
