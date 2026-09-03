@@ -56,7 +56,7 @@ python3 scripts/validate_tei.py --odd tei_output/*.xml
 ```
 
 TEI files land in `tei_output/`. The three annotation phases are enabled by
-default and need two HTTP services (PyHellen, VieuxParler) plus several GB of
+default and need two HTTP services ([PyHellen](https://github.com/Grand-Siecle/PyHellen), [VieuxParler](https://github.com/Grand-Siecle/VieuxParler-API)) plus several GB of
 NER models; without them the pipeline still produces a complete base TEI, and
 says which phases it skipped. See the [user guide](docs/user-guide.md).
 
