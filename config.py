@@ -1,5 +1,5 @@
 # -----------------------------------------------------------
-# Configuration for ALTO2TEI pipeline
+# Configuration for the TEIlle-douce pipeline
 # Modify these values to customize the pipeline
 # -----------------------------------------------------------
 
@@ -18,7 +18,7 @@ def _env(name, default, convert=None):
 
     - unset keeps the default;
     - SET BUT EMPTY also keeps the default, and says so. A wrapper doing
-      `export ALTO2TEI_MODERNIZE_URL="${MODERNIZE_URL}"` with the outer
+      `export TDOUCE_MODERNIZE_URL="${MODERNIZE_URL}"` with the outer
       variable unset would otherwise hand out an empty base URL, which
       disables the service with no message a reader can act on;
     - a value *convert* rejects keeps the default AND says so: silently
@@ -124,10 +124,10 @@ LOG_FILE = Path("pipeline.log")
 # =============================================================================
 
 # Input directory containing ALTO XML files or ZIP archives
-OCR_DIR = _env_path("ALTO2TEI_OCR_DIR", "OCR")
+OCR_DIR = _env_path("TDOUCE_OCR_DIR", "OCR")
 
 # Output directory for generated TEI XML files
-OUTPUT_DIR = _env_path("ALTO2TEI_OUTPUT_DIR", "tei_output")
+OUTPUT_DIR = _env_path("TDOUCE_OUTPUT_DIR", "tei_output")
 
 # =============================================================================
 # METADATA SOURCE
@@ -268,20 +268,20 @@ LANG_DEFAULT = "fra"  # fallback to French for ambiguous texts
 # =============================================================================
 
 # Enable/disable linguistic enrichment (tokenization, POS, lemmatization)
-ENRICHMENT_ENABLED = _env_bool("ALTO2TEI_ENRICHMENT", True)
+ENRICHMENT_ENABLED = _env_bool("TDOUCE_ENRICHMENT", True)
 
 # PyHellen API server URL
-PYHELLEN_URL = _env_str("ALTO2TEI_PYHELLEN_URL", "http://localhost:8000")
+PYHELLEN_URL = _env_str("TDOUCE_PYHELLEN_URL", "http://localhost:8000")
 
 # Request timeout in seconds (higher for first request / model loading)
-PYHELLEN_TIMEOUT = _env_float("ALTO2TEI_PYHELLEN_TIMEOUT", 120, minimum=0.1)
+PYHELLEN_TIMEOUT = _env_float("TDOUCE_PYHELLEN_TIMEOUT", 120, minimum=0.1)
 
 # Timeout of the reachability probe both services answer before a run
 # (PyHellen /api/languages, VieuxParler /health). Shared, and generous:
 # a remote server still loading its model takes seconds to answer, and a
 # probe that gives up first disables the phase for the whole run with a
 # single warning line to explain the missing <w> or <choice>.
-HEALTH_TIMEOUT = _env_float("ALTO2TEI_HEALTH_TIMEOUT", 30, minimum=0.1)
+HEALTH_TIMEOUT = _env_float("TDOUCE_HEALTH_TIMEOUT", 30, minimum=0.1)
 
 # Maximum concurrent PyHellen requests (audit 3.3 — same model as
 # MODERNIZE_MAX_CONCURRENT).
@@ -321,19 +321,19 @@ ENRICHMENT_MIN_TEXT_LENGTH = 5
 # =============================================================================
 
 # Enable/disable text modernization (old French -> modern French)
-MODERNIZE_ENABLED = _env_bool("ALTO2TEI_MODERNIZE", True)
+MODERNIZE_ENABLED = _env_bool("TDOUCE_MODERNIZE", True)
 
 # Mapping from TEI language ident to modernization API base URL.
 # Add entries below as APIs become available: each one is overridable by
-# ALTO2TEI_MODERNIZE_URL_<IDENT> (e.g. ALTO2TEI_MODERNIZE_URL_FRA), and
-# the bare ALTO2TEI_MODERNIZE_URL moves every language that has no
+# TDOUCE_MODERNIZE_URL_<IDENT> (e.g. TDOUCE_MODERNIZE_URL_FRA), and
+# the bare TDOUCE_MODERNIZE_URL moves every language that has no
 # specific override — so a second entry stays configurable without a
 # patch to this file, which is the whole point.
 _MODERNIZE_API_DEFAULTS = {"fra": "http://localhost:8011"}
-_MODERNIZE_URL = _env_str("ALTO2TEI_MODERNIZE_URL", None)
+_MODERNIZE_URL = _env_str("TDOUCE_MODERNIZE_URL", None)
 MODERNIZE_API = {
     ident: _env_str(
-        f"ALTO2TEI_MODERNIZE_URL_{ident.upper()}", _MODERNIZE_URL or default
+        f"TDOUCE_MODERNIZE_URL_{ident.upper()}", _MODERNIZE_URL or default
     )
     for ident, default in _MODERNIZE_API_DEFAULTS.items()
 }
@@ -342,7 +342,7 @@ MODERNIZE_API = {
 MODERNIZE_BATCH_SIZE = 64
 
 # Timeout in seconds for modernization API calls
-MODERNIZE_TIMEOUT = _env_float("ALTO2TEI_MODERNIZE_TIMEOUT", 300, minimum=0.1)
+MODERNIZE_TIMEOUT = _env_float("TDOUCE_MODERNIZE_TIMEOUT", 300, minimum=0.1)
 
 # Max concurrent requests to the modernization API (avoid PoolTimeout)
 MODERNIZE_MAX_CONCURRENT = 8
@@ -368,7 +368,7 @@ MODERNIZE_CERT_THRESHOLDS = {"low": 0.0, "medium": 0.90, "high": 0.95}
 # restated in the editorialDecl prose below, free to diverge (audit
 # 2.13) — the prose now reads it.
 MODERNIZE_SIMILARITY_MIN = _env_float(
-    "ALTO2TEI_MODERNIZE_SIMILARITY_MIN", 0.8, minimum=0.0, maximum=1.0
+    "TDOUCE_MODERNIZE_SIMILARITY_MIN", 0.8, minimum=0.0, maximum=1.0
 )
 
 # =============================================================================
@@ -376,7 +376,7 @@ MODERNIZE_SIMILARITY_MIN = _env_float(
 # =============================================================================
 
 # Enable/disable automatic NER pipeline (runs after modernization)
-NER_ENABLED = _env_bool("ALTO2TEI_NER", True)
+NER_ENABLED = _env_bool("TDOUCE_NER", True)
 
 # NER models configuration
 NER_MODELS = {

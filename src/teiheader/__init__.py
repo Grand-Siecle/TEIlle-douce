@@ -3,7 +3,7 @@
 # Builds the <teiHeader> element with metadata and taxonomy
 # -----------------------------------------------------------
 """
-TEI Header module for ALTO2TEI pipeline.
+TEI Header module for TEIlle-douce pipeline.
 
 This module provides functions to build TEI headers from metadata.
 

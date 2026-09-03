@@ -3,7 +3,7 @@
 # File handling and XML output utilities
 # -----------------------------------------------------------
 """
-Utilities module for ALTO2TEI pipeline.
+Utilities module for TEIlle-douce pipeline.
 
 This module provides shared utilities for file handling and XML output.
 

@@ -1,9 +1,9 @@
 <?xml version='1.0' encoding='UTF-8'?>
 <grammar xmlns="http://relaxng.org/ns/structure/1.0" xmlns:tei="http://www.tei-c.org/ns/1.0" xmlns:teix="http://www.tei-c.org/ns/Examples" xmlns:xlink="http://www.w3.org/1999/xlink" datatypeLibrary="http://www.w3.org/2001/XMLSchema-datatypes" ns="http://www.tei-c.org/ns/1.0"><!--
-Schema generated from ODD source 2026-09-03T13:16:51Z. . 
+Schema generated from ODD source 2026-09-03T16:07:06Z. . 
 TEI Edition: P5 Version 4.12.0. Last updated on 28th July 2026, revision 113e933e2 
 TEI Edition Location: https://www.tei-c.org/Vault/P5/4.12.0/ 
- The TEI emitted by the ALTO2TEI pipeline: page structure carried over from ALTO, running text, a header built from local metadata, and the linguistic and onomastic annotation added by the optional phases. 
+ The TEI emitted by the TEIlle-douce pipeline: page structure carried over from ALTO, running text, a header built from local metadata, and the linguistic and onomastic annotation added by the optional phases. 
 --><!--[https://creativecommons.org/licenses/by/4.0/] Cette personnalisation est diffusée sous licence Creative Commons Attribution 4.0 International (CC BY 4.0), comme les éditions qu'elle décrit.-->
    <define name="tei_macro.abContent">
       <zeroOrMore>
@@ -239,7 +239,7 @@ Suggested values include: 1] human; 2] template; 3] system; 4] bot; 5] unspecifi
          </attribute>
       </optional>
    </define>
-   <pattern xmlns="http://purl.oclc.org/dsdl/schematron" id="alto2tei-att.cmc-generatedBy-CMC_generatedBy_within_post-constraint-rule-1">
+   <pattern xmlns="http://purl.oclc.org/dsdl/schematron" id="teille-douce-att.cmc-generatedBy-CMC_generatedBy_within_post-constraint-rule-1">
       <sch:rule xmlns="http://www.tei-c.org/ns/1.0" xmlns:rng="http://relaxng.org/ns/structure/1.0" xmlns:sch="http://purl.oclc.org/dsdl/schematron" xmlns:xi="http://www.w3.org/2001/XInclude" context="tei:*[@generatedBy]">
          <sch:assert test="ancestor-or-self::tei:post">The @generatedBy attribute is for use within a &lt;post&gt; element.</sch:assert>
       </sch:rule>
@@ -336,17 +336,17 @@ Suggested values include: 1] human; 2] template; 3] system; 4] bot; 5] unspecifi
          </attribute>
       </optional>
    </define>
-   <pattern xmlns="http://purl.oclc.org/dsdl/schematron" id="alto2tei-att.datable.w3c-att-datable-w3c-when-constraint-rule-2">
+   <pattern xmlns="http://purl.oclc.org/dsdl/schematron" id="teille-douce-att.datable.w3c-att-datable-w3c-when-constraint-rule-2">
       <sch:rule xmlns="http://www.tei-c.org/ns/1.0" xmlns:rng="http://relaxng.org/ns/structure/1.0" xmlns:sch="http://purl.oclc.org/dsdl/schematron" xmlns:xi="http://www.w3.org/2001/XInclude" context="tei:*[@when]">
          <sch:report test="@notBefore|@notAfter|@from|@to" role="nonfatal">The @when attribute cannot be used with any other att.datable.w3c attributes.</sch:report>
       </sch:rule>
    </pattern>
-   <pattern xmlns="http://purl.oclc.org/dsdl/schematron" id="alto2tei-att.datable.w3c-att-datable-w3c-from-constraint-rule-3">
+   <pattern xmlns="http://purl.oclc.org/dsdl/schematron" id="teille-douce-att.datable.w3c-att-datable-w3c-from-constraint-rule-3">
       <sch:rule xmlns="http://www.tei-c.org/ns/1.0" xmlns:rng="http://relaxng.org/ns/structure/1.0" xmlns:sch="http://purl.oclc.org/dsdl/schematron" xmlns:xi="http://www.w3.org/2001/XInclude" context="tei:*[@from]">
          <sch:report test="@notBefore" role="nonfatal">The @from and @notBefore attributes cannot be used together.</sch:report>
       </sch:rule>
    </pattern>
-   <pattern xmlns="http://purl.oclc.org/dsdl/schematron" id="alto2tei-att.datable.w3c-att-datable-w3c-to-constraint-rule-4">
+   <pattern xmlns="http://purl.oclc.org/dsdl/schematron" id="teille-douce-att.datable.w3c-att-datable-w3c-to-constraint-rule-4">
       <sch:rule xmlns="http://www.tei-c.org/ns/1.0" xmlns:rng="http://relaxng.org/ns/structure/1.0" xmlns:sch="http://purl.oclc.org/dsdl/schematron" xmlns:xi="http://www.w3.org/2001/XInclude" context="tei:*[@to]">
          <sch:report test="@notAfter" role="nonfatal">The @to and @notAfter attributes cannot be used together.</sch:report>
       </sch:rule>
@@ -641,7 +641,7 @@ Suggested values include: 1] internal; 2] external; 3] conjecture</a:documentati
          </attribute>
       </optional>
    </define>
-   <pattern xmlns="http://purl.oclc.org/dsdl/schematron" id="alto2tei-att.global.source-source-only_1_ODD_source-constraint-rule-5">
+   <pattern xmlns="http://purl.oclc.org/dsdl/schematron" id="teille-douce-att.global.source-source-only_1_ODD_source-constraint-rule-5">
       <sch:rule xmlns="http://www.tei-c.org/ns/1.0" xmlns:rng="http://relaxng.org/ns/structure/1.0" xmlns:sch="http://purl.oclc.org/dsdl/schematron" xmlns:xi="http://www.w3.org/2001/XInclude" context="tei:*[@source]">
          <sch:let name="srcs" value="tokenize( normalize-space(@source),' ')"/>
          <sch:report test="(   self::tei:classRef                                 | self::tei:dataRef                                 | self::tei:elementRef                                 | self::tei:macroRef                                 | self::tei:moduleRef                                 | self::tei:schemaSpec )                                   and                                   $srcs[2]">
@@ -839,7 +839,7 @@ Suggested values include: 1] top; 2] bottom; 3] margin; 4] opposite; 5] overleaf
          </attribute>
       </optional>
    </define>
-   <pattern xmlns="http://purl.oclc.org/dsdl/schematron" id="alto2tei-att.pointing-targetLang-targetLang-constraint-rule-6">
+   <pattern xmlns="http://purl.oclc.org/dsdl/schematron" id="teille-douce-att.pointing-targetLang-targetLang-constraint-rule-6">
       <sch:rule xmlns="http://www.tei-c.org/ns/1.0" xmlns:rng="http://relaxng.org/ns/structure/1.0" xmlns:sch="http://purl.oclc.org/dsdl/schematron" xmlns:xi="http://www.w3.org/2001/XInclude" context="tei:*[not(self::tei:schemaSpec)][@targetLang]">
          <sch:assert test="@target">@targetLang should only be used on &lt;<sch:name/>&gt; if @target is specified.</sch:assert>
       </sch:rule>
@@ -1006,7 +1006,7 @@ Suggested values include: 1] sole; 2] major; 3] minor</a:documentation>
          </attribute>
       </optional>
    </define>
-   <pattern xmlns="http://purl.oclc.org/dsdl/schematron" id="alto2tei-att.spanning-spanTo-spanTo-points-to-following-constraint-rule-7">
+   <pattern xmlns="http://purl.oclc.org/dsdl/schematron" id="teille-douce-att.spanning-spanTo-spanTo-points-to-following-constraint-rule-7">
       <sch:rule xmlns="http://www.tei-c.org/ns/1.0" xmlns:rng="http://relaxng.org/ns/structure/1.0" xmlns:sch="http://purl.oclc.org/dsdl/schematron" xmlns:xi="http://www.w3.org/2001/XInclude" context="tei:*[ starts-with( @spanTo, '#') ]">
          <sch:assert test="id( substring( @spanTo, 2 ) ) &gt;&gt; .">
               The element indicated by @spanTo (<sch:value-of select="@spanTo"/>) must follow the current &lt;<sch:name/>&gt; element.
@@ -1037,7 +1037,7 @@ Suggested values include: 1] sole; 2] major; 3] minor</a:documentation>
          </attribute>
       </optional>
    </define>
-   <pattern xmlns="http://purl.oclc.org/dsdl/schematron" id="alto2tei-att.typed-subtypeTyped-constraint-rule-8">
+   <pattern xmlns="http://purl.oclc.org/dsdl/schematron" id="teille-douce-att.typed-subtypeTyped-constraint-rule-8">
       <sch:rule xmlns="http://www.tei-c.org/ns/1.0" xmlns:rng="http://relaxng.org/ns/structure/1.0" xmlns:sch="http://purl.oclc.org/dsdl/schematron" xmlns:xi="http://www.w3.org/2001/XInclude" context="tei:*[@subtype]">
          <sch:assert test="@type">
           The &lt;<sch:name/>&gt; element should not be categorized in detail with @subtype unless also categorized in general with @type.
@@ -3489,7 +3489,7 @@ Sample values include: 1] duplicate; 2] duplicate-partial; 3] excessStart; 4] ex
          </attribute>
       </optional>
    </define>
-   <pattern xmlns="http://purl.oclc.org/dsdl/schematron" id="alto2tei-att.calendarSystem-calendar-calendar_attr_on_empty_element-constraint-rule-9">
+   <pattern xmlns="http://purl.oclc.org/dsdl/schematron" id="teille-douce-att.calendarSystem-calendar-calendar_attr_on_empty_element-constraint-rule-9">
       <sch:rule xmlns="http://www.tei-c.org/ns/1.0" xmlns:rng="http://relaxng.org/ns/structure/1.0" xmlns:sch="http://purl.oclc.org/dsdl/schematron" xmlns:xi="http://www.w3.org/2001/XInclude" context="tei:*[@calendar]">
          <sch:assert test="string-length( normalize-space(.) ) gt 0"> @calendar indicates one or more
               systems or calendars to which the date represented by the content of this element belongs,
@@ -3540,14 +3540,14 @@ Suggested values include: 1] page; 2] column; 3] line; 4] book; 5] poem; 6] cant
       <element name="p">
          <a:documentation xmlns:a="http://relaxng.org/ns/compatibility/annotations/1.0">(paragraph) marks paragraphs in prose. [3.1. Paragraphs 7.2.6. Speech Contents]</a:documentation>
          <ref name="tei_macro.paraContent"/>
-         <pattern xmlns="http://purl.oclc.org/dsdl/schematron" xmlns:rng="http://relaxng.org/ns/structure/1.0" id="alto2tei-p-abstractModel-structure-p-in-ab-or-p-constraint-rule-10">
+         <pattern xmlns="http://purl.oclc.org/dsdl/schematron" xmlns:rng="http://relaxng.org/ns/structure/1.0" id="teille-douce-p-abstractModel-structure-p-in-ab-or-p-constraint-rule-10">
             <sch:rule xmlns="http://www.tei-c.org/ns/1.0" xmlns:sch="http://purl.oclc.org/dsdl/schematron" context="tei:p">
                <sch:report test="(ancestor::tei:ab or ancestor::tei:p) and                        not( ancestor::tei:floatingText                           | parent::tei:exemplum                           | parent::tei:item                           | parent::tei:note                           | parent::tei:q                           | parent::tei:quote                           | parent::tei:remarks                           | parent::tei:said                           | parent::tei:sp                           | parent::tei:stage                           | parent::tei:cell                           | parent::tei:figure )">
           Abstract model violation: Paragraphs may not occur inside other paragraphs or &lt;ab&gt; elements.
         </sch:report>
             </sch:rule>
          </pattern>
-         <pattern xmlns="http://purl.oclc.org/dsdl/schematron" xmlns:rng="http://relaxng.org/ns/structure/1.0" id="alto2tei-p-abstractModel-structure-p-in-l-constraint-rule-11">
+         <pattern xmlns="http://purl.oclc.org/dsdl/schematron" xmlns:rng="http://relaxng.org/ns/structure/1.0" id="teille-douce-p-abstractModel-structure-p-in-l-constraint-rule-11">
             <sch:rule xmlns="http://www.tei-c.org/ns/1.0" xmlns:sch="http://purl.oclc.org/dsdl/schematron" context="tei:l//tei:p">
                <sch:assert test="ancestor::tei:floatingText | parent::tei:figure | parent::tei:note">
           Abstract model violation: Metrical lines (&lt;l&gt; elements) may not contain higher-level structural elements such as &lt;div&gt;, &lt;p&gt;, or &lt;ab&gt;, unless &lt;p&gt; is a child of &lt;figure&gt; or &lt;note&gt;, or is a descendant of &lt;floatingText&gt;.
@@ -3748,7 +3748,7 @@ Suggested values include: 1] spoken (spoken); 2] thought (thought); 3] written (
       <element name="desc">
          <a:documentation xmlns:a="http://relaxng.org/ns/compatibility/annotations/1.0">(description) contains a short description of the purpose, function, or use of its parent element, or when the parent is a documentation element, describes or defines the object being documented.  [23.4.1. Description of Components]</a:documentation>
          <ref name="tei_macro.limitedContent"/>
-         <pattern xmlns="http://purl.oclc.org/dsdl/schematron" xmlns:rng="http://relaxng.org/ns/structure/1.0" id="alto2tei-desc-deprecationInfo-only-in-deprecated-constraint-rule-12">
+         <pattern xmlns="http://purl.oclc.org/dsdl/schematron" xmlns:rng="http://relaxng.org/ns/structure/1.0" id="teille-douce-desc-deprecationInfo-only-in-deprecated-constraint-rule-12">
             <sch:rule xmlns="http://www.tei-c.org/ns/1.0" xmlns:sch="http://purl.oclc.org/dsdl/schematron" context="tei:desc[ @type eq 'deprecationInfo']">
                <sch:assert test="../@validUntil">Information about a
         deprecation should only be present in a specification element
@@ -3839,7 +3839,7 @@ Suggested values include: 1] deprecationInfo (deprecation information)</a:docume
                </data>
             </attribute>
          </optional>
-         <pattern xmlns="http://purl.oclc.org/dsdl/schematron" xmlns:rng="http://relaxng.org/ns/structure/1.0" id="alto2tei-rt-target-rt-target-not-span-constraint-rule-13">
+         <pattern xmlns="http://purl.oclc.org/dsdl/schematron" xmlns:rng="http://relaxng.org/ns/structure/1.0" id="teille-douce-rt-target-rt-target-not-span-constraint-rule-13">
             <sch:rule xmlns="http://www.tei-c.org/ns/1.0" xmlns:sch="http://purl.oclc.org/dsdl/schematron" context="tei:rt/@target">
                <sch:report test="../@from | ../@to">When @target is present, neither @from nor @to should be.</sch:report>
             </sch:rule>
@@ -3852,7 +3852,7 @@ Suggested values include: 1] deprecationInfo (deprecation information)</a:docume
                </data>
             </attribute>
          </optional>
-         <pattern xmlns="http://purl.oclc.org/dsdl/schematron" xmlns:rng="http://relaxng.org/ns/structure/1.0" id="alto2tei-rt-from-rt-from-constraint-rule-14">
+         <pattern xmlns="http://purl.oclc.org/dsdl/schematron" xmlns:rng="http://relaxng.org/ns/structure/1.0" id="teille-douce-rt-from-rt-from-constraint-rule-14">
             <sch:rule xmlns="http://www.tei-c.org/ns/1.0" xmlns:sch="http://purl.oclc.org/dsdl/schematron" context="tei:rt/@from">
                <sch:assert test="../@to">When @from is present, the @to attribute of &lt;<sch:name/>&gt; is required.</sch:assert>
             </sch:rule>
@@ -3865,7 +3865,7 @@ Suggested values include: 1] deprecationInfo (deprecation information)</a:docume
                </data>
             </attribute>
          </optional>
-         <pattern xmlns="http://purl.oclc.org/dsdl/schematron" xmlns:rng="http://relaxng.org/ns/structure/1.0" id="alto2tei-rt-to-rt-to-constraint-rule-15">
+         <pattern xmlns="http://purl.oclc.org/dsdl/schematron" xmlns:rng="http://relaxng.org/ns/structure/1.0" id="teille-douce-rt-to-rt-to-constraint-rule-15">
             <sch:rule xmlns="http://www.tei-c.org/ns/1.0" xmlns:sch="http://purl.oclc.org/dsdl/schematron" context="tei:rt/@to">
                <sch:assert test="../@from">When @to is present, the @from attribute of &lt;<sch:name/>&gt; is required.</sch:assert>
             </sch:rule>
@@ -4340,7 +4340,7 @@ Sample values include: 1] suspension (suspension); 2] contraction (contraction);
    <define name="tei_ptr">
       <element name="ptr">
          <a:documentation xmlns:a="http://relaxng.org/ns/compatibility/annotations/1.0">(pointer) defines a pointer to another location. [3.7. Simple Links and Cross-References 17.1. Links]</a:documentation>
-         <pattern xmlns="http://purl.oclc.org/dsdl/schematron" xmlns:rng="http://relaxng.org/ns/structure/1.0" id="alto2tei-ptr-ptrAtts-constraint-rule-16">
+         <pattern xmlns="http://purl.oclc.org/dsdl/schematron" xmlns:rng="http://relaxng.org/ns/structure/1.0" id="teille-douce-ptr-ptrAtts-constraint-rule-16">
             <sch:rule xmlns="http://www.tei-c.org/ns/1.0" xmlns:sch="http://purl.oclc.org/dsdl/schematron" context="tei:ptr">
                <sch:report test="@target and @cRef">Only one of the attributes @target and @cRef may be supplied on &lt;<sch:name/>&gt;.</sch:report>
             </sch:rule>
@@ -4358,7 +4358,7 @@ Sample values include: 1] suspension (suspension); 2] contraction (contraction);
       <element name="ref">
          <a:documentation xmlns:a="http://relaxng.org/ns/compatibility/annotations/1.0">(reference) defines a reference to another location, possibly modified by additional text or comment. [3.7. Simple Links and Cross-References 17.1. Links]</a:documentation>
          <ref name="tei_macro.paraContent"/>
-         <pattern xmlns="http://purl.oclc.org/dsdl/schematron" xmlns:rng="http://relaxng.org/ns/structure/1.0" id="alto2tei-ref-refAtts-constraint-rule-17">
+         <pattern xmlns="http://purl.oclc.org/dsdl/schematron" xmlns:rng="http://relaxng.org/ns/structure/1.0" id="teille-douce-ref-refAtts-constraint-rule-17">
             <sch:rule xmlns="http://www.tei-c.org/ns/1.0" xmlns:sch="http://purl.oclc.org/dsdl/schematron" context="tei:ref">
                <sch:report test="@target and @cRef">Only one of the attributes @target and @cRef may be supplied on &lt;<sch:name/>&gt;.</sch:report>
             </sch:rule>
@@ -4418,7 +4418,7 @@ Sample values include: 1] suspension (suspension); 2] contraction (contraction);
                </zeroOrMore>
             </zeroOrMore>
          </group>
-         <pattern xmlns="http://purl.oclc.org/dsdl/schematron" xmlns:rng="http://relaxng.org/ns/structure/1.0" id="alto2tei-list-gloss-list-must-have-labels-constraint-rule-18">
+         <pattern xmlns="http://purl.oclc.org/dsdl/schematron" xmlns:rng="http://relaxng.org/ns/structure/1.0" id="teille-douce-list-gloss-list-must-have-labels-constraint-rule-18">
             <sch:rule xmlns="http://www.tei-c.org/ns/1.0" xmlns:sch="http://purl.oclc.org/dsdl/schematron" context="tei:list[@type='gloss']">
                <sch:assert test="tei:label">
           The content of a "gloss" list should include a sequence of
@@ -5066,7 +5066,7 @@ Sample values include: 1] main; 2] sub (subordinate); 3] alt (alternate); 4] sho
                <ref name="tei_model.ptrLike"/>
             </choice>
          </optional>
-         <pattern xmlns="http://purl.oclc.org/dsdl/schematron" xmlns:rng="http://relaxng.org/ns/structure/1.0" id="alto2tei-relatedItem-targetorcontent1-constraint-rule-19">
+         <pattern xmlns="http://purl.oclc.org/dsdl/schematron" xmlns:rng="http://relaxng.org/ns/structure/1.0" id="teille-douce-relatedItem-targetorcontent1-constraint-rule-19">
             <sch:rule xmlns="http://www.tei-c.org/ns/1.0" xmlns:sch="http://purl.oclc.org/dsdl/schematron" context="tei:relatedItem">
                <sch:report test="@target and count( child::* ) &gt; 0">If the @target attribute on <sch:name/> is used, the relatedItem element must be empty.</sch:report>
                <sch:assert test="@target or child::*">A relatedItem element should have either a @target attribute or a child element to indicate the related bibliographic item.</sch:assert>
@@ -5095,7 +5095,7 @@ Sample values include: 1] main; 2] sub (subordinate); 3] alt (alternate); 4] sho
                <ref name="tei_model.global"/>
             </choice>
          </zeroOrMore>
-         <pattern xmlns="http://purl.oclc.org/dsdl/schematron" xmlns:rng="http://relaxng.org/ns/structure/1.0" id="alto2tei-l-abstractModel-structure-l-in-l-constraint-rule-20">
+         <pattern xmlns="http://purl.oclc.org/dsdl/schematron" xmlns:rng="http://relaxng.org/ns/structure/1.0" id="teille-douce-l-abstractModel-structure-l-in-l-constraint-rule-20">
             <sch:rule xmlns="http://www.tei-c.org/ns/1.0" xmlns:sch="http://purl.oclc.org/dsdl/schematron" context="tei:l">
                <sch:report test="ancestor::tei:l[not(.//tei:note//tei:l[. = current()])]">Abstract model violation: Metrical lines (&lt;l&gt; elements) may not contain &lt;l&gt; or &lt;lg&gt; elements.</sch:report>
             </sch:rule>
@@ -5139,12 +5139,12 @@ Sample values include: 1] main; 2] sub (subordinate); 3] alt (alternate); 4] sho
                </zeroOrMore>
             </zeroOrMore>
          </group>
-         <pattern xmlns="http://purl.oclc.org/dsdl/schematron" xmlns:rng="http://relaxng.org/ns/structure/1.0" id="alto2tei-lg-atleast1oflggapl-constraint-rule-21">
+         <pattern xmlns="http://purl.oclc.org/dsdl/schematron" xmlns:rng="http://relaxng.org/ns/structure/1.0" id="teille-douce-lg-atleast1oflggapl-constraint-rule-21">
             <sch:rule xmlns="http://www.tei-c.org/ns/1.0" xmlns:sch="http://purl.oclc.org/dsdl/schematron" context="tei:lg">
                <sch:assert test="count(descendant::tei:lg|descendant::tei:l|descendant::tei:gap) &gt; 0">An &lt;lg&gt; element must contain at least one child &lt;l&gt;, &lt;lg&gt;, or &lt;gap&gt; element.</sch:assert>
             </sch:rule>
          </pattern>
-         <pattern xmlns="http://purl.oclc.org/dsdl/schematron" xmlns:rng="http://relaxng.org/ns/structure/1.0" id="alto2tei-lg-abstractModel-structure-lg-in-l-constraint-rule-22">
+         <pattern xmlns="http://purl.oclc.org/dsdl/schematron" xmlns:rng="http://relaxng.org/ns/structure/1.0" id="teille-douce-lg-abstractModel-structure-lg-in-l-constraint-rule-22">
             <sch:rule xmlns="http://www.tei-c.org/ns/1.0" xmlns:sch="http://purl.oclc.org/dsdl/schematron" context="tei:lg">
                <sch:report test="ancestor::tei:l[not(.//tei:note//tei:lg[. = current()])]">Abstract model violation: Lines may not contain line groups.</sch:report>
             </sch:rule>
@@ -5489,14 +5489,14 @@ Sample values include: 1] index; 2] toc; 3] figlist; 4] tablist</a:documentation
                </rng:group>
             </rng:optional>
          </group>
-         <pattern xmlns="http://purl.oclc.org/dsdl/schematron" xmlns:rng="http://relaxng.org/ns/structure/1.0" id="alto2tei-div-abstractModel-structure-div-in-l-constraint-rule-23">
+         <pattern xmlns="http://purl.oclc.org/dsdl/schematron" xmlns:rng="http://relaxng.org/ns/structure/1.0" id="teille-douce-div-abstractModel-structure-div-in-l-constraint-rule-23">
             <sch:rule xmlns="http://www.tei-c.org/ns/1.0" xmlns:sch="http://purl.oclc.org/dsdl/schematron" context="tei:l//tei:div">
                <sch:assert test="ancestor::tei:floatingText">
           Abstract model violation: Metrical lines (&lt;l&gt; elements) may not contain higher-level structural elements such as &lt;div&gt;, unless &lt;div&gt; is a descendant of &lt;floatingText&gt;.
         </sch:assert>
             </sch:rule>
          </pattern>
-         <pattern xmlns="http://purl.oclc.org/dsdl/schematron" xmlns:rng="http://relaxng.org/ns/structure/1.0" id="alto2tei-div-abstractModel-structure-div-in-ab-or-p-constraint-rule-24">
+         <pattern xmlns="http://purl.oclc.org/dsdl/schematron" xmlns:rng="http://relaxng.org/ns/structure/1.0" id="teille-douce-div-abstractModel-structure-div-in-ab-or-p-constraint-rule-24">
             <sch:rule xmlns="http://www.tei-c.org/ns/1.0" xmlns:sch="http://purl.oclc.org/dsdl/schematron" context="tei:div">
                <sch:report test="(ancestor::tei:p or ancestor::tei:ab) and not(ancestor::tei:floatingText)">
           Abstract model violation: &lt;p&gt; and &lt;ab&gt; may not contain higher-level structural elements such as &lt;div&gt;, unless &lt;div&gt; is a descendant of &lt;floatingText&gt;.
@@ -6378,7 +6378,7 @@ Sample values include: 1] glued; 2] pinned; 3] sewn</a:documentation>
    <define name="tei_path">
       <element name="path">
          <a:documentation xmlns:a="http://relaxng.org/ns/compatibility/annotations/1.0">(path) defines any line passing through two or more points within a <code xmlns="http://www.w3.org/1999/xhtml" xmlns:rng="http://relaxng.org/ns/structure/1.0">&lt;surface&gt;</code> element. [12.1. Digital Facsimiles 12.2.2. Embedded Transcription]</a:documentation>
-         <pattern xmlns="http://purl.oclc.org/dsdl/schematron" xmlns:rng="http://relaxng.org/ns/structure/1.0" id="alto2tei-path-pathmustnotbeclosed-constraint-rule-25">
+         <pattern xmlns="http://purl.oclc.org/dsdl/schematron" xmlns:rng="http://relaxng.org/ns/structure/1.0" id="teille-douce-path-pathmustnotbeclosed-constraint-rule-25">
             <sch:rule xmlns="http://www.tei-c.org/ns/1.0" xmlns:sch="http://purl.oclc.org/dsdl/schematron" xmlns:xi="http://www.w3.org/2001/XInclude" context="tei:path[@points]">
                <sch:let name="firstPair" value="tokenize( normalize-space( @points ), ' ')[1]"/>
                <sch:let name="lastPair" value="tokenize( normalize-space( @points ), ' ')[last()]"/>
@@ -6557,7 +6557,7 @@ Sample values include: 1] header; 2] footer; 3] pageNum (page number); 4] lineNu
    <define name="tei_link">
       <element name="link">
          <a:documentation xmlns:a="http://relaxng.org/ns/compatibility/annotations/1.0">(link) defines an association or hypertextual link among elements or passages, of some type not more precisely specifiable by other elements. [17.1. Links]</a:documentation>
-         <pattern xmlns="http://purl.oclc.org/dsdl/schematron" xmlns:rng="http://relaxng.org/ns/structure/1.0" id="alto2tei-link-linkTargets3-constraint-rule-26">
+         <pattern xmlns="http://purl.oclc.org/dsdl/schematron" xmlns:rng="http://relaxng.org/ns/structure/1.0" id="teille-douce-link-linkTargets3-constraint-rule-26">
             <sch:rule xmlns="http://www.tei-c.org/ns/1.0" xmlns:sch="http://purl.oclc.org/dsdl/schematron" xmlns:xi="http://www.w3.org/2001/XInclude" context="tei:link">
                <sch:assert test="contains(normalize-space(@target),' ')">You must supply at least two values for @target on &lt;<sch:name/>&gt;.</sch:assert>
             </sch:rule>
@@ -6591,7 +6591,7 @@ Sample values include: 1] header; 2] footer; 3] pageNum (page number); 4] lineNu
       <element name="ab">
          <a:documentation xmlns:a="http://relaxng.org/ns/compatibility/annotations/1.0">(anonymous block) contains any component-level unit of text, acting as a container for phrase or inter level elements analogous to, but without the same constraints as, a paragraph. [17.3. Blocks, Segments, and Anchors]</a:documentation>
          <ref name="tei_macro.abContent"/>
-         <pattern xmlns="http://purl.oclc.org/dsdl/schematron" xmlns:rng="http://relaxng.org/ns/structure/1.0" id="alto2tei-ab-abstractModel-structure-ab-in-l-constraint-rule-27">
+         <pattern xmlns="http://purl.oclc.org/dsdl/schematron" xmlns:rng="http://relaxng.org/ns/structure/1.0" id="teille-douce-ab-abstractModel-structure-ab-in-l-constraint-rule-27">
             <sch:rule xmlns="http://www.tei-c.org/ns/1.0" xmlns:sch="http://purl.oclc.org/dsdl/schematron" xmlns:xi="http://www.w3.org/2001/XInclude" context="tei:l//tei:ab">
                <sch:assert test="ancestor::tei:floatingText | parent::tei:figure | parent::tei:note">
           Abstract model violation: Metrical lines (&lt;l&gt; elements) may not contain higher-level divisions such as &lt;p&gt; or &lt;ab&gt;, unless &lt;ab&gt; is a child of &lt;figure&gt; or &lt;note&gt;, or is a descendant of &lt;floatingText&gt;.
@@ -6738,7 +6738,7 @@ Sample values include: 1] header; 2] footer; 3] pageNum (page number); 4] lineNu
       <element name="s">
          <a:documentation xmlns:a="http://relaxng.org/ns/compatibility/annotations/1.0">(s-unit) contains a sentence-like division of a text. [18.1. Linguistic Segment Categories 8.4.1. Segmentation]</a:documentation>
          <ref name="tei_macro.phraseSeq"/>
-         <pattern xmlns="http://purl.oclc.org/dsdl/schematron" xmlns:rng="http://relaxng.org/ns/structure/1.0" id="alto2tei-s-noNestedS-constraint-rule-28">
+         <pattern xmlns="http://purl.oclc.org/dsdl/schematron" xmlns:rng="http://relaxng.org/ns/structure/1.0" id="teille-douce-s-noNestedS-constraint-rule-28">
             <sch:rule xmlns="http://www.tei-c.org/ns/1.0" xmlns:sch="http://purl.oclc.org/dsdl/schematron" context="tei:s">
                <sch:report test="tei:s">You may not nest one &lt;s&gt; element within another: use &lt;seg&gt; instead.</sch:report>
             </sch:rule>
@@ -7806,7 +7806,7 @@ Sample values include: 1] primary; 2] other; 3] paid; 4] unpaid</a:documentation
                </zeroOrMore>
             </choice>
          </group>
-         <pattern xmlns="http://purl.oclc.org/dsdl/schematron" xmlns:rng="http://relaxng.org/ns/structure/1.0" id="alto2tei-msDesc-one_ms_singleton_max-constraint-rule-29">
+         <pattern xmlns="http://purl.oclc.org/dsdl/schematron" xmlns:rng="http://relaxng.org/ns/structure/1.0" id="teille-douce-msDesc-one_ms_singleton_max-constraint-rule-29">
             <sch:rule xmlns="http://www.tei-c.org/ns/1.0" xmlns:sch="http://purl.oclc.org/dsdl/schematron" xmlns:xi="http://www.w3.org/2001/XInclude" context="tei:msContents|tei:physDesc|tei:history|tei:additional">
                <sch:let name="gi" value="name(.)"/>
                <sch:report test="preceding-sibling::*[ name(.) eq $gi ]                           and                           not( following-sibling::*[ name(.) eq $gi ] )">
@@ -7879,7 +7879,7 @@ Sample values include: 1] binding; 2] endband; 3] slipcase; 4] support; 5] tie</
                </choice>
             </zeroOrMore>
          </group>
-         <pattern xmlns="http://purl.oclc.org/dsdl/schematron" xmlns:rng="http://relaxng.org/ns/structure/1.0" id="alto2tei-msIdentifier-msId_minimal-constraint-rule-30">
+         <pattern xmlns="http://purl.oclc.org/dsdl/schematron" xmlns:rng="http://relaxng.org/ns/structure/1.0" id="teille-douce-msIdentifier-msId_minimal-constraint-rule-30">
             <sch:rule xmlns="http://www.tei-c.org/ns/1.0" xmlns:sch="http://purl.oclc.org/dsdl/schematron" xmlns:xi="http://www.w3.org/2001/XInclude" context="tei:msIdentifier">
                <sch:report test="not( parent::tei:msPart )                           and                           ( child::*[1]/self::idno  or  child::*[1]/self::altIdentifier  or  normalize-space(.) eq '')">An &lt;msIdentifier&gt; must contain either a &lt;repository&gt; or &lt;location&gt;.</sch:report>
             </sch:rule>
@@ -8003,7 +8003,7 @@ Sample values include: 1] binding; 2] endband; 3] slipcase; 4] support; 5] tie</
    <sch:ns xmlns="http://www.tei-c.org/ns/1.0" xmlns:rng="http://relaxng.org/ns/structure/1.0" xmlns:sch="http://purl.oclc.org/dsdl/schematron" prefix="rna" uri="http://relaxng.org/ns/compatibility/annotations/1.0"/>
    <sch:ns xmlns="http://www.tei-c.org/ns/1.0" xmlns:rng="http://relaxng.org/ns/structure/1.0" xmlns:sch="http://purl.oclc.org/dsdl/schematron" prefix="sch" uri="http://purl.oclc.org/dsdl/schematron"/>
    <sch:ns xmlns="http://www.tei-c.org/ns/1.0" xmlns:rng="http://relaxng.org/ns/structure/1.0" xmlns:sch="http://purl.oclc.org/dsdl/schematron" prefix="sch1x" uri="http://www.ascc.net/xml/schematron"/>
-   <pattern xmlns="http://purl.oclc.org/dsdl/schematron" id="alto2tei-langUsage-langues-seules-constraint-rule-31">
+   <pattern xmlns="http://purl.oclc.org/dsdl/schematron" id="teille-douce-langUsage-langues-seules-constraint-rule-31">
       <sch:rule xmlns="http://www.tei-c.org/ns/1.0" xmlns:sch="http://purl.oclc.org/dsdl/schematron" context="tei:langUsage">
          <sch:report test="tei:language and (tei:p or tei:ab)">
                   langUsage mixes prose and language elements; its content
@@ -8012,7 +8012,7 @@ Sample values include: 1] binding; 2] endband; 3] slipcase; 4] support; 5] tie</
                 </sch:report>
       </sch:rule>
    </pattern>
-   <pattern xmlns="http://purl.oclc.org/dsdl/schematron" id="alto2tei-language-quantite-constraint-rule-32">
+   <pattern xmlns="http://purl.oclc.org/dsdl/schematron" id="teille-douce-language-quantite-constraint-rule-32">
       <sch:rule xmlns="http://www.tei-c.org/ns/1.0" xmlns:sch="http://purl.oclc.org/dsdl/schematron" context="tei:langUsage/tei:language[@usage]">
          <sch:assert test="@ident and normalize-space(@ident)">
                   A language element must carry a non-empty @ident.
@@ -8023,7 +8023,7 @@ Sample values include: 1] binding; 2] endband; 3] slipcase; 4] support; 5] tie</
                 </sch:assert>
       </sch:rule>
    </pattern>
-   <pattern xmlns="http://purl.oclc.org/dsdl/schematron" id="alto2tei-choice-orig-reg-constraint-rule-33">
+   <pattern xmlns="http://purl.oclc.org/dsdl/schematron" id="teille-douce-choice-orig-reg-constraint-rule-33">
       <sch:rule xmlns="http://www.tei-c.org/ns/1.0" xmlns:sch="http://purl.oclc.org/dsdl/schematron" context="tei:choice">
          <sch:assert test="count(tei:orig) = 1 and count(tei:reg) = 1">
                   A choice produced by modernization holds exactly one orig
@@ -8031,7 +8031,7 @@ Sample values include: 1] binding; 2] endband; 3] slipcase; 4] support; 5] tie</
                 </sch:assert>
       </sch:rule>
    </pattern>
-   <pattern xmlns="http://purl.oclc.org/dsdl/schematron" id="alto2tei-pas-de-cesure-residuelle-constraint-rule-34">
+   <pattern xmlns="http://purl.oclc.org/dsdl/schematron" id="teille-douce-pas-de-cesure-residuelle-constraint-rule-34">
       <sch:rule xmlns="http://www.tei-c.org/ns/1.0" xmlns:sch="http://purl.oclc.org/dsdl/schematron" context="tei:reg">
          <sch:report test="contains(., '¬')">
                   A residual line-break hyphen (¬) in a modernized form:
@@ -8039,7 +8039,7 @@ Sample values include: 1] binding; 2] endband; 3] slipcase; 4] support; 5] tie</
                 </sch:report>
       </sch:rule>
    </pattern>
-   <pattern xmlns="http://purl.oclc.org/dsdl/schematron" id="alto2tei-entite-automatique-datee-constraint-rule-35">
+   <pattern xmlns="http://purl.oclc.org/dsdl/schematron" id="teille-douce-entite-automatique-datee-constraint-rule-35">
       <sch:rule xmlns="http://www.tei-c.org/ns/1.0" xmlns:sch="http://purl.oclc.org/dsdl/schematron" context="*[@resp = '#ner-auto']">
          <sch:assert test="@cert">
                   An automatically detected entity must carry @cert
@@ -8047,7 +8047,7 @@ Sample values include: 1] binding; 2] endband; 3] slipcase; 4] support; 5] tie</
                 </sch:assert>
       </sch:rule>
    </pattern>
-   <pattern xmlns="http://purl.oclc.org/dsdl/schematron" id="alto2tei-graphiczone-identifiee-constraint-rule-36">
+   <pattern xmlns="http://purl.oclc.org/dsdl/schematron" id="teille-douce-graphiczone-identifiee-constraint-rule-36">
       <sch:rule xmlns="http://www.tei-c.org/ns/1.0" xmlns:sch="http://purl.oclc.org/dsdl/schematron" context="tei:zone[@type = 'GraphicZone']">
          <sch:assert test="@xml:id">
                   A GraphicZone must carry an xml:id: its figure in the text
@@ -8055,7 +8055,7 @@ Sample values include: 1] binding; 2] endband; 3] slipcase; 4] support; 5] tie</
                 </sch:assert>
       </sch:rule>
    </pattern>
-   <pattern xmlns="http://purl.oclc.org/dsdl/schematron" id="alto2tei-figure-ancree-constraint-rule-37">
+   <pattern xmlns="http://purl.oclc.org/dsdl/schematron" id="teille-douce-figure-ancree-constraint-rule-37">
       <sch:rule xmlns="http://www.tei-c.org/ns/1.0" xmlns:sch="http://purl.oclc.org/dsdl/schematron" context="tei:figure">
          <sch:assert test="@corresp">
                   A figure must carry @corresp naming the GraphicZone it comes
@@ -8063,30 +8063,30 @@ Sample values include: 1] binding; 2] endband; 3] slipcase; 4] support; 5] tie</
                 </sch:assert>
       </sch:rule>
    </pattern>
-   <pattern xmlns="http://purl.oclc.org/dsdl/schematron" id="alto2tei-idno-iiif-unique-constraint-rule-38">
+   <pattern xmlns="http://purl.oclc.org/dsdl/schematron" id="teille-douce-idno-iiif-unique-constraint-rule-38">
       <sch:rule xmlns="http://www.tei-c.org/ns/1.0" xmlns:sch="http://purl.oclc.org/dsdl/schematron" context="tei:idno[@type = 'iiif']">
          <sch:report test="contains(., '|')">
                   An unsplit IIIF idno: several manifests share one element.
                 </sch:report>
       </sch:rule>
    </pattern>
-   <pattern xmlns="http://purl.oclc.org/dsdl/schematron" id="alto2tei-pas-de-gabarit-publie-constraint-rule-39">
+   <pattern xmlns="http://purl.oclc.org/dsdl/schematron" id="teille-douce-pas-de-gabarit-publie-constraint-rule-39">
       <sch:rule xmlns="http://www.tei-c.org/ns/1.0" xmlns:sch="http://purl.oclc.org/dsdl/schematron" context="tei:ptr[@target] | tei:idno">
          <sch:report test="contains(@target, '0000-0000-0000-0000')                                   or contains(., '0000-0000-0000-0000')">
                   A placeholder ORCID reached the output.
                 </sch:report>
       </sch:rule>
    </pattern>
-   <pattern xmlns="http://purl.oclc.org/dsdl/schematron" id="alto2tei-inventaire-ferme-constraint-rule-40">
+   <pattern xmlns="http://purl.oclc.org/dsdl/schematron" id="teille-douce-inventaire-ferme-constraint-rule-40">
       <sch:rule xmlns="http://www.tei-c.org/ns/1.0" xmlns:sch="http://purl.oclc.org/dsdl/schematron" context="tei:*">
          <sch:assert test="local-name() = (                     'TEI', 'ab', 'addName', 'altIdentifier', 'appInfo', 'application',                     'author', 'authority', 'availability', 'bibl', 'birth', 'body',                     'c', 'catDesc', 'category', 'change', 'choice', 'classDecl',                     'country', 'creation', 'date', 'death', 'div', 'edition',                     'editionStmt', 'editorialDecl', 'education', 'encodingDesc', 'event', 'extent',                     'faith', 'figure', 'fileDesc', 'foreign', 'forename', 'front',                     'fw', 'genName', 'graphic', 'head', 'hi', 'idno',                     'interpretation', 'item', 'keywords', 'label', 'langUsage', 'language',                     'lb', 'licence', 'line', 'link', 'linkGrp', 'list',                     'listBibl', 'listEvent', 'listObject', 'listOrg', 'listPerson', 'listPlace',                     'material', 'measure', 'msDesc', 'msIdentifier', 'name', 'nameLink',                     'normalization', 'note', 'object', 'objectDesc', 'objectIdentifier', 'objectName',                     'occupation', 'org', 'orgName', 'orig', 'p', 'particDesc',                     'path', 'pb', 'pc', 'persName', 'person', 'physDesc',                     'place', 'placeName', 'profileDesc', 'ptr', 'pubPlace', 'publicationStmt',                     'publisher', 'reg', 'repository', 'resp', 'respStmt', 'revisionDesc',                     'roleName', 'rs', 's', 'segmentation', 'settingDesc', 'settlement',                     'sourceDesc', 'sourceDoc', 'standOff', 'surface', 'surname', 'taxonomy',                     'teiHeader', 'term', 'text', 'textClass', 'title', 'titlePage',                     'titlePart', 'titleStmt', 'w', 'zone')">
                   Element "<sch:value-of select="local-name()"/>" is not part of
-                  the ALTO2TEI inventory. Either the pipeline gained an element
-                  and schema/alto2tei.odd has not caught up, or this is a stray.
+                  the TEIlle-douce inventory. Either the pipeline gained an element
+                  and schema/teille-douce.odd has not caught up, or this is a stray.
                 </sch:assert>
       </sch:rule>
    </pattern>
-   <pattern xmlns="http://purl.oclc.org/dsdl/schematron" id="alto2tei-coordonnees-bien-formees-constraint-rule-41">
+   <pattern xmlns="http://purl.oclc.org/dsdl/schematron" id="teille-douce-coordonnees-bien-formees-constraint-rule-41">
       <sch:rule xmlns="http://www.tei-c.org/ns/1.0" xmlns:sch="http://purl.oclc.org/dsdl/schematron" context="*[@points]">
          <sch:assert test="matches(@points,                     '^-?[0-9]+(\.[0-9]+)?,-?[0-9]+(\.[0-9]+)?( -?[0-9]+(\.[0-9]+)?,-?[0-9]+(\.[0-9]+)?)*$')">
                   @points must be whitespace-separated x,y pairs.

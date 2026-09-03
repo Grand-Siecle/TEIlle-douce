@@ -124,7 +124,7 @@ class DefaultTree:
         phases = [
             ("conversion",
              "Conversion of the ALTO XML source (OCR/HTR output) into "
-             "TEI P5 with sourceDoc and body by the alto2tei pipeline."),
+             "TEI P5 with sourceDoc and body by the TEIlle-douce pipeline."),
             ("enrichment",
              "Linguistic enrichment: tokenization, part-of-speech tagging, "
              "lemmatization and sentence segmentation (PyHellen)."),

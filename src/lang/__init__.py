@@ -1,5 +1,5 @@
 # -----------------------------------------------------------
-# Language detection module for ALTO2TEI pipeline
+# Language detection module for TEIlle-douce pipeline
 # -----------------------------------------------------------
 """
 Language detection using lingua-language-detector with heuristic fallback.

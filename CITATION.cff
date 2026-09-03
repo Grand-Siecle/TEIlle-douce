@@ -1,6 +1,6 @@
 cff-version: 1.2.0
 message: "If you use this software, please cite it as below."
-title: "ALTO2TEI: an ALTO-to-TEI pipeline for early modern printed books"
+title: "TEIlle-douce: an ALTO-to-TEI pipeline for early modern printed books"
 abstract: >-
   A Python pipeline converting the ALTO XML produced by OCR/HTR engines into
   TEI P5 editions of early modern printed books. Layout is preserved in
@@ -31,7 +31,7 @@ authors:
     given-names: Pauline
   - family-names: Marquaille
     given-names: Léonie
-repository-code: "https://github.com/rayondemiel/test_tei_ouput"
+repository-code: "https://github.com/rayondemiel/TEIlle-douce"
 license: AGPL-3.0-or-later
 keywords:
   - TEI

@@ -1,6 +1,6 @@
 # -----------------------------------------------------------
 # Code by: Kelly Christensen
-# Central TEI data structure for the ALTO2TEI pipeline.
+# Central TEI data structure for the TEIlle-douce pipeline.
 # -----------------------------------------------------------
 """
 TEI document class.

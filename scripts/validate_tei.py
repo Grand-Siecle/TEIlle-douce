@@ -1,9 +1,9 @@
 # -----------------------------------------------------------
 # Validates TEI outputs against the known failure modes of this
 # pipeline. Usage: venv/bin/python scripts/validate_tei.py tei_test/*.xml
-# Optional: --odd valide contre le schema du projet (schema/alto2tei.rng
-# et schema/alto2tei.svrl.xsl, tous deux versionnes, derives de
-# schema/alto2tei.odd) : le TEI que cette chaine emet, et rien d'autre.
+# Optional: --odd valide contre le schema du projet (schema/teille-douce.rng
+# et schema/teille-douce.svrl.xsl, tous deux versionnes, derives de
+# schema/teille-douce.odd) : le TEI que cette chaine emet, et rien d'autre.
 # Optional: --schema chemin/vers/tei_all.rng ajoute la validation RelaxNG
 # complete (les violations sont des ERROR). Le schema n'est pas versionne
 # ici (~1 Mo, https://tei-c.org/release/xml/tei/custom/schema/relaxng/) ;
@@ -22,8 +22,8 @@ from lxml import etree
 
 SVRL = "http://purl.oclc.org/dsdl/svrl"
 RACINE = Path(__file__).resolve().parent.parent
-ODD_RNG = RACINE / "schema" / "alto2tei.rng"
-ODD_SVRL = RACINE / "schema" / "alto2tei.svrl.xsl"
+ODD_RNG = RACINE / "schema" / "teille-douce.rng"
+ODD_SVRL = RACINE / "schema" / "teille-douce.svrl.xsl"
 
 XML_ID = "{http://www.w3.org/XML/1998/namespace}id"
 NCNAME = re.compile(r"^[A-Za-z_][A-Za-z0-9._\-]*$")
@@ -144,7 +144,7 @@ def validate(path, relaxng=None, schematron=None):
         # Cinq invariants locaux -- prose dans <langUsage>, idno IIIF non
         # decoupe, ¬ residuel dans un <reg>, GraphicZone sans xml:id,
         # ORCID de gabarit -- ne sont plus verifies ici : ils sont enonces
-        # une seule fois, dans schema/alto2tei.odd, et appliques par la
+        # une seule fois, dans schema/teille-douce.odd, et appliques par la
         # validation Schematron ci-dessus. Les redire en Python entretenait
         # deux versions qui divergeaient sur la severite et la portee.
         src = el.get("source")
@@ -258,7 +258,7 @@ def _controler(path):
         if odd_rng is not None:
             arbre = etree.parse(path, parser=PARSER)
             if not odd_rng.validate(arbre):
-                errors.extend(f"alto2tei.rng L{e.line}: {e.message}"
+                errors.extend(f"teille-douce.rng L{e.line}: {e.message}"
                               for e in list(odd_rng.error_log)[:20])
         return path, errors, warnings
     except Exception as e:
@@ -276,7 +276,7 @@ def main(paths=None):
     )
     parser.add_argument(
         "--odd", action="store_true",
-        help="valide contre le schema du projet (schema/alto2tei.{rng,svrl.xsl})",
+        help="valide contre le schema du projet (schema/teille-douce.{rng,svrl.xsl})",
     )
     parser.add_argument(
         "--schema", metavar="RNG",
@@ -301,7 +301,7 @@ def main(paths=None):
             # saxonche manquant n'emporte pas la validation RelaxNG, qui
             # ne demande que lxml et un schema versionne.
             print(f"note: Schematron non applique ({absent}) — "
-                  "seul alto2tei.rng a servi")
+                  "seul teille-douce.rng a servi")
     else:
         # Cinq invariants locaux ne vivent plus que dans l'ODD ; se taire
         # ici laisserait croire a un controle complet.

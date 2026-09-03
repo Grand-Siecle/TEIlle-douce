@@ -56,8 +56,8 @@ def _executer_main(tmp_path, ocr_dir, args=(), **flags):
     sortie = tmp_path / "out"
     env = {
         **os.environ,
-        "ALTO2TEI_OCR_DIR": str(ocr_dir),
-        "ALTO2TEI_OUTPUT_DIR": str(sortie),
+        "TDOUCE_OCR_DIR": str(ocr_dir),
+        "TDOUCE_OUTPUT_DIR": str(sortie),
         **{k: v for k, v in flags.items()},
     }
     env.update(_env_couverture_sous_processus())
@@ -134,15 +134,15 @@ def _valider_odd(chemin):
     """Valide contre le schema du projet : le TEI que CETTE chaine emet.
 
     tei_all repond a « est-ce du TEI ? » et laisse passer un type de zone
-    invente ou une <figure> sans ancrage ; schema/alto2tei.rng repond a
+    invente ou une <figure> sans ancrage ; schema/teille-douce.rng repond a
     « est-ce cette edition-ci ? ». Il est versionne, donc ce controle ne
     se saute jamais -- contrairement a _valider_schema().
 
     Le Schematron, lui, est en XSLT 2.0 (c'est ce que la TEI produit) et
     demande saxonche, qui n'est pas installe partout."""
-    relaxng = _schema_compile(str(RACINE / "schema" / "alto2tei.rng"))
+    relaxng = _schema_compile(str(RACINE / "schema" / "teille-douce.rng"))
     doc = etree.parse(str(chemin))
-    assert relaxng.validate(doc), "alto2tei.rng :\n" + "\n".join(
+    assert relaxng.validate(doc), "teille-douce.rng :\n" + "\n".join(
         f"L{e.line}: {e.message}" for e in list(relaxng.error_log)[:10]
     )
 
@@ -158,12 +158,12 @@ def _valider_odd(chemin):
 
 def _valider_schema(chemin):
     """Valide contre tei_all.rng quand il est disponible, sinon skip."""
-    demande = os.environ.get("ALTO2TEI_TEI_RNG")
+    demande = os.environ.get("TDOUCE_TEI_RNG")
     schema = Path(demande or (RACINE / "tei_all.rng"))
     if not schema.exists():
         # Un chemin explicitement demande et introuvable est une erreur de
         # configuration, pas une raison de sauter le controle en silence.
-        assert not demande, f"ALTO2TEI_TEI_RNG pointe sur un fichier absent : {schema}"
+        assert not demande, f"TDOUCE_TEI_RNG pointe sur un fichier absent : {schema}"
         pytest.skip(f"tei_all.rng absent ({schema}) — validation de schema sautee")
     relaxng = _schema_compile(str(schema))
     doc = etree.parse(str(chemin))
@@ -208,7 +208,7 @@ def services_manquants():
 # Mode court
 # =============================================================================
 
-MODE_COURT = {"ALTO2TEI_NER": "0", "ALTO2TEI_ENRICHMENT": "0", "ALTO2TEI_MODERNIZE": "0"}
+MODE_COURT = {"TDOUCE_NER": "0", "TDOUCE_ENRICHMENT": "0", "TDOUCE_MODERNIZE": "0"}
 
 
 @pytest.fixture(scope="module")
@@ -341,7 +341,7 @@ def test_court_est_valide_selon_tei_all(tei_court):
     Validation de schema complete, quand un tei_all.rng est disponible.
 
     Le schema (~1 Mo) n'est pas versionne : poser le fichier a la racine
-    (ou pointer ALTO2TEI_TEI_RNG dessus) active le controle. Telechargement :
+    (ou pointer TDOUCE_TEI_RNG dessus) active le controle. Telechargement :
     https://tei-c.org/release/xml/tei/custom/schema/relaxng/tei_all.rng
     """
     # L'ODD d'abord : _valider_schema() se saute quand tei_all.rng
@@ -427,7 +427,7 @@ def tei_complet(tmp_path_factory):
 
     return lancer_pipeline(
         tmp_path_factory.mktemp("e2e_complet"),
-        ALTO2TEI_NER="1", ALTO2TEI_ENRICHMENT="1", ALTO2TEI_MODERNIZE="1",
+        TDOUCE_NER="1", TDOUCE_ENRICHMENT="1", TDOUCE_MODERNIZE="1",
     )
 
 

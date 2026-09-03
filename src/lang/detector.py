@@ -1,5 +1,5 @@
 # -----------------------------------------------------------
-# Language detection for ALTO2TEI pipeline
+# Language detection for TEIlle-douce pipeline
 # -----------------------------------------------------------
 """
 Language detection using lingua-language-detector with heuristic fallback.

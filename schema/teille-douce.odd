@@ -4,12 +4,12 @@
   <teiHeader>
     <fileDesc>
       <titleStmt>
-        <title>ALTO2TEI — personnalisation TEI de la chaîne de conversion</title>
+        <title>TEIlle-douce — personnalisation TEI de la chaîne de conversion</title>
         <title type="sub" xml:lang="en">A TEI customization describing what the
-        ALTO2TEI pipeline emits</title>
+        TEIlle-douce pipeline emits</title>
         <respStmt>
           <resp>Conception et encodage</resp>
-          <name>Projet ALTO2TEI, Université de Genève</name>
+          <name>Projet Grand Siècle, Université de Genève</name>
         </respStmt>
       </titleStmt>
       <publicationStmt>
@@ -54,7 +54,7 @@
       <div xml:id="propos" xml:lang="fr">
         <head>Ce que dit cette personnalisation</head>
 
-        <p>ALTO2TEI convertit des fichiers ALTO issus d'OCR/HTR en TEI. Le
+        <p>TEIlle-douce convertit des fichiers ALTO issus d'OCR/HTR en TEI. Le
         schéma de référence du projet était jusqu'ici <code>tei_all</code>,
         c'est-à-dire la totalité des Guidelines : six cents éléments, dont la
         chaîne en émet quatre-vingt-dix-huit. Valider contre <code>tei_all</code>
@@ -113,18 +113,18 @@
           </row>
           <row>
             <cell>Enrichissement linguistique</cell>
-            <cell><code>ALTO2TEI_ENRICHMENT</code></cell>
+            <cell><code>TDOUCE_ENRICHMENT</code></cell>
             <cell><gi>s</gi>, <gi>w</gi>, <gi>pc</gi>, <gi>c</gi> et leurs
             attributs morphosyntaxiques</cell>
           </row>
           <row>
             <cell>Modernisation</cell>
-            <cell><code>ALTO2TEI_MODERNIZE</code></cell>
+            <cell><code>TDOUCE_MODERNIZE</code></cell>
             <cell><gi>choice</gi>, <gi>orig</gi>, <gi>reg</gi></cell>
           </row>
           <row>
             <cell>Entités nommées</cell>
-            <cell><code>ALTO2TEI_NER</code></cell>
+            <cell><code>TDOUCE_NER</code></cell>
             <cell><gi>persName</gi>, <gi>placeName</gi>, <gi>orgName</gi>,
             <gi>objectName</gi>, <gi>material</gi>, <gi>rs</gi> dans le corps,
             et <gi>listPerson</gi> dans l'en-tête</cell>
@@ -135,13 +135,13 @@
       <div xml:id="schema">
         <head xml:lang="fr">La spécification</head>
 
-        <schemaSpec ident="alto2tei" prefix="tei_" start="TEI">
+        <schemaSpec ident="teille-douce" prefix="tei_" start="TEI">
 
-          <desc xml:lang="fr">Le TEI qu'émet la chaîne ALTO2TEI : structure de
+          <desc xml:lang="fr">Le TEI qu'émet la chaîne TEIlle-douce : structure de
           page issue d'ALTO, corps du texte, en-tête construit depuis les
           métadonnées locales, et les annotations linguistiques et
           onomastiques des phases facultatives.</desc>
-          <desc xml:lang="en">The TEI emitted by the ALTO2TEI pipeline: page
+          <desc xml:lang="en">The TEI emitted by the TEIlle-douce pipeline: page
           structure carried over from ALTO, running text, a header built from
           local metadata, and the linguistic and onomastic annotation added by
           the optional phases.</desc>
@@ -582,8 +582,8 @@
                     'teiHeader', 'term', 'text', 'textClass', 'title', 'titlePage',
                     'titlePart', 'titleStmt', 'w', 'zone')">
                   Element "<sch:value-of select="local-name()"/>" is not part of
-                  the ALTO2TEI inventory. Either the pipeline gained an element
-                  and schema/alto2tei.odd has not caught up, or this is a stray.
+                  the TEIlle-douce inventory. Either the pipeline gained an element
+                  and schema/teille-douce.odd has not caught up, or this is a stray.
                 </sch:assert>
               </sch:rule>
             </constraint>

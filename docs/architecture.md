@@ -60,7 +60,7 @@ happens *inside* a document, at page level.
 | 14 | `finalize_extent()` | `<extent>` word and image counts |
 | 15 | `write_xml()` | the file |
 
-Steps 9, 10 and 11 are skipped when their `ALTO2TEI_*` flag is off or their
+Steps 9, 10 and 11 are skipped when their `TDOUCE_*` flag is off or their
 service is unreachable. Everything else always runs.
 
 **The order is not arbitrary.** Four constraints fix it:
@@ -84,7 +84,7 @@ config.py                    Settings only: paths, versions, services, threshold
 main.py                      CLI, run orchestration, per-document isolation
 scripts/
   validate_tei.py            Output validation (known failure modes + ODD)
-  build_odd.py               Compiles schema/alto2tei.odd → rng, sch, svrl.xsl
+  build_odd.py               Compiles schema/teille-douce.odd → rng, sch, svrl.xsl
   rng_simplify.py            RELAX NG §4.19/§4.20 reductions (see schema/README.md)
   build_test_fixture.py      Regenerates tests/fixtures/ from the private corpus
 src/

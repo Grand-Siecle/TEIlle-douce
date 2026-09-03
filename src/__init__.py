@@ -1,8 +1,8 @@
 # -----------------------------------------------------------
-# ALTO2TEI - ALTO to TEI XML conversion pipeline
+# TEIlle-douce - ALTO to TEI XML conversion pipeline
 # -----------------------------------------------------------
 """
-ALTO2TEI package.
+TEIlle-douce package.
 
 Converts ALTO (Analyzed Layout and Text Object) XML files from OCR/HTR systems
 into TEI (Text Encoding Initiative) XML format with SegmOnto taxonomy.

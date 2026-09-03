@@ -1,5 +1,5 @@
 # -----------------------------------------------------------
-# Linguistic enrichment module for ALTO2TEI pipeline.
+# Linguistic enrichment module for TEIlle-douce pipeline.
 # Transforms body containers into tokenized TEI with NLP annotations.
 # -----------------------------------------------------------
 """

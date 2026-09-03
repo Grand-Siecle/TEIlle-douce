@@ -1,15 +1,15 @@
 # The project's TEI schema
 
-`alto2tei.odd` is the TEI customization of ALTO2TEI: the normative description
+`teille-douce.odd` is the TEI customization of TEIlle-douce: the normative description
 of the documents the pipeline produces. The three other files are derived from
 it by `scripts/build_odd.py` and must never be edited directly.
 
 | File | Role | Applied by |
 |---|---|---|
-| `alto2tei.odd` | Source. A TEI document describing the customization. | — |
-| `alto2tei.rng` | Content model (RELAX NG). | `lxml` |
-| `alto2tei.sch` | Schematron constraints, readable form. | — |
-| `alto2tei.svrl.xsl` | Schematron constraints, executable form. | `saxonche` |
+| `teille-douce.odd` | Source. A TEI document describing the customization. | — |
+| `teille-douce.rng` | Content model (RELAX NG). | `lxml` |
+| `teille-douce.sch` | Schematron constraints, readable form. | — |
+| `teille-douce.svrl.xsl` | Schematron constraints, executable form. | `saxonche` |
 
 For the practical side — what each rule catches, how to validate, how to change
 the schema — see [`docs/schema.md`](../docs/schema.md). This file documents the
@@ -23,7 +23,7 @@ six hundred elements, of which the pipeline emits 118. Validating against
 not exist, nor a `<figure>` with no anchor, nor an automatic entity carrying no
 indication of certainty.
 
-`alto2tei.odd` answers the complementary question: is this document a conformant
+`teille-douce.odd` answers the complementary question: is this document a conformant
 output of *this* pipeline. Both validations remain available and answer distinct
 questions.
 
@@ -60,7 +60,7 @@ flowchart TB
         SCHX["SchXslt 1.10.1"]
     end
 
-    ODD["<b>alto2tei.odd</b><br/>source"]
+    ODD["<b>teille-douce.odd</b><br/>source"]
     COMP["compiled ODD<br/><i>temporary, ~2 MB</i>"]
 
     ODD --> A1["odd2odd.xsl"]
@@ -71,11 +71,11 @@ flowchart TB
     COMP --> C1["extract-isosch.xsl<br/>lang=en"]
 
     B1 --> B2["rng_simplify.py<br/>RELAX NG §4.19 and §4.20<br/><i>279 patterns eliminated</i>"]
-    B2 --> RNG["<b>alto2tei.rng</b><br/>383 KB · compiles in 0.1 s"]
+    B2 --> RNG["<b>teille-douce.rng</b><br/>383 KB · compiles in 0.1 s"]
 
-    C1 --> SCH["<b>alto2tei.sch</b><br/>17 KB"]
+    C1 --> SCH["<b>teille-douce.sch</b><br/>17 KB"]
     SCH --> D1["pipeline-for-svrl.xsl"]
-    D1 --> SVRL["<b>alto2tei.svrl.xsl</b><br/>143 KB"]
+    D1 --> SVRL["<b>teille-douce.svrl.xsl</b><br/>143 KB"]
 
     STY -. " " .-> B1
     SCHX -. " " .-> D1
@@ -123,7 +123,7 @@ elements whose text lives inside `<w>`. A call without `--odd` therefore does no
 check them, and the script says so rather than letting a reader believe the check
 was complete. Rules the TEI marks `role="nonfatal"` remain warnings.
 
-The end-to-end tests validate the output against `alto2tei.rng` on every run:
+The end-to-end tests validate the output against `teille-douce.rng` on every run:
 the schema being versioned, that check cannot be skipped. The Schematron half is
 skipped, with an explicit reason, when `saxonche` is not installed.
 
@@ -223,7 +223,7 @@ constraint declared in the ODD is missing from the generated Schematron.
 
 ## Modification procedure
 
-1. Edit `alto2tei.odd`.
+1. Edit `teille-douce.odd`.
 2. Recompile: `venv/bin/python scripts/build_odd.py`.
 3. Verify: `venv/bin/python -m pytest tests/test_odd.py tests/test_e2e_pipeline.py`.
 4. Commit the source and the three derived files in the same commit.

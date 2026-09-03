@@ -36,7 +36,7 @@ def violations_odd(chemin):
     """Les violations Schematron de l'ODD sur un document.
 
     Les cinq invariants locaux que ce script verifiait en double sont
-    desormais enonces une seule fois, dans schema/alto2tei.odd. Les tests
+    desormais enonces une seule fois, dans schema/teille-douce.odd. Les tests
     qui les epinglaient interrogent donc la regle publiee, pas une seconde
     implementation."""
     pytest.importorskip("saxonche")
@@ -234,7 +234,7 @@ def test_figure_sans_graphic_est_normale_quand_la_zone_n_a_pas_de_crop(tmp_path)
 
 
 # =============================================================================
-# Validation contre le schema du projet (schema/alto2tei.odd)
+# Validation contre le schema du projet (schema/teille-douce.odd)
 # =============================================================================
 
 SVRL_NS = "http://purl.oclc.org/dsdl/svrl"
@@ -337,7 +337,7 @@ def test_odd_valide_une_sortie_du_pipeline(tmp_path, capsys):
     pytest.importorskip("saxonche")
     import scripts.validate_tei as vt
     if not vt.ODD_RNG.exists():
-        pytest.skip("schema/alto2tei.rng absent — lancer scripts/build_odd.py")
+        pytest.skip("schema/teille-douce.rng absent — lancer scripts/build_odd.py")
     golden = (RACINE / "tests" / "fixtures" / "golden" / "LIV9001_court.tei.xml")
     doc = tmp_path / "doc.tei.xml"
     doc.write_text(golden.read_text(encoding="utf-8").replace(
@@ -438,7 +438,7 @@ def test_odd_sans_saxonche_valide_quand_meme_le_relaxng(tmp_path, capsys, monkey
     depend que de lxml et d'un schema versionne."""
     import scripts.validate_tei as vt
     if not vt.ODD_RNG.exists():
-        pytest.skip("schema/alto2tei.rng absent — lancer scripts/build_odd.py")
+        pytest.skip("schema/teille-douce.rng absent — lancer scripts/build_odd.py")
 
     def pas_de_saxon():
         raise SystemExit("saxonche absent")
@@ -448,7 +448,7 @@ def test_odd_sans_saxonche_valide_quand_meme_le_relaxng(tmp_path, capsys, monkey
         vt.main(["--odd", _ecrire(tmp_path, TEI_OK)])
     sortie = capsys.readouterr().out
     assert "Schematron" in sortie and "saxonche" in sortie
-    assert "alto2tei.rng" in sortie, "le RelaxNG doit avoir ete applique"
+    assert "teille-douce.rng" in sortie, "le RelaxNG doit avoir ete applique"
 
 
 # Chaque regle publiee par l'ODD doit pouvoir etre enfreinte, et l'echec

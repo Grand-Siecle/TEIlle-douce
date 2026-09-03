@@ -1,9 +1,9 @@
 # -----------------------------------------------------------
-# ALTO2TEI - Main workflow script
+# TEIlle-douce - Main workflow script
 # Converts ALTO XML files to TEI format with SegmOnto taxonomy
 # -----------------------------------------------------------
 """
-ALTO2TEI main workflow.
+TEIlle-douce main workflow.
 
 This script orchestrates the conversion of ALTO XML files to TEI format.
 Configuration is imported from config.py.

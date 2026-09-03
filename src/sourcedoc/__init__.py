@@ -3,7 +3,7 @@
 # Builds the <sourceDoc> element from ALTO XML files
 # -----------------------------------------------------------
 """
-SourceDoc module for ALTO2TEI pipeline.
+SourceDoc module for TEIlle-douce pipeline.
 
 This module provides functions to build TEI sourceDoc elements from ALTO files.
 Uses parallel processing for performance on large documents.

@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
-Compile schema/alto2tei.odd en schemas exploitables.
+Compile schema/teille-douce.odd en schemas exploitables.
 
 L'ODD est la source de verite : ce que la chaine emet, avec quelles valeurs
 et sous quelles contraintes. Ce script en derive les trois artefacts
 versionnes a cote de lui :
 
-    schema/alto2tei.rng        modele de contenu, applique par lxml
-    schema/alto2tei.sch        contraintes Schematron, forme lisible
-    schema/alto2tei.svrl.xsl   les memes, precompilees, forme executable
+    schema/teille-douce.rng        modele de contenu, applique par lxml
+    schema/teille-douce.sch        contraintes Schematron, forme lisible
+    schema/teille-douce.svrl.xsl   les memes, precompilees, forme executable
 
 Le troisieme existe parce que la TEI produit du Schematron en
 queryBinding="xslt2", que lxml.isoschematron refuse (il n'implemente que
@@ -55,7 +55,7 @@ from rng_simplify import simplifier  # noqa: E402
 
 RACINE = Path(__file__).resolve().parent.parent
 SCHEMA = RACINE / "schema"
-ODD = SCHEMA / "alto2tei.odd"
+ODD = SCHEMA / "teille-douce.odd"
 OUTILS = RACINE / ".odd-toolchain"
 
 # Versions epinglees. Les remonter est un changement delibere : il faut
@@ -221,10 +221,10 @@ def compiler(destination):
 
     with tempfile.TemporaryDirectory() as tmp:
         atelier = Path(tmp)
-        rng = atelier / "alto2tei.rng"
-        sch = atelier / "alto2tei.sch"
-        svrl = atelier / "alto2tei.svrl.xsl"
-        compile_odd = atelier / "alto2tei.compiled.odd"
+        rng = atelier / "teille-douce.rng"
+        sch = atelier / "teille-douce.sch"
+        svrl = atelier / "teille-douce.svrl.xsl"
+        compile_odd = atelier / "teille-douce.compiled.odd"
         with PySaxonProcessor(license=False) as proc:
             # 1. ODD -> ODD compile : les moduleRef sont resolus contre la
             #    P5, les elementSpec mode="change" fusionnes dans leur
