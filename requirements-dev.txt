@@ -7,5 +7,5 @@ coverage>=7.15,<8
 # SaxonC-HE : moteur XSLT 2.0 sans JVM. Necessaire pour compiler l'ODD
 # (scripts/build_odd.py) et pour appliquer le Schematron qui en derive --
 # la TEI le produit en queryBinding="xslt2", que lxml ne sait pas executer.
-# La validation RelaxNG contre schema/alto2tei.rng, elle, n'en depend pas.
+# La validation RelaxNG contre schema/teille-douce.rng, elle, n'en depend pas.
 saxonche>=13,<14

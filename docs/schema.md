@@ -22,7 +22,7 @@ it detects neither a zone type that does not exist, nor a `<figure>` with no
 anchor, nor a machine-generated entity carrying no indication of certainty.
 
 **"Is this a conformant output of *this* pipeline?"** is answered by
-`schema/alto2tei.odd`. It constrains on three levels:
+`schema/teille-douce.odd`. It constrains on three levels:
 
 1. **A closed element inventory.** `<moduleRef include="…">` imports only the
    elements the pipeline actually emits. Anything else is an error — either the
@@ -84,10 +84,10 @@ reported as warnings.
 
 The Schematron half needs `saxonche` (the TEI produces it in
 `queryBinding="xslt2"`, which lxml cannot execute); RELAX NG validation against
-`schema/alto2tei.rng` does not. When `saxonche` is missing, the Schematron step
+`schema/teille-douce.rng` does not. When `saxonche` is missing, the Schematron step
 skips with an explicit reason.
 
-The end-to-end tests validate against `schema/alto2tei.rng` on every run. The
+The end-to-end tests validate against `schema/teille-douce.rng` on every run. The
 schema is versioned, so that check cannot be skipped.
 
 **Cost:** roughly 0.7 s per MB — about thirty seconds for a 39 MB document of
@@ -105,8 +105,8 @@ requirement, forty times cheaper.
 
 ## Changing the schema
 
-`alto2tei.odd` is the source. `alto2tei.rng`, `alto2tei.sch` and
-`alto2tei.svrl.xsl` are generated from it and versioned. **Never edit the
+`teille-douce.odd` is the source. `teille-douce.rng`, `teille-douce.sch` and
+`teille-douce.svrl.xsl` are generated from it and versioned. **Never edit the
 derivatives by hand.**
 
 ```bash
@@ -117,7 +117,7 @@ venv/bin/python scripts/build_odd.py --refresh  # re-download the toolchain
 
 The procedure:
 
-1. Edit `schema/alto2tei.odd`.
+1. Edit `schema/teille-douce.odd`.
 2. Recompile: `venv/bin/python scripts/build_odd.py`.
 3. Verify: `venv/bin/python -m pytest tests/test_odd.py tests/test_e2e_pipeline.py`.
 4. Commit the source **and the three derivatives in the same commit**.
@@ -140,10 +140,10 @@ recompile and read the diff of the generated schemas.
 
 | File | Role | Applied by |
 |---|---|---|
-| `schema/alto2tei.odd` | Source. A TEI document describing the customization. | — |
-| `schema/alto2tei.rng` | Content model (RELAX NG). | `lxml` |
-| `schema/alto2tei.sch` | Schematron constraints, readable form. | — |
-| `schema/alto2tei.svrl.xsl` | Schematron constraints, executable form. | `saxonche` |
+| `schema/teille-douce.odd` | Source. A TEI document describing the customization. | — |
+| `schema/teille-douce.rng` | Content model (RELAX NG). | `lxml` |
+| `schema/teille-douce.sch` | Schematron constraints, readable form. | — |
+| `schema/teille-douce.svrl.xsl` | Schematron constraints, executable form. | `saxonche` |
 | `scripts/build_odd.py` | Compiles the ODD into the three derivatives. | — |
 | `scripts/rng_simplify.py` | RELAX NG §4.19/§4.20 reductions, needed before lxml reads the schema. | — |
 | `scripts/validate_tei.py` | Runs everything, plus the document-wide Python invariants. | — |

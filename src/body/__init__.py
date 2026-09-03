@@ -3,7 +3,7 @@
 # Builds the <body> element from sourceDoc text data
 # -----------------------------------------------------------
 """
-Body module for ALTO2TEI pipeline.
+Body module for TEIlle-douce pipeline.
 
 This module provides functions to build TEI body elements from extracted text.
 

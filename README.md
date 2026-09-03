@@ -1,15 +1,21 @@
-# ALTO2TEI
+# TEIlle-douce
 
 [![CI](https://github.com/rayondemiel/test_tei_ouput/actions/workflows/ci.yml/badge.svg)](https://github.com/rayondemiel/test_tei_ouput/actions/workflows/ci.yml)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org/downloads/)
 [![Code: AGPL-3.0](https://img.shields.io/badge/code-AGPL--3.0-orange.svg)](LICENSE)
 [![Encoding: CC BY 4.0](https://img.shields.io/badge/TEI%20output-CC%20BY%204.0-green.svg)](https://creativecommons.org/licenses/by/4.0/)
 
-A pipeline that turns the ALTO XML produced by OCR/HTR engines into TEI P5
-editions of early modern printed books — page images kept addressable through
-IIIF, layout kept in `<sourceDoc>` under the [SegmOnto](https://segmonto.github.io/)
-taxonomy, reading text assembled in `<text>`, and — optionally — annotated with
-tokens, lemmas, modernized spellings and named entities.
+*Taille-douce* is the copperplate engraving of the seventeenth century — the
+technique Abraham Bosse set out in his *Traicté des manières de graver en taille
+douce* (1645), and the one that illustrated most of the books this pipeline
+reads.
+
+TEIlle-douce turns the ALTO XML produced by OCR/HTR engines into TEI P5 editions
+of early modern printed books — page images kept addressable through IIIF,
+layout kept in `<sourceDoc>` under the
+[SegmOnto](https://segmonto.github.io/) taxonomy, reading text assembled in
+`<text>`, and — optionally — annotated with tokens, lemmas, modernized spellings
+and named entities.
 
 It exists for a specific corpus: 27 volumes — 19 distinct works — of French
 art theory and art literature printed between 1548 and 1669, all but one from
@@ -19,6 +25,10 @@ books, but every design decision was made against them.
 
 Part of the **[Projet Grand Siècle](https://github.com/Grand-Siecle)**
 (Université de Lausanne — UNIL, Université de Genève — UNIGE).
+
+> **Note** — this repository is moving to `Grand-Siecle/teille-douce`. Until the
+> transfer, it lives at `rayondemiel/test_tei_ouput`, which is the URL the
+> commands below use.
 
 ---
 
@@ -34,14 +44,14 @@ One TEI file per volume, with four layers a reader can use independently:
 | **Annotation** *(optional)* | in `<text>` and `<standOff>` | `<s>`/`<w>`/`<pc>` with POS and lemmas, `<choice><orig>/<reg></choice>` for modernized spellings, `<persName>`/`<placeName>`/`<rs>` for entities resolved against `<standOff>` lists |
 
 Every document is also validated against the project's own TEI customization
-([`schema/alto2tei.odd`](schema/)), which states what a conformant output of
+([`schema/teille-douce.odd`](schema/)), which states what a conformant output of
 *this* pipeline is — a stricter question than TEI conformance.
 
 ## Quickstart
 
 ```bash
-git clone https://github.com/rayondemiel/test_tei_ouput.git alto2tei
-cd alto2tei
+git clone https://github.com/rayondemiel/test_tei_ouput.git teille-douce
+cd teille-douce
 python3.12 -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
 
@@ -49,7 +59,7 @@ pip install -r requirements.txt
 cp -r /path/to/my-volume OCR/
 
 # Convert, without the phases that need external services
-ALTO2TEI_NER=0 ALTO2TEI_ENRICHMENT=0 ALTO2TEI_MODERNIZE=0 python3 main.py
+TDOUCE_NER=0 TDOUCE_ENRICHMENT=0 TDOUCE_MODERNIZE=0 python3 main.py
 
 # Check the result
 python3 scripts/validate_tei.py --odd tei_output/*.xml
@@ -109,7 +119,7 @@ Known limits, deliberate rather than pending:
 
 ## Licence and credits
 
-Copyright © 2025–2026 the ALTO2TEI authors.
+Copyright © 2025–2026 the TEIlle-douce authors.
 
 The **code** is distributed under the [GNU AGPL-3.0](LICENSE). The **TEI
 encoding it produces** is published under

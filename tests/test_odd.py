@@ -1,4 +1,4 @@
-# Tests de schema/alto2tei.odd -- l'ODD du projet.
+# Tests de schema/teille-douce.odd -- l'ODD du projet.
 #
 # Un ODD est une promesse : « la chaine emet ceci, avec ces valeurs ». Une
 # promesse qu'aucun test ne tient derive en silence, et un schema qui a pris
@@ -21,10 +21,10 @@ from src.constants import SEGMONTO_LINES, SEGMONTO_ZONES
 from src.enrichment.entity_schema import NER_ENTITY_TYPES
 
 RACINE = Path(__file__).resolve().parent.parent
-ODD = RACINE / "schema" / "alto2tei.odd"
-RNG = RACINE / "schema" / "alto2tei.rng"
-SCH = RACINE / "schema" / "alto2tei.sch"
-SVRL = RACINE / "schema" / "alto2tei.svrl.xsl"
+ODD = RACINE / "schema" / "teille-douce.odd"
+RNG = RACINE / "schema" / "teille-douce.rng"
+SCH = RACINE / "schema" / "teille-douce.sch"
+SVRL = RACINE / "schema" / "teille-douce.svrl.xsl"
 GOLDEN = RACINE / "tests" / "fixtures" / "golden" / "LIV9001_court.tei.xml"
 
 NS_TEI = "http://www.tei-c.org/ns/1.0"

@@ -1,6 +1,6 @@
 # Contributing
 
-ALTO2TEI is a research pipeline for the
+TEIlle-douce is a research pipeline for the
 [Projet Grand Siècle](https://github.com/Grand-Siecle). Contributions are
 welcome — bug reports, corpus feedback, and code.
 
@@ -26,7 +26,7 @@ The useful report contains the input that reproduces it. For a conversion bug,
 that means:
 
 - the ALTO file or files (or the smallest excerpt that still fails);
-- the command you ran, including any `ALTO2TEI_*` variables;
+- the command you ran, including any `TDOUCE_*` variables;
 - the relevant part of the run's `pipeline_*.log`;
 - what the output contains versus what it should contain.
 
@@ -89,16 +89,16 @@ your change did.
 
 ### Adding an element to the output means adding it to the ODD
 
-`schema/alto2tei.odd` declares a **closed** inventory of what the pipeline
+`schema/teille-douce.odd` declares a **closed** inventory of what the pipeline
 emits. Emit a new element without declaring it and `tests/test_odd.py` fails, on
 purpose. Recompile and commit source plus derivatives together:
 
 ```bash
 venv/bin/python scripts/build_odd.py
-git add schema/alto2tei.odd schema/alto2tei.rng schema/alto2tei.sch schema/alto2tei.svrl.xsl
+git add schema/teille-douce.odd schema/teille-douce.rng schema/teille-douce.sch schema/teille-douce.svrl.xsl
 ```
 
-Never edit `alto2tei.rng`, `alto2tei.sch` or `alto2tei.svrl.xsl` by hand;
+Never edit `teille-douce.rng`, `teille-douce.sch` or `teille-douce.svrl.xsl` by hand;
 `build_odd.py --check` catches it if you do. See [docs/schema.md](docs/schema.md).
 
 ### Coverage only goes up
@@ -143,8 +143,8 @@ And, if you touched anything that reaches the output, validate on real
 documents rather than only on the fixture:
 
 ```bash
-ALTO2TEI_OCR_DIR=OCR_test ALTO2TEI_OUTPUT_DIR=tei_test \
-ALTO2TEI_NER=0 ALTO2TEI_ENRICHMENT=0 ALTO2TEI_MODERNIZE=0 python3 main.py
+TDOUCE_OCR_DIR=OCR_test TDOUCE_OUTPUT_DIR=tei_test \
+TDOUCE_NER=0 TDOUCE_ENRICHMENT=0 TDOUCE_MODERNIZE=0 python3 main.py
 venv/bin/python scripts/validate_tei.py --odd tei_test/*.xml
 ```
 

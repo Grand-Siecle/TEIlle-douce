@@ -1,6 +1,6 @@
 # User guide
 
-Everything needed to run ALTO2TEI on your own documents and read what comes
+Everything needed to run TEIlle-douce on your own documents and read what comes
 out. For how the pipeline works internally, see
 [architecture.md](architecture.md).
 
@@ -22,15 +22,15 @@ install on anything older, and language detection results change between its
 minor releases — which is why the version is pinned exactly.
 
 ```bash
-git clone https://github.com/rayondemiel/test_tei_ouput.git alto2tei
-cd alto2tei
+git clone https://github.com/rayondemiel/test_tei_ouput.git teille-douce
+cd teille-douce
 python3.12 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 ```
 
 The repository is **run, not installed**: `python3 main.py` from the project
-root. There is no `pip install alto2tei`, and `pyproject.toml` deliberately
+root. There is no `pip install teille-douce`, and `pyproject.toml` deliberately
 declares no `[project]` table — `config.py` and `main.py` live at the root,
 outside any package.
 
@@ -81,7 +81,7 @@ at the end and a warning names it.
 Layout labels must follow the [SegmOnto](https://segmonto.github.io/)
 controlled vocabulary, carried by ALTO's `TAGREFS` in the form
 `MainZone:column#1`. The pipeline recognizes 15 zone types and 6 line types;
-`schema/alto2tei.odd` holds the closed list. An unknown label does not lose
+`schema/teille-douce.odd` holds the closed list. An unknown label does not lose
 text — it falls back to a plain `<ab type="…">` — but it gets no dedicated TEI
 structure either.
 
@@ -180,7 +180,7 @@ parallel, capped at `min(cpu_count(), 8)` workers.
 To convert without the three annotation phases — no services, no models:
 
 ```bash
-ALTO2TEI_NER=0 ALTO2TEI_ENRICHMENT=0 ALTO2TEI_MODERNIZE=0 python3 main.py
+TDOUCE_NER=0 TDOUCE_ENRICHMENT=0 TDOUCE_MODERNIZE=0 python3 main.py
 ```
 
 You get a complete base TEI: header, `sourceDoc`, text structure, notes,
@@ -197,23 +197,25 @@ responsibility statement, the languages to detect, the confidence thresholds. It
 is meant to be edited.
 
 **Environment variables** override what moves between machines and between runs
-— paths, service URLs, timeouts, and the phase switches:
+— paths, service URLs, timeouts, and the phase switches. The prefix is
+`TDOUCE_`, from the pipeline's original name; it is kept so that existing
+wrapper scripts and CI configurations keep working:
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `ALTO2TEI_OCR_DIR` | `OCR` | Input directory |
-| `ALTO2TEI_OUTPUT_DIR` | `tei_output` | Output directory |
-| `ALTO2TEI_ENRICHMENT` | `1` | Linguistic enrichment on/off |
-| `ALTO2TEI_MODERNIZE` | `1` | Modernization on/off |
-| `ALTO2TEI_NER` | `1` | Named-entity recognition on/off |
-| `ALTO2TEI_PYHELLEN_URL` | `http://localhost:8000` | PyHellen base URL |
-| `ALTO2TEI_PYHELLEN_TIMEOUT` | `120` | Seconds per PyHellen request |
-| `ALTO2TEI_MODERNIZE_URL` | `http://localhost:8011` | VieuxParler base URL, for every language with no specific override |
-| `ALTO2TEI_MODERNIZE_URL_<IDENT>` | — | Same, for one language only (`ALTO2TEI_MODERNIZE_URL_FRA`) |
-| `ALTO2TEI_MODERNIZE_TIMEOUT` | `300` | Seconds per modernization batch |
-| `ALTO2TEI_MODERNIZE_SIMILARITY_MIN` | `0.8` | Below this similarity, a modernized line is rejected as a hallucination |
-| `ALTO2TEI_HEALTH_TIMEOUT` | `30` | Seconds for the reachability probe both services answer before a run |
-| `ALTO2TEI_TEI_RNG` | — | Path to a `tei_all.rng`, for the schema-validation tests |
+| `TDOUCE_OCR_DIR` | `OCR` | Input directory |
+| `TDOUCE_OUTPUT_DIR` | `tei_output` | Output directory |
+| `TDOUCE_ENRICHMENT` | `1` | Linguistic enrichment on/off |
+| `TDOUCE_MODERNIZE` | `1` | Modernization on/off |
+| `TDOUCE_NER` | `1` | Named-entity recognition on/off |
+| `TDOUCE_PYHELLEN_URL` | `http://localhost:8000` | PyHellen base URL |
+| `TDOUCE_PYHELLEN_TIMEOUT` | `120` | Seconds per PyHellen request |
+| `TDOUCE_MODERNIZE_URL` | `http://localhost:8011` | VieuxParler base URL, for every language with no specific override |
+| `TDOUCE_MODERNIZE_URL_<IDENT>` | — | Same, for one language only (`TDOUCE_MODERNIZE_URL_FRA`) |
+| `TDOUCE_MODERNIZE_TIMEOUT` | `300` | Seconds per modernization batch |
+| `TDOUCE_MODERNIZE_SIMILARITY_MIN` | `0.8` | Below this similarity, a modernized line is rejected as a hallucination |
+| `TDOUCE_HEALTH_TIMEOUT` | `30` | Seconds for the reachability probe both services answer before a run |
+| `TDOUCE_TEI_RNG` | — | Path to a `tei_all.rng`, for the schema-validation tests |
 
 Booleans accept `1`/`true`/`yes`/`on` and `0`/`false`/`no`/`off`,
 case-insensitive.
@@ -221,7 +223,7 @@ case-insensitive.
 **Every setting rejects a value it cannot use** — unreadable, empty, non-finite,
 out of range — and keeps its default while saying so on stderr. A variable set
 but empty counts as unusable: a wrapper doing
-`export ALTO2TEI_MODERNIZE_URL="${MODERNIZE_URL}"` with the outer variable unset
+`export TDOUCE_MODERNIZE_URL="${MODERNIZE_URL}"` with the outer variable unset
 would otherwise silently disable the service. If a value of yours was ignored,
 there is a `RuntimeWarning` naming it and giving the reason.
 
@@ -238,7 +240,7 @@ per detected language: `freem` for French, `lasla` for Latin, `grc` for Ancient
 Greek. Produces `<s>`, `<w>` and `<pc>` inside `<ab>`, `<note>`, `<head>` and
 `<titlePart>`.
 
-Configure with `ALTO2TEI_PYHELLEN_URL`. Requests are capped at 8 concurrent, and
+Configure with `TDOUCE_PYHELLEN_URL`. Requests are capped at 8 concurrent, and
 a circuit breaker stops calling after 10 consecutive failures — a frozen server
 must not turn into hours of sequential timeouts.
 
@@ -248,7 +250,7 @@ An HTTP service rewriting early modern French into modern French, line by line
 in batches of 64. Produces `<choice><orig>…</orig><reg>…</reg></choice>`.
 
 Two guards make the result readable as evidence rather than as a claim. A line
-whose modernized form falls below `ALTO2TEI_MODERNIZE_SIMILARITY_MIN`
+whose modernized form falls below `TDOUCE_MODERNIZE_SIMILARITY_MIN`
 (0.8 character-level similarity, after normalizing long-s, accents and case) is
 **rejected** and left unmodified — over Greek OCR artifacts the service answers
 with invented French. What survives carries a `@cert` grading how much it
@@ -483,7 +485,7 @@ breakdown and for what the eleven rules check.
 ## Troubleshooting
 
 **`Directory not found: OCR`** — `OCR/` does not exist. Create it, or point
-`ALTO2TEI_OCR_DIR` elsewhere.
+`TDOUCE_OCR_DIR` elsewhere.
 
 **`No ALTO documents found in OCR/.`** — `OCR/` has no subdirectory containing
 `.xml` files. Loose XML files at the top level of `OCR/` are not picked up:
@@ -500,10 +502,10 @@ many persons it loaded.
 
 **No `<w>` or no `<choice>` in the output** — the corresponding service did not
 answer its probe. There is one warning line at the start of the run saying which
-one. Check the URL, and raise `ALTO2TEI_HEALTH_TIMEOUT` if the server is remote
+one. Check the URL, and raise `TDOUCE_HEALTH_TIMEOUT` if the server is remote
 and still loading its model.
 
-**No entities** — `requirements-ner.txt` is not installed, or `ALTO2TEI_NER=0`.
+**No entities** — `requirements-ner.txt` is not installed, or `TDOUCE_NER=0`.
 The first NER run also downloads several GB of models.
 
 **A setting seems ignored** — look for a `RuntimeWarning` naming the variable.

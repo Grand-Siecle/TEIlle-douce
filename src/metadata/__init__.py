@@ -3,7 +3,7 @@
 # Loads and processes document metadata from various sources
 # -----------------------------------------------------------
 """
-Metadata module for ALTO2TEI pipeline.
+Metadata module for TEIlle-douce pipeline.
 
 This module provides classes and functions for loading document metadata
 from CSV files, handling IIIF URL mappings, and person metadata.

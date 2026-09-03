@@ -1,5 +1,5 @@
 # -----------------------------------------------------------
-# Shared constants for ALTO2TEI pipeline
+# Shared constants for the TEIlle-douce pipeline
 # XML namespaces and internal constants used across modules
 # -----------------------------------------------------------
 
@@ -16,7 +16,13 @@ from lxml import etree
 # the same ALTO input must yield byte-identical TEI ids on every run, so
 # outputs can be diffed and the external entity-reconciliation step can
 # rely on stable ids.
-UUID_NAMESPACE = uuid.uuid5(uuid.NAMESPACE_DNS, "alto2tei")
+#
+# The seed string is frozen. Changing it renumbers every xml:id of every
+# document the pipeline has ever produced, breaking the @ref of any
+# downstream reconciliation and every already-published file. It was
+# changed once, from "alto2tei" to "teille-douce", while nothing
+# depended on the output yet; that window is closed.
+UUID_NAMESPACE = uuid.uuid5(uuid.NAMESPACE_DNS, "teille-douce")
 
 # =============================================================================
 # XML NAMESPACES

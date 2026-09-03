@@ -17,8 +17,8 @@ For working *on* the pipeline. If you only want to run it, the
 ## Setting up
 
 ```bash
-git clone https://github.com/rayondemiel/test_tei_ouput.git alto2tei
-cd alto2tei
+git clone https://github.com/rayondemiel/test_tei_ouput.git teille-douce
+cd teille-douce
 python3.12 -m venv venv
 source venv/bin/activate
 pip install -r requirements-dev.txt   # core + pytest + coverage + saxonche
@@ -39,7 +39,7 @@ curl -sSL -o tei_all.rng https://tei-c.org/release/xml/tei/custom/schema/relaxng
 ```
 
 `tei_all.rng` at the project root is picked up automatically; put it elsewhere
-and point `ALTO2TEI_TEI_RNG` at it. Without it the tei_all tests skip with an
+and point `TDOUCE_TEI_RNG` at it. Without it the tei_all tests skip with an
 explicit reason rather than passing silently.
 
 For a quick manual run on a handful of real documents, `OCR_test/` holds
@@ -47,8 +47,8 @@ symlinks into the private corpus (gitignored, as are `tei_test/`, `tei_full/`,
 `tei_mini/`):
 
 ```bash
-ALTO2TEI_OCR_DIR=OCR_test ALTO2TEI_OUTPUT_DIR=tei_test \
-ALTO2TEI_NER=0 ALTO2TEI_ENRICHMENT=0 ALTO2TEI_MODERNIZE=0 python3 main.py
+TDOUCE_OCR_DIR=OCR_test TDOUCE_OUTPUT_DIR=tei_test \
+TDOUCE_NER=0 TDOUCE_ENRICHMENT=0 TDOUCE_MODERNIZE=0 python3 main.py
 ```
 
 ## The test suite
@@ -190,7 +190,7 @@ expected not to repeat it.
 
 ### Adding an element to the output means adding it to the ODD
 
-`schema/alto2tei.odd` is the normative description of what the pipeline emits,
+`schema/teille-douce.odd` is the normative description of what the pipeline emits,
 with a **closed** element inventory. `tests/test_odd.py` fails until a newly
 emitted element is declared there. See [schema.md](schema.md).
 
@@ -230,8 +230,8 @@ The order below is the one the conventions above imply.
    ```
 6. **Validate real output**, not just the fixture:
    ```bash
-   ALTO2TEI_OCR_DIR=OCR_test ALTO2TEI_OUTPUT_DIR=tei_test \
-   ALTO2TEI_NER=0 ALTO2TEI_ENRICHMENT=0 ALTO2TEI_MODERNIZE=0 python3 main.py
+   TDOUCE_OCR_DIR=OCR_test TDOUCE_OUTPUT_DIR=tei_test \
+   TDOUCE_NER=0 TDOUCE_ENRICHMENT=0 TDOUCE_MODERNIZE=0 python3 main.py
    venv/bin/python scripts/validate_tei.py --odd tei_test/*.xml
    ```
 
@@ -244,7 +244,7 @@ the console; they always go to the run's `pipeline_*.log` regardless. Third-part
 HTTP libraries are pinned to WARNING because they were filling the log with
 megabytes of connection traces.
 
-**Work on one document.** Point `ALTO2TEI_OCR_DIR` at a directory holding a
+**Work on one document.** Point `TDOUCE_OCR_DIR` at a directory holding a
 single volume — or a single page. Most bugs reproduce on one page.
 
 **Isolate the phase.** The three annotation phases are independent switches. If
