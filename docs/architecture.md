@@ -163,10 +163,16 @@ zone and line tables, which `sourcedoc/` then uses to build `@corresp`.
 ### `sourcedoc/` — the layout
 
 `builder.py` distributes pages over a `multiprocessing` pool capped at
-`min(cpu_count(), 8)`. Results come back through `imap_unordered` and are
-**re-sorted by page number**, so speed does not reorder the document. A page
-whose ALTO is malformed is recorded in `skipped_pages` and the document
-continues; a document where *every* page fails is a failure.
+`min(cpu_count(), 8)`. Results come back through `imap_unordered` and each
+lands in **the slot of the job that produced it**, so speed does not reorder
+the document. The routing key is the page's position in the ordered file list,
+never its page number: that number is the first digit run of the filename, two
+files can share one, and keying on it used to drop a page and emit its
+neighbour twice. Files sharing a number are all converted, and a warning names
+them. A page whose ALTO is malformed is recorded in `skipped_pages` and the
+document continues; a document where *every* page fails is a failure — and so
+is one where two files would put two pages under a single `<surface>`
+`xml:id`, which no XML parser would read back.
 
 `elements.py` builds `<surface>` → `<zone>` (region) → `<zone>` (line) →
 `<path>` + `<line>`. `attributes.py` converts ALTO geometry into TEI:
