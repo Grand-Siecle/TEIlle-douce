@@ -116,7 +116,11 @@ SEGMONTO_ZONES = {
     "CustomZone": "https://segmonto.github.io/gd/gdZ/CustomZone/",
     "DamageZone": "https://segmonto.github.io/gd/gdZ/DamageZone",
     "DecorationZone": "https://segmonto.github.io/gd/gdZ/DecorationZone",
-    "DigitizationArtefactzone": "https://segmonto.github.io/gd/gdZ/DigitizationArtefactzone",
+    # z majuscule : c'est l'orthographe SegmOnto, et celle des 273
+    # occurrences du corpus. Avec la minuscule, la categorie n'entrait pas
+    # dans la taxonomie du header alors que les zones pointaient dessus :
+    # un @corresp pendant, verifie sur LIV0011.
+    "DigitizationArtefactZone": "https://segmonto.github.io/gd/gdZ/DigitizationArtefactZone",
     "DropCapitalZone": "https://segmonto.github.io/gd/gdZ/DropCapitalZone",
     "GraphicZone": "https://segmonto.github.io/gd/gdZ/GraphicZone",
     "MainZone": "https://segmonto.github.io/gd/gdZ/MainZone",

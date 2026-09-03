@@ -194,7 +194,13 @@ class SurfaceTree:
         textline = self._find_by_id(line_id, "TextLine")
         if textline is not None:
             baseline_str = textline.get("BASELINE", "")
-            baseline.attrib["points"] = format_alto_points(baseline_str)
+            # Une TextLine sans BASELINE donnait points="" : un attribut
+            # vide n'est pas une ligne de base. Le schema du projet le
+            # refuse, et la regle TEI qui lit ces coordonnees s'interrompt
+            # dessus au lieu de rapporter.
+            points = format_alto_points(baseline_str)
+            if points:
+                baseline.attrib["points"] = points
 
         return zone
 

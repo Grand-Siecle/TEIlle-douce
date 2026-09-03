@@ -344,8 +344,11 @@ def test_court_est_valide_selon_tei_all(tei_court):
     (ou pointer ALTO2TEI_TEI_RNG dessus) active le controle. Telechargement :
     https://tei-c.org/release/xml/tei/custom/schema/relaxng/tei_all.rng
     """
-    _valider_schema(tei_court)
+    # L'ODD d'abord : _valider_schema() se saute quand tei_all.rng
+    # manque, et un skip interrompt le test — il emportait avec lui
+    # le seul controle que ce depot puisse toujours faire.
     _valider_odd(tei_court)
+    _valider_schema(tei_court)
 
 
 @pytest.mark.e2e
@@ -446,5 +449,5 @@ def test_complet_est_valide_selon_tei_all(tei_complet):
     """Le mode complet produit les @cert et les <persName> automatiques :
     ce sont eux qui, avec "mid" hors vocabulaire TEI, rendaient invalide
     tout fichier annote alors que le TEI de base etait propre."""
-    _valider_schema(tei_complet)
     _valider_odd(tei_complet)
+    _valider_schema(tei_complet)

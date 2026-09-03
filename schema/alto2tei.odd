@@ -76,7 +76,7 @@
           silence.</item>
           <item><label>Listes de valeurs fermées</label> — les attributs dont
           le vocabulaire est décidé par le projet (types de zone et de ligne,
-          types d'entités, responsabilités) sont énumérés, avec la source de
+          types d'entités) sont énumérés, avec la source de
           vérité dont ils sont tirés.</item>
           <item><label>Contraintes Schematron</label> — ce qu'un modèle de
           contenu ne peut pas exprimer : les invariants que la chaîne doit
@@ -159,12 +159,23 @@
                      include="TEI body div front text titlePage titlePart"/>
 
           <moduleRef key="header"
-                     include="appInfo application authority availability
-                              catDesc category change classDecl creation
-                              editorialDecl encodingDesc extent fileDesc idno
-                              interpretation keywords langUsage language
-                              licence profileDesc publicationStmt revisionDesc
-                              sourceDesc taxonomy teiHeader textClass
+                     include="appInfo application authority availability catDesc
+                              category change
+                              classDecl creation
+                              edition editionStmt
+                              editorialDecl
+                              encodingDesc extent
+                              fileDesc idno
+                              interpretation
+                              keywords langUsage
+                              language licence
+                              normalization
+                              profileDesc
+                              publicationStmt
+                              revisionDesc
+                              segmentation
+                              sourceDesc taxonomy
+                              teiHeader textClass
                               titleStmt"/>
 
           <!-- `core` est le seul module importe entier, et c'est un
@@ -182,23 +193,36 @@
           <moduleRef key="transcr"
                      include="fw line path sourceDoc surface zone"/>
 
-          <moduleRef key="linking" include="ab"/>
+          <moduleRef key="linking"
+                     include="ab link linkGrp standOff"/>
 
-          <moduleRef key="figures" include="figure"/>
+          <moduleRef key="figures"
+                     include="figure"/>
 
-          <moduleRef key="analysis" include="c pc s w"/>
+          <moduleRef key="analysis"
+                     include="c pc s w"/>
 
           <moduleRef key="namesdates"
-                     include="addName birth country death education faith
-                              forename genName listPerson nameLink objectName
-                              occupation orgName persName person placeName
-                              roleName settlement surname"/>
+                     include="addName birth country death education event faith
+                              forename genName
+                              listEvent listObject
+                              listOrg listPerson
+                              listPlace nameLink
+                              object
+                              objectIdentifier
+                              objectName occupation
+                              org orgName persName
+                              person place placeName
+                              roleName settlement
+                              surname"/>
 
           <moduleRef key="msdescription"
                      include="altIdentifier material msDesc msIdentifier
-                              objectDesc physDesc repository"/>
+                              objectDesc physDesc
+                              repository"/>
 
-          <moduleRef key="corpus" include="particDesc"/>
+          <moduleRef key="corpus"
+                     include="particDesc settingDesc"/>
 
           <!-- ============================================================
                Couche 2 — listes de valeurs fermées
@@ -228,7 +252,7 @@
                   <valItem ident="CustomZone"/>
                   <valItem ident="DamageZone"/>
                   <valItem ident="DecorationZone"/>
-                  <valItem ident="DigitizationArtefactzone"/>
+                  <valItem ident="DigitizationArtefactZone"/>
                   <valItem ident="DropCapitalZone"/>
                   <valItem ident="GraphicZone"/>
                   <valItem ident="MainZone"/>
@@ -309,27 +333,6 @@
             </attList>
           </elementSpec>
 
-          <classSpec ident="att.global.responsibility" mode="change"
-                     type="atts" module="tei">
-            <desc xml:lang="fr">La chaîne ne connaît qu'un agent automatique :
-            le repérage d'entités nommées. Toute autre responsabilité est
-            humaine et passe par le <gi>respStmt</gi> de l'en-tête.</desc>
-            <desc xml:lang="en">The pipeline knows one automatic agent: named
-            entity recognition. Every other responsibility is human and goes
-            through the header's <gi>respStmt</gi>.</desc>
-            <attList>
-              <attDef ident="resp" mode="change">
-                <valList type="closed">
-                  <valItem ident="#ner-auto">
-                    <desc xml:lang="fr">Annotation produite par la phase de
-                    reconnaissance d'entités nommées.</desc>
-                    <desc xml:lang="en">Annotation produced by the named
-                    entity recognition phase.</desc>
-                  </valItem>
-                </valList>
-              </attDef>
-            </attList>
-          </classSpec>
 
           <!-- ============================================================
                Couche 3 — contraintes Schematron
@@ -371,7 +374,7 @@
             a claim about words, and a count of containers cannot support
             it.</desc>
             <constraint>
-              <sch:rule context="tei:langUsage/tei:language">
+              <sch:rule context="tei:langUsage/tei:language[@usage]">
                 <sch:assert test="@ident and normalize-space(@ident)">
                   A language element must carry a non-empty @ident.
                 </sch:assert>
@@ -507,7 +510,7 @@
 
 
           <constraintSpec ident="inventaire-ferme" scheme="schematron">
-            <desc xml:lang="fr">La chaine emet ces 98 elements TEI, et
+            <desc xml:lang="fr">La chaine emet ces 118 elements TEI, et
             eux seuls. C'est la couche 1 de cet ODD, l'inventaire ferme. Les
             <gi>moduleRef</gi> ci-dessus la portent pour tous les modules sauf
             <code>core</code>, qui doit etre importe entier pour que le
@@ -517,7 +520,7 @@
             inattendu ». Un element nouveau echoue ici tant qu'il n'est pas
             ajoute a la liste : la chaine ne peut pas elargir sa sortie en
             silence.</desc>
-            <desc xml:lang="en">The pipeline emits these 98 TEI elements
+            <desc xml:lang="en">The pipeline emits these 118 TEI elements
             and no others. This is the first layer of this ODD, the closed
             inventory. The <gi>moduleRef</gi> declarations above carry it for
             every module but <code>core</code>, which has to be imported whole
@@ -532,20 +535,23 @@
                     'TEI', 'ab', 'addName', 'altIdentifier', 'appInfo', 'application',
                     'author', 'authority', 'availability', 'bibl', 'birth', 'body',
                     'c', 'catDesc', 'category', 'change', 'choice', 'classDecl',
-                    'country', 'creation', 'date', 'death', 'div', 'editorialDecl',
-                    'education', 'encodingDesc', 'extent', 'faith', 'fileDesc', 'figure',
-                    'foreign', 'forename', 'front', 'fw', 'genName', 'graphic',
-                    'head', 'hi', 'idno', 'interpretation', 'keywords', 'label',
-                    'langUsage', 'language', 'lb', 'licence', 'line', 'listPerson',
+                    'country', 'creation', 'date', 'death', 'div', 'edition',
+                    'editionStmt', 'editorialDecl', 'education', 'encodingDesc', 'event', 'extent',
+                    'faith', 'figure', 'fileDesc', 'foreign', 'forename', 'front',
+                    'fw', 'genName', 'graphic', 'head', 'hi', 'idno',
+                    'interpretation', 'item', 'keywords', 'label', 'langUsage', 'language',
+                    'lb', 'licence', 'line', 'link', 'linkGrp', 'list',
+                    'listBibl', 'listEvent', 'listObject', 'listOrg', 'listPerson', 'listPlace',
                     'material', 'measure', 'msDesc', 'msIdentifier', 'name', 'nameLink',
-                    'note', 'objectDesc', 'objectName', 'occupation', 'orgName', 'orig',
-                    'p', 'particDesc', 'path', 'pb', 'pc', 'persName',
-                    'person', 'physDesc', 'placeName', 'profileDesc', 'ptr', 'pubPlace',
-                    'publicationStmt', 'publisher', 'reg', 'repository', 'resp', 'respStmt',
-                    'revisionDesc', 'roleName', 'rs', 's', 'settlement', 'sourceDesc',
-                    'sourceDoc', 'surface', 'surname', 'taxonomy', 'teiHeader', 'term',
-                    'text', 'textClass', 'title', 'titlePage', 'titlePart', 'titleStmt',
-                    'w', 'zone')">
+                    'normalization', 'note', 'object', 'objectDesc', 'objectIdentifier', 'objectName',
+                    'occupation', 'org', 'orgName', 'orig', 'p', 'particDesc',
+                    'path', 'pb', 'pc', 'persName', 'person', 'physDesc',
+                    'place', 'placeName', 'profileDesc', 'ptr', 'pubPlace', 'publicationStmt',
+                    'publisher', 'reg', 'repository', 'resp', 'respStmt', 'revisionDesc',
+                    'roleName', 'rs', 's', 'segmentation', 'settingDesc', 'settlement',
+                    'sourceDesc', 'sourceDoc', 'standOff', 'surface', 'surname', 'taxonomy',
+                    'teiHeader', 'term', 'text', 'textClass', 'title', 'titlePage',
+                    'titlePart', 'titleStmt', 'w', 'zone')">
                   Element "<sch:value-of select="local-name()"/>" is not part of
                   the ALTO2TEI inventory. Either the pipeline gained an element
                   and schema/alto2tei.odd has not caught up, or this is a stray.

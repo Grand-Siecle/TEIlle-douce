@@ -43,16 +43,28 @@ def erreurs_svrl(rapport):
     Schematron distingue l'assertion non tenue (`failed-assert`) du rapport
     declenche (`successful-report`) ; l'ODD emploie les deux selon qu'il est
     plus clair d'affirmer ce qui doit etre ou de signaler ce qui ne doit pas.
-    Pour un controle de sortie, les deux sont des violations."""
+    Pour un controle de sortie, les deux sont des violations.
+
+    Renvoie des couples (message, role) : la TEI marque trois de ses
+    propres regles `role="nonfatal"`, et les traiter comme fatales ferait
+    echouer un document sur un avertissement de sa part."""
     if isinstance(rapport, str):
         rapport = etree.fromstring(rapport.encode())
-    erreurs = []
-    for balise in ("failed-assert", "successful-report"):
-        for el in rapport.iter(f"{{{SVRL}}}{balise}"):
-            texte = " ".join("".join(el.itertext()).split())
-            lieu = el.get("location", "")
-            erreurs.append(f"{texte} [{lieu}]" if lieu else texte)
-    return erreurs
+    violations = []
+    attendus = {f"{{{SVRL}}}failed-assert", f"{{{SVRL}}}successful-report"}
+    # Un seul parcours, dans l'ordre du document : balayer d'abord toutes
+    # les assertions puis tous les rapports mettait les seconds derriere
+    # les premiers, hors de portee du plafond d'affichage. Sur un document
+    # annote, les 63 echecs d'inventaire suffisaient a rendre les quatre
+    # regles ecrites en <sch:report> invisibles.
+    for el in rapport.iter():
+        if not isinstance(el.tag, str) or el.tag not in attendus:
+            continue
+        texte = " ".join("".join(el.itertext()).split())
+        lieu = el.get("location", "")
+        message = f"{texte} [{lieu}]" if lieu else texte
+        violations.append((message, el.get("role") or "fatal"))
+    return violations
 
 
 def schematron_du_projet():
@@ -89,8 +101,12 @@ def validate(path, relaxng=None, schematron=None):
 
     # Contraintes de l'ODD, si la feuille SVRL est fournie
     if schematron is not None:
-        for message in erreurs_svrl(schematron.transform_to_string(source_file=path))[:20]:
-            errors.append(f"Schematron: {message}")
+        for message, role in erreurs_svrl(
+                schematron.transform_to_string(source_file=path))[:20]:
+            if role == "nonfatal":
+                warnings.append(f"Schematron: {message}")
+            else:
+                errors.append(f"Schematron: {message}")
 
     def local(el):
         return etree.QName(el).localname if isinstance(el.tag, str) else ""
@@ -259,6 +275,10 @@ def main(paths=None):
     for path in args.fichiers:
         # Un fichier illisible est un échec de CE fichier, pas du script :
         # les suivants sont quand même contrôlés.
+        # Saxon leve ses propres exceptions (PySaxonApiError) sur un
+        # fichier que lxml accepte : un DOCTYPE introuvable, un
+        # imbriquement trop profond, une regle TEI qui bute sur une valeur.
+        # Les laisser passer arretait le lot au premier fichier fautif.
         try:
             errors, warnings = validate(path, relaxng=relaxng,
                                         schematron=schematron)
@@ -269,8 +289,8 @@ def main(paths=None):
                         f"alto2tei.rng L{e.line}: {e.message}"
                         for e in list(odd_rng.error_log)[:20]
                     )
-        except (etree.XMLSyntaxError, OSError) as e:
-            errors, warnings = [f"fichier invalide: {e}"], []
+        except Exception as e:
+            errors, warnings = [f"fichier invalide: {type(e).__name__}: {e}"], []
         status = "FAIL" if errors else "ok"
         print(f"[{status}] {path}: {len(errors)} erreurs, {len(warnings)} avertissements")
         for e in errors[:10]:

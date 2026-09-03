@@ -15,7 +15,7 @@ directement.
 ## Portée
 
 Le schéma de référence était jusqu'ici `tei_all`, soit l'intégralité des
-Guidelines : environ six cents éléments, dont la chaîne en émet 98. Une
+Guidelines : environ six cents éléments, dont la chaîne en émet 118. Une
 validation contre `tei_all` établit la conformité TEI, mais ne détecte ni un
 type de zone inexistant, ni une `<figure>` sans ancrage, ni une entité
 automatique dépourvue d'indice de certitude.
@@ -32,8 +32,8 @@ La personnalisation contraint sur trois niveaux.
    [Contraintes d'implémentation](#contraintes-dimplémentation).
 2. **Listes de valeurs fermées.** `zone/@type` reprend la taxonomie SegmOnto
    de `src/constants.py`, `rs/@type` la table d'entités de
-   `src/enrichment/entity_schema.py`, `@resp` les agents déclarés.
-3. **Contraintes Schematron.** Neuf règles portant sur ce qu'un modèle de
+   `src/enrichment/entity_schema.py`.
+3. **Contraintes Schematron.** Dix règles portant sur ce qu'un modèle de
    contenu ne peut pas exprimer : complétude d'un `<choice>`, présence de
    `@cert` sur toute annotation automatique, unité de mesure sur `@n` d'un
    `<language>`, absence de césure résiduelle dans un `<reg>`, absence de
@@ -67,17 +67,17 @@ flowchart TB
     COMP --> B1["odd2relax.xsl"]
     COMP --> C1["extract-isosch.xsl<br/>lang=en"]
 
-    B1 --> B2["rng_simplify.py<br/>RELAX NG §4.19 et §4.20<br/><i>247 motifs éliminés</i>"]
-    B2 --> RNG["<b>alto2tei.rng</b><br/>360 Ko · compilation 0,1 s"]
+    B1 --> B2["rng_simplify.py<br/>RELAX NG §4.19 et §4.20<br/><i>281 motifs éliminés</i>"]
+    B2 --> RNG["<b>alto2tei.rng</b><br/>384 Ko · compilation 0,1 s"]
 
     C1 --> SCH["<b>alto2tei.sch</b><br/>16 Ko"]
     SCH --> D1["pipeline-for-svrl.xsl"]
-    D1 --> SVRL["<b>alto2tei.svrl.xsl</b><br/>136 Ko"]
+    D1 --> SVRL["<b>alto2tei.svrl.xsl</b><br/>139 Ko"]
 
     STY -. " " .-> B1
     SCHX -. " " .-> D1
 
-    RNG --> USE["validate_tei.py --odd<br/>tests E2E · CI"]
+    RNG --> USE["validate_tei.py --odd<br/>tests E2E"]
     SVRL --> USE
 
     classDef source fill:#1f6feb22,stroke:#1f6feb,stroke-width:2px
@@ -107,6 +107,11 @@ venv/bin/python scripts/validate_tei.py --odd tei_output/*.xml
 # Validation contre tei_all, si une copie est disponible (non versionnée, ~1 Mo)
 venv/bin/python scripts/validate_tei.py --schema tei_all.rng tei_output/*.xml
 ```
+
+`--odd` est plus strict que l'appel nu : cinq contrôles que ce script
+signale comme avertissements sont énoncés par l'ODD et remontent alors en
+erreurs. Les règles que la TEI marque `role="nonfatal"` restent des
+avertissements.
 
 Les tests de bout en bout valident la sortie contre `alto2tei.rng` à chaque
 exécution : le schéma étant versionné, ce contrôle ne peut pas être sauté. La
@@ -158,7 +163,7 @@ motifs impossibles en place. Deux conséquences ont été observées :
 
 `scripts/rng_simplify.py` applique donc ces réductions avant que lxml ne lise
 le fichier. La langue reconnue par le schéma est inchangée : seule son
-écriture l'est. Effet mesuré : 247 motifs éliminés, compilation ramenée à
+écriture l'est. Effet mesuré : 281 motifs éliminés, compilation ramenée à
 0,1 s.
 
 Les règles portant sur `<empty/>` (§4.19) sont également nécessaires, la

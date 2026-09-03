@@ -4,7 +4,11 @@
 # Run: venv/bin/python -m pytest tests/test_validate_tei.py -q
 import pytest
 
+from pathlib import Path
+
 from scripts.validate_tei import main, validate
+
+RACINE = Path(__file__).resolve().parent.parent
 
 TEI_OK = """<TEI xmlns="http://www.tei-c.org/ns/1.0">
   <teiHeader>
@@ -321,9 +325,11 @@ def test_un_echec_svrl_devient_une_erreur_situee():
     )
     erreurs = erreurs_svrl(_rapport_svrl(corps))
     assert len(erreurs) == 2
-    assert "figure must carry @corresp" in erreurs[0]
-    assert "tei:text[1]" in erreurs[0]
-    assert "langUsage mixes prose" in erreurs[1]
+    (premier, role1), (second, _) = erreurs
+    assert "figure must carry @corresp" in premier
+    assert "tei:text[1]" in premier
+    assert role1 == "fatal", "sans @role, une violation est fatale"
+    assert "langUsage mixes prose" in second
 
 
 def test_le_texte_svrl_est_ramene_sur_une_ligne():
@@ -333,6 +339,69 @@ def test_le_texte_svrl_est_ramene_sur_une_ligne():
     corps = ('<svrl:failed-assert location="/tei:TEI">'
              "<svrl:text>\n     un message\n     coupe en trois\n   </svrl:text>"
              "</svrl:failed-assert>")
-    (erreur,) = erreurs_svrl(_rapport_svrl(corps))
+    ((erreur, _),) = erreurs_svrl(_rapport_svrl(corps))
     assert "un message coupe en trois" in erreur
     assert "\n" not in erreur
+
+
+def test_les_violations_sortent_dans_l_ordre_du_document():
+    """Elles etaient groupees par type : toutes les assertions, puis tous
+    les rapports. Sur un document annote, les 63 echecs d'inventaire
+    passaient devant et le plafond d'affichage rendait les quatre regles
+    ecrites en <sch:report> litteralement inatteignables."""
+    from scripts.validate_tei import erreurs_svrl
+    corps = (
+        '<svrl:successful-report location="/a"><svrl:text>premier</svrl:text></svrl:successful-report>'
+        '<svrl:failed-assert location="/b"><svrl:text>deuxieme</svrl:text></svrl:failed-assert>'
+        '<svrl:successful-report location="/c"><svrl:text>troisieme</svrl:text></svrl:successful-report>'
+    )
+    messages = [m for m, _ in erreurs_svrl(_rapport_svrl(corps))]
+    assert ["premier" in messages[0], "deuxieme" in messages[1],
+            "troisieme" in messages[2]] == [True, True, True], messages
+
+
+def test_une_regle_nonfatale_de_la_tei_est_un_avertissement():
+    """La TEI marque trois de ses propres regles role="nonfatal" ; les
+    traiter comme fatales ferait echouer un document sur un avertissement
+    qui n'est pas le notre."""
+    from scripts.validate_tei import erreurs_svrl
+    corps = ('<svrl:report location="/a"/>'
+             '<svrl:failed-assert location="/b" role="nonfatal">'
+             "<svrl:text>usage of deprecated attribute</svrl:text></svrl:failed-assert>")
+    ((_, role),) = erreurs_svrl(_rapport_svrl(corps))
+    assert role == "nonfatal"
+
+
+def test_odd_sans_schema_compile_le_dit_au_lieu_de_planter(tmp_path, monkeypatch):
+    """--odd sur un depot ou build_odd.py n'a jamais tourne doit nommer la
+    commande a lancer, pas echouer sur un fichier introuvable."""
+    import scripts.validate_tei as vt
+    monkeypatch.setattr(vt, "ODD_RNG", tmp_path / "absent.rng")
+    with pytest.raises(SystemExit) as leve:
+        vt.main(["--odd", _ecrire(tmp_path, TEI_OK)])
+    assert "build_odd.py" in str(leve.value)
+
+
+def test_schematron_du_projet_signale_une_feuille_absente(tmp_path, monkeypatch):
+    import scripts.validate_tei as vt
+    pytest.importorskip("saxonche")
+    monkeypatch.setattr(vt, "ODD_SVRL", tmp_path / "absent.xsl")
+    with pytest.raises(SystemExit) as leve:
+        vt.schematron_du_projet()
+    assert "build_odd.py" in str(leve.value)
+
+
+def test_odd_valide_une_sortie_du_pipeline(tmp_path, capsys):
+    """Le chemin nominal de --odd, de bout en bout : le golden, sa date de
+    generation remise, doit passer RelaxNG et Schematron."""
+    pytest.importorskip("saxonche")
+    import scripts.validate_tei as vt
+    if not vt.ODD_RNG.exists():
+        pytest.skip("schema/alto2tei.rng absent — lancer scripts/build_odd.py")
+    golden = (RACINE / "tests" / "fixtures" / "golden" / "LIV9001_court.tei.xml")
+    doc = tmp_path / "doc.tei.xml"
+    doc.write_text(golden.read_text(encoding="utf-8").replace(
+        'when="DATE-GENERATION"', 'when="2026-09-03"'), encoding="utf-8")
+    with pytest.raises(SystemExit) as leve:
+        vt.main(["--odd", str(doc)])
+    assert leve.value.code == 0, capsys.readouterr().out

@@ -116,7 +116,17 @@ def _archive_stylesheets():
             )
         print(f"  anonyme bride ({echec}) -- reprise via gh api")
         acheve = subprocess.run(["gh", "api", STYLESHEETS_API],
-                                capture_output=True, check=True)
+                                capture_output=True)
+        if acheve.returncode != 0:
+            # Le cas le plus frequent est un gh installe mais pas
+            # connecte : son explication est dans stderr, et la taire
+            # laisserait une trace d'appel a la place du diagnostic.
+            raise SystemExit(
+                "gh api a echoue pour les Stylesheets :\n"
+                + (acheve.stderr.decode("utf-8", "replace").strip()
+                   or f"code de sortie {acheve.returncode}")
+                + "\n(se connecter avec `gh auth login`, ou reessayer plus tard)"
+            )
         return acheve.stdout
 
 
@@ -198,15 +208,23 @@ def _transformer(proc, feuille, source, sortie, **params):
 
 
 def compiler(destination):
-    """Produit les trois artefacts dans *destination*."""
+    """Produit les trois artefacts dans *destination*.
+
+    Tout est compile dans un repertoire temporaire et n'arrive dans
+    *destination* qu'une fois les quatre etapes reussies. Ecrire au fil de
+    l'eau laissait, si une etape echouait, un .rng neuf a cote d'un .sch et
+    d'un .svrl.xsl de la compilation precedente -- et, dans le cas du
+    controle des motifs impossibles, exactement le schema incompilable que
+    ce controle existe pour empecher."""
     PySaxonProcessor = _processeur()
     destination.mkdir(parents=True, exist_ok=True)
-    rng = destination / "alto2tei.rng"
-    sch = destination / "alto2tei.sch"
-    svrl = destination / "alto2tei.svrl.xsl"
 
     with tempfile.TemporaryDirectory() as tmp:
-        compile_odd = Path(tmp) / "alto2tei.compiled.odd"
+        atelier = Path(tmp)
+        rng = atelier / "alto2tei.rng"
+        sch = atelier / "alto2tei.sch"
+        svrl = atelier / "alto2tei.svrl.xsl"
+        compile_odd = atelier / "alto2tei.compiled.odd"
         with PySaxonProcessor(license=False) as proc:
             # 1. ODD -> ODD compile : les moduleRef sont resolus contre la
             #    P5, les elementSpec mode="change" fusionnes dans leur
@@ -252,10 +270,17 @@ def compiler(destination):
             _transformer(proc, SCHXSLT / "2.0" / "pipeline-for-svrl.xsl",
                          sch, svrl, schxslt__compile__metadata=False)
 
-    for produit in (rng, sch, svrl):
-        print(f"  {produit.relative_to(RACINE) if produit.is_relative_to(RACINE) else produit}"
-              f" ({produit.stat().st_size / 1024:.0f} Ko)")
-    return rng, sch, svrl
+        produits = []
+        for provisoire in (rng, sch, svrl):
+            definitif = destination / provisoire.name
+            shutil.copy2(provisoire, definitif)
+            produits.append(definitif)
+
+    for produit in produits:
+        chemin = (produit.relative_to(RACINE)
+                  if produit.is_relative_to(RACINE) else produit)
+        print(f"  {chemin} ({produit.stat().st_size / 1024:.0f} Ko)")
+    return tuple(produits)
 
 
 HORODATAGE = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z")

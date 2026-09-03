@@ -30,11 +30,6 @@ GOLDEN = RACINE / "tests" / "fixtures" / "golden" / "LIV9001_court.tei.xml"
 NS_TEI = "http://www.tei-c.org/ns/1.0"
 
 
-@pytest.fixture(scope="module")
-def odd():
-    return etree.parse(str(ODD))
-
-
 def _inventaire_declare(odd):
     """Les noms d'elements que la contrainte `inventaire-ferme` autorise."""
     for spec in odd.iter(f"{{{NS_TEI}}}constraintSpec"):
@@ -43,6 +38,46 @@ def _inventaire_declare(odd):
                             .__next__().get("test").split())
             return set(re.findall(r"'([A-Za-z]+)'", test))
     raise AssertionError("contrainte `inventaire-ferme` introuvable dans l'ODD")
+
+
+def elements_que_le_code_peut_emettre():
+    """Tout nom d'element que `src/` peut poser dans un document.
+
+    Le premier inventaire etait releve dans le golden, produit avec les
+    trois phases facultatives coupees : quinze elements manquaient, et le
+    schema rejetait toute sortie reellement annotee. Les sources sont donc
+    prises la ou elles decident, pas la ou elles se voient :
+
+    - un motif large sur `src/` — le nom d'element est le second argument
+      des constructeurs comme des helpers (`_sub`, `_find_or_create`) ;
+    - la table d'entites, dont plusieurs cles portent des noms d'elements
+      (`tei_list`, `tei_parent`… : c'est la que vivent standOff et
+      listPlace) ;
+    - les declarations editoriales, dont les CLES sont des noms
+      d'elements (`normalization`, `segmentation`) ;
+    - le golden, pour ce qu'un helper construit sans litteral lisible.
+    """
+    from src.teiheader.prose import EDITORIAL_DECLARATIONS
+
+    noms = set(EDITORIAL_DECLARATIONS)
+    for entree in NER_ENTITY_TYPES.values():
+        for cle, valeur in entree.items():
+            if cle.startswith("tei_") and isinstance(valeur, str) and valeur.isalpha():
+                noms.add(valeur)
+
+    motif = re.compile(r'\(\s*[A-Za-z_.\[\]"\']+\s*,\s*"([A-Za-z]+)"')
+    for source in (RACINE / "src").rglob("*.py"):
+        noms.update(motif.findall(source.read_text(encoding="utf-8")))
+    noms.update(re.findall(r'etree\.Element\(\s*"([A-Za-z]+)"',
+                           "\n".join(f.read_text(encoding="utf-8")
+                                     for f in (RACINE / "src").rglob("*.py"))))
+
+    noms.update(etree.QName(e).localname
+                for e in etree.parse(str(GOLDEN)).getroot().iter()
+                if isinstance(e.tag, str))
+    # <TEI> et les conteneurs poses par le squelette
+    noms.update({"TEI", "text", "body", "front"})
+    return noms
 
 
 def _valist(odd, element, attribut):
@@ -83,20 +118,7 @@ def test_l_inventaire_ne_declare_rien_qui_ne_soit_construit():
     odd = etree.parse(str(ODD))
     declares = _inventaire_declare(odd)
 
-    construits = set()
-    motif = re.compile(r'(?:SubElement\([^,]+,\s*|etree\.Element\(\s*)"([A-Za-z]+)"')
-    for source in (RACINE / "src").rglob("*.py"):
-        construits.update(motif.findall(source.read_text(encoding="utf-8")))
-    construits.update(v["tei_element"] for v in NER_ENTITY_TYPES.values())
-    # <TEI> et les conteneurs poses par le squelette du header
-    construits.update({"TEI", "text", "body", "front"})
-    # Certains elements passent par un helper plutot que par un
-    # SubElement litteral (<birth>, <death> dans csv_book.py) : leur
-    # presence dans une sortie reelle vaut preuve d'emission.
-    construits.update(etree.QName(e).localname
-                      for e in etree.parse(str(GOLDEN)).getroot().iter()
-                      if isinstance(e.tag, str))
-
+    construits = elements_que_le_code_peut_emettre()
     fantomes = declares - construits
     assert not fantomes, (
         f"l'ODD declare des elements que rien n'emet : {sorted(fantomes)}")
@@ -162,7 +184,17 @@ def test_le_schematron_porte_les_contraintes_de_l_odd():
     assert not absentes, (
         f"contraintes ecrites dans l'ODD mais absentes du Schematron : "
         f"{sorted(absentes)}")
-    assert len(idents) >= 9, idents
+    # Un plancher laisserait disparaitre une regle sans bruit : c'est le
+    # nombre exact qui est verifie.
+    assert len(idents) == 10, sorted(idents)
+
+    # Et le contenu, pas seulement l'ident : modifier un XPath en gardant
+    # son nom passait inapercu.
+    for spec in odd.iter(f"{{{NS_TEI}}}constraintSpec"):
+        for regle in spec.iter("{http://purl.oclc.org/dsdl/schematron}rule"):
+            contexte = " ".join(regle.get("context").split())
+            assert contexte in " ".join(schematron.split()), (
+                f"contexte absent du Schematron produit : {contexte}")
 
 
 def test_la_verification_de_derive_ignore_l_horodatage_de_generation():
@@ -170,11 +202,103 @@ def test_la_verification_de_derive_ignore_l_horodatage_de_generation():
     compilations du meme ODD different d'une ligne. --check doit voir la
     derive reelle sans crier sur cette ligne-la -- meme convention que la
     normalisation du golden E2E."""
-    import sys
-    sys.path.insert(0, str(RACINE / "scripts"))
-    from build_odd import sans_horodatage
+    from scripts.build_odd import sans_horodatage
 
     a = "<!-- This file generated 2026-09-03T09:05:15Z by 'extract-isosch.xsl'. -->"
     b = "<!-- This file generated 2026-09-03T09:05:25Z by 'extract-isosch.xsl'. -->"
     assert sans_horodatage(a) == sans_horodatage(b)
     assert sans_horodatage(a) != sans_horodatage(a.replace("extract", "autre"))
+
+
+# -----------------------------------------------------------
+# Ce que la revue de la PR a mis au jour
+# -----------------------------------------------------------
+
+def test_l_etiquette_segmonto_est_orthographiee_comme_le_corpus():
+    """SEGMONTO_ZONES portait "DigitizationArtefactzone", z minuscule ; les
+    273 occurrences du corpus s'ecrivent "DigitizationArtefactZone". Le
+    <zone> emis reprend le libelle brut de l'ALTO et pointe vers
+    #DigitizationArtefactZone, mais la taxonomie du header n'est batie que
+    sur les cles de SEGMONTO_ZONES : la categorie manquait, et le @corresp
+    pendait. Verifie sur tei_output/LIV0011."""
+    assert "DigitizationArtefactZone" in SEGMONTO_ZONES
+    assert "DigitizationArtefactzone" not in SEGMONTO_ZONES
+    assert SEGMONTO_ZONES["DigitizationArtefactZone"].endswith(
+        "DigitizationArtefactZone")
+
+
+def test_l_inventaire_couvre_les_phases_facultatives():
+    """L'inventaire etait bati sur le golden, produit avec les trois phases
+    coupees : il ignorait standOff, listPlace, normalization, segmentation
+    et onze autres elements, si bien que le schema rejetait toute sortie
+    reellement annotee. La table d'entites et les declarations editoriales
+    sont les sources qui le disent sans faire tourner la chaine."""
+    declares = _inventaire_declare(etree.parse(str(ODD)))
+
+    from src.teiheader.prose import EDITORIAL_DECLARATIONS
+    attendus = set(EDITORIAL_DECLARATIONS)          # <normalization>, <segmentation>…
+    for entree in NER_ENTITY_TYPES.values():
+        for cle, valeur in entree.items():
+            if cle.startswith("tei_") and isinstance(valeur, str) and valeur.isalpha():
+                attendus.add(valeur)                # standOff, listPlace, place…
+    attendus |= {"linkGrp", "link"}                 # ner_resolve.py, liens de mention
+    attendus |= {"editionStmt", "edition"}          # utils/xml.py
+
+    manquants = sorted(attendus - declares)
+    assert not manquants, (
+        f"elements emis par les phases facultatives, absents de l'inventaire : "
+        f"{manquants}")
+
+
+# Ce que chaque phase facultative ajoute au document, greffe a l'endroit
+# ou la chaine le pose. Le golden est produit avec les trois phases
+# coupees : sans ces greffes, aucun test ne verrait que le schema rejette
+# une sortie annotee -- ce qui etait le cas.
+GREFFES = {
+    "modernisation : <normalization> dans l'editorialDecl":
+        ("<editorialDecl>", "<editorialDecl><normalization><p>x</p></normalization>"),
+    "enrichissement : <segmentation> dans l'editorialDecl":
+        ("<editorialDecl>", "<editorialDecl><segmentation><p>x</p></segmentation>"),
+    "modernisation : <choice><orig>/<reg> dans le corps":
+        ("<ab ", "<ab n='greffe'><choice><orig>ma¬in</orig><reg>main</reg></choice></ab><ab "),
+    "enrichissement : <s>/<w>/<pc> dans le corps":
+        ("<ab ", "<ab n='greffe'><s><w lemma='x' pos='NOMcom'>mot</w><pc>.</pc></s></ab><ab "),
+    "NER : <standOff> et ses listes":
+        ("<text>", "<standOff><listPlace><place xml:id='p1'><placeName>Rome</placeName>"
+                   "</place></listPlace><listOrg><org xml:id='o1'><orgName>Academie</orgName>"
+                   "</org></listOrg><listEvent><event xml:id='e1'><label>Salon</label></event>"
+                   "</listEvent><listObject><object xml:id='ob1'>"
+                   # TEI exige que le nom soit dans <objectIdentifier> ;
+                   # entity_schema.py le sait (tei_item_wrapper).
+                   "<objectIdentifier><objectName>Tableau</objectName>"
+                   "</objectIdentifier></object></listObject>"
+                   "<linkGrp type='mentions'>"
+                   "<link target='#p1 #o1'/></linkGrp></standOff><text>"),
+    "NER : entites dans le corps":
+        ("<ab ", "<ab n='greffe'><persName resp='#ner-auto' cert='high'>Poussin</persName>"
+                 "<rs type='technique' resp='#ner-auto' cert='low'>burin</rs>"
+                 "<material>huile</material></ab><ab "),
+    "agent automatique declare dans l'<editionStmt>":
+        ("</titleStmt>", "</titleStmt><editionStmt><edition>x</edition>"
+                         "<respStmt xml:id='ner-auto'><resp>NER</resp>"
+                         "<name>GLiNER</name></respStmt></editionStmt>"),
+}
+
+
+@pytest.mark.parametrize("cas", list(GREFFES))
+def test_le_schema_accepte_ce_que_chaque_phase_produit(cas):
+    """L'inventaire etait releve sur le golden, produit avec NER,
+    enrichissement et modernisation coupes : quinze elements manquaient et
+    `validate_tei.py --odd` echouait sur tout document reellement annote.
+    Le E2E complet le verrait, mais il exige deux services locaux et il est
+    deselectionne par defaut ; ces greffes tiennent le controle sans eux."""
+    avant, apres = GREFFES[cas]
+    texte = GOLDEN.read_text(encoding="utf-8").replace(
+        'when="DATE-GENERATION"', 'when="2026-09-03"')
+    assert avant in texte, f"motif de greffe absent du golden : {avant!r}"
+    texte = texte.replace(avant, apres, 1)
+
+    relaxng = etree.RelaxNG(etree.parse(str(RNG)))
+    doc = etree.fromstring(texte.encode())
+    assert relaxng.validate(doc), "\n".join(
+        f"L{e.line}: {e.message}" for e in list(relaxng.error_log)[:6])

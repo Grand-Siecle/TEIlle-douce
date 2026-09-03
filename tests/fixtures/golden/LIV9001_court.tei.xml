@@ -176,6 +176,10 @@
               <title>DamageZone</title>
               <ptr target="https://segmonto.github.io/gd/gdZ/DamageZone"/>
             </catDesc>
+            <catDesc xml:id="DigitizationArtefactZone">
+              <title>DigitizationArtefactZone</title>
+              <ptr target="https://segmonto.github.io/gd/gdZ/DigitizationArtefactZone"/>
+            </catDesc>
             <catDesc xml:id="DropCapitalZone">
               <title>DropCapitalZone</title>
               <ptr target="https://segmonto.github.io/gd/gdZ/DropCapitalZone"/>

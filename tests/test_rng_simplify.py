@@ -260,3 +260,67 @@ def test_le_vide_s_absorbe_dans_le_contenu_d_un_element_deja_pourvu():
     arbre = grammaire('<element name="x"><text/><empty/></element>')
     simplifier(arbre)
     assert rendu(start(arbre)) == '<element name="x"><text/></element>'
+
+
+# -----------------------------------------------------------
+# Trous releves en revue
+# -----------------------------------------------------------
+
+def test_le_vide_s_absorbe_aussi_dans_une_definition():
+    """La branche qui traite <define> comme un group implicite renvoyait
+    avant d'atteindre les regles sur <empty/> : un vide ne dans une
+    definition y restait, alors que c'est exactement la forme qui faisait
+    rejeter des documents conformes ailleurs."""
+    arbre = etree.fromstring(f'''<grammar xmlns="{RNG}">
+      <start><ref name="x"/></start>
+      <define name="x"><text/><optional><notAllowed/></optional></define>
+    </grammar>'''.encode())
+    simplifier(arbre)
+    define = arbre.find(f'{{{RNG}}}define[@name="x"]')
+    assert rendu(define) == '<define name="x"><text/></define>'
+
+
+def test_une_classe_de_noms_ecrite_en_choix_n_est_pas_un_motif():
+    """<element><choice><name>a</name><name>b</name></choice>… : ce choix
+    nomme l'element, il n'est pas son contenu. Le confondre avec un motif
+    faisait supprimer le seul contenu de l'element, et lxml refusait alors
+    la grammaire entiere."""
+    arbre = grammaire('<element><choice><name>a</name><name>b</name></choice>'
+                      '<text/><empty/></element>')
+    simplifier(arbre)
+    sortie = rendu(start(arbre))
+    assert "<text/>" in sortie, sortie
+    assert etree.RelaxNG(arbre) is not None, "la grammaire doit rester compilable"
+
+
+def test_la_documentation_n_est_pas_un_motif():
+    """Les 563 <a:documentation> du schema produit ne sont pas du contenu ;
+    les compter comme tel ferait vider des elements de leur seul motif."""
+    A = "http://relaxng.org/ns/compatibility/annotations/1.0"
+    arbre = grammaire(f'<element name="lb"><a:documentation xmlns:a="{A}">'
+                      f'(saut de ligne)</a:documentation><empty/></element>')
+    simplifier(arbre)
+    assert etree.RelaxNG(arbre) is not None
+    assert "<empty/>" in rendu(start(arbre))
+
+
+def test_une_branche_impossible_entrelacee_ne_disparait_pas():
+    """choice(notAllowed, p) = p, mais interleave(notAllowed, p) =
+    notAllowed. Retirer la branche entrelacee ELARGIT la langue reconnue —
+    l'unique chose que ce module promet de ne jamais faire."""
+    modele = f'''<grammar xmlns="{RNG}">
+      <start><ref name="x"/></start>
+      <define name="x"><element name="a"><text/></element></define>
+      <define name="x" combine="{{}}"><notAllowed/></define>
+    </grammar>'''
+    doc = etree.fromstring(b'<a>salut</a>')
+
+    entrelace = etree.fromstring(modele.format("interleave").encode())
+    simplifier(entrelace)
+    assert not etree.RelaxNG(entrelace).validate(doc), \
+        "la grammaire ne reconnaissait rien ; elle ne doit pas se mettre a reconnaitre"
+
+    choix = etree.fromstring(modele.format("choice").encode())
+    simplifier(choix)
+    assert etree.RelaxNG(choix).validate(doc), \
+        "en choix, la branche impossible s'efface bien"

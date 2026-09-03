@@ -55,14 +55,35 @@ def _motifs(el):
     <element name="x"> porte son nom en attribut ; <element><anyName/>…
     le porte en element. Une name-class n'est pas un motif et ne rend
     rien impossible."""
-    classes_de_noms = {"name", "anyName", "nsName", "choice_name"}
     for enfant in el:
-        nom = _nom(enfant)
-        if nom is None or nom in ("param", "except"):
+        # <a:documentation> et consorts vivent hors de l'espace de noms
+        # RELAX NG : ce ne sont pas des motifs.
+        if not isinstance(enfant.tag, str) or not enfant.tag.startswith(f"{{{RNG}}}"):
             continue
-        if _nom(el) in ("element", "attribute") and nom in classes_de_noms:
+        nom = _nom(enfant)
+        if nom in ("param", "except"):
+            continue
+        if _nom(el) in ("element", "attribute") and _classe_de_noms(enfant):
             continue
         yield enfant
+
+
+def _classe_de_noms(el):
+    """*el* nomme-t-il son element, plutot que d'en decrire le contenu ?
+
+    Une classe de noms s'ecrit <name>, <anyName>, <nsName> -- ou <choice>,
+    dont les enfants sont eux-memes des classes de noms. C'est la forme
+    qu'odd2relax donne a un elementSpec a noms alternatifs ; la prendre
+    pour un motif faisait supprimer le seul contenu de l'element, et lxml
+    refusait ensuite la grammaire entiere."""
+    nom = _nom(el)
+    if nom in ("name", "anyName", "nsName"):
+        return True
+    if nom == "choice":
+        enfants = [e for e in el if isinstance(e.tag, str)
+                   and e.tag.startswith(f"{{{RNG}}}")]
+        return bool(enfants) and all(_classe_de_noms(e) for e in enfants)
+    return False
 
 
 def _impossible(el, noms_impossibles):
@@ -105,7 +126,9 @@ def _simplifier_motif(el, noms_impossibles):
                 el.remove(enfant)
             etree.SubElement(el, f"{{{RNG}}}notAllowed")
             return reductions + 1
-        return reductions
+        # Une definition porte aussi un group implicite : le vide s'y
+        # absorbe comme ailleurs, et s'arreter ici le laissait en place.
+        return reductions + _simplifier_vides(el, nom)
 
     # <except> qui ne retranche plus rien : l'exception disparait.
     if nom == "except":
@@ -196,7 +219,11 @@ def _noms_impossibles(grammaire):
         par_nom.setdefault(define.get("name"), []).append(define)
     impossibles = set()
     for nom, definitions in par_nom.items():
-        if all(len(d) == 1 and _nom(d[0]) == "notAllowed" for d in definitions):
+        nulle = [len(d) == 1 and _nom(d[0]) == "notAllowed" for d in definitions]
+        # choice(notAllowed, p) = p : il faut que TOUTES le soient.
+        # interleave(notAllowed, p) = notAllowed : une seule suffit.
+        entrelace = any(d.get("combine") == "interleave" for d in definitions)
+        if (any(nulle) if entrelace else all(nulle)):
             impossibles.add(nom)
     return impossibles, par_nom
 
@@ -226,8 +253,10 @@ def simplifier(grammaire):
                 reductions += 1
         # Une branche impossible d'un define combine tombe seule.
         for define in list(grammaire.iter(f"{{{RNG}}}define")):
+            # Seule une branche de CHOIX s'efface : retirer une branche
+            # entrelacee elargirait la langue reconnue.
             if len(define) == 1 and _nom(define[0]) == "notAllowed" \
-                    and define.get("combine"):
+                    and define.get("combine") == "choice":
                 define.getparent().remove(define)
                 reductions += 1
 
