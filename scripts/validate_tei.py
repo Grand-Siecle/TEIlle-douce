@@ -250,6 +250,9 @@ def main(paths=None):
                 f"{ODD_RNG} est absent : venv/bin/python scripts/build_odd.py")
         odd_rng = etree.RelaxNG(etree.parse(str(ODD_RNG)))
         try:
+            # Le processeur n'est plus utilise ensuite, mais il est garde
+            # en vie deliberement : la feuille compilee en depend, et rien
+            # ne garantit ce lien d'une version de SaxonC a l'autre.
             processeur, schematron = schematron_du_projet()
         except SystemExit as absent:
             # saxonche manquant n'emporte pas la validation RelaxNG, qui

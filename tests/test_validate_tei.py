@@ -449,3 +449,33 @@ def test_odd_sans_saxonche_valide_quand_meme_le_relaxng(tmp_path, capsys, monkey
     sortie = capsys.readouterr().out
     assert "Schematron" in sortie and "saxonche" in sortie
     assert "alto2tei.rng" in sortie, "le RelaxNG doit avoir ete applique"
+
+
+# Chaque regle publiee par l'ODD doit pouvoir etre enfreinte, et l'echec
+# doit se voir. Quatre d'entre elles n'etaient declenchees par aucun test
+# — et l'histoire de cette PR montre qu'une regle peut disparaitre du
+# Schematron produit sans que rien ne le signale.
+INFRACTIONS = {
+    "language-quantite": (
+        '<category xml:id="MainZone"/>',
+        '<category xml:id="MainZone"/><langUsage>'
+        '<language ident="fra" usage="100" n="10">French</language></langUsage>',
+        "@n on language"),
+    "choice-orig-reg": (
+        "texte</ab>", "<choice><orig>ancien</orig></choice></ab>",
+        "exactly one orig"),
+    "entite-automatique-datee": (
+        "texte</ab>", '<persName resp="#ner-auto">Poussin</persName></ab>',
+        "must carry @cert"),
+    "inventaire-ferme": (
+        "texte</ab>", "<quote>hors inventaire</quote></ab>",
+        "is not part of"),
+}
+
+
+@pytest.mark.parametrize("regle", list(INFRACTIONS))
+def test_chaque_regle_de_l_odd_se_declenche_quand_on_l_enfreint(regle, tmp_path):
+    avant, apres, attendu = INFRACTIONS[regle]
+    contenu = TEI_OK.replace(avant, apres, 1)
+    violations = violations_odd(_ecrire(tmp_path, contenu))
+    assert any(attendu in v for v in violations), (regle, violations)
