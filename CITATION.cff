@@ -31,7 +31,7 @@ authors:
     given-names: Pauline
   - family-names: Marquaille
     given-names: Léonie
-repository-code: "https://github.com/rayondemiel/test_tei_ouput"
+repository-code: "https://github.com/rayondemiel/TEIlle-douce"
 license: AGPL-3.0-or-later
 keywords:
   - TEI

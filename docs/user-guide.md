@@ -22,8 +22,8 @@ install on anything older, and language detection results change between its
 minor releases — which is why the version is pinned exactly.
 
 ```bash
-git clone https://github.com/rayondemiel/test_tei_ouput.git teille-douce
-cd teille-douce
+git clone https://github.com/rayondemiel/TEIlle-douce.git
+cd TEIlle-douce
 python3.12 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt

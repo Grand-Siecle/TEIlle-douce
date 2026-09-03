@@ -17,8 +17,8 @@ For working *on* the pipeline. If you only want to run it, the
 ## Setting up
 
 ```bash
-git clone https://github.com/rayondemiel/test_tei_ouput.git teille-douce
-cd teille-douce
+git clone https://github.com/rayondemiel/TEIlle-douce.git
+cd TEIlle-douce
 python3.12 -m venv venv
 source venv/bin/activate
 pip install -r requirements-dev.txt   # core + pytest + coverage + saxonche

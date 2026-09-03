@@ -1,6 +1,6 @@
 # TEIlle-douce
 
-[![CI](https://github.com/rayondemiel/test_tei_ouput/actions/workflows/ci.yml/badge.svg)](https://github.com/rayondemiel/test_tei_ouput/actions/workflows/ci.yml)
+[![CI](https://github.com/rayondemiel/TEIlle-douce/actions/workflows/ci.yml/badge.svg)](https://github.com/rayondemiel/TEIlle-douce/actions/workflows/ci.yml)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org/downloads/)
 [![Code: AGPL-3.0](https://img.shields.io/badge/code-AGPL--3.0-orange.svg)](LICENSE)
 [![Encoding: CC BY 4.0](https://img.shields.io/badge/TEI%20output-CC%20BY%204.0-green.svg)](https://creativecommons.org/licenses/by/4.0/)
@@ -26,9 +26,9 @@ books, but every design decision was made against them.
 Part of the **[Projet Grand Siècle](https://github.com/Grand-Siecle)**
 (Université de Lausanne — UNIL, Université de Genève — UNIGE).
 
-> **Note** — this repository is moving to `Grand-Siecle/teille-douce`. Until the
-> transfer, it lives at `rayondemiel/test_tei_ouput`, which is the URL the
-> commands below use.
+> **Note** — this repository is moving to the `Grand-Siecle` organization.
+> Until the transfer it lives at `rayondemiel/TEIlle-douce`, which is the URL
+> the commands below use; GitHub will redirect the old one afterwards.
 
 ---
 
@@ -50,8 +50,8 @@ Every document is also validated against the project's own TEI customization
 ## Quickstart
 
 ```bash
-git clone https://github.com/rayondemiel/test_tei_ouput.git teille-douce
-cd teille-douce
+git clone https://github.com/rayondemiel/TEIlle-douce.git
+cd TEIlle-douce
 python3.12 -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
 
