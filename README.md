@@ -59,7 +59,7 @@ pip install -e .
 cp -r /path/to/my-volume OCR/
 
 # Convert, without the phases that need external services
-TDOUCE_NER=0 TDOUCE_ENRICHMENT=0 TDOUCE_MODERNIZE=0 teille-douce run
+teille-douce run --fast
 
 # Check the result
 python3 scripts/validate_tei.py --odd tei_output/*.xml

@@ -167,9 +167,39 @@ teille-douce run
 Output goes to `tei_output/`, one `<name>.tei.xml` per volume. Progress is shown
 per document and per page.
 
+`run` takes the volumes to convert as arguments — a directory name, the
+internal id parsed from it, or a glob:
+
+```bash
+teille-douce run LIV0044              # one volume
+teille-douce run 'LIV003*' -x LIV0038 # a glob, minus one
+teille-douce run --fast --dry-run     # what would happen, writing nothing
+```
+
 | Option | Effect |
 |---|---|
-| `--skip-existing` | Skip volumes whose TEI output already exists. Minimal resume after an interrupted run. |
+| `DOC ...` | Volumes to convert. A selector matching nothing stops the run — a typo must not look like an empty corpus. |
+| `-x, --exclude PATTERN` | Drop volumes after selection. Repeatable. |
+| `--limit N` | Convert at most N of those selected, in order. |
+| `--skip-existing` / `--force` | Skip volumes already converted / convert them anyway. |
+| `-i, --input` · `-o, --output` | Input and output directories. |
+| `--entities` · `--metadata` · `--persons` | Entity CSVs, and the two catalogues. |
+| `--fast` | No annotation phase at all: no service, no model. |
+| `--phases LIST` | Set the phases outright: `enrich,modernize,ner`, `all` or `none`. |
+| `--enrich`/`--no-enrich`, and likewise for `modernize` and `ner` | Add or remove one phase from the current set. |
+| `--pyhellen URL` · `--vieuxparler URL` · `--health-timeout S` | The two services. |
+| `-j, --jobs N` · `--batch-size N` · `--concurrency N` | Workers, lines per request, in-flight requests. |
+| `-n, --dry-run` | Resolve everything, list the plan, write nothing. |
+| `-v` / `-vv` / `-q` · `--log-level` · `--log-file` / `--no-log-file` | Console detail and the run log. |
+
+**Phases resolve left to right.** `--phases` replaces the set, then each
+`--X` / `--no-X` applies as a delta — so `--fast --enrich` means *no service
+work except enrichment*. Naming a phase in `--phases` and removing it with
+`--no-X` is refused: there is no reading of that which says what you meant.
+
+**Exit codes.** `0` everything asked for succeeded · `1` some volumes failed
+· `2` usage error · `3` misconfiguration, nothing ran (input directory
+missing, no volumes found, a selector matched nothing).
 
 A document that fails does not kill the run: the error is logged with its
 traceback, the document is reported as `FAILED`, and processing continues. The
@@ -179,7 +209,7 @@ nothing references a TEI that was never produced.
 
 **Logs.** Each run writes its own timestamped file, `pipeline_YYYYmmdd_HHMMSS.log`,
 at DEBUG level. The console shows warnings and errors only, unless you set
-`DEBUG = True` in `teille_douce/config.py`. Change or disable the log file with `LOG_FILE`.
+`-v` (`-vv` for debug). Move or disable the run log with `--log-file` / `--no-log-file`.
 
 **Cost.** With every annotation phase enabled, a full volume takes tens of
 minutes — most of it waiting on the two HTTP services. Page parsing itself is
@@ -190,7 +220,7 @@ parallel, capped at `min(cpu_count(), 8)` workers.
 To convert without the three annotation phases — no services, no models:
 
 ```bash
-TDOUCE_NER=0 TDOUCE_ENRICHMENT=0 TDOUCE_MODERNIZE=0 teille-douce run
+teille-douce run --fast
 ```
 
 You get a complete base TEI: header, `sourceDoc`, text structure, notes,
@@ -205,6 +235,14 @@ Two mechanisms, with different purposes.
 column expectations, software versions written into `<appInfo>`, the
 responsibility statement, the languages to detect, the confidence thresholds. It
 is meant to be edited.
+
+**Command-line flags** win over everything, per setting: a flag you did not
+pass does not shadow what the environment supplied, so `-o /tmp/out` leaves
+`TDOUCE_OCR_DIR` in charge of the input. The chain is
+
+```
+flag  >  environment (TDOUCE_*)  >  config file  >  config.py default
+```
 
 **Environment variables** override what moves between machines and between runs
 — paths, service URLs, timeouts, and the phase switches. The prefix is
@@ -515,7 +553,7 @@ answer its probe. There is one warning line at the start of the run saying which
 one. Check the URL, and raise `TDOUCE_HEALTH_TIMEOUT` if the server is remote
 and still loading its model.
 
-**No entities** — `requirements-ner.txt` is not installed, or `TDOUCE_NER=0`.
+**No entities** — the NER extra is not installed, or the phase was off (`--no-ner`, `--fast`, or `TDOUCE_NER=0`).
 The first NER run also downloads several GB of models.
 
 **A setting seems ignored** — look for a `RuntimeWarning` naming the variable.
@@ -541,4 +579,4 @@ with `--skip-existing` to convert only what is missing.
 **No images in a TEI viewer** — the volume has neither a `manifest_iiif` value
 nor a mapping CSV, or the mapping matched under 30 % of the filenames and was
 rejected. For a non-Gallica IIIF server, set `IIIF_URI["image_base"]` in
-`teille_douce/config.py`.
+`teille_douce/config.py` — it describes the project, so it has no flag.
