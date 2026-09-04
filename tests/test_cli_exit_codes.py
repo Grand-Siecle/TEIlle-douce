@@ -160,7 +160,7 @@ def test_an_output_path_that_is_a_file_is_a_misconfiguration(tmp_path):
     res, _ = _executer_main(tmp_path, ocr, **MODE_COURT)
 
     assert res.returncode == 3
-    assert "output directory" in res.stdout
+    assert "--output" in res.stdout
 
 
 def test_an_unusable_log_path_costs_the_log_not_the_conversion(tmp_path):

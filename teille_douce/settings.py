@@ -446,6 +446,14 @@ def _resolve_modernize_api(flags, env, from_file, config_path, rejected):
         # Through _resolve like everything else: read raw, a stray space
         # became part of the URL and the service was reported unreachable
         # with nothing naming the variable.
+        if flag_given:
+            # --vieuxparler has already decided. Walking the per-language
+            # layer anyway warned about a variable that had no effect on
+            # the run, in the one situation where the operator had
+            # deliberately overridden it.
+            resolved[ident] = shared
+            continue
+
         # The fallback is what the run would use without this variable, so
         # a refusal announces the URL that actually takes effect rather
         # than None.
@@ -459,10 +467,7 @@ def _resolve_modernize_api(flags, env, from_file, config_path, rejected):
         # `specific`, so preferring `specific` inverted the chain: a box
         # exporting TDOUCE_MODERNIZE_URL_FRA could not be redirected from
         # the command line, and nothing said the flag had been ignored.
-        if flag_given:
-            resolved[ident] = shared
-        else:
-            resolved[ident] = specific or shared or default
+        resolved[ident] = specific or shared or default
     return resolved
 
 

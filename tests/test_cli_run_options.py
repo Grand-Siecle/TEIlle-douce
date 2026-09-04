@@ -639,3 +639,29 @@ def test_an_invalid_config_file_still_exits_cleanly_under_quiet(tmp_path, monkey
         with pytest.raises(SystemExit) as excinfo:
             settings_for(argv)
         assert excinfo.value.code == 3, argv
+
+
+def test_verbose_never_lowers_a_level_a_lower_layer_set():
+    """The floor was enforced for -q only, so -v could reduce verbosity: an
+    operator whose wrapper set DEBUG and who added -v ended up at INFO."""
+    settings = settings_for(["run", "-v"], env={"TDOUCE_LOG_LEVEL": "DEBUG"})
+
+    assert settings.log_level == "DEBUG"
+
+
+def test_a_flag_silences_the_per_language_variable_it_overrides():
+    """Walking the per-language layer anyway warned about a variable that
+    had no effect, in the one case where it was deliberately overridden."""
+    import warnings as warnings_module
+
+    from teille_douce.settings import Settings
+
+    with warnings_module.catch_warnings(record=True) as raised:
+        warnings_module.simplefilter("always")
+        settings = Settings.load(
+            flags={"modernize_url": "http://flag:1"},
+            env={"TDOUCE_MODERNIZE_URL_FRA": "  "},
+        )
+
+    assert settings.modernize_api["fra"] == "http://flag:1"
+    assert not [w for w in raised if "MODERNIZE_URL_FRA" in str(w.message)]

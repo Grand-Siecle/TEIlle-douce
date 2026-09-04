@@ -124,10 +124,11 @@ def _resolve_settings(args, env, parser, config_file, flags):
     """Fold the verbosity flags in, then resolve every layer."""
     level = options.console_level(args)
     if level is not None:
-        if getattr(args, "quiet", 0):
-            # -q asks for less, never for more: an operator whose wrapper
-            # set TDOUCE_LOG_LEVEL=ERROR and who adds -q must not get every
-            # WARNING back. The chatter is silenced by `say()` either way.
+        if getattr(args, "quiet", 0) or getattr(args, "verbose", 0):
+            # -q asks for less and -v for more, neither for the opposite:
+            # an operator whose wrapper set ERROR and who adds -q must not
+            # get every WARNING back, and one who set DEBUG and adds -v
+            # must not end up at INFO.
             order = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
             with warnings.catch_warnings():
                 # The layers are about to be resolved for real; warning
@@ -135,7 +136,9 @@ def _resolve_settings(args, env, parser, config_file, flags):
                 warnings.simplefilter("ignore", RuntimeWarning)
                 floor = Settings.load(flags={}, env=env,
                                       config_file=config_file).log_level
-            if order.index(level) > order.index(floor):
+            quieter = bool(getattr(args, "quiet", 0))
+            asked, current = order.index(level), order.index(floor)
+            if (asked > current) if quieter else (asked < current):
                 flags["log_level"] = level
         else:
             flags["log_level"] = level

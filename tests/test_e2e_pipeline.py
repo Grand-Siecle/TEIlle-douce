@@ -28,6 +28,8 @@ from pathlib import Path
 import pytest
 from lxml import etree
 
+from teille_douce.settings import get_settings
+
 RACINE = Path(__file__).resolve().parent.parent
 FIXTURES = RACINE / "tests" / "fixtures"
 ALTO_MIN = FIXTURES / "alto_min"
@@ -166,7 +168,9 @@ def _valider_odd(chemin):
 
 def _valider_schema(chemin):
     """Valide contre tei_all.rng quand il est disponible, sinon skip."""
-    demande = os.environ.get("TDOUCE_TEI_RNG")
+    # Through the settings object, so the field is not a decoration
+    # that a --tei-rng flag would appear to feed and would not.
+    demande = get_settings().tei_rng
     schema = Path(demande or (RACINE / "tei_all.rng"))
     if not schema.exists():
         # Un chemin explicitement demande et introuvable est une erreur de

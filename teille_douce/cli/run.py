@@ -599,6 +599,16 @@ def execute(args):
         console.print(f"[red]Directory not found: {escape(str(settings.ocr_dir))}[/red]")
         sys.exit(EXIT_MISCONFIGURED)
 
+    # Checked here rather than at mkdir time: -o naming an existing file
+    # used to be discovered after expand_archives had unpacked the whole
+    # corpus and both catalogues had been read.
+    if settings.output_dir.exists() and not settings.output_dir.is_dir():
+        console.print(
+            f"[red]Not a directory:[/red] "
+            f"{escape(str(settings.output_dir))} (--output)"
+        )
+        sys.exit(EXIT_MISCONFIGURED)
+
     # Create output directory
     dry_run = getattr(args, "dry_run", False)
 
@@ -695,10 +705,6 @@ def execute(args):
 
     # Names the selectors could legitimately match, whether or not they
     # produced a directory to walk.
-    known = ({d.name for d in ready_dirs}
-             | {Path(n).stem for n, _ in failed_archives}
-             | {Path(n).stem for n in pending_archives})
-
     # Collect documents to process
     docs = []
     for d in ready_dirs:
@@ -722,6 +728,13 @@ def execute(args):
             f"[red]No ALTO documents found in {escape(str(settings.ocr_dir))}.[/red]"
         )
         sys.exit(EXIT_MISCONFIGURED)
+
+    # Only directories that actually hold ALTO: an extracted archive with
+    # no *.xml is not a volume a selector can match, and treating it as one
+    # answered "every volume was excluded" when nothing had been.
+    known = ({name for name, _, _ in docs}
+             | {Path(n).stem for n, _ in failed_archives}
+             | {Path(n).stem for n in pending_archives})
 
     # Narrow to what was asked for. A selector that names nothing stops the
     # run: a typo must not look like an empty corpus.
@@ -769,10 +782,10 @@ def execute(args):
         # failure to report, not a success to return. Exiting early here
         # let a nightly wrapper announce success forever while one archive
         # never converted.
-        console.print(
-            f"[bold yellow]Completed with errors:[/bold yellow] "
-            f"0/{len(failed_archives)} documents converted"
-        )
+        early = f"0/{len(failed_archives)} documents converted"
+        if skipped_existing:
+            early += f" ({skipped_existing} more skipped, already converted)"
+        console.print(f"[bold yellow]Completed with errors:[/bold yellow] {early}")
         for name, reason in failed_archives:
             console.print(f"  [red]FAILED[/red] {escape(f'{name}: {reason}')}")
         sys.exit(EXIT_SOME_FAILED)
@@ -825,8 +838,6 @@ def execute(args):
             f"— headers will keep placeholder person entries.[/yellow]"
         )
 
-    no_probe = getattr(args, "no_probe", False)
-    require_services = getattr(args, "require_services", False)
     # Created here and not earlier: every exit above this line means
     # nothing will be written, and leaving an empty directory behind after
     # refusing to run is a write like any other.
