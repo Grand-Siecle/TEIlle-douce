@@ -51,15 +51,38 @@ def test_config_holds_settings_and_not_the_encoding_schema():
         assert hasattr(config, reglage), f"{reglage} a disparu de config.py"
 
 
-def test_config_no_longer_reads_the_environment_at_import():
+def test_config_no_longer_reads_the_environment_at_import(monkeypatch):
     """C'etait le bug : une valeur figee a l'import ne peut plus etre
     surchargee par un drapeau analyse ensuite. Les couches sont resolues
-    dans teille_douce/settings.py, apres parse_args."""
-    source = (__import__("pathlib").Path(__file__).resolve().parent.parent
-              / "teille_douce" / "config.py").read_text(encoding="utf-8")
+    dans teille_douce/settings.py, apres parse_args.
 
-    assert "os.environ" not in source
-    assert "_env(" not in source
+    Verifie sur le comportement et non sur le texte du fichier : la
+    version precedente cherchait "os.environ" et "_env(" dans la source,
+    et un `os.getenv` au niveau du module — exactement la rechute — passait
+    les deux assertions sans etre vu."""
+    import importlib
+
+    import teille_douce.config as config
+
+    monkeypatch.setenv("TDOUCE_OCR_DIR", "/depuis-l-environnement")
+    monkeypatch.setenv("TDOUCE_OUTPUT_DIR", "/depuis-l-environnement")
+    monkeypatch.setenv("TDOUCE_PYHELLEN_URL", "http://depuis-l-environnement")
+    importlib.reload(config)
+
+    try:
+        assert config.DEFAULT_OCR_DIR == "OCR"
+        assert config.DEFAULT_OUTPUT_DIR == "tei_output"
+        assert config.DEFAULT_PYHELLEN_URL == "http://localhost:8000"
+
+        # Et la seule chose qui lit bien cet environnement, c'est la
+        # resolution des couches, appelee apres parse_args.
+        from teille_douce.settings import Settings
+        resolved = Settings.load(env={"TDOUCE_OCR_DIR": "/depuis-l-environnement"},
+                                 flags={})
+        assert str(resolved.ocr_dir) == "/depuis-l-environnement"
+    finally:
+        monkeypatch.undo()
+        importlib.reload(config)
 
 
 def test_the_moved_blocks_are_reachable_where_they_now_live():

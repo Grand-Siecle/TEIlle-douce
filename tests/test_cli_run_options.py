@@ -15,6 +15,7 @@ import pytest
 
 from teille_douce import config
 from teille_douce.cli import app
+from teille_douce.cli.run import entity_snapshot as entity_snapshot_of
 
 
 def settings_for(argv, env=None, discover_config=False):
@@ -841,6 +842,41 @@ def test_a_level_set_by_a_lower_layer_is_not_overridden_by_debug(tmp_path):
     assert logging.getLevelName(handler.level) == "ERROR"
 
 
+@pytest.mark.parametrize("flags,expected", [
+    ((), "ERROR"),
+    (("-q",), "ERROR"),
+    (("-qq",), "ERROR"),
+    (("-v",), "INFO"),
+    (("-vv",), "DEBUG"),
+])
+def test_asking_for_less_is_never_louder_than_asking_for_nothing(flags,
+                                                                 expected):
+    """The guard that stops -q from raising a quiet console computed its
+    floor from `debug` alone, while configure_logging lowers the console to
+    DEBUG only when no other layer named a level. With both TDOUCE_DEBUG
+    and TDOUCE_LOG_LEVEL set the two disagreed: the console sat at ERROR,
+    the guard believed DEBUG, and -q — a request for LESS — let WARNING
+    back through. -v was a no-op in the same cell."""
+    import logging
+
+    from teille_douce.cli import options
+    from teille_douce.cli.run import configure_logging
+
+    args = app.parse_args(["run", "--no-log-file", *flags])
+    settings = app.settings_from(
+        args, env={"TDOUCE_DEBUG": "1", "TDOUCE_LOG_LEVEL": "ERROR"}
+    )
+    configure_logging(
+        settings,
+        quiet=bool(getattr(args, "quiet", 0)),
+        level_asked=(options.asks_to_be_quieter(args)
+                     or settings.origin("log_level") != "default"),
+    )
+
+    handler = logging.getLogger().handlers[-1]
+    assert logging.getLevelName(handler.level) == expected
+
+
 def test_a_refused_flag_stays_a_usage_error_whatever_the_other_layers_hold():
     """Suppressing the warning for a shared URL no language reads is right;
     suppressing the usage error is not — `--vieuxparler "$URL"` with URL
@@ -898,3 +934,51 @@ def test_a_config_url_of_the_wrong_type_is_refused_not_crashed(tmp_path):
     rejection, = settings.rejected
     assert rejection.name == "services.pyhellen"
     assert rejection.layer == f"config:{toml}"
+
+
+# =============================================================================
+# The entity directory a failed document is allowed to touch
+# =============================================================================
+
+def test_a_directory_that_cannot_be_read_is_not_a_directory_this_run_wrote(
+        tmp_path, monkeypatch):
+    """The snapshot announced "its entity files will be left alone if this
+    document fails" and then recorded an empty before-set, which says the
+    opposite: empty means this run wrote all of it, and the cleanup after a
+    failed document reads that as a licence to unlink every file in a
+    directory it could not even read."""
+    from pathlib import Path
+
+    from teille_douce.cli.run import entity_snapshot
+
+    entities = tmp_path / "ents"
+    entities.mkdir()
+    (entities / "from-a-previous-run.csv").write_text("x", encoding="utf-8")
+
+    def refuse(self, pattern):
+        raise OSError(13, "Permission denied")
+
+    monkeypatch.setattr(Path, "rglob", refuse)
+    existing, created, reason = entity_snapshot(entities)
+
+    assert reason is not None
+    assert not created, "an unreadable directory was not created by this run"
+    assert existing == set()
+
+
+def test_an_absent_entity_directory_is_one_this_run_creates(tmp_path):
+    existing, created, reason = entity_snapshot_of(tmp_path / "ents")
+
+    assert (existing, created, reason) == (set(), True, None)
+
+
+def test_an_existing_entity_directory_is_snapshotted_whole(tmp_path):
+    entities = tmp_path / "ents"
+    (entities / "sub").mkdir(parents=True)
+    kept = entities / "sub" / "from-a-previous-run.csv"
+    kept.write_text("x", encoding="utf-8")
+
+    existing, created, reason = entity_snapshot_of(entities)
+
+    assert kept in existing
+    assert not created and reason is None

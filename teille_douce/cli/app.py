@@ -136,11 +136,18 @@ def _resolve_settings(args, env, parser, config_file, flags):
                 warnings.simplefilter("ignore", RuntimeWarning)
                 without_flags = Settings.load(flags={}, env=env,
                                               config_file=config_file)
-                # `debug` puts the console at DEBUG, so it IS the current
-                # level: comparing against log_level alone let `-v` lower a
-                # DEBUG console to INFO — the inversion this guard exists
-                # to prevent.
-                floor = ("DEBUG" if without_flags.debug
+                # The floor is the console level this run would have had
+                # with no verbosity flag, so it has to be derived by the
+                # rule configure_logging actually applies: `debug` lowers
+                # the console to DEBUG only when nothing else asked for a
+                # level. Reading `debug` alone claimed a DEBUG floor for a
+                # run whose console was really at the level the
+                # environment set, and `-q` then let ERROR back up to
+                # WARNING — louder for asking for less — while `-v` did
+                # nothing at all.
+                floor = ("DEBUG"
+                         if (without_flags.debug
+                             and without_flags.origin("log_level") == "default")
                          else without_flags.log_level)
             quieter = bool(getattr(args, "quiet", 0))
             asked, current = order.index(level), order.index(floor)
@@ -233,11 +240,20 @@ def normalise(argv, commands=None):
                 matches = [o for o in _long_options() if o.startswith(name)]
                 skip = len(matches) == 1 and matches[0] in takes_a_value
                 continue
-            # A short cluster: `-nj 4` is `-n -j 4`, so the value belongs to
-            # its LAST letter. Testing the whole token left `4` looking like
-            # a positional and the real subcommand behind it a selector.
+            # A short cluster. argparse hands the rest of the token to the
+            # FIRST letter that wants a value, as an ATTACHED one: `-otei`
+            # is `-o tei` and consumes nothing further, while `-qj 4` is
+            # `-q -j 4` and does. Reading the last letter instead agreed
+            # with argparse only until an attached value happened to end
+            # in a short-option letter, and `-otei run` then swallowed
+            # `run` as `-i`'s value and left a phantom selector behind.
             if len(name) > 2 and not name.startswith("--"):
-                skip = f"-{name[-1]}" in takes_a_value
+                letters = name[1:]
+                skip = False
+                for offset, letter in enumerate(letters):
+                    if f"-{letter}" in takes_a_value:
+                        skip = offset == len(letters) - 1
+                        break
             continue
         if token in commands:
             index = position

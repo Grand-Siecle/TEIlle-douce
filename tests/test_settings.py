@@ -363,3 +363,80 @@ def test_both_sharers_of_a_key_convert_alike():
         for declaration in sharers:
             with pytest.raises(ValueError):
                 declaration.convert(0)
+
+
+# =============================================================================
+# What a path in a config file means
+# =============================================================================
+
+def test_a_relative_path_in_the_config_file_is_read_next_to_that_file(tmp_path):
+    """The file is found by walking up, so anchoring on the working
+    directory would make one line mean something different in every
+    subdirectory it was written to serve."""
+    toml = tmp_path / "teille-douce.toml"
+    toml.write_text('[paths]\noutput = "tei"\n', encoding="utf-8")
+
+    settings = Settings.load(env={}, flags={}, config_file=toml)
+
+    assert settings.output_dir == tmp_path / "tei"
+
+
+@pytest.mark.parametrize("written", ['""', '"   "'])
+def test_an_empty_path_in_the_config_file_is_refused_like_any_other(tmp_path,
+                                                                   written):
+    """Anchoring ran ahead of the layer's own validation, and `Path("")` is
+    `Path(".")`: joining it handed back the config file's own directory, a
+    real non-empty path the "is empty" check could no longer see. So
+    `[paths] output = ""` — the wrapper idiom refused everywhere else in
+    this pipeline — quietly meant "write the corpus beside the config
+    file", with no warning and nothing recorded."""
+    toml = tmp_path / "teille-douce.toml"
+    toml.write_text(f"[paths]\noutput = {written}\n", encoding="utf-8")
+
+    with pytest.warns(RuntimeWarning, match="is empty"):
+        settings = Settings.load(env={}, flags={}, config_file=toml)
+
+    assert settings.output_dir == Path(config.DEFAULT_OUTPUT_DIR)
+    assert settings.origin("output_dir") == "default"
+    assert any(r.name == "paths.output" for r in settings.rejected)
+
+
+def test_a_tilde_in_a_path_names_the_home_directory(tmp_path, monkeypatch):
+    """A shell expands ~ before a variable is ever read, but a config file
+    and a quoted flag do not: "~/tei" used to become a directory literally
+    named "~", created under whatever the anchor was."""
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    toml = tmp_path / "teille-douce.toml"
+    toml.write_text('[paths]\noutput = "~/tei"\n', encoding="utf-8")
+
+    assert Settings.load(env={}, flags={},
+                         config_file=toml).output_dir == home / "tei"
+    assert Settings.load(env={"TDOUCE_OUTPUT_DIR": "~/tei"},
+                         flags={}).output_dir == home / "tei"
+
+
+def test_a_tilde_naming_nobody_is_refused_rather_than_raised(tmp_path):
+    """`Path("~ghost/x").expanduser()` raises RuntimeError, which is not
+    one of the two exceptions the layer catches: it escaped as a traceback
+    instead of the refusal every other unusable value gets. The anchoring
+    step meets it first and hands the value on untouched, so a single
+    place answers for it."""
+    toml = tmp_path / "teille-douce.toml"
+    toml.write_text('[paths]\noutput = "~personnenexistepas4711/tei"\n',
+                    encoding="utf-8")
+
+    with pytest.warns(RuntimeWarning, match="home directory"):
+        settings = Settings.load(env={}, flags={}, config_file=toml)
+
+    assert settings.output_dir == Path(config.DEFAULT_OUTPUT_DIR)
+    assert settings.origin("output_dir") == "default"
+
+
+def test_a_tilde_naming_nobody_in_the_environment_is_refused_too():
+    with pytest.warns(RuntimeWarning, match="home directory"):
+        settings = Settings.load(
+            env={"TDOUCE_OUTPUT_DIR": "~personnenexistepas4711/tei"}, flags={})
+
+    assert settings.output_dir == Path(config.DEFAULT_OUTPUT_DIR)

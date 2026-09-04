@@ -217,8 +217,9 @@ run ends with a summary and exits **non-zero** if anything failed — so it can 
 trusted in a script. Entity CSVs written before a failure are cleaned up, so
 nothing references a TEI that was never produced.
 
-**Logs.** Each run writes its own timestamped file, `pipeline_YYYYmmdd_HHMMSS.log`,
-at DEBUG level. The console shows warnings and errors only, unless you set
+**Logs.** Each run writes its own file, `pipeline_YYYYmmdd_HHMMSS_PID.log`, at
+DEBUG level — the process id is there so that volumes launched in parallel,
+which start inside the same second, do not truncate each other's log. The console shows warnings and errors only, unless you set
 `-v` (`-vv` for debug). Move or disable the run log with `--log-file` / `--no-log-file`.
 
 **Cost.** With every annotation phase enabled, a full volume takes tens of
@@ -591,6 +592,14 @@ breakdown and for what the eleven rules check.
 **`No ALTO documents found in OCR/.`** — `OCR/` has no subdirectory containing
 `.xml` files. Loose XML files at the top level of `OCR/` are not picked up:
 every volume needs its own directory.
+
+**`N directories with no ALTO file, nothing to convert`** — those volumes
+exist as directories but hold no `.xml` anywhere under them, usually an
+archive packed without its ALTO subfolder. They are named in the warning, in
+the log and in the summary line (`… (N more held no ALTO)`), and the run
+continues on the rest: nothing was converted from them, and nothing failed
+either. The exit status stays 0, because the corpus is what it is — the run
+did not lose anything, it was handed nothing.
 
 **The header is full of `Information not available.`** — no catalogue row
 matched. Check that the `BDD` column of `metadata_livre.csv` contains exactly

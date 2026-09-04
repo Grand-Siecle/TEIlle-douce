@@ -664,3 +664,59 @@ def test_no_probe_and_require_services_contradict_each_other(tmp_path):
     assert res.returncode == 3
     assert "--no-probe" in res.stdout and "--require-services" in res.stdout
     assert not sortie.exists()
+
+
+def _archive_without_alto(ocr, name="LIV9004_reconciled"):
+    """An archive whose volume directory carries no *.xml -- the ALTO
+    subfolder left out at packing time, which is how this arrives in
+    practice."""
+    with zipfile.ZipFile(ocr / f"{name}.zip", "w") as zf:
+        zf.writestr(f"{name}/readme.txt", "packed without the ALTO folder")
+    return name
+
+
+def test_a_volume_that_holds_no_alto_is_named_not_dropped(tmp_path):
+    """It fell out of the document list with no counter, no log line and
+    no summary mention: absent from both sides of the fraction, so a run
+    that converted one of two volumes said "1/1 documents converted" and
+    exited 0. A volume whose ALTO subfolder was left out of its archive
+    disappeared from a two-hundred-volume run without a word."""
+    ocr = tmp_path / "ocr"
+    shutil.copytree(ALTO_MIN, ocr)
+    name = _archive_without_alto(ocr)
+
+    res, _ = _executer_main(tmp_path, ocr, **MODE_COURT)
+
+    assert res.returncode == 0
+    assert name in res.stdout
+    assert "no ALTO" in res.stdout
+    assert "held no ALTO" in res.stdout
+
+
+def test_a_corpus_of_only_alto_less_volumes_says_which_ones(tmp_path):
+    """Exit 3 is right — nothing there could be converted — but the
+    message named the directory and left the operator to work out which
+    of two hundred volumes was the empty one."""
+    ocr = tmp_path / "ocr"
+    ocr.mkdir()
+    name = _archive_without_alto(ocr)
+
+    res, sortie = _executer_main(tmp_path, ocr, **MODE_COURT)
+
+    assert res.returncode == 3
+    assert f"no ALTO file, nothing to convert: {name}" in res.stdout
+    assert not sortie.exists()
+
+
+def test_a_volume_with_no_alto_that_was_not_selected_stays_quiet(tmp_path):
+    """Reporting every unselected volume of a large corpus would bury the
+    one the operator asked about."""
+    ocr = tmp_path / "ocr"
+    shutil.copytree(ALTO_MIN, ocr)
+    name = _archive_without_alto(ocr)
+
+    res, _ = _executer_main(tmp_path, ocr, args=(DOCUMENT,), **MODE_COURT)
+
+    assert res.returncode == 0
+    assert "held no ALTO" not in res.stdout
+    assert name not in res.stdout

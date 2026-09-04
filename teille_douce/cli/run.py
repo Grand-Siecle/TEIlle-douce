@@ -53,9 +53,17 @@ def _run_log_path(base_path, now):
 
     mode="w" on a fixed name destroyed the previous run's log: a failed
     nightly run relaunched in the morning became undiagnosable. Each run
-    now writes its own file (e.g. pipeline_20260828_093000.log).
+    now writes its own file (e.g. pipeline_20260828_093000_4711.log).
+
+    The process id is in the name because the timestamp alone is not
+    unique: a launcher firing several volumes at once starts them within
+    the same second, and mode="w" then reinstated exactly the failure this
+    function exists to prevent, one run truncating another's log. Testing
+    the name for existence first would not help — the handler is lazy, so
+    neither file exists at the moment both runs choose their name.
     """
-    return base_path.with_name(f"{base_path.stem}_{now:%Y%m%d_%H%M%S}{base_path.suffix}")
+    stamp = f"{now:%Y%m%d_%H%M%S}_{os.getpid()}"
+    return base_path.with_name(f"{base_path.stem}_{stamp}{base_path.suffix}")
 
 
 def _log_path_is_usable(path):
@@ -238,6 +246,27 @@ def _extract_archive(zip_path, target):
     except BaseException:
         shutil.rmtree(tmp_target, ignore_errors=True)
         raise
+
+
+def entity_snapshot(entity_dir):
+    """What a document's entity directory already holds, before NER writes.
+
+    Answers (existing_files, created_by_this_run, failure_or_None).
+
+    The third value is what makes this a function. An unreadable directory
+    used to be announced -- "its entity files will be left alone if this
+    document fails" -- and then treated as an empty one, which says the
+    opposite: an empty before-set means this run wrote everything in
+    there, and the cleanup after a failed document reads that as a licence
+    to unlink the lot. A caller that gets a failure here has to leave the
+    directory alone.
+    """
+    try:
+        if entity_dir.exists():
+            return set(entity_dir.rglob("*")), False, None
+        return set(), True, None
+    except OSError as reason:
+        return set(), False, reason
 
 
 def expand_archives(ocr_dir, extract=True, wanted=None, keep=None):
@@ -492,7 +521,12 @@ def _process_document(doc_name, filepaths, doc_dir, df_meta, config,
     )
 
     # Unusable pages must be loud: a document with no page at all is a
-    # failure, a partial one is flagged in the console and the summary.
+    # failure, a partial one is flagged here, on the document it belongs
+    # to, and written to the log. It does NOT reach the end-of-run summary
+    # — a nightly wrapper reading that line alone cannot tell a corpus
+    # converted whole from one that lost pages in a dozen volumes. Saying
+    # so is the incident model's job, not a counter bolted onto a line
+    # that already carries four different things.
     if tree.skipped_pages:
         if len(tree.skipped_pages) == len(filepaths):
             raise RuntimeError(
@@ -886,11 +920,33 @@ def execute(args):
     # Names the selectors could legitimately match, whether or not they
     # produced a directory to walk.
     # Collect documents to process
-    docs = []
+    docs, without_alto = [], []
     for d in ready_dirs:
         xmls = sorted(d.rglob("*.xml"))
         if xmls:
             docs.append((d.name, xmls, d))
+        elif _selected(d.name):
+            # A directory that is there and holds no ALTO is a defect of
+            # the source, not an absence — and it used to fall out of
+            # `docs` with no counter, no log line and no summary mention.
+            # A volume whose ALTO subfolder was left out of its archive
+            # disappeared from a two-hundred-volume run without a word,
+            # and the run still exited 0 claiming every document it had
+            # kept was every document there was.
+            without_alto.append(d.name)
+
+    if without_alto:
+        console.print(
+            f"[yellow]Warning: {len(without_alto)} "
+            f"director{'y' if len(without_alto) == 1 else 'ies'} with no ALTO "
+            f"file, nothing to convert:[/yellow] "
+            f"{escape(', '.join(sorted(without_alto)))}"
+        )
+        for name in sorted(without_alto):
+            logging.getLogger(__name__).warning(
+                "%s: no *.xml under this directory; nothing was converted "
+                "from it", name,
+            )
 
     everything_excluded = bool(selectors or exclusions_asked) and not any(
         _selected(entry.name if entry.is_dir() else entry.stem)
@@ -1065,6 +1121,7 @@ def execute(args):
         # Entity directories this run brought into existence. A failure
         # cleans up only these, never a directory that was already there.
         entity_dirs_created, entity_files_before = set(), {}
+        entity_snapshot_failed = set()
         # Corrupt archives belong in the summary and in the exit code, but
         # not in the failure budget: seeding the list with them made
         # --fail-fast stop after the first SUCCESSFUL document.
@@ -1077,12 +1134,12 @@ def execute(args):
             entity_dir = settings.entities_dir / doc_name
             entity_files_before[doc_name] = set()
             if do_ner:
-                try:
-                    if entity_dir.exists():
-                        entity_files_before[doc_name] = set(entity_dir.rglob("*"))
-                    else:
-                        entity_dirs_created.add(doc_name)
-                except OSError as reason:
+                existing, created, reason = entity_snapshot(entity_dir)
+                entity_files_before[doc_name] = existing
+                if created:
+                    entity_dirs_created.add(doc_name)
+                if reason is not None:
+                    entity_snapshot_failed.add(doc_name)
                     logging.getLogger(__name__).warning(
                         "%s: cannot inspect %s (%s); its entity files will "
                         "be left alone if this document fails",
@@ -1114,6 +1171,7 @@ def execute(args):
                 # else's files.
                 stray = settings.entities_dir / doc_name
                 if (do_ner
+                        and doc_name not in entity_snapshot_failed
                         and not _out_path(doc_name, settings.output_dir).exists()
                         and stray.is_dir()):
                     if doc_name in entity_dirs_created:
@@ -1172,6 +1230,11 @@ def execute(args):
     converted = f"{len(ok_docs)}/{total} documents converted"
     if skipped_existing:
         converted += f" ({skipped_existing} more skipped, already converted)"
+    if without_alto:
+        # In the summary and not only in the warning above it: the summary
+        # line is what a nightly wrapper reads, and a volume that yielded
+        # no ALTO was absent from both sides of the fraction.
+        converted += (f" ({len(without_alto)} more held no ALTO)")
     never_tried = len(docs) - len(ok_docs) - (len(failed_docs) - len(failed_archives))
     if stopped_early and never_tried > 0:
         # Every phase reports what it lost: a run stopped after one failure

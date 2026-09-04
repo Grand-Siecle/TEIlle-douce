@@ -491,3 +491,48 @@ def test_build_sourcedoc_refuses_two_pages_under_one_surface_id(
     message = str(excinfo.value)
     assert "f1" in message
     assert "1.xml" in message and "f1.xml" in message
+
+
+def test_the_workers_are_handed_the_settings_this_run_resolved(tmp_path,
+                                                               monkeypatch):
+    """A worker starts in a fresh interpreter under forkserver/spawn, so
+    `get_settings()` there rebuilds from the environment alone and ignores
+    every command-line flag. Passing the resolved object as an initarg is
+    the only thing that stops a worker from reading the environment behind
+    the CLI's back — and dropping it broke nothing visible, because in a
+    test the environment happens to yield the same defaults.
+
+    Structural on purpose: nothing under `_build_surface_fragment` reads a
+    runtime setting yet (see `_init_worker`), so there is no behaviour to
+    assert on. What must not silently disappear is the wiring."""
+    from teille_douce.settings import Settings, use_settings
+    from teille_douce.sourcedoc import builder
+
+    seen = {}
+
+    class _CapturedPool:
+        def __init__(self, workers, initializer=None, initargs=()):
+            seen["initargs"] = initargs
+
+        def imap_unordered(self, function, jobs):
+            return iter(())
+
+        def close(self):
+            pass
+
+        def join(self):
+            pass
+
+        def terminate(self):
+            pass
+
+    monkeypatch.setattr(builder._MP_CONTEXT, "Pool", _CapturedPool)
+
+    chosen = Settings.load(flags={"max_workers": "3"}, env={})
+    f1 = write_alto(tmp_path, "f1.xml", GOOD_ALTO_TMPL.format(word="un"))
+    with use_settings(chosen):
+        build_sourcedoc("DOC1", etree.Element("TEI"), [f1], [], [], {})
+
+    assert chosen in seen["initargs"], (
+        "the resolved Settings never reached the worker initializer"
+    )

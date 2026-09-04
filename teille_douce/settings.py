@@ -46,7 +46,13 @@ def _as_path(raw):
     # they cannot use.
     if not isinstance(raw, (str, Path)):
         raise ValueError("is not a path")
-    return Path(raw)
+    try:
+        # A shell expands ~ before the variable is ever read, but a config
+        # file and a quoted flag do not: without this, "~/tei" is a
+        # directory literally named "~" in the working directory.
+        return Path(raw).expanduser()
+    except RuntimeError:
+        raise ValueError("names a home directory that cannot be resolved")
 
 
 def _as_str(raw):
@@ -400,16 +406,35 @@ def _read_config_file(path):
                 near = _nearest_key(name)
                 hint = f" — did you mean '{near}'?" if near else ""
                 raise ValueError(f"{path}: unknown setting '{name}'{hint}")
-            # A relative path in the file means "next to the file". The
-            # file is found by walking up, so anchoring on the working
-            # directory would make it mean something different from every
-            # subdirectory it was meant to serve.
             if _BY_KEY[name].convert is _as_path and isinstance(value, str):
-                candidate = Path(value)
-                if not candidate.is_absolute():
-                    value = str(path.parent / candidate)
+                value = _anchor(value, path.parent)
             flat[name] = value
     return flat
+
+
+def _anchor(raw, base):
+    """Read a config file's path value as written next to that file.
+
+    The file is found by walking up, so anchoring on the working directory
+    would make one line mean something different in every subdirectory it
+    was meant to serve.
+
+    Anchoring runs ahead of the layer's own validation, so it has to refuse
+    what that validation would have refused. `Path("")` is `Path(".")`, and
+    joining it hands back the config file's own directory: unguarded, an
+    empty value turned into a real, non-empty path that the "is empty"
+    check could no longer see, and `[paths] output = ""` -- the wrapper
+    idiom this project already refuses everywhere else -- quietly meant
+    "write the corpus beside the config file".
+    """
+    stripped = raw.strip()
+    if not stripped:
+        return raw
+    try:
+        candidate = Path(stripped).expanduser()
+    except RuntimeError:
+        return raw
+    return str(candidate if candidate.is_absolute() else base / candidate)
 
 
 def _nearest_key(name):

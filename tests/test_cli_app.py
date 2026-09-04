@@ -62,6 +62,65 @@ def test_a_short_cluster_ending_in_a_value_taking_letter_keeps_its_value():
     assert app.settings_from(args, env={}).max_workers == 4
 
 
+def test_an_attached_short_value_does_not_swallow_the_subcommand():
+    """argparse gives the rest of a cluster to the FIRST letter that wants
+    a value, attached: `-otei` is `-o tei` and consumes nothing further.
+    Reading the LAST letter instead agreed with argparse only until an
+    attached value happened to end in a short-option letter — and the `i`
+    of `tei` then made `run` look like `-i`'s value, leaving a phantom
+    document selector that stops the run as an unmatched typo."""
+    assert app.normalise(["-otei", "run"]) == ["run", "-otei"]
+    assert app.parse_args(["-otei", "run", "--no-config"]).documents == []
+
+
+def test_the_cluster_model_agrees_with_argparse_on_every_cluster():
+    """The property, not three examples of it: for every short cluster the
+    parser accepts, normalise must consume the next token exactly when
+    argparse would. Anything else moves a token across the boundary
+    between an option's value and a positional."""
+    import contextlib
+    import io
+    import itertools
+    import warnings
+
+    parser = app.build_parser()
+    shorts = sorted({
+        option[1]
+        for sub in app._subparsers()
+        for action in sub._actions
+        for option in action.option_strings
+        if len(option) == 2 and option.startswith("-")
+        and option not in ("-h", "-V")
+    })
+
+    def argparse_consumes_the_next_token(cluster):
+        sink = io.StringIO()
+        try:
+            with contextlib.redirect_stderr(sink), \
+                 contextlib.redirect_stdout(sink), \
+                 warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                args = parser.parse_args(["run", cluster, "MARK", "ZZZ"])
+        except SystemExit:
+            return None            # not a cluster this parser accepts
+        return "MARK" not in (args.documents or [])
+
+    checked, disagreements = 0, []
+    for size in (2, 3):
+        for letters in itertools.product(shorts, repeat=size):
+            cluster = "-" + "".join(letters)
+            truth = argparse_consumes_the_next_token(cluster)
+            if truth is None:
+                continue
+            checked += 1
+            rewritten = app.normalise([cluster, "MARK", "run"])
+            if (rewritten == ["run", cluster, "MARK"]) != truth:
+                disagreements.append((cluster, truth, rewritten))
+
+    assert checked > 100, "the alphabet of short options went missing"
+    assert not disagreements, disagreements[:5]
+
+
 def test_the_published_version_is_the_package_version():
     """A version may live in exactly one place. `[project]` reads
     `teille_douce.__version__`, so the two can never disagree — unless the
