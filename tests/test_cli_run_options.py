@@ -625,3 +625,17 @@ def test_an_empty_log_level_is_a_usage_error():
         settings_for(["run", "--log-level", ""])
 
     assert excinfo.value.code == 2
+
+
+def test_an_invalid_config_file_still_exits_cleanly_under_quiet(tmp_path, monkeypatch):
+    """The -q floor probe read the config file above the guard that turns a
+    config problem into exit 3, so `-q` alone turned it into a traceback."""
+    (tmp_path / "teille-douce.toml").write_text(
+        '[paths]\ninpu = "OCR"\n', encoding="utf-8"
+    )
+    monkeypatch.chdir(tmp_path)
+
+    for argv in (["run"], ["run", "-q"], ["run", "-qq"]):
+        with pytest.raises(SystemExit) as excinfo:
+            settings_for(argv)
+        assert excinfo.value.code == 3, argv

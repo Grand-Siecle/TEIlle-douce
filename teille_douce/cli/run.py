@@ -368,7 +368,7 @@ def select_documents(docs, selectors, exclusions, limit, skip=None):
 
 
 def _process_document(doc_name, filepaths, doc_dir, df_meta, config,
-                      person_db, do_enrich, do_modernize, progress):
+                      person_db, do_enrich, do_modernize, do_ner, progress):
     """
     Run the full conversion pipeline on one document.
 
@@ -407,7 +407,7 @@ def _process_document(doc_name, filepaths, doc_dir, df_meta, config,
     # failed its probe disables its phase for the whole run, and every file
     # still declared <normalization> asserting that reg readings had been
     # generated — an editorial claim about a file that carries none.
-    with use_settings(enrich=do_enrich, modernize=do_modernize):
+    with use_settings(enrich=do_enrich, modernize=do_modernize, ner=do_ner):
         tree.root, tree.segmonto_zones, tree.segmonto_lines = build_header(
             tree.metadata,
             tree.d,
@@ -525,7 +525,7 @@ def _process_document(doc_name, filepaths, doc_dir, df_meta, config,
             )
 
     # Step 5: Named Entity Recognition (after enrichment + modernization)
-    if get_settings().ner:
+    if do_ner:
         task_ner = progress.add_task(
             f"[cyan]{escape(doc_name)}: Reconnaissance d'entites nommees[/cyan]",
             total=None,
@@ -636,6 +636,21 @@ def execute(args):
         else:
             unavailable.append("PyHellen (enrichment)")
             console.print("[yellow]Warning: Enrichment API unreachable — continuing without linguistic annotation.[/yellow]")
+
+    # NER has no service to probe, but it has dependencies that are often
+    # absent — and without this the header declared entity recognition on
+    # every file of a run that produced not one <persName>.
+    do_ner = settings.ner
+    if do_ner:
+        try:
+            import teille_douce.enrichment.ner_pipeline  # noqa: F401
+        except ImportError as reason:
+            do_ner = False
+            unavailable.append("NER models")
+            console.print(
+                f"[yellow]Warning: NER dependencies not installed "
+                f"({escape(str(reason))}) — no entity recognition.[/yellow]"
+            )
 
     if require_services and unavailable:
         # Asked for explicitly: a phase whose service is down is fatal
@@ -779,9 +794,13 @@ def execute(args):
         )
         for name, filepaths, _ in docs:
             console.print(f"  {escape(name)}  [dim]{len(filepaths)} pages[/dim]")
-        phases = [n for n, on in (("enrich", settings.enrich),
-                                  ("modernize", settings.modernize),
-                                  ("ner", settings.ner)) if on] or ["none"]
+        # The probes ran above, so the plan states what would actually
+        # happen rather than what was asked — the one command whose whole
+        # job is to say what would happen must not contradict what it just
+        # learned.
+        phases = [n for n, on in (("enrich", do_enrich),
+                                  ("modernize", do_modernize),
+                                  ("ner", do_ner)) if on] or ["none"]
         console.print(
             f"[dim]  input {escape(str(settings.ocr_dir))} → output "
             f"{escape(str(settings.output_dir))} · phases "
@@ -813,7 +832,7 @@ def execute(args):
     # refusing to run is a write like any other.
     try:
         settings.output_dir.mkdir(parents=True, exist_ok=True)
-    except (FileExistsError, NotADirectoryError, PermissionError) as reason:
+    except OSError as reason:
         # -o makes it as easy to name an existing file as -i does, and the
         # input guard above already refuses that. Same answer here: exit 3,
         # not a traceback after the metadata have been loaded.
@@ -850,7 +869,7 @@ def execute(args):
             try:
                 _process_document(
                     doc_name, filepaths, doc_dir, df_meta, config,
-                    person_db, do_enrich, do_modernize, progress,
+                    person_db, do_enrich, do_modernize, do_ner, progress,
                 )
             except Exception as e:
                 # Audit 2.1: one broken document must not kill the run.

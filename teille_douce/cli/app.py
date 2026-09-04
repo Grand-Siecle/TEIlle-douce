@@ -112,6 +112,16 @@ def settings_from(args, env=None, parser=None):
     elif getattr(args, "skip_existing", False):
         flags["skip_existing"] = True
 
+    try:
+        return _resolve_settings(args, env, parser, config_file, flags)
+    except (ValueError, tomllib.TOMLDecodeError, OSError) as reason:
+        # Exit 3, not a traceback and not 1: nothing ran, and 1 is
+        # reserved for "some volumes failed".
+        parser.exit(3, f"teille-douce: {reason}\n")
+
+
+def _resolve_settings(args, env, parser, config_file, flags):
+    """Fold the verbosity flags in, then resolve every layer."""
     level = options.console_level(args)
     if level is not None:
         if getattr(args, "quiet", 0):
@@ -137,12 +147,7 @@ def settings_from(args, env=None, parser=None):
         if level.upper() == "DEBUG":
             flags["debug"] = True
 
-    try:
-        settings = Settings.load(flags=flags, env=env, config_file=config_file)
-    except (ValueError, tomllib.TOMLDecodeError, OSError) as reason:
-        # Exit 3, not a traceback and not 1: nothing ran, and 1 is
-        # reserved for "some volumes failed".
-        parser.exit(3, f"teille-douce: {reason}\n")
+    settings = Settings.load(flags=flags, env=env, config_file=config_file)
 
     # A value the environment offers is refused with a warning and the
     # default is kept -- that is the documented contract. A value the user
