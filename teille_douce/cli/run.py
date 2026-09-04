@@ -564,7 +564,9 @@ def execute(args):
     # Create output directory
     dry_run = getattr(args, "dry_run", False)
 
-    if getattr(args, "no_probe", False) and getattr(args, "require_services", False):
+    no_probe = getattr(args, "no_probe", False)
+    require_services = getattr(args, "require_services", False)
+    if no_probe and require_services:
         # One says "assume they answer", the other "prove they do". Checked
         # here, before expand_archives unpacks anything: --require-services
         # promises to fail before a single write.
@@ -585,16 +587,29 @@ def execute(args):
         if not (settings.ocr_dir / zip_path.stem).exists()
     ] if dry_run else []
 
-    # An archive nobody selected is none of this run's business: reporting
-    # it made `run LIV0044` say "1/2 documents converted" and exit 1.
+    # Selection has to see the archives too. It only ever saw extracted
+    # directories, so naming a volume whose archive failed to extract was
+    # reported as a typo — exit 3, "no volume matches" — and the failure
+    # itself never reached the summary or the exit code.
     selectors = getattr(args, "documents", []) or []
     exclusions = getattr(args, "exclude", None) or []
+
+    def _selected(name):
+        return bool(select_documents([(name, [], None)],
+                                     selectors, exclusions, None)[0])
+
     if selectors or exclusions:
         failed_archives = [
             (name, reason) for name, reason in failed_archives
-            if select_documents([(Path(name).stem, [], None)],
-                                selectors, exclusions, None)[0]
+            if _selected(Path(name).stem)
         ]
+        pending_archives = [n for n in pending_archives if _selected(Path(n).stem)]
+
+    # Names the selectors could legitimately match, whether or not they
+    # produced a directory to walk.
+    known = ({d.name for d in ready_dirs}
+             | {Path(n).stem for n, _ in failed_archives}
+             | {Path(n).stem for n in pending_archives})
 
     # Collect documents to process
     docs = []
@@ -633,6 +648,13 @@ def execute(args):
         getattr(args, "exclude", None) or [], getattr(args, "limit", None),
         skip=already_converted,
     )
+    # A selector that named an archive matched something real, even if that
+    # something failed or is still zipped.
+    unmatched = [
+        selector for selector in unmatched
+        if not any(select_documents([(name, [], None)], [selector], [], None)[0]
+                   for name in known)
+    ]
     if unmatched:
         console.print(
             "[red]No volume matches:[/red] "
@@ -691,6 +713,9 @@ def execute(args):
             f"[dim]  input {settings.ocr_dir} → output {settings.output_dir}"
             f" · phases {', '.join(phases)} · {settings.max_workers} workers[/dim]"
         )
+        origin = settings.origin("__config__")
+        say(f"[dim]  config {origin}[/dim]" if origin != "default"
+            else "[dim]  no config file[/dim]")
         console.print("[dim]  nothing written (--dry-run)[/dim]")
         return
 
@@ -707,8 +732,6 @@ def execute(args):
             f"— headers will keep placeholder person entries.[/yellow]"
         )
 
-    no_probe = getattr(args, "no_probe", False)
-    require_services = getattr(args, "require_services", False)
     no_probe = getattr(args, "no_probe", False)
     require_services = getattr(args, "require_services", False)
     unavailable = []

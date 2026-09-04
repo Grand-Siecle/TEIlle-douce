@@ -87,9 +87,12 @@ scripts/
   rng_simplify.py            RELAX NG §4.19/§4.20 reductions (see schema/README.md)
   build_test_fixture.py      Regenerates tests/fixtures/ from the private corpus
 teille_douce/
-  config.py                  Settings only: paths, versions, services, thresholds
+  config.py                  What describes the project: versions, taxonomies,
+                             thresholds, responsibility — plus the defaults
+  settings.py                The four layers, resolved after parse_args
   cli/
-    app.py                   Argument parser and subcommand dispatch
+    app.py                   Argument parser, subcommand dispatch, flags → Settings
+    options.py               Every option of `run`, and the phase fold
     run.py                   Run orchestration, per-document isolation
   tei.py                     The TEI class — facade carrying document state
   constants.py               Namespaces, SegmOnto taxonomies, POS tagsets
@@ -154,7 +157,10 @@ than vanishing, so the shape of the header does not depend on how complete a
 catalogue row happens to be — and a consumer can rely on the element being
 there.
 
-`prose.py` generates the `<editorialDecl>` prose from `teille_douce/config.py`. The
+`prose.py` generates the `<editorialDecl>` prose from the settings in force —
+as a function, not a table, because a table evaluated at import froze the
+phase flags before the command line was read and declared modernization in
+the header of runs that had it switched off. The
 modernization rejection threshold, for instance, is stated in the header by
 reading the constant, not by restating the number — the two used to be separate
 and were free to diverge.
@@ -368,6 +374,11 @@ from teille_douce.lang import get_detector, build_langusage
 from teille_douce.utils import Files, write_xml
 ```
 
-`teille_douce/config.py` is imported by the modules that need settings, so overriding a
-setting means setting the environment variable before the import — which is what
-`tests/test_config_env.py` does.
+Settings are read at call time through `teille_douce/settings.py`, never bound
+at import — which is what lets a command-line flag, parsed after every import
+has happened, take effect at all. `Settings.load()` resolves four layers,
+**per setting**: flag, then `TDOUCE_*`, then a `teille-douce.toml`, then the
+default in `config.py`. A module imported on its own, in a REPL or in a test
+that never touches the CLI, gets settings built lazily from the environment —
+exactly what it saw before the object existed. `use_settings()` scopes an
+override for a block.

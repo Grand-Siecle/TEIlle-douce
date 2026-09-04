@@ -261,3 +261,26 @@ def test_the_documented_table_lists_every_variable_the_code_reads():
 
     missing = Settings.environment_variables() - documented
     assert not missing, f"undocumented: {', '.join(sorted(missing))}"
+
+
+def test_a_rejected_value_names_what_the_run_actually_uses(tmp_path):
+    """The message promised "keeping the default" even when a lower layer
+    supplied something else, misdirecting the reader it exists to inform."""
+    toml = tmp_path / "teille-douce.toml"
+    toml.write_text("[limits]\njobs = 4\n", encoding="utf-8")
+
+    with pytest.warns(RuntimeWarning, match="using 4"):
+        settings = Settings.load(env={"TDOUCE_JOBS": "zero"}, flags={},
+                                 config_file=toml)
+
+    assert settings.max_workers == 4
+
+
+def test_the_config_file_that_was_read_is_recorded(tmp_path):
+    toml = tmp_path / "teille-douce.toml"
+    toml.write_text("[limits]\njobs = 4\n", encoding="utf-8")
+
+    settings = Settings.load(env={}, flags={}, config_file=toml)
+
+    assert settings.origin("__config__") == str(toml)
+    assert Settings.load(env={}, flags={}).origin("__config__") == "default"

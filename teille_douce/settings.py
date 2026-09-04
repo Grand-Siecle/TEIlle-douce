@@ -325,6 +325,12 @@ class Settings:
             if origin != "default":
                 origins[declaration.name] = origin
 
+        # Which file was read, if any. A teille-douce.toml found by
+        # walking up and forgotten is the least debuggable thing in this
+        # design, so the run can name it.
+        if config_file is not None:
+            origins["__config__"] = str(config_file)
+
         values["modernize_api"] = _resolve_modernize_api(
             flags, env, from_file, config_file, rejected
         )
@@ -370,7 +376,13 @@ def _nearest_key(name):
 
 
 def _resolve(declaration, flags, env, from_file, config_path, rejected):
-    """Walk the layers for one setting, highest first."""
+    """Walk the layers for one setting, highest first.
+
+    Refusals are collected as the walk goes and only announced once the
+    value that actually took effect is known: the message used to promise
+    "keeping the default" even when a lower layer supplied something else,
+    which misdirects the reader it exists to inform.
+    """
     layers = [("flag", None, flags.get(declaration.name))]
     if declaration.env:
         layers.append((f"env:{declaration.env}", declaration.env,
@@ -379,41 +391,40 @@ def _resolve(declaration, flags, env, from_file, config_path, rejected):
         layers.append((f"config:{config_path}", declaration.key,
                        from_file[declaration.key]))
 
-    for origin, label, raw in layers:
+    refused, value, origin = [], None, "default"
+    for layer, label, raw in layers:
         if raw is None:
             continue
-        # A value typed on the command line becomes a usage error upstream,
-        # so promising to keep the default here would be a lie in transit.
-        announce = origin != "flag"
+        name = label or declaration.name
         if isinstance(raw, str) and not raw.strip():
-            if announce:
-                warnings.warn(
-                    f"{label} is set but empty — keeping the default "
-                    f"{declaration.default!r}",
-                    RuntimeWarning, stacklevel=4,
-                )
-            rejected.append(
-                Rejection(label or declaration.name, origin, raw, "is empty")
-            )
+            refused.append((layer, name, raw, "is empty"))
             continue
         try:
-            return declaration.convert(
+            value = declaration.convert(
                 raw.strip() if isinstance(raw, str) else raw
-            ), origin
+            )
+            origin = layer
+            break
         except (ValueError, TypeError) as reason:
-            name = label or declaration.name
-            if announce:
-                warnings.warn(
-                    f"{name}={raw!r} {reason} — keeping the default "
-                    f"{declaration.default!r}",
-                    RuntimeWarning, stacklevel=4,
-                )
-            rejected.append(Rejection(name, origin, str(raw), str(reason)))
+            refused.append((layer, name, raw, str(reason)))
 
-    default = declaration.default
-    if default is None:
-        return None, "default"
-    return declaration.convert(default), "default"
+    if origin == "default":
+        value = None if declaration.default is None else \
+            declaration.convert(declaration.default)
+
+    for layer, name, raw, reason in refused:
+        rejected.append(Rejection(name, layer, str(raw), reason))
+        # A value typed on the command line becomes a usage error upstream,
+        # so announcing what was kept instead would be a lie in transit.
+        if layer == "flag":
+            continue
+        warnings.warn(
+            f"{name}={raw!r} {reason} — using {value!r} "
+            f"({'the default' if origin == 'default' else origin})",
+            RuntimeWarning, stacklevel=4,
+        )
+
+    return value, origin
 
 
 def _resolve_modernize_api(flags, env, from_file, config_path, rejected):
@@ -458,6 +469,10 @@ def _resolve_modernize_api(flags, env, from_file, config_path, rejected):
 
 _ACTIVE = None
 
+# Distinguishes `use_settings()` — keep what is in force — from
+# `use_settings(None)`, which deliberately installs nothing.
+_KEEP = object()
+
 
 def get_settings():
     """The settings in force.
@@ -480,7 +495,7 @@ def set_settings(settings):
 
 
 @contextlib.contextmanager
-def use_settings(settings=None, **overrides):
+def use_settings(settings=_KEEP, **overrides):
     """Install settings for the duration of a block, then restore.
 
     Replaces the `importlib.reload(config)` dance the tests needed while
@@ -490,7 +505,14 @@ def use_settings(settings=None, **overrides):
     previous = _ACTIVE
     try:
         if overrides:
-            settings = replace(settings or get_settings(), **overrides)
+            base = get_settings() if settings is _KEEP else (settings or get_settings())
+            settings = replace(base, **overrides)
+        elif settings is _KEEP:
+            # Bare `use_settings()` reads as "scope this block", so it keeps
+            # what is in force. `use_settings(None)` is the deliberate
+            # spelling for "install nothing", which the lazy-build test
+            # needs, and the two must not be the same call.
+            settings = get_settings()
         _ACTIVE = settings
         yield _ACTIVE
     finally:
