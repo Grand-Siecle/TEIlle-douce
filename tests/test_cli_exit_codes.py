@@ -510,3 +510,40 @@ def test_a_mistyped_exclusion_is_still_refused(tmp_path):
 
     assert res.returncode == 3
     assert "NEXISTEPAS" in res.stdout
+
+
+def test_an_entities_directory_over_the_corpus_is_refused(tmp_path):
+    """A per-document failure removes that document's entity directory.
+    `NER_OUTPUT_DIR` was a hardcoded constant, so the blast radius was
+    bounded; making it a setting let `--entities OCR` plus any failure
+    delete the ALTO volume the run had just read."""
+    ocr = tmp_path / "ocr"
+    shutil.copytree(ALTO_MIN, ocr)
+
+    res, _ = _executer_main(
+        tmp_path, ocr, args=("--entities", str(ocr)), **MODE_COURT
+    )
+
+    assert res.returncode == 3
+    assert "must not overlap" in res.stdout
+    assert (ocr / DOCUMENT).is_dir(), "the source volume was destroyed"
+
+
+def test_a_failure_removes_only_the_entity_directory_it_created(tmp_path):
+    """The cleanup was an unbounded rmtree of a user-named path."""
+    ocr = tmp_path / "ocr"
+    shutil.copytree(ALTO_MIN, ocr)
+    entities = tmp_path / "ents" / DOCUMENT
+    entities.mkdir(parents=True)
+    (entities / "keep.txt").write_text("precious", encoding="utf-8")
+
+    sortie = tmp_path / "out"
+    sortie.mkdir()
+    sortie.chmod(0o500)
+    try:
+        _executer_main(tmp_path, ocr, args=("--entities", str(tmp_path / "ents")),
+                       **MODE_COURT)
+    finally:
+        sortie.chmod(0o700)
+
+    assert (entities / "keep.txt").exists(), "pre-existing content was removed"

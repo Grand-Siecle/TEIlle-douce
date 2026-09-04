@@ -663,6 +663,18 @@ def execute(args):
     # Checked here rather than at mkdir time: -o naming an existing file
     # used to be discovered after expand_archives had unpacked the whole
     # corpus and both catalogues had been read.
+    entities = settings.entities_dir.resolve()
+    corpus = settings.ocr_dir.resolve()
+    if entities == corpus or corpus in entities.parents or entities in corpus.parents:
+        # A per-document failure removes that document's entity directory.
+        # Pointing --entities at the corpus made that removal delete the
+        # ALTO it had just read.
+        console.print(
+            f"[red]--entities must not overlap the input directory:[/red] "
+            f"{escape(str(settings.entities_dir))}"
+        )
+        sys.exit(EXIT_MISCONFIGURED)
+
     if settings.output_dir.exists() and not settings.output_dir.is_dir():
         console.print(
             f"[red]Not a directory:[/red] "
@@ -838,11 +850,6 @@ def execute(args):
                 continue
             pending_archives.append(zip_path.name)
 
-    # Selection has to see the archives too. It only ever saw extracted
-    # directories, so naming a volume whose archive failed to extract was
-    # reported as a typo — exit 3, "no volume matches" — and the failure
-    # itself never reached the summary or the exit code.
-    selectors = getattr(args, "documents", []) or []
 
     if selectors or exclusions_asked:
         failed_archives = [
@@ -1037,11 +1044,16 @@ def execute(args):
 
         ok_docs = []
         stopped_early = False
+        # Entity directories this run brought into existence. A failure
+        # cleans up only these, never a directory that was already there.
+        entity_dirs_created = set()
         # Corrupt archives belong in the summary and in the exit code, but
         # not in the failure budget: seeding the list with them made
         # --fail-fast stop after the first SUCCESSFUL document.
         failed_docs = []
         for doc_name, filepaths, doc_dir in docs:
+            if not (settings.entities_dir / doc_name).exists():
+                entity_dirs_created.add(doc_name)
             try:
                 _process_document(
                     doc_name, filepaths, doc_dir, df_meta, config,
@@ -1058,8 +1070,15 @@ def execute(args):
                 failed_docs.append((doc_name, str(e)))
                 # No orphan side effects: entity CSVs written before the
                 # failure would reference a TEI that was never produced
-                if not _out_path(doc_name, settings.output_dir).exists():
-                    shutil.rmtree(settings.entities_dir / doc_name, ignore_errors=True)
+                # Only what this run created. `entities_dir` is a setting
+                # now, so an unbounded rmtree here destroyed whatever the
+                # named directory happened to hold: `--entities OCR` plus
+                # any per-document failure deleted the source volume.
+                stray = settings.entities_dir / doc_name
+                if (not _out_path(doc_name, settings.output_dir).exists()
+                        and doc_name in entity_dirs_created
+                        and stray.is_dir()):
+                    shutil.rmtree(stray, ignore_errors=True)
                 # And no zombie progress rows left spinning forever
                 for tid in progress.task_ids:
                     if tid != task_docs:
