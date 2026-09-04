@@ -597,24 +597,30 @@ def _fail_the_run(sortie):
     sortie.chmod(0o500)
 
 
-def test_a_failure_removes_the_entity_directory_this_run_created(tmp_path):
-    """The bounded rmtree — added because an unbounded one deleted the
-    source volume — had no test of the path it guards."""
+def test_a_failure_touches_no_entity_file_when_ner_did_not_run(tmp_path):
+    """With the phase off nothing was written there, so there is nothing of
+    this run's to remove — and removing anything would be removing someone
+    else's files. (The removal path itself needs NER models; it is
+    exercised by the e2e_full mode.)"""
     ocr = tmp_path / "ocr"
     shutil.copytree(ALTO_MIN, ocr)
-    entities = tmp_path / "ents"
+    entities = tmp_path / "ents" / DOCUMENT
+    entities.mkdir(parents=True)
+    (entities / "from-a-previous-run.csv").write_text("x", encoding="utf-8")
+
     sortie = tmp_path / "out"
     _fail_the_run(sortie)
     try:
         res, _ = _executer_main(
-            tmp_path, ocr, args=("--entities", str(entities)), **MODE_COURT
+            tmp_path, ocr, args=("--entities", str(tmp_path / "ents")),
+            **MODE_COURT,
         )
     finally:
         sortie.chmod(0o700)
 
     assert res.returncode == 1
-    assert not (entities / DOCUMENT).exists(), (
-        "an entity directory this run created survived the failure"
+    assert (entities / "from-a-previous-run.csv").exists(), (
+        "a failure with NER off removed files it never wrote"
     )
 
 
@@ -643,3 +649,18 @@ def test_an_empty_selected_volume_names_itself(tmp_path):
     assert res.returncode == 3
     assert "FOO" in res.stdout
     assert "No ALTO documents found in" not in res.stdout
+
+
+def test_no_probe_and_require_services_contradict_each_other(tmp_path):
+    """One says "assume the services answer", the other "prove they do".
+    Refused before expand_archives unpacks anything, because
+    --require-services promises to fail before a single write."""
+    ocr = tmp_path / "ocr"
+    shutil.copytree(ALTO_MIN, ocr)
+
+    res, sortie = _executer_main(
+        tmp_path, ocr, args=("--no-probe", "--require-services"), **MODE_COURT)
+
+    assert res.returncode == 3
+    assert "--no-probe" in res.stdout and "--require-services" in res.stdout
+    assert not sortie.exists()

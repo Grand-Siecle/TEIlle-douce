@@ -43,6 +43,25 @@ def test_an_option_given_before_the_subcommand_survives_it():
     assert parse(["--skip-existing", "run"]).skip_existing is True
 
 
+def test_bare_help_is_the_help_of_run():
+    """`teille-douce -h` with no subcommand must document what a bare
+    invocation actually does. The top-level parser alone lists a command
+    and none of the options you can pass it."""
+    assert app.normalise(["-h"]) == ["run", "-h"]
+    assert app.normalise(["--help"]) == ["run", "--help"]
+
+
+def test_a_short_cluster_ending_in_a_value_taking_letter_keeps_its_value():
+    """`-qj 4` is `-q -j 4`: the value belongs to the LAST letter of the
+    cluster. Testing the whole token left `4` looking like a positional,
+    and the subcommand behind it was read as a document selector."""
+    assert app.normalise(["-qj", "4", "run", "LIV1"]) == [
+        "run", "-qj", "4", "LIV1"]
+    args = app.parse_args(["-qj", "4", "run", "LIV1", "--no-config"])
+    assert args.documents == ["LIV1"]
+    assert app.settings_from(args, env={}).max_workers == 4
+
+
 def test_the_published_version_is_the_package_version():
     """A version may live in exactly one place. `[project]` reads
     `teille_douce.__version__`, so the two can never disagree — unless the

@@ -197,7 +197,37 @@ _SETTINGS = (
     _Declaration("tei_rng", "TDOUCE_TEI_RNG", None, _as_path, None),
 )
 
-_BY_KEY = {d.key: d for d in _SETTINGS if d.key}
+# Two settings may share a config key on purpose — limits.concurrency
+# feeds both services, matching --concurrency. Sharing is declared here so
+# that an accidental collision, the day two rows with different converters
+# land on one key, is an error at import rather than a silent win for
+# whichever came last.
+SHARED_KEYS = frozenset({"limits.concurrency"})
+
+
+def _index_by_key(declarations, shared=SHARED_KEYS):
+    """Map config key to declaration, refusing an undeclared collision.
+
+    First row wins for a shared key: the layer above only needs the
+    converter and the anchoring rule, which the sharers agree on.
+    """
+    index = {}
+    for declaration in declarations:
+        if not declaration.key:
+            continue
+        first = index.get(declaration.key)
+        if first is not None and declaration.key not in shared:
+            raise RuntimeError(
+                f"two settings declare the config key {declaration.key!r}: "
+                f"{first.name} and {declaration.name}. Add it to SHARED_KEYS "
+                f"if that is intended, and check that both convert alike."
+            )
+        if first is None:
+            index[declaration.key] = declaration
+    return index
+
+
+_BY_KEY = _index_by_key(_SETTINGS)
 # declared after _SETTINGS: see _MODERNIZE_URL below
 
 

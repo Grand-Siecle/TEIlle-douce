@@ -19,9 +19,24 @@ NER_DEPENDENCIES = ("flair", "gliner", "huggingface_hub", "torch")
 
 
 def missing_ner_dependencies():
-    """The NER packages that are not installed, in declaration order."""
-    return tuple(name for name in NER_DEPENDENCIES
-                 if importlib.util.find_spec(name) is None)
+    """The NER packages that are not installed, in declaration order.
+
+    `find_spec` raises rather than answering for a name already in
+    sys.modules with no spec, and propagates a half-installed package's own
+    ImportError. Either turned the documented "dependencies not installed"
+    warning into a traceback, so anything but a clean answer counts as
+    missing — which is what the caller needs to know.
+    """
+    missing = []
+    for name in NER_DEPENDENCIES:
+        try:
+            found = importlib.util.find_spec(name) is not None
+        except Exception:
+            found = False
+        if not found:
+            missing.append(name)
+    return tuple(missing)
+
 
 logger = logging.getLogger(__name__)
 

@@ -15,7 +15,8 @@ from pathlib import Path
 import pytest
 
 from teille_douce import config
-from teille_douce.settings import Settings, get_settings, use_settings
+from teille_douce.settings import (SHARED_KEYS, Settings, _index_by_key,
+                                   get_settings, use_settings)
 
 
 # =============================================================================
@@ -292,3 +293,57 @@ def test_the_config_file_that_was_read_is_recorded(tmp_path):
 
     assert settings.origin("__config__") == str(toml)
     assert Settings.load(env={}, flags={}).origin("__config__") == "default"
+
+
+# =============================================================================
+# The config-key index
+# =============================================================================
+
+def test_two_settings_may_not_quietly_share_a_config_key():
+    """The index used to be a dict comprehension, so a duplicate key was a
+    silent win for the last row. `_read_config_file`'s path anchoring and
+    the did-you-mean suggestion both look a key up here, so the day two
+    rows diverge in converter one setting's value would be validated
+    against the other's rules with nothing to say so."""
+    from teille_douce.settings import _Declaration, _as_int, _as_str
+
+    clash = [_Declaration("first", "TDOUCE_FIRST", "a.same", _as_int(), 1),
+             _Declaration("second", "TDOUCE_SECOND", "a.same", _as_str, "x")]
+
+    with pytest.raises(RuntimeError, match="first and second"):
+        _index_by_key(clash)
+
+
+def test_a_key_declared_shared_is_allowed_and_keeps_the_first_row():
+    """--concurrency drives both services through limits.concurrency on
+    purpose. Sharing is a declaration, not an accident."""
+    from teille_douce.settings import _Declaration, _as_int
+
+    rows = [_Declaration("first", "TDOUCE_FIRST", "limits.concurrency",
+                         _as_int(minimum=1), 8),
+            _Declaration("second", "TDOUCE_SECOND", "limits.concurrency",
+                         _as_int(minimum=1), 8)]
+
+    assert _index_by_key(rows)["limits.concurrency"].name == "first"
+
+
+def test_the_shipped_declarations_share_only_what_is_declared():
+    from teille_douce.settings import _SETTINGS
+
+    keys = [d.key for d in _SETTINGS if d.key]
+    repeated = {k for k in keys if keys.count(k) > 1}
+
+    assert repeated == set(SHARED_KEYS)
+
+
+def test_both_sharers_of_a_key_convert_alike():
+    """One row wins the index, so the loser's value is validated by the
+    winner's converter. That is only safe while they agree."""
+    from teille_douce.settings import _SETTINGS
+
+    for key in SHARED_KEYS:
+        sharers = [d for d in _SETTINGS if d.key == key]
+        assert len({d.convert(4) for d in sharers}) == 1, key
+        for declaration in sharers:
+            with pytest.raises(ValueError):
+                declaration.convert(0)

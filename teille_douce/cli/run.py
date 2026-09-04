@@ -747,7 +747,10 @@ def execute(args):
         # Named in every run, not only in the plan: a teille-douce.toml
         # found by walking up can redirect paths.output, and an operator
         # who has forgotten it has nothing to read.
-        say(f"[dim]Reading {escape(config_origin)}[/dim]")
+        # console.print, not say(): a file found by walking up can
+        # redirect paths.output, and -q silences chatter, never a fact the
+        # operator needs to explain where the output went.
+        console.print(f"[dim]Reading {escape(config_origin)}[/dim]")
 
     unavailable = []
 
@@ -830,7 +833,13 @@ def execute(args):
             # pass keeps it and select_documents counts the skip; in a dry
             # run `skipped_archives` does. Counting in both places
             # announced "2 documents already converted" for one volume.
-            if not dry_run and not (settings.ocr_dir / name).exists():
+            extracted = settings.ocr_dir / name
+            if not dry_run and not (
+                extracted.is_dir() and any(extracted.rglob("*.xml"))
+            ):
+                # Counted here unless the directory pass will count it:
+                # that pass keeps only directories holding ALTO, so an
+                # archive beside an empty one was counted nowhere.
                 unpacked_skips.append(name)
             return False
         return True
@@ -918,14 +927,6 @@ def execute(args):
     # Only directories that actually hold ALTO: an extracted archive with
     # no *.xml is not a volume a selector can match, and treating it as one
     # answered "every volume was excluded" when nothing had been.
-    # A volume the resume skipped is a name the selector legitimately
-    # found: without it, naming an already-converted, still-archived
-    # volume was reported as a typo.
-    known = ({name for name, _, _ in docs}
-             | set(unpacked_skips) | set(skipped_names)
-             | {Path(n).stem for n, _ in failed_archives}
-             | {Path(n).stem for n in pending_archives})
-
     # Narrow to what was asked for. A selector that names nothing stops the
     # run: a typo must not look like an empty corpus.
     # Both filters live in one place, in the order that makes the pair
@@ -1069,12 +1070,24 @@ def execute(args):
         # --fail-fast stop after the first SUCCESSFUL document.
         failed_docs = []
         for doc_name, filepaths, doc_dir in docs:
+            # Under the same guard as the conversion: a permissions change
+            # on an entity directory must not end a multi-hour run. And
+            # only when NER can write there — a --fast run walked a
+            # pre-existing directory once per volume for nothing.
             entity_dir = settings.entities_dir / doc_name
-            if not entity_dir.exists():
-                entity_dirs_created.add(doc_name)
-                entity_files_before[doc_name] = set()
-            else:
-                entity_files_before[doc_name] = set(entity_dir.rglob("*"))
+            entity_files_before[doc_name] = set()
+            if do_ner:
+                try:
+                    if entity_dir.exists():
+                        entity_files_before[doc_name] = set(entity_dir.rglob("*"))
+                    else:
+                        entity_dirs_created.add(doc_name)
+                except OSError as reason:
+                    logging.getLogger(__name__).warning(
+                        "%s: cannot inspect %s (%s); its entity files will "
+                        "be left alone if this document fails",
+                        doc_name, entity_dir, reason,
+                    )
             try:
                 _process_document(
                     doc_name, filepaths, doc_dir, df_meta, config,
@@ -1095,8 +1108,13 @@ def execute(args):
                 # now, so an unbounded rmtree here destroyed whatever the
                 # named directory happened to hold: `--entities OCR` plus
                 # any per-document failure deleted the source volume.
+                # Only when NER ran: with the phase off nothing was
+                # written there, so there is nothing of this run's to
+                # remove — and removing anything would be removing someone
+                # else's files.
                 stray = settings.entities_dir / doc_name
-                if (not _out_path(doc_name, settings.output_dir).exists()
+                if (do_ner
+                        and not _out_path(doc_name, settings.output_dir).exists()
                         and stray.is_dir()):
                     if doc_name in entity_dirs_created:
                         shutil.rmtree(stray, ignore_errors=True)

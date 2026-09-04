@@ -13,11 +13,19 @@ from pathlib import Path
 
 import pytest
 
+from teille_douce import config
 from teille_douce.cli import app
 
 
-def settings_for(argv, env=None):
-    """Resolve *argv* the way the command line does, without running."""
+def settings_for(argv, env=None, discover_config=False):
+    """Resolve *argv* the way the command line does, without running.
+
+    Config-file discovery walks up to the root, so a teille-douce.toml
+    anywhere above the checkout would steer these cases. It is off unless a
+    test is about discovery, which is what `discover_config` is for.
+    """
+    if not discover_config and "--config" not in argv:
+        argv = [*argv, "--no-config"]
     return app.settings_from(app.parse_args(argv), env=env or {})
 
 
@@ -305,7 +313,7 @@ def test_a_config_file_is_found_by_walking_up_from_the_working_directory(tmp_pat
     deep.mkdir(parents=True)
     monkeypatch.chdir(deep)
 
-    settings = settings_for(["run"])
+    settings = settings_for(["run"], discover_config=True)
 
     # Anchored on the file, not on the working directory — see
     # test_a_config_file_anchors_its_relative_paths_to_itself.
@@ -481,7 +489,7 @@ def test_a_config_file_anchors_its_relative_paths_to_itself(tmp_path, monkeypatc
     deep.mkdir(parents=True)
     monkeypatch.chdir(deep)
 
-    assert settings_for(["run"]).ocr_dir == tmp_path / "corpus"
+    assert settings_for(["run"], discover_config=True).ocr_dir == tmp_path / "corpus"
 
 
 def test_the_modernization_url_flag_is_validated_like_its_sibling():
@@ -552,7 +560,7 @@ def test_quiet_still_lets_a_warning_through():
     silencing it converted a whole corpus with placeholder headers and
     exited 0 with nothing said. -qq is the deliberate spelling for
     accepting that."""
-    assert settings_for(["run", "-q"]).log_level == "WARNING"
+    assert settings_for(["run", "-q"], discover_config=True).log_level == "WARNING"
     assert settings_for(["run", "-qq"]).log_level == "ERROR"
 
 
@@ -612,7 +620,7 @@ def test_quiet_lowers_a_level_the_config_file_raised(tmp_path, monkeypatch):
     )
     monkeypatch.chdir(tmp_path)
 
-    assert settings_for(["run", "-q"]).log_level == "WARNING"
+    assert settings_for(["run", "-q"], discover_config=True).log_level == "WARNING"
 
 
 def test_a_rejected_value_is_announced_once(recwarn):
@@ -641,7 +649,7 @@ def test_an_invalid_config_file_still_exits_cleanly_under_quiet(tmp_path, monkey
 
     for argv in (["run"], ["run", "-q"], ["run", "-qq"]):
         with pytest.raises(SystemExit) as excinfo:
-            settings_for(argv)
+            settings_for(argv, discover_config=True)
         assert excinfo.value.code == 3, argv
 
 
@@ -699,6 +707,23 @@ def test_the_ner_probe_can_actually_fire(monkeypatch):
     monkeypatch.setattr(ner_models.importlib.util, "find_spec", lambda name: None)
 
     assert ner_models.missing_ner_dependencies() == ner_models.NER_DEPENDENCIES
+
+
+def test_a_broken_install_reads_as_missing_rather_than_raising(monkeypatch):
+    """`find_spec` answers with an exception for a name sitting in
+    sys.modules without a spec, and re-raises a half-installed package's own
+    ImportError. Unguarded, a broken torch turned the documented "NER
+    dependencies not installed" warning into a traceback."""
+    from teille_douce.enrichment import ner_models
+
+    def explode(name):
+        if name == "torch":
+            raise ValueError(f"{name}.__spec__ is None")
+        return object()
+
+    monkeypatch.setattr(ner_models.importlib.util, "find_spec", explode)
+
+    assert ner_models.missing_ner_dependencies() == ("torch",)
 
 
 def test_the_ner_dependencies_are_the_ones_the_code_imports():
@@ -825,3 +850,51 @@ def test_a_refused_flag_stays_a_usage_error_whatever_the_other_layers_hold():
                      env={"TDOUCE_MODERNIZE_URL_FRA": "http://perlang"})
 
     assert excinfo.value.code == 2
+
+
+# =============================================================================
+# What a malformed invocation or config file says before exiting
+# =============================================================================
+
+def test_a_limit_that_is_not_a_number_says_so(capsys):
+    """argparse falls back to the callable's __name__ when a type raises
+    anything else, and told the user "invalid _at_least_one value"."""
+    with pytest.raises(SystemExit) as exit:
+        app.parse_args(["run", "--limit", "beaucoup"])
+
+    assert exit.value.code == 2
+    assert "whole number" in capsys.readouterr().err
+
+
+def test_a_bare_value_at_the_top_of_the_config_file_is_named(tmp_path,
+                                                             capsys):
+    """`output = "tei"` outside any section is the natural mistake, and
+    tomllib parses it happily. Nothing has run at that point, so it exits
+    3 — misconfigured — rather than 1, which means volumes failed."""
+    toml = tmp_path / "teille-douce.toml"
+    toml.write_text('output = "tei"\n', encoding="utf-8")
+
+    with pytest.raises(SystemExit) as exit:
+        app.settings_from(app.parse_args(["run", "--config", str(toml)]),
+                          env={})
+
+    assert exit.value.code == 3
+    message = capsys.readouterr().err
+    assert "output" in message and "section" in message
+
+
+def test_a_config_url_of_the_wrong_type_is_refused_not_crashed(tmp_path):
+    """A bare port instead of a URL. The converter answers with a rejection
+    the run can report; anything raised out of the config layer would have
+    been a traceback."""
+    toml = tmp_path / "teille-douce.toml"
+    toml.write_text("[services]\npyhellen = 8000\n", encoding="utf-8")
+
+    with pytest.warns(RuntimeWarning, match="not a string"):
+        settings = app.settings_from(
+            app.parse_args(["run", "--config", str(toml)]), env={})
+
+    assert settings.pyhellen_url == config.DEFAULT_PYHELLEN_URL
+    rejection, = settings.rejected
+    assert rejection.name == "services.pyhellen"
+    assert rejection.layer == f"config:{toml}"
