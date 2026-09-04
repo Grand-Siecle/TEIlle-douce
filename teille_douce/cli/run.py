@@ -389,11 +389,12 @@ def select_documents(docs, selectors, exclusions, limit, skip=None):
             same N volumes and skipping them all on every run.
 
     Returns:
-        tuple: (kept, unmatched, skipped) — unmatched holds the selectors
-        that named nothing, because a typo must not look like an empty
-        corpus; skipped counts what the resume predicate removed, and
-        nothing else. Counting every kind of drop announced volumes as
-        "already converted" that a selector or a limit had dropped.
+        tuple: (kept, skipped) — skipped counts what the resume predicate
+        removed, and nothing else. Counting every kind of drop announced
+        volumes as "already converted" that a selector or a limit had
+        dropped. No pattern is judged here: `execute` validates them
+        against the raw directory listing, which is the only place that
+        sees the corpus before it is narrowed.
     """
     def matches(pattern, name):
         # The canonical id is what the pipeline writes into xml:id and what
@@ -411,7 +412,7 @@ def select_documents(docs, selectors, exclusions, limit, skip=None):
     # would be about this function's own filtering. `execute` validates
     # every pattern against the raw directory listing beforehand, which is
     # the only place that sees the whole corpus.
-    kept, unmatched = list(docs), []
+    kept = list(docs)
     if selectors:
         kept = [d for d in docs if any(matches(p, d[0]) for p in selectors)]
     for pattern in exclusions or []:
@@ -429,7 +430,7 @@ def select_documents(docs, selectors, exclusions, limit, skip=None):
         skipped = before_skip - len(kept)
     if limit is not None:
         kept = kept[:limit]
-    return kept, unmatched, skipped
+    return kept, skipped
 
 
 def _process_document(doc_name, filepaths, doc_dir, df_meta, config,
@@ -900,9 +901,18 @@ def execute(args):
             for name, reason in failed_archives:
                 console.print(f"  [red]FAILED[/red] {escape(f'{name}: {reason}')}")
             sys.exit(EXIT_SOME_FAILED)
-        console.print(
-            f"[red]No ALTO documents found in {escape(str(settings.ocr_dir))}.[/red]"
-        )
+        if selectors:
+            # The corpus may be perfectly healthy: it is the selected
+            # volume that holds no ALTO, and naming the whole directory
+            # sent the operator to inspect the wrong thing.
+            console.print(
+                "[red]No ALTO found in:[/red] " + escape(", ".join(selectors))
+            )
+        else:
+            console.print(
+                f"[red]No ALTO documents found in "
+                f"{escape(str(settings.ocr_dir))}.[/red]"
+            )
         sys.exit(EXIT_MISCONFIGURED)
 
     # Only directories that actually hold ALTO: an extracted archive with
@@ -924,17 +934,11 @@ def execute(args):
         (lambda name: _out_path(name, settings.output_dir).exists())
         if settings.skip_existing else None
     )
-    docs, unmatched, skipped_existing = select_documents(
+    docs, skipped_existing = select_documents(
         docs, getattr(args, "documents", []) or [],
         getattr(args, "exclude", None) or [], getattr(args, "limit", None),
         skip=already_converted,
     )
-    if unmatched:
-        console.print(
-            "[red]No volume matches:[/red] "
-            + escape(", ".join(unmatched))
-        )
-        sys.exit(EXIT_MISCONFIGURED)
     skipped_existing += skipped_archives + len(unpacked_skips)
     if not docs and not failed_archives and not pending_archives:
         if skipped_existing:
@@ -1101,12 +1105,27 @@ def execute(args):
                         # held; only the files this run wrote are removed,
                         # or they would reference a TEI that does not
                         # exist (audit 2.4).
-                        for path in sorted(stray.rglob("*"), reverse=True):
-                            if path not in entity_files_before[doc_name]:
+                        #
+                        # Guarded on its own: this runs inside the handler
+                        # that exists so one broken document cannot kill a
+                        # multi-hour run, and an OSError here — a
+                        # concurrent writer, a permission change, a
+                        # directory that gained a file between the walk
+                        # and the rmdir — would have escaped it.
+                        try:
+                            for path in sorted(stray.rglob("*"), reverse=True):
+                                if path in entity_files_before[doc_name]:
+                                    continue
                                 if path.is_file():
                                     path.unlink(missing_ok=True)
                                 elif path.is_dir():
                                     path.rmdir()
+                        except OSError as cleanup_error:
+                            logging.getLogger(__name__).warning(
+                                "%s: could not remove the entity files of "
+                                "this failed document (%s)",
+                                doc_name, cleanup_error,
+                            )
                 # And no zombie progress rows left spinning forever
                 for tid in progress.task_ids:
                     if tid != task_docs:

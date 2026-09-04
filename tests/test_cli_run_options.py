@@ -197,10 +197,9 @@ def _docs(*names):
 
 
 def test_no_selector_keeps_every_document():
-    kept, missed, _ = select_documents(_docs("LIV0044", "LIV0021"), [], [], None)
+    kept, _ = select_documents(_docs("LIV0044", "LIV0021"), [], [], None)
 
     assert [d[0] for d in kept] == ["LIV0044", "LIV0021"]
-    assert missed == []
 
 
 def test_a_selector_matches_a_name_an_internal_id_or_a_glob():
@@ -221,22 +220,21 @@ def test_select_documents_judges_no_pattern_at_all():
     own filtering. `execute` validates every pattern against the raw
     directory listing, which is the only place that sees the whole corpus;
     tests/test_cli_exit_codes.py exercises that end to end."""
-    kept, missed, _ = select_documents(_docs("LIV0044"), ["LIV9999"], [], None)
+    kept, _ = select_documents(_docs("LIV0044"), ["LIV9999"], [], None)
 
     assert kept == []
-    assert missed == []
 
 
 def test_exclusions_apply_after_selection():
     docs = _docs("LIV0044", "LIV0021", "LIV0038")
-    kept, _, _ = select_documents(docs, [], ["LIV0021"], None)
+    kept, _ = select_documents(docs, [], ["LIV0021"], None)
 
     assert [d[0] for d in kept] == ["LIV0044", "LIV0038"]
 
 
 def test_limit_keeps_the_first_n_in_order():
     docs = _docs("LIV0044", "LIV0021", "LIV0038")
-    kept, _, _ = select_documents(docs, [], [], 2)
+    kept, _ = select_documents(docs, [], [], 2)
 
     assert [d[0] for d in kept] == ["LIV0044", "LIV0021"]
 
@@ -503,7 +501,7 @@ def test_limit_counts_what_will_actually_be_converted():
     docs = [(f"LIV{n:04d}", [], None) for n in range(1, 5)]
     already_done = {"LIV0001", "LIV0002"}
 
-    kept, _, _ = select_documents(
+    kept, _ = select_documents(
         docs, [], [], limit=1, skip=lambda name: name in already_done
     )
 
@@ -522,7 +520,7 @@ def test_the_skip_count_counts_only_what_the_resume_skipped():
 
     docs = [(f"LIV{n:04d}", [], None) for n in range(1, 4)]
 
-    kept, missed, skipped = select_documents(
+    kept, skipped = select_documents(
         docs, [], ["LIV0003"], limit=1, skip=lambda name: False
     )
 
@@ -581,10 +579,9 @@ def test_the_canonical_document_id_selects():
 
     docs = [("LIV0002a_reconciled", [], None), ("LIV0002b_reconciled", [], None)]
 
-    kept, missed, _ = select_documents(docs, ["LIV0002a"], [], None)
+    kept, _ = select_documents(docs, ["LIV0002a"], [], None)
 
     assert [d[0] for d in kept] == ["LIV0002a_reconciled"]
-    assert missed == []
 
 
 def test_select_documents_does_not_judge_an_exclusion_it_cannot_see():
@@ -597,9 +594,8 @@ def test_select_documents_does_not_judge_an_exclusion_it_cannot_see():
 
     docs = [("LIV0044_reconciled", [], None)]
 
-    _, missed, _ = select_documents(docs, [], ["LIV0038_reconcilied"], None)
+    _, _ = select_documents(docs, [], ["LIV0038_reconcilied"], None)
 
-    assert missed == []
 
 
 def test_quiet_never_raises_the_level_a_lower_layer_set():

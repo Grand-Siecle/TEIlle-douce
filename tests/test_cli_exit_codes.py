@@ -589,3 +589,57 @@ def test_the_default_entity_directory_never_blocks_a_run(tmp_path):
     res, _ = _executer_main(tmp_path, tmp_path / "ocr", **MODE_COURT)
 
     assert res.returncode == 0, res.stdout[-2000:]
+
+
+def _fail_the_run(sortie):
+    """Make the writing step fail, so a document reaches the cleanup."""
+    sortie.mkdir(exist_ok=True)
+    sortie.chmod(0o500)
+
+
+def test_a_failure_removes_the_entity_directory_this_run_created(tmp_path):
+    """The bounded rmtree — added because an unbounded one deleted the
+    source volume — had no test of the path it guards."""
+    ocr = tmp_path / "ocr"
+    shutil.copytree(ALTO_MIN, ocr)
+    entities = tmp_path / "ents"
+    sortie = tmp_path / "out"
+    _fail_the_run(sortie)
+    try:
+        res, _ = _executer_main(
+            tmp_path, ocr, args=("--entities", str(entities)), **MODE_COURT
+        )
+    finally:
+        sortie.chmod(0o700)
+
+    assert res.returncode == 1
+    assert not (entities / DOCUMENT).exists(), (
+        "an entity directory this run created survived the failure"
+    )
+
+
+def test_an_exclusion_that_matches_nothing_stops_the_run(tmp_path):
+    """Documented: an exclusion that silently misses converts at full cost
+    the volume it was meant to hold back."""
+    ocr = tmp_path / "ocr"
+    shutil.copytree(ALTO_MIN, ocr)
+
+    res, _ = _executer_main(tmp_path, ocr, args=("-x", "NOPE"), **MODE_COURT)
+
+    assert res.returncode == 3
+    assert "NOPE" in res.stdout
+
+
+def test_an_empty_selected_volume_names_itself(tmp_path):
+    """The message named the whole input directory, sending the operator to
+    inspect a corpus that was perfectly healthy."""
+    ocr = tmp_path / "ocr"
+    ocr.mkdir()
+    (ocr / "FOO").mkdir()
+    shutil.copytree(ALTO_MIN / DOCUMENT, ocr / "BAR")
+
+    res, _ = _executer_main(tmp_path, ocr, args=("FOO",), **MODE_COURT)
+
+    assert res.returncode == 3
+    assert "FOO" in res.stdout
+    assert "No ALTO documents found in" not in res.stdout

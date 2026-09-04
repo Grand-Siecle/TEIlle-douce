@@ -179,7 +179,7 @@ teille-douce run --fast --dry-run     # what would happen, writing nothing
 | Option | Effect |
 |---|---|
 | `DOC ...` | Volumes to convert. A selector matching nothing stops the run — a typo must not look like an empty corpus. |
-| `-x, --exclude PATTERN` | Drop volumes after selection. Repeatable. |
+| `-x, --exclude PATTERN` | Drop volumes after selection. Repeatable. **A pattern matching nothing stops the run**, like a selector: an exclusion that silently misses converts at full cost the volume it was meant to hold back. A standing `-x` in a wrapper therefore has to be removed the day its volume leaves the corpus. |
 | `--limit N` | Convert at most N of those selected, in order. |
 | `--skip-existing` / `--force` | Skip volumes already converted / convert them anyway. |
 | `-i, --input` · `-o, --output` | Input and output directories. |
@@ -208,7 +208,7 @@ run, the summary says how many volumes were never attempted.
 
 **Exit codes.** `0` everything asked for succeeded · `1` some volumes failed
 · `2` usage error · `3` misconfiguration, nothing ran (input directory
-missing, no volumes found, a selector matched nothing, `--require-services`
+missing, no volumes found, a selector **or an exclusion** matched nothing, `--require-services`
 with a service down).
 
 A document that fails does not kill the run: the error is logged with its
