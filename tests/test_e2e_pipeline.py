@@ -58,6 +58,14 @@ def _executer_main(tmp_path, ocr_dir, args=(), **flags):
         **os.environ,
         "TDOUCE_OCR_DIR": str(ocr_dir),
         "TDOUCE_OUTPUT_DIR": str(sortie),
+        # Ces cas cherchent des sous-chaines dans stdout. Rich honore
+        # FORCE_COLOR meme quand sa sortie est un tuyau : avec elle,
+        # "1/2 documents converted" arrive colore, "1/2" est coupe par
+        # des codes ANSI, et la recherche echoue. La CI ne pose pas la
+        # variable, mais beaucoup de terminaux modernes si — la suite
+        # etait donc rouge chez le developpeur et verte en CI.
+        "FORCE_COLOR": "",
+        "NO_COLOR": "1",
         **{k: v for k, v in flags.items()},
     }
     env.update(_env_couverture_sous_processus())
@@ -194,7 +202,7 @@ def service_disponible(url, timeout=2.0):
 
 
 def services_manquants():
-    from config import MODERNIZE_API, PYHELLEN_URL
+    from teille_douce.config import MODERNIZE_API, PYHELLEN_URL
     manquants = []
     if not service_disponible(PYHELLEN_URL):
         manquants.append(f"PyHellen ({PYHELLEN_URL})")

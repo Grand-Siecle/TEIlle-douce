@@ -1,6 +1,6 @@
 # -----------------------------------------------------------
-# Characterization tests for src/sourcedoc/builder.py and
-# src/sourcedoc/elements.py, written ahead of the refactor
+# Characterization tests for teille_douce/sourcedoc/builder.py and
+# teille_douce/sourcedoc/elements.py, written ahead of the refactor
 # described in docs/rapport_audit.md (SS3.4, 3.5, 3.7, 4.9, 2.3).
 #
 # These tests assert on the produced TEI XML, never on internal
@@ -16,11 +16,11 @@ from pathlib import Path
 import pytest
 from lxml import etree
 
-from src.constants import NS_ALTO, XML_ID
-from src.metadata.iiif import IIIFMapping
-from src.sourcedoc import builder
-from src.sourcedoc.builder import extract_labels, build_sourcedoc
-from src.sourcedoc.elements import SurfaceTree
+from teille_douce.constants import NS_ALTO, XML_ID
+from teille_douce.metadata.iiif import IIIFMapping
+from teille_douce.sourcedoc import builder
+from teille_douce.sourcedoc.builder import extract_labels, build_sourcedoc
+from teille_douce.sourcedoc.elements import SurfaceTree
 
 
 def qlocal(el):
@@ -287,7 +287,7 @@ def test_build_sourcedoc_reports_duplicate_alto_ids_from_workers(tmp_path, monke
     f = write_alto(tmp_path, "f1.xml", DUPLICATE_BLOCK_ALTO)
 
     output_root = etree.Element("TEI")
-    with caplog.at_level(logging.WARNING, logger="src.sourcedoc.builder"):
+    with caplog.at_level(logging.WARNING, logger="teille_douce.sourcedoc.builder"):
         _, skipped = build_sourcedoc("DOC1", output_root, [f], [], [], {})
 
     assert skipped == []
@@ -303,7 +303,7 @@ def test_surfacetree_disambiguates_duplicate_alto_ids_deterministically():
     present dans la fixture e2e : deux TextBlock ID='block_2'). uuid4
     masquait le doublon ; uuid5 doit desambiguiser sans collision xml:id,
     et de facon reproductible d'un run a l'autre."""
-    from src.sourcedoc.elements import SurfaceTree
+    from teille_douce.sourcedoc.elements import SurfaceTree
 
     def deux_zones():
         tree = SurfaceTree("DOC1", "f1", etree.Element("alto"))
@@ -336,7 +336,7 @@ def test_malformed_alto_page_does_not_crash_the_run(tmp_path, monkeypatch, caplo
     (tmp_path / "f3.xml").write_text(UNRECOVERABLE_ALTO, encoding="utf-8")
 
     output_root = etree.Element("TEI")
-    with caplog.at_level(logging.WARNING, logger="src.sourcedoc.builder"):
+    with caplog.at_level(logging.WARNING, logger="teille_douce.sourcedoc.builder"):
         _, skipped = build_sourcedoc(
             "DOC1", output_root,
             [good, tmp_path / "f2.xml", tmp_path / "f3.xml"],
@@ -397,7 +397,7 @@ def test_build_sourcedoc_keeps_both_pages_when_page_numbers_collide(
     second = write_alto(tmp_path, "f1-np.xml", GOOD_ALTO_TMPL.format(word="pagetwo"))
 
     output_root = etree.Element("TEI")
-    with caplog.at_level(logging.WARNING, logger="src.sourcedoc.builder"):
+    with caplog.at_level(logging.WARNING, logger="teille_douce.sourcedoc.builder"):
         _, skipped = build_sourcedoc(
             "DOC1", output_root, [first, second], [], [], {}
         )
@@ -433,7 +433,7 @@ def test_build_sourcedoc_keeps_both_pages_when_no_filename_has_a_number(
     cover = write_alto(tmp_path, "couverture.xml", GOOD_ALTO_TMPL.format(word="cover"))
 
     output_root = etree.Element("TEI")
-    with caplog.at_level(logging.WARNING, logger="src.sourcedoc.builder"):
+    with caplog.at_level(logging.WARNING, logger="teille_douce.sourcedoc.builder"):
         _, skipped = build_sourcedoc(
             "DOC1", output_root, [plate, cover], [], [], {}
         )

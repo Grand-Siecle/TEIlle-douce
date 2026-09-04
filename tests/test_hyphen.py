@@ -10,7 +10,7 @@ l'autre seulement « ¬ » (audit 4.7).
 """
 import pytest
 
-from src.utils.hyphen import (
+from teille_douce.utils.hyphen import (
     HYPHEN_CHARS,
     ends_with_hyphen,
     joins_words,
@@ -65,10 +65,10 @@ def test_the_three_phases_rejoin_both_marks(marque):
     """La fixture porte les deux formes (f1 en « ¬ », f7 en « - »). Les
     trois phases nommees dans le module doivent recoller les deux — c'est
     l'accord que ce module existe pour garantir."""
-    from src.modernize import dehyphenate_lines
-    from src.lang.detector import LinguaDetector
-    from src.enrichment.extractor import TextSpan
-    from src.enrichment.dehyphenation import dehyphenate
+    from teille_douce.modernize import dehyphenate_lines
+    from teille_douce.lang.detector import LinguaDetector
+    from teille_douce.enrichment.extractor import TextSpan
+    from teille_douce.enrichment.dehyphenation import dehyphenate
 
     # 1. modernisation : recolle les lignes d'une meme zone
     joined, _ = dehyphenate_lines([f"mainte{marque}", "nant"])

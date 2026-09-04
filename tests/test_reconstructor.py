@@ -1,5 +1,5 @@
 # -----------------------------------------------------------
-# Tests for src/enrichment/reconstructor.py (Phase 6): rebuilds a TEI
+# Tests for teille_douce/enrichment/reconstructor.py (Phase 6): rebuilds a TEI
 # container's children as <s>/<w>/<pc>/<lb>/<hi>/<foreign> from the
 # sentences produced by the segmenter, out of aligned NLP tokens.
 # Run: venv/bin/python -m pytest tests/test_reconstructor.py -q
@@ -9,18 +9,18 @@ import re
 import pytest
 from lxml import etree
 
-from src.constants import NS_TEI, NS_XML, XML_ID
-from src.enrichment.reconstructor import (
+from teille_douce.constants import NS_TEI, NS_XML, XML_ID
+from teille_douce.enrichment.reconstructor import (
     rebuild_container,
     _insert_lb,
     _create_w,
     _create_pc,
     _create_cross_line_w,
 )
-from src.enrichment.client import NLPToken
-from src.enrichment.extractor import TextSpan
-from src.enrichment.aligner import AlignedToken
-from src.enrichment.segmenter import Sentence
+from teille_douce.enrichment.client import NLPToken
+from teille_douce.enrichment.extractor import TextSpan
+from teille_douce.enrichment.aligner import AlignedToken
+from teille_douce.enrichment.segmenter import Sentence
 
 # xml:lang key, mirrors the module-level constant private to reconstructor.py
 XML_LANG = f"{{{NS_XML}}}lang"
@@ -310,7 +310,7 @@ def test_insert_lb_directly_sets_corresp_and_tracks_inserted_id():
 def test_cross_line_w_and_sentence_ids_are_deterministic():
     """Audit 2.8 : memes entrees -> memes xml:id, pour les fragments de mots
     cesures comme pour les phrases du segmenteur."""
-    from src.enrichment.segmenter import segment_sentences
+    from teille_douce.enrichment.segmenter import segment_sentences
 
     def ids_fragments():
         lb1 = etree.Element("lb")
@@ -681,7 +681,7 @@ def test_an_annotated_container_points_at_the_tagset_it_was_tagged_with():
     pas sur chaque <w> : c'est une propriete du modele qui a annote le
     passage, et le repeter cent mille fois par volume ne dirait rien de
     plus."""
-    from src.constants import POS_TAGSETS
+    from teille_douce.constants import POS_TAGSETS
 
     sent = mk_sentence("s1", [mk_aligned(mk_token("mot"))])
     container = mk_container()
@@ -696,7 +696,7 @@ def test_a_foreign_run_points_at_its_own_tagset():
     container = mk_container()
     rebuild_container(container, [sent], primary_lang="fra")
 
-    from src.constants import POS_TAGSETS
+    from teille_douce.constants import POS_TAGSETS
     foreign = container.find(".//foreign")
     assert foreign is not None
     assert foreign.get("ana") == f"#{POS_TAGSETS['lasla']['id']}"

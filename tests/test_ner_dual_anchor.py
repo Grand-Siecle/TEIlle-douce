@@ -15,12 +15,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from lxml import etree
 
-from src.enrichment.ner_align import (
+from teille_douce.enrichment.ner_align import (
     AlignedEntity,
     backfill_reg_fragments,
     inject_entities,
 )
-from src.enrichment.ner_resolve import ResolvedEntity, add_refs_to_body
+from teille_douce.enrichment.ner_resolve import ResolvedEntity, add_refs_to_body
 
 NS = "http://www.tei-c.org/ns/1.0"
 XML_LANG = "{http://www.w3.org/XML/1998/namespace}lang"

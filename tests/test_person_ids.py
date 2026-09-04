@@ -17,9 +17,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import pytest
 from lxml import etree
 
-import src.metadata.csv_person as csv_person_module
-from src.metadata.csv_person import load_person_database
-from src.metadata.csv_book import (
+import teille_douce.metadata.csv_person as csv_person_module
+from teille_douce.metadata.csv_person import load_person_database
+from teille_douce.metadata.csv_book import (
     safe_person_id,
     build_metadata_dict,
     override_teiheader_from_csv,
@@ -37,7 +37,7 @@ FIXTURE_PERSON_CSV = Path(__file__).resolve().parent / "fixtures" / "metadata_pe
 
 @pytest.fixture(autouse=True)
 def reset_person_db_singleton():
-    """src.metadata.csv_person._person_db est un singleton de module.
+    """teille_douce.metadata.csv_person._person_db est un singleton de module.
     Reset avant ET apres chaque test pour ne pas dependre du
     metadata_personne.csv reel (gitignore) ni polluer les autres modules
     de test - meme motif que tests/test_metadata_sources.py."""
@@ -58,7 +58,7 @@ def test_ark_becomes_ncname():
 
 def _minimal_root():
     """Build a minimal TEI header skeleton, same construction pattern as
-    src/tei.py + src/teiheader/default.py (unqualified tags + nsmap), so
+    teille_douce/tei.py + teille_douce/teiheader/default.py (unqualified tags + nsmap), so
     override_teiheader_from_csv's unqualified .find() xpaths resolve."""
     root = etree.Element("TEI", nsmap={None: "http://www.tei-c.org/ns/1.0"})
     teiHeader = etree.SubElement(root, "teiHeader")

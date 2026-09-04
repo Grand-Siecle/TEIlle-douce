@@ -12,8 +12,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src.modernize import dehyphenate_lines, drop_carried_words
-from src.tei import strip_residual_hyphens
+from teille_douce.modernize import dehyphenate_lines, drop_carried_words
+from teille_douce.tei import strip_residual_hyphens
 
 
 def test_basic_join():

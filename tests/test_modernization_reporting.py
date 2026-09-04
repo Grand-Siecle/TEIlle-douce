@@ -13,9 +13,9 @@
 import pytest
 from lxml import etree
 
-from src import modernize as modernize_mod
-from src.body import builder
-from src.tei import TEI
+from teille_douce import modernize as modernize_mod
+from teille_douce.body import builder
+from teille_douce.tei import TEI
 
 
 def qlocal(el):

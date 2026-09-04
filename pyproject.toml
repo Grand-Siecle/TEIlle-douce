@@ -1,9 +1,81 @@
-# Pas de table [project] ici : le depot s'execute (`python3 main.py`), il
-# ne s'installe pas — config.py et main.py vivent a la racine, hors de
-# tout paquet. En declarer une ferait croire le contraire a l'outillage
-# (uv, pip install -e .), qui construirait une roue publiant `metadata`,
-# `utils` et `lang` au premier niveau de site-packages. La version de
-# Python exigee est dans requirements.txt, la ou pip la lit vraiment.
+[build-system]
+# 77 et non 68 : la licence est declaree en chaine SPDX et
+# `license-files` est une cle de premier niveau — PEP 639, que
+# setuptools n'accepte qu'a partir de 77. En dessous, un
+# `pip install --no-build-isolation -e .` echoue sur une erreur
+# de schema difficile a lire.
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "teille-douce"
+description = "Convert ALTO XML from OCR/HTR into TEI P5 with the SegmOnto taxonomy"
+readme = "README.md"
+license = "AGPL-3.0-or-later"
+license-files = ["LICENSE"]
+requires-python = ">=3.12"
+dynamic = ["version"]
+
+# Le socle du pipeline. Python 3.12 minimum : lingua-language-detector 2.2
+# exige >=3.12 et pandas 3.0 >=3.11 (la CI epingle 3.12 pour cette raison).
+#
+# lingua est epingle a l'exact : la detection de langue CHANGE de resultat
+# d'une version mineure a l'autre (constate de 2.1 a 2.2), et le test E2E
+# compare le TEI produit au golden caractere par caractere — un run
+# reproductible ne doit pas dependre de la date d'installation.
+# Les autres bornes arretent la majeure suivante ; httpx est en 0.x, ou
+# la rupture se joue sur la mineure.
+dependencies = [
+    "lxml>=6.0,<7",
+    "pandas>=3.0,<4",
+    "rich>=14.0,<15",
+    "lingua-language-detector==2.2.0",
+    "httpx>=0.28,<0.29",
+]
+
+[project.optional-dependencies]
+# Ce que la CI installe : le socle + de quoi lancer la suite. Ni modeles
+# NER ni services : la suite par defaut tourne sans reseau.
+#
+# SaxonC-HE : moteur XSLT 2.0 sans JVM. Necessaire pour compiler l'ODD
+# (scripts/build_odd.py) et pour appliquer le Schematron qui en derive --
+# la TEI le produit en queryBinding="xslt2", que lxml ne sait pas executer.
+# La validation RelaxNG contre schema/teille-douce.rng, elle, n'en depend pas.
+dev = [
+    "pytest>=9.0,<10",
+    "coverage>=7.15,<8",
+    "saxonche>=13,<14",
+]
+# Plusieurs Go de roues et de modeles, tenus a l'ecart du socle : la suite
+# par defaut tourne sans eux (imports paresseux dans ner_models.py, import
+# garde dans ner_detect.py).
+#
+# huggingface_hub est importe directement par ner_models.py pour resoudre
+# les instantanes de modeles : il arrivait en dependance transitive, donc
+# non declare et libre de disparaitre a la prochaine resolution.
+ner = [
+    "transformers>=4.57,<5",
+    "torch>=2.10,<3",
+    "gliner>=0.2.25,<0.3",
+    "flair>=0.15,<0.16",
+    "huggingface_hub>=0.36,<1",
+]
+
+[project.scripts]
+teille-douce = "teille_douce.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/rayondemiel/TEIlle-douce"
+
+[tool.setuptools.dynamic]
+version = {attr = "teille_douce.__version__"}
+
+# Un seul paquet de premier niveau, et il est distinctif. C'est ce qui rend
+# la table [project] ci-dessus possible : les sous-paquets s'appelaient
+# `metadata`, `utils` et `lang`, que la decouverte automatique aurait
+# publies a la racine de site-packages.
+[tool.setuptools.packages.find]
+include = ["teille_douce*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -15,7 +87,7 @@ markers = [
 ]
 
 [tool.coverage.run]
-source = ["src", "main", "config", "scripts"]
+source = ["teille_douce", "main", "scripts"]
 # build_odd.py pilote une chaine externe -- telechargements, XSLT Saxon,
 # boite a outils TEI -- et ne peut pas s'executer dans la suite : 118 de
 # ses 161 instructions sont hors de portee ici. Seul son helper pur

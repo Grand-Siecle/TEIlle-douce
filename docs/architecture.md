@@ -16,7 +16,7 @@ responsible for each part of it.
 ## The shape of a run
 
 ```
-config.py ──────────────► main.py
+teille_douce/config.py ──► teille_douce/cli/
                              │
                     OCR/ ────┤ expand_archives()      ZIPs → directories
                              │ load_metadata()        the two CSVs, once
@@ -40,7 +40,7 @@ happens *inside* a document, at page level.
 
 ## Per-document sequence
 
-`main._process_document()`, in order:
+`teille_douce.cli.run._process_document()`, in order:
 
 | # | Call | Produces |
 |---|---|---|
@@ -80,14 +80,17 @@ service is unreachable. Everything else always runs.
 ## Module map
 
 ```
-config.py                    Settings only: paths, versions, services, thresholds
-main.py                      CLI, run orchestration, per-document isolation
+main.py                      Compatibility launcher over teille_douce.cli
 scripts/
   validate_tei.py            Output validation (known failure modes + ODD)
   build_odd.py               Compiles schema/teille-douce.odd → rng, sch, svrl.xsl
   rng_simplify.py            RELAX NG §4.19/§4.20 reductions (see schema/README.md)
   build_test_fixture.py      Regenerates tests/fixtures/ from the private corpus
-src/
+teille_douce/
+  config.py                  Settings only: paths, versions, services, thresholds
+  cli/
+    app.py                   Argument parser and subcommand dispatch
+    run.py                   Run orchestration, per-document isolation
   tei.py                     The TEI class — facade carrying document state
   constants.py               Namespaces, SegmOnto taxonomies, POS tagsets
   dates.py                   Reading the dates the corpus writes (CSV cells, text)
@@ -135,8 +138,7 @@ src/
     xml.py                   XML writing, content_root(), xml_id_safe()
 ```
 
-Around 14,800 lines under `src/`, `scripts/`, `main.py` and `config.py`; 12,400
-lines of tests.
+Around 14,800 lines under `teille_douce/` and `scripts/`; 12,400 lines of tests.
 
 Each module is self-contained enough to be imported on its own, which is what
 the test suite does throughout.
@@ -152,7 +154,7 @@ than vanishing, so the shape of the header does not depend on how complete a
 catalogue row happens to be — and a consumer can rely on the element being
 there.
 
-`prose.py` generates the `<editorialDecl>` prose from `config.py`. The
+`prose.py` generates the `<editorialDecl>` prose from `teille_douce/config.py`. The
 modernization rejection threshold, for instance, is stated in the header by
 reading the constant, not by restating the number — the two used to be separate
 and were free to diverge.
@@ -327,9 +329,9 @@ NER disabled never pays for them.
 
 ## Cross-cutting concerns
 
-**`src/tei.py`** is the facade. It carries the document state — root, filepaths,
+**`teille_douce/tei.py`** is the facade. It carries the document state — root, filepaths,
 metadata, `segmonto_zones`, `lang_stats`, `skipped_pages` — and exposes one
-method per phase. `main.py` never reaches into a submodule.
+method per phase. `teille_douce/cli/run.py` never reaches into a submodule.
 
 **Identifiers.** `uuid5`, seeded from the document and the element, prefixed by
 type (`zone_`, `zoneLine_`, `line_`, `path_`, `s_`, `pers-`, `place-`). Two
@@ -355,17 +357,17 @@ not be indistinguishable from a document that simply had nothing to enrich.
 ## Using modules independently
 
 ```python
-from src import TEI
-from src.teiheader import build_header
-from src.sourcedoc import build_sourcedoc
-from src.body import build_body, Text, link_notes_to_lines
-from src.metadata import load_metadata, load_person_database, IIIFMapping
-from src.enrichment import enrich_body
-from src.enrichment.ner_pipeline import run_ner
-from src.lang import get_detector, build_langusage
-from src.utils import Files, write_xml
+from teille_douce import TEI
+from teille_douce.teiheader import build_header
+from teille_douce.sourcedoc import build_sourcedoc
+from teille_douce.body import build_body, Text, link_notes_to_lines
+from teille_douce.metadata import load_metadata, load_person_database, IIIFMapping
+from teille_douce.enrichment import enrich_body
+from teille_douce.enrichment.ner_pipeline import run_ner
+from teille_douce.lang import get_detector, build_langusage
+from teille_douce.utils import Files, write_xml
 ```
 
-`config.py` is imported by the modules that need settings, so overriding a
+`teille_douce/config.py` is imported by the modules that need settings, so overriding a
 setting means setting the environment variable before the import — which is what
 `tests/test_config_env.py` does.

@@ -7,8 +7,8 @@
 #
 # Ces tests croisent donc l'ODD avec ses trois sources de verite : les
 # elements que le pipeline construit vraiment (releves dans le golden), la
-# taxonomie SegmOnto de src/constants.py, et la table d'entites de
-# src/enrichment/entity_schema.py.
+# taxonomie SegmOnto de teille_douce/constants.py, et la table d'entites de
+# teille_douce/enrichment/entity_schema.py.
 #
 # Run: venv/bin/python -m pytest tests/test_odd.py -q
 import re
@@ -17,8 +17,8 @@ from pathlib import Path
 import pytest
 from lxml import etree
 
-from src.constants import SEGMONTO_LINES, SEGMONTO_ZONES
-from src.enrichment.entity_schema import NER_ENTITY_TYPES
+from teille_douce.constants import SEGMONTO_LINES, SEGMONTO_ZONES
+from teille_douce.enrichment.entity_schema import NER_ENTITY_TYPES
 
 RACINE = Path(__file__).resolve().parent.parent
 ODD = RACINE / "schema" / "teille-douce.odd"
@@ -41,14 +41,14 @@ def _inventaire_declare(odd):
 
 
 def elements_que_le_code_peut_emettre():
-    """Tout nom d'element que `src/` peut poser dans un document.
+    """Tout nom d'element que `teille_douce/` peut poser dans un document.
 
     Le premier inventaire etait releve dans le golden, produit avec les
     trois phases facultatives coupees : quinze elements manquaient, et le
     schema rejetait toute sortie reellement annotee. Les sources sont donc
     prises la ou elles decident, pas la ou elles se voient :
 
-    - un motif large sur `src/` — le nom d'element est le second argument
+    - un motif large sur `teille_douce/` — le nom d'element est le second argument
       des constructeurs comme des helpers (`_sub`, `_find_or_create`) ;
     - la table d'entites, dont plusieurs cles portent des noms d'elements
       (`tei_list`, `tei_parent`… : c'est la que vivent standOff et
@@ -57,7 +57,7 @@ def elements_que_le_code_peut_emettre():
       d'elements (`normalization`, `segmentation`) ;
     - le golden, pour ce qu'un helper construit sans litteral lisible.
     """
-    from src.teiheader.prose import EDITORIAL_DECLARATIONS
+    from teille_douce.teiheader.prose import EDITORIAL_DECLARATIONS
 
     noms = set(EDITORIAL_DECLARATIONS)
     for entree in NER_ENTITY_TYPES.values():
@@ -66,11 +66,11 @@ def elements_que_le_code_peut_emettre():
                 noms.add(valeur)
 
     motif = re.compile(r'\(\s*[A-Za-z_.\[\]"\']+\s*,\s*"([A-Za-z]+)"')
-    for source in (RACINE / "src").rglob("*.py"):
+    for source in (RACINE / "teille_douce").rglob("*.py"):
         noms.update(motif.findall(source.read_text(encoding="utf-8")))
     noms.update(re.findall(r'etree\.Element\(\s*"([A-Za-z]+)"',
                            "\n".join(f.read_text(encoding="utf-8")
-                                     for f in (RACINE / "src").rglob("*.py"))))
+                                     for f in (RACINE / "teille_douce").rglob("*.py"))))
 
     noms.update(etree.QName(e).localname
                 for e in etree.parse(str(GOLDEN)).getroot().iter()
@@ -138,7 +138,7 @@ def test_les_types_de_zone_couvrent_la_taxonomie_segmonto():
 
 
 def test_les_types_de_zone_declarent_les_replis_alto():
-    """Sans TAGREFS SegmOnto, src/sourcedoc/attributes.py reprend le nom de
+    """Sans TAGREFS SegmOnto, teille_douce/sourcedoc/attributes.py reprend le nom de
     l'element ALTO. Ces valeurs ne sont pas SegmOnto, et l'ODD doit les
     declarer plutot que de les faire echouer."""
     valeurs = _valist(etree.parse(str(ODD)), "zone", "type")
@@ -235,7 +235,7 @@ def test_l_inventaire_couvre_les_phases_facultatives():
     sont les sources qui le disent sans faire tourner la chaine."""
     declares = _inventaire_declare(etree.parse(str(ODD)))
 
-    from src.teiheader.prose import EDITORIAL_DECLARATIONS
+    from teille_douce.teiheader.prose import EDITORIAL_DECLARATIONS
     attendus = set(EDITORIAL_DECLARATIONS)          # <normalization>, <segmentation>…
     for entree in NER_ENTITY_TYPES.values():
         for cle, valeur in entree.items():

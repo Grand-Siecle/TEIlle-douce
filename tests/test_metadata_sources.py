@@ -1,6 +1,6 @@
 # Run: venv/bin/python -m pytest tests/test_metadata_sources.py -q
 #
-# Targets: src/metadata/iiif.py (IIIFMapping) and src/metadata/csv_person.py
+# Targets: teille_douce/metadata/iiif.py (IIIFMapping) and teille_douce/metadata/csv_person.py
 # (PersonDatabase + module-level singleton helpers). All fixtures are
 # synthetic CSVs built under tmp_path - the real metadata_livre.csv /
 # metadata_personne.csv are gitignored and absent from a fresh clone, so
@@ -9,10 +9,10 @@ from pathlib import Path
 
 import pytest
 
-import config
-from src.metadata.iiif import IIIFMapping
-import src.metadata.csv_person as csv_person_module
-from src.metadata.csv_person import (
+import teille_douce.config as config
+from teille_douce.metadata.iiif import IIIFMapping
+import teille_douce.metadata.csv_person as csv_person_module
+from teille_douce.metadata.csv_person import (
     PersonDatabase,
     load_person_database,
     get_person_database,
@@ -23,7 +23,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 
 @pytest.fixture(autouse=True)
 def reset_person_db_singleton():
-    """src.metadata.csv_person._person_db is a module-level singleton.
+    """teille_douce.metadata.csv_person._person_db is a module-level singleton.
     Reset it before AND after every test in this file so we never leak
     state into (or pick up state left by) other test modules such as
     tests/test_person_ids.py, which loads the real METADATA_PERSON_CSV
@@ -197,7 +197,7 @@ def test_detect_csv_skips_candidate_with_too_few_columns(tmp_path):
 
 
 def test_detect_csv_skips_candidate_larger_than_max_size(tmp_path, monkeypatch):
-    import src.metadata.iiif as iiif_module
+    import teille_douce.metadata.iiif as iiif_module
 
     alto_files = _alto_files("f1.xml")
     rows = [("url", "src", "f1.xml")] * 3
@@ -233,10 +233,10 @@ def test_iiif_uri_carries_no_unread_url_building_keys():
         (REPO_ROOT / rel).read_text(encoding="utf-8")
         for rel in (
             "main.py",
-            "src/tei.py",
-            "src/sourcedoc/builder.py",
-            "src/sourcedoc/attributes.py",
-            "src/sourcedoc/elements.py",
+            "teille_douce/tei.py",
+            "teille_douce/sourcedoc/builder.py",
+            "teille_douce/sourcedoc/attributes.py",
+            "teille_douce/sourcedoc/elements.py",
         )
     )
     mortes = {"scheme", "server", "manifest_prefix", "manifest_suffix", "image_prefix"}
@@ -255,7 +255,7 @@ def test_configured_image_base_survives_a_non_gallica_manifest():
     deduire la base d'images ; la valeur configuree doit alors survivre
     au lieu d'etre ecrasee par None (et de faire perdre @source a
     toutes les pages)."""
-    import main
+    import teille_douce.cli.run as main
 
     base = "https://iiif.example.org/iiif/2/mon-volume"
     with pytest.MonkeyPatch.context() as mp:

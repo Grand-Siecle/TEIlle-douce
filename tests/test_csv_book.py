@@ -1,6 +1,6 @@
 # Run: venv/bin/python -m pytest tests/test_csv_book.py -q
 #
-# Characterization tests for src/metadata/csv_book.py, written ahead of the
+# Characterization tests for teille_douce/metadata/csv_book.py, written ahead of the
 # planned rewrite of override_teiheader_from_csv (docs/rapport_audit.md
 # §4.4: 470 lines, ~15 copy-pasted "if person.get(X): note..." blocks, 4
 # nested functions, to be replaced by a field -> note-type mapping table).
@@ -18,10 +18,10 @@ import pandas as pd
 import pytest
 from lxml import etree
 
-from src.metadata import csv_person
-from src.metadata.csv_person import load_person_database
-from src.dates import date_attributes, normalize_date
-from src.metadata.csv_book import (
+from teille_douce.metadata import csv_person
+from teille_douce.metadata.csv_person import load_person_database
+from teille_douce.dates import date_attributes, normalize_date
+from teille_douce.metadata.csv_book import (
     load_metadata,
     find_metadata_row,
     build_metadata_dict,
@@ -77,7 +77,7 @@ def _write_person_csv(tmp_path, rows, name="metadata_personne.csv"):
 
 
 def _build_default_root(document="TESTDOC0001"):
-    """Minimal TEI header skeleton mirroring src/teiheader/default.py's
+    """Minimal TEI header skeleton mirroring teille_douce/teiheader/default.py's
     DefaultTree output closely enough to exercise every branch of
     override_teiheader_from_csv (same element names, same nesting, same
     placeholder text, same msIdentifier child order: country, settlement,
@@ -653,7 +653,7 @@ def test_extra_repository_and_cote_siblings_precede_altidentifier():
 
 def test_add_life_event_normalizes_date_and_builds_a_geonames_uri():
     """Audit 5.6 : un seul encodage — @when ISO, @ref en URI complete."""
-    from src.metadata.csv_book import _add_life_event
+    from teille_douce.metadata.csv_book import _add_life_event
 
     parent = etree.Element("person")
     birth = _add_life_event(parent, "birth", "1590/05/22", "Paris", "2988507")
@@ -664,7 +664,7 @@ def test_add_life_event_normalizes_date_and_builds_a_geonames_uri():
 
 
 def test_add_life_event_partial_and_empty_inputs():
-    from src.metadata.csv_book import _add_life_event
+    from teille_douce.metadata.csv_book import _add_life_event
 
     parent = etree.Element("person")
     # sans identifiant de lieu : pas de @ref invente
@@ -685,7 +685,7 @@ def test_add_life_event_partial_and_empty_inputs():
 def test_tei_version_number_keeps_the_numeric_prefix():
     """TEI exige un numero de version sur <application> ; la convention du
     corpus ("4.3.x") le rendait invalide."""
-    from src.teiheader.default import tei_version_number
+    from teille_douce.teiheader.default import tei_version_number
 
     assert tei_version_number("4.3.x") == "4.3"
     assert tei_version_number("8.0.x") == "8.0"
@@ -701,7 +701,7 @@ def test_csv_languages_survive_when_nothing_is_detected():
     ecrase par les langues DETECTEES quand il y en a — mais quand la
     detection ne produit rien, la declaration du catalogue survit, ce qui
     vaut mieux qu'un <langUsage> vide."""
-    from src.lang import build_langusage
+    from teille_douce.lang import build_langusage
 
     root = _build_default_root()
     override_teiheader_from_csv(root, {"langues": "français|latin"}, "TESTDOC0001")
@@ -764,7 +764,7 @@ def test_approximate_dates_keep_their_year_and_say_so():
 def test_unusable_date_is_kept_as_text_not_dropped():
     """Une date que le pipeline ne sait pas lire ne doit ni disparaitre ni
     devenir un @when invalide : elle reste en texte."""
-    from src.metadata.csv_book import _add_life_event
+    from teille_douce.metadata.csv_book import _add_life_event
 
     parent = etree.Element("person")
     birth = _add_life_event(parent, "birth", "date inconnue", None, None)

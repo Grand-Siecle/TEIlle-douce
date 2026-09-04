@@ -1,5 +1,5 @@
 """
-Tests cibles pour la fragmentation de phrases dans src/body/builder.py.
+Tests cibles pour la fragmentation de phrases dans teille_douce/body/builder.py.
 
 Perimetre EXCLUSIF : _walk_sentence_children, _parse_line_groups,
 _append_tokens_with_foreign, _rebuild_with_modernization, ainsi que les
@@ -16,8 +16,8 @@ _set_fragment_links().
 
 from lxml import etree
 
-from src.constants import NS_XML, XML_ID
-from src.body.builder import (
+from teille_douce.constants import NS_XML, XML_ID
+from teille_douce.body.builder import (
     _SentenceSegment,
     _LineGroup,
     _walk_sentence_children,

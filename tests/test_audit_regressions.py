@@ -12,9 +12,9 @@ son test couvrent la brique en vue de son cablage.
 
 from lxml import etree
 
-from src.constants import NS_ALTO, SEGMONTO_ZONES, XML_ID
-from src.metadata.csv_person import CSV_DELIMITER, PersonDatabase
-from src.sourcedoc.elements import SurfaceTree
+from teille_douce.constants import NS_ALTO, SEGMONTO_ZONES, XML_ID
+from teille_douce.metadata.csv_person import CSV_DELIMITER, PersonDatabase
+from teille_douce.sourcedoc.elements import SurfaceTree
 
 
 def qlocal(el):
@@ -177,11 +177,11 @@ def test_ner_and_csv_keep_one_container_each(tmp_path, monkeypatch):
     ajoutait un second a cote — tout consommateur lisant
     .//particDesc/listPerson ne voyait alors qu'une moitie des personnes.
     """
-    from src.enrichment.ner_resolve import ResolvedEntity, inject_header_entities
-    from src.metadata import csv_person
-    from src.metadata.csv_book import override_teiheader_from_csv
-    from src.metadata.csv_person import load_person_database
-    from src.enrichment.entity_schema import NER_ENTITY_TYPES
+    from teille_douce.enrichment.ner_resolve import ResolvedEntity, inject_header_entities
+    from teille_douce.metadata import csv_person
+    from teille_douce.metadata.csv_book import override_teiheader_from_csv
+    from teille_douce.metadata.csv_person import load_person_database
+    from teille_douce.enrichment.entity_schema import NER_ENTITY_TYPES
 
     # arbre nu, comme celui que le pipeline construit en memoire
     root = etree.Element("TEI", nsmap={None: "http://www.tei-c.org/ns/1.0"})

@@ -9,7 +9,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from lxml import etree
-from src.sourcedoc.attributes import Attributes, format_alto_points
+from teille_douce.sourcedoc.attributes import Attributes, format_alto_points
 
 ALTO_TMPL = """<alto xmlns="http://www.loc.gov/standards/alto/ns-v4#">
   <Layout><Page WIDTH="1000" HEIGHT="1500">

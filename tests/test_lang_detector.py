@@ -1,9 +1,9 @@
-# Tests unitaires de src/lang/detector.py -- chemins d'orchestration,
+# Tests unitaires de teille_douce/lang/detector.py -- chemins d'orchestration,
 # sans charger les modeles lingua (internes bouchonnes par monkeypatch).
 # La detection reelle est couverte par le mode e2e court.
 #
 # Run: venv/bin/python -m pytest tests/test_lang_detector.py -q
-from src.lang.detector import LinguaDetector
+from teille_douce.lang.detector import LinguaDetector
 
 TEXTE = "un texte suffisamment long pour depasser le seuil minimal de detection"
 
@@ -86,7 +86,7 @@ def test_detect_foreign_segments_passes_given_primary_through(monkeypatch):
 
 from lxml import etree
 
-from src.lang.header import build_langusage
+from teille_douce.lang.header import build_langusage
 
 
 def _entete():
@@ -195,7 +195,7 @@ def test_without_any_xml_lang_the_detector_stats_are_the_fallback():
 def test_the_language_volumes_add_up_to_the_extent():
     """Deux chiffres dans le meme header ne peuvent pas etre tous les deux
     la longueur du texte : la somme des @n doit faire l'<extent>."""
-    from src.volumetry import language_volume, text_volume
+    from teille_douce.volumetry import language_volume, text_volume
 
     root = _document(
         '<ab xml:lang="fra"><lb corresp="#l1"/>quatre mots en francais</ab>'

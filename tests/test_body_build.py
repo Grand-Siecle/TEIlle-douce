@@ -1,7 +1,7 @@
 # Run: venv/bin/python -m pytest tests/test_body_build.py -q
 """
-Tests unitaires pour src/body/builder.py::build_body et
-_apply_language_detection, ainsi que src/body/text.py::Text._extract_lines.
+Tests unitaires pour teille_douce/body/builder.py::build_body et
+_apply_language_detection, ainsi que teille_douce/body/text.py::Text._extract_lines.
 
 Perimetre strict : uniquement ces fonctions. Les autres fonctions de
 builder.py (_walk_sentence_children, _parse_line_groups,
@@ -19,8 +19,8 @@ lingua reel est remplace par un objet factice (_StubDetector).
 import pytest
 from lxml import etree
 
-from src.body.builder import build_body, _apply_language_detection, XML_LANG
-from src.body.text import Text, Line
+from teille_douce.body.builder import build_body, _apply_language_detection, XML_LANG
+from teille_douce.body.text import Text, Line
 
 
 def qlocal(el):
@@ -680,12 +680,12 @@ def test_a_reentered_container_is_registered_once(monkeypatch):
     """Une legende de figure reprise apres une interruption ne doit pas
     etre enregistree deux fois : la detection de langue tournerait deux
     fois sur le meme element, avec une liste de lignes tronquee."""
-    import src.body.builder as builder_mod
+    import teille_douce.body.builder as builder_mod
 
     detecteur = _StubDetectorCompteur()
     monkeypatch.setattr(builder_mod, "get_detector", lambda: detecteur)
 
-    from src.body.text import Graphic
+    from teille_douce.body.text import Graphic
     graphics = [Graphic("zone_fig", "GraphicZone", "https://iiif/crop.jpg", "p1", "1", 0)]
     lines = [
         make_line("l1", "GraphicZone", "zone_fig", "p1", text="legende 1"),

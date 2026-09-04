@@ -28,8 +28,8 @@ anchor, nor a machine-generated entity carrying no indication of certainty.
    elements the pipeline actually emits. Anything else is an error — either the
    pipeline gained an element and the ODD has not caught up, or it is a stray.
 2. **Closed value lists.** `zone/@type` mirrors the SegmOnto taxonomy in
-   `src/constants.py`; `rs/@type` mirrors the entity table in
-   `src/enrichment/entity_schema.py`.
+   `teille_douce/constants.py`; `rs/@type` mirrors the entity table in
+   `teille_douce/enrichment/entity_schema.py`.
 3. **Eleven Schematron rules** for what a content model cannot express.
 
 Both validations remain available, and they answer different questions. In

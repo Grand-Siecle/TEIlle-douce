@@ -1,11 +1,11 @@
 # Characterization tests for the modernization entry points in
-# src/body/builder.py: apply_modernization, apply_modernization_enriched,
+# teille_douce/body/builder.py: apply_modernization, apply_modernization_enriched,
 # _wrap_plain_lines, _append_choice.
 #
 # Scope: entry points only. build_body, _apply_language_detection,
 # _parse_line_groups, _walk_sentence_children, _rebuild_with_modernization,
 # _append_tokens_with_foreign, _insert_foreign_inline, _build_offset_to_line,
-# _splice_lb_tail and src/enrichment/reconstructor.py are covered by other
+# _splice_lb_tail and teille_douce/enrichment/reconstructor.py are covered by other
 # test files written in parallel; not touched here.
 #
 # No network calls: the real modernization API runs on localhost:8011 and
@@ -25,8 +25,8 @@ from unittest.mock import patch
 
 from lxml import etree
 
-from src.body import builder
-from src.body.builder import (
+from teille_douce.body import builder
+from teille_douce.body.builder import (
     apply_modernization,
     apply_modernization_enriched,
     _append_choice,
@@ -347,7 +347,7 @@ def test_grading_uses_the_api_delta_not_the_diplomatic_line():
     decision et la note se prennent entre ce qui est ENVOYE et ce qui
     REVIENT.
     """
-    from src.modernize import dehyphenate_lines, grade_readings
+    from teille_douce.modernize import dehyphenate_lines, grade_readings
 
     envoye, portes = dehyphenate_lines(
         ["Le vray et le souv¬", "erain Arbitre: et le reste"]
@@ -362,7 +362,7 @@ def test_reg_cert_grades_with_the_similarity_of_the_reading():
     legere d'une reecriture lourde. Les seuils sont cales sur la
     distribution reelle du corpus (similarite 0.81-1.00, mediane 0.96),
     donc sur des lignes entieres, pas sur quelques mots."""
-    from src.modernize import grade_readings
+    from teille_douce.modernize import grade_readings
 
     ligne = ("Des raisons qui nous obligent a sanctifier le jour du Seigneur "
              "et a le passer en oeuvres de pieté")
@@ -379,7 +379,7 @@ def test_reg_cert_grades_with_the_similarity_of_the_reading():
 def test_reg_carries_the_grade_decided_upstream():
     """L'applier ecrit ce qu'on lui donne : il ne recalcule aucun score
     (il n'a pas la bonne paire de chaines sous la main)."""
-    from src.modernize import Reading
+    from teille_douce.modernize import Reading
 
     root = etree.fromstring(
         '<TEI><text><body><ab><lb corresp="l1"/>Texte original</ab></body></text></TEI>'
@@ -394,8 +394,8 @@ def test_reg_carries_the_grade_decided_upstream():
 def test_modernization_responsibility_is_declared_and_idempotent():
     """Le @resp des lectures doit resoudre : le respStmt est declare dans
     le header, et un second passage ne le duplique pas."""
-    from src.tei import declare_modernization_responsibility
-    from src.constants import XML_ID
+    from teille_douce.tei import declare_modernization_responsibility
+    from teille_douce.constants import XML_ID
 
     root = etree.fromstring(
         '<TEI><teiHeader><fileDesc><titleStmt><title>T</title></titleStmt>'
@@ -415,7 +415,7 @@ def test_a_line_group_without_lb_is_reported_not_silently_skipped(caplog):
     apparier — il traverserait l'API pour rien. build_body n'en produit
     pas aujourd'hui ; le jour ou il en produirait, ce serait un trou
     silencieux."""
-    from src.body.builder import _parse_line_groups
+    from teille_douce.body.builder import _parse_line_groups
 
     container = etree.fromstring(
         b'<ab><s><w>texte</w><w>avant</w><lb corresp="#l1"/><w>apres</w></s></ab>'
@@ -432,7 +432,7 @@ def test_a_container_already_modernized_is_not_rebuilt_without_its_readings():
     """_parse_line_groups ne collecte que <s> et <lb> : un second passage
     supprimerait tous les <choice> ecrits au premier, <orig> et <reg>
     compris, pour ne garder que ce que les groupes portent."""
-    from src.body.builder import _rebuild_with_modernization, _parse_line_groups
+    from teille_douce.body.builder import _rebuild_with_modernization, _parse_line_groups
 
     container = etree.fromstring(
         b'<ab><lb corresp="#l1"/><choice><orig><s><w>Roy</w></s></orig>'

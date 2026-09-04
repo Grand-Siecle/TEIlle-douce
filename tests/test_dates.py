@@ -9,7 +9,7 @@ verifie de quel cote de cette ligne tombe une valeur.
 """
 import pytest
 
-from src.dates import date_attributes, roman_year, text_date_attributes
+from teille_douce.dates import date_attributes, roman_year, text_date_attributes
 
 
 # =============================================================================
