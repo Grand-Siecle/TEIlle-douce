@@ -155,7 +155,8 @@ _SETTINGS = (
     _Declaration("pyhellen_url", "TDOUCE_PYHELLEN_URL", "services.pyhellen",
                  _as_str, config.DEFAULT_PYHELLEN_URL),
     _Declaration("pyhellen_timeout", "TDOUCE_PYHELLEN_TIMEOUT",
-                 "services.pyhellen_timeout", _as_number(minimum=0.1), 120.0),
+                 "services.pyhellen_timeout", _as_number(minimum=0.1),
+                 config.DEFAULT_PYHELLEN_TIMEOUT),
     _Declaration("modernize_timeout", "TDOUCE_MODERNIZE_TIMEOUT",
                  "services.modernize_timeout", _as_number(minimum=0.1), 300.0),
     _Declaration("health_timeout", "TDOUCE_HEALTH_TIMEOUT",
@@ -419,7 +420,15 @@ def _resolve_modernize_api(flags, env, from_file, config_path, rejected):
                          config_path, rejected)
     resolved = {}
     for ident, default in config.DEFAULT_MODERNIZE_API.items():
-        specific = env.get(f"{_MODERNIZE_URL_ENV}_{ident.upper()}")
+        # Through _resolve like everything else: read raw, a stray space
+        # became part of the URL and the service was reported unreachable
+        # with nothing naming the variable.
+        per_language = _Declaration(
+            f"modernize_url_{ident}", f"{_MODERNIZE_URL_ENV}_{ident.upper()}",
+            None, _as_str, None,
+        )
+        specific, _ = _resolve(per_language, flags, env, from_file,
+                               config_path, rejected)
         resolved[ident] = specific or shared or default
     return resolved
 

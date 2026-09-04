@@ -57,7 +57,10 @@ def _run_log_path(base_path, now):
 
 def configure_logging(settings, now=None):
     """Install this run's handlers. Returns the run's log file, or None."""
-    global RUN_LOG_FILE
+    global RUN_LOG_FILE, _QUIET
+
+    _QUIET = (not settings.debug
+              and getattr(logging, settings.log_level) >= logging.ERROR)
 
     handlers = []
     RUN_LOG_FILE = (
@@ -108,6 +111,22 @@ from teille_douce.utils.files import parse_document_id
 
 
 console = Console()
+
+# Console verbosity, set by configure_logging(). `console.print` is not
+# routed through logging, so a level alone silenced nothing: `-q` printed
+# every per-document line and both progress bars, and was indistinguishable
+# from a run without it.
+_QUIET = False
+
+
+def say(message):
+    """Print an informational line, unless the run was asked to be quiet.
+
+    Warnings, failures and the end-of-run summary are printed directly and
+    are never suppressed: -q asks for less chatter, not for less truth.
+    """
+    if not _QUIET:
+        console.print(message)
 
 
 # =============================================================================
@@ -183,10 +202,10 @@ def expand_archives(ocr_dir, extract=True):
         target = ocr_dir / zip_path.stem
         if not target.exists() and not extract:
             # --dry-run: say what would happen, unpack nothing.
-            console.print(f"[dim]Would extract: {escape(zip_path.name)}[/dim]")
+            say(f"[dim]Would extract: {escape(zip_path.name)}[/dim]")
             continue
         if not target.exists():
-            console.print(f"[dim]Extracting: {escape(zip_path.name)} -> {escape(target.name)}/[/dim]")
+            say(f"[dim]Extracting: {escape(zip_path.name)} -> {escape(target.name)}/[/dim]")
             # Broad on purpose: zipfile surfaces corruption as BadZipFile,
             # zlib.error, RuntimeError or NotImplementedError depending on
             # where it hits; whatever the reason, the run must go on.
@@ -317,7 +336,7 @@ def _process_document(doc_name, filepaths, doc_dir, df_meta, config,
     """
     settings = get_settings()
     t0 = perf_counter()
-    console.print(f"\n[bold cyan]-> {escape(doc_name)}[/bold cyan]")
+    say(f"\n[bold cyan]-> {escape(doc_name)}[/bold cyan]")
 
     # Initialize TEI tree
     tree = TEI(doc_name, filepaths, doc_dir)
@@ -382,7 +401,7 @@ def _process_document(doc_name, filepaths, doc_dir, df_meta, config,
 
     if tree.lang_stats:
         langs = [f"{k}:{v}" for k, v in sorted(tree.lang_stats.items(), key=lambda x: -x[1])[:4]]
-        console.print(f"  [dim]Languages: {', '.join(langs)}[/dim]")
+        say(f"  [dim]Languages: {', '.join(langs)}[/dim]")
 
     # Step 2: Extract line data for modernization (before enrichment modifies DOM)
     line_data = None
@@ -402,7 +421,7 @@ def _process_document(doc_name, filepaths, doc_dir, df_meta, config,
         progress.update(task_enrich, visible=False)
 
         if enrich_stats and enrich_stats.get("containers_enriched", 0) > 0:
-            console.print(
+            say(
                 f"  [dim]Annotation: {enrich_stats['containers_enriched']} containers, "
                 f"{enrich_stats['tokens_total']} tokens, "
                 f"{enrich_stats['sentences_total']} sentences[/dim]"
@@ -440,7 +459,7 @@ def _process_document(doc_name, filepaths, doc_dir, df_meta, config,
         progress.update(task_mod, visible=False)
 
         if mod_stats.get("lines_modernized", 0) > 0:
-            console.print(
+            say(
                 f"  [dim]Modernisation: {mod_stats['lines_modernized']} lines[/dim]"
             )
         # Same hole as enrichment had (audit 2.7): a document whose
@@ -500,7 +519,7 @@ def _process_document(doc_name, filepaths, doc_dir, df_meta, config,
     write_xml(tree.root, out_path)
 
     dt = perf_counter() - t0
-    console.print(f"[green]OK[/green] Written: {out_path} [dim]({dt:.2f}s)[/dim]")
+    say(f"[green]OK[/green] Written: {out_path} [dim]({dt:.2f}s)[/dim]")
 
     progress.update(task_pages, visible=False)
 
@@ -615,7 +634,7 @@ def execute(args):
     # Load person metadata database
     person_db = load_person_database(settings.persons_csv)
     if person_db:
-        console.print(f"[dim]Loaded {len(person_db)} persons from {settings.persons_csv}[/dim]")
+        say(f"[dim]Loaded {len(person_db)} persons from {settings.persons_csv}[/dim]")
     else:
         console.print(
             f"[yellow]Warning: person metadata not loaded ({settings.persons_csv}) "
@@ -632,7 +651,7 @@ def execute(args):
         from teille_douce.modernize import check_api as check_modernize_api
         if no_probe or check_modernize_api():
             do_modernize = True
-            console.print("[green]Modernization API (VieuxParler) available.[/green]")
+            say("[green]Modernization API (VieuxParler) available.[/green]")
         else:
             unavailable.append("VieuxParler (modernization)")
             console.print("[yellow]Warning: Modernization API unreachable — continuing without modernization.[/yellow]")
@@ -643,7 +662,7 @@ def execute(args):
         from teille_douce.enrichment.client import check_server as check_enrichment_api
         if no_probe or check_enrichment_api():
             do_enrich = True
-            console.print("[green]Enrichment API (PyHellen) available.[/green]")
+            say("[green]Enrichment API (PyHellen) available.[/green]")
         else:
             unavailable.append("PyHellen (enrichment)")
             console.print("[yellow]Warning: Enrichment API unreachable — continuing without linguistic annotation.[/yellow]")
@@ -675,12 +694,17 @@ def execute(args):
         TextColumn("[green]{task.percentage:>3.0f}%"),
         TimeElapsedColumn(),
         console=console,
+        # A progress bar is chatter, and -q asks for none.
+        disable=_QUIET,
     ) as progress:
 
         task_docs = progress.add_task("Processing documents", total=len(docs))
 
         ok_docs = []
-        failed_docs = list(failed_archives)  # corrupt archives count as failures
+        # Corrupt archives belong in the summary and in the exit code, but
+        # not in the failure budget: seeding the list with them made
+        # --fail-fast stop after the first SUCCESSFUL document.
+        failed_docs = []
         for doc_name, filepaths, doc_dir in docs:
             try:
                 _process_document(
@@ -721,6 +745,7 @@ def execute(args):
                 break
 
     # Audit 2.10: end-of-run summary + non-zero exit code on failures
+    failed_docs = failed_docs + list(failed_archives)
     total = len(docs) + len(failed_archives)
     converted = f"{len(ok_docs)}/{total} documents converted"
     if skipped_existing:

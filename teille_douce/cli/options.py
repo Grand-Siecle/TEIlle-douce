@@ -31,8 +31,12 @@ _OPTION_FOR_SETTING = {
 
 
 def _at_least_one(raw):
-    """A count of failures starts at one: `--max-failures 0` stopped the
-    run after the first document, having converted it and failed nothing."""
+    """A count starts at one.
+
+    `--max-failures 0` stopped the run after the first document having
+    failed nothing, and `--limit -1` — a plausible "no limit" idiom —
+    silently dropped the last volume and exited 0.
+    """
     value = int(raw)
     if value < 1:
         raise argparse.ArgumentTypeError("must be at least 1")
@@ -72,8 +76,13 @@ def _phase_set(parser, raw):
     `none` are aliases, and naming no phase they cannot contradict a later
     `--no-X`. `--phases all --no-ner` is the same idiom as `--fast --enrich`.
     """
-    if raw in ("all", ""):
+    if raw == "all":
         return set(PHASES), set()
+    if not raw.strip():
+        # Set but empty: keep what the layers below decided, like every
+        # other setting. `--phases "$PHASES"` with PHASES unset must not
+        # turn everything back on.
+        parser.error("--phases was given an empty list")
     if raw == "none":
         return set(), set()
     names = {n.strip() for n in raw.split(",") if n.strip()}
@@ -138,7 +147,7 @@ def add_run_arguments(parser):
         help="drop volumes matching PATTERN, after selection (repeatable)",
     )
     selection.add_argument(
-        "--limit", type=int, metavar="N", default=none,
+        "--limit", type=_at_least_one, metavar="N", default=none,
         help="convert at most N of the selected volumes, in order",
     )
     resume = selection.add_mutually_exclusive_group()

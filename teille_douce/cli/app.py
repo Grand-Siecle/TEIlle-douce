@@ -104,7 +104,7 @@ def settings_from(args, env=None, parser=None):
         # asks for a quiet console; the debug setting also gates what goes
         # into the run log, which console verbosity has no business
         # touching.
-        if level == "DEBUG":
+        if level.upper() == "DEBUG":
             flags["debug"] = True
 
     try:
@@ -121,9 +121,16 @@ def settings_from(args, env=None, parser=None):
     # explicitly overrode would be answering a different question.
     typed = [r for r in settings.rejected if r.layer == "flag"]
     if typed:
-        parser.error("; ".join(
-            f"{options.option_for(r.name)}={r.raw!r} {r.reason}" for r in typed
-        ))
+        # One option can feed two settings (--concurrency does), and the
+        # reader does not need to be told twice.
+        seen, messages = set(), []
+        for rejection in typed:
+            message = (f"{options.option_for(rejection.name)}="
+                       f"{rejection.raw!r} {rejection.reason}")
+            if message not in seen:
+                seen.add(message)
+                messages.append(message)
+        parser.error("; ".join(messages))
 
     # Two answers a flag gives that no layer below it can express.
     if getattr(args, "no_log_file", False):

@@ -190,7 +190,7 @@ teille-douce run --fast --dry-run     # what would happen, writing nothing
 | `--pyhellen URL` · `--vieuxparler URL` · `--health-timeout S` | The two services. |
 | `-j, --jobs N` · `--batch-size N` · `--concurrency N` | Workers, lines per request, in-flight requests. |
 | `-n, --dry-run` | Resolve everything, list the plan, write nothing. |
-| `-v` / `-vv` / `-q` · `--log-level` · `--log-file` / `--no-log-file` | Console detail and the run log. |
+| `-v` / `-vv` / `-q` · `--log-level` · `--log-file` / `--no-log-file` | Console detail and the run log. `-q` leaves the failures and the summary; it does not hide what went wrong. |
 
 **Phases resolve left to right.** `--phases` replaces the set, then each
 `--X` / `--no-X` applies as a delta — so `--fast --enrich` means *no service

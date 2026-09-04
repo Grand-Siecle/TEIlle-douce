@@ -406,3 +406,56 @@ def test_a_malformed_config_file_is_a_misconfiguration(tmp_path):
         settings_for(["run", "--config", str(toml)])
 
     assert excinfo.value.code == 3
+
+
+# =============================================================================
+# What the third review caught
+# =============================================================================
+
+def test_phases_given_empty_is_a_usage_error():
+    """`--phases ""` used to mean "all", so a wrapper doing
+    `--phases "$PHASES"` with PHASES unset turned every phase back on. A
+    value typed and unusable is a usage error, like every other flag."""
+    with pytest.raises(SystemExit) as excinfo:
+        settings_for(["run", "--phases", ""])
+
+    assert excinfo.value.code == 2
+
+
+def test_a_lowercase_debug_level_still_turns_the_diagnostics_on():
+    settings = settings_for(["run", "--log-level", "debug"])
+
+    assert settings.log_level == "DEBUG"
+    assert settings.debug is True
+
+
+def test_limit_must_be_a_number_of_volumes():
+    """`--limit -1` silently dropped the last volume and exited 0: a partial
+    conversion reported as a success."""
+    with pytest.raises(SystemExit) as excinfo:
+        settings_for(["run", "--limit", "-1"])
+
+    assert excinfo.value.code == 2
+
+
+def test_a_per_language_url_is_validated_like_every_other_value():
+    from teille_douce.settings import Settings
+
+    settings = Settings.load(
+        env={"TDOUCE_MODERNIZE_URL_FRA": "  http://host:8011  "}, flags={}
+    )
+
+    assert settings.modernize_api["fra"] == "http://host:8011"
+
+
+def test_the_pyhellen_timeout_default_is_the_one_config_declares():
+    from teille_douce import config
+    from teille_douce.settings import Settings
+
+    assert Settings.load(env={}, flags={}).pyhellen_timeout == \
+        config.DEFAULT_PYHELLEN_TIMEOUT
+
+
+def test_an_option_feeding_two_settings_is_reported_once():
+    with pytest.raises(SystemExit):
+        settings_for(["run", "--concurrency", "zero"])
