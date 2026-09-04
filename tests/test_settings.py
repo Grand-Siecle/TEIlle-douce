@@ -262,6 +262,14 @@ def test_the_documented_table_lists_every_variable_the_code_reads():
     missing = Settings.environment_variables() - documented
     assert not missing, f"undocumented: {', '.join(sorted(missing))}"
 
+    # And the other way: a row for a variable no setting answers to sends a
+    # reader to set something that does nothing. The per-language family is
+    # documented by its shape, so its example is exempt.
+    invented = {name for name in documented
+                if name not in Settings.environment_variables()
+                and not name.startswith("TDOUCE_MODERNIZE_URL_")}
+    assert not invented, f"documented but unread: {', '.join(sorted(invented))}"
+
 
 def test_a_rejected_value_names_what_the_run_actually_uses(tmp_path):
     """The message promised "keeping the default" even when a lower layer

@@ -249,7 +249,6 @@ def expand_archives(ocr_dir, extract=True, wanted=None):
         if not target.exists() and not extract:
             # --dry-run: unpack nothing. The plan lists these itself, so
             # saying it here as well printed every archive twice.
-            say(f"[dim]Would extract: {escape(zip_path.name)}[/dim]")
             continue
         if not target.exists():
             say(f"[dim]Extracting: {escape(zip_path.name)} -> {escape(target.name)}/[/dim]")
@@ -672,21 +671,6 @@ def execute(args):
             console.print("[red]No volume matches:[/red] " + escape(", ".join(stray)))
             sys.exit(EXIT_MISCONFIGURED)
 
-    # Configured here and not at the top: everything above this line can
-    # still refuse to run, and a log directory left behind after refusing
-    # is a write like any other.
-    from teille_douce.cli import options as _options
-    configure_logging(
-        settings,
-        quiet=bool(getattr(args, "quiet", 0)),
-        write=not dry_run,
-        # A level set by the environment or the config file was asked for
-        # too: `debug` used to install a DEBUG console over an explicit
-        # TDOUCE_LOG_LEVEL=ERROR with nothing said.
-        level_asked=(_options.asks_to_be_quieter(args)
-                     or settings.origin("log_level") != "default"),
-    )
-
     unavailable = []
 
     # Check modernization API availability
@@ -751,22 +735,25 @@ def execute(args):
     # Archives --dry-run did not unpack are prospective work, not absent
     # documents: they are a documented input layout, and the plan has to
     # be right precisely before the first run.
-    pending_archives = [
-        zip_path.name for zip_path in sorted(settings.ocr_dir.glob("*.zip"))
-        if not (settings.ocr_dir / zip_path.stem).exists()
-        # The plan must apply the same filters the run would: a pending
-        # archive whose TEI already exists is not work, and a limit counts
-        # it like anything else.
-        and not (settings.skip_existing
-                 and _out_path(zip_path.stem, settings.output_dir).exists())
-    ] if dry_run else []
+    pending_archives, skipped_archives = [], 0
+    if dry_run:
+        for zip_path in sorted(settings.ocr_dir.glob("*.zip")):
+            if (settings.ocr_dir / zip_path.stem).exists():
+                continue
+            # The plan applies the filters the run would — but a skipped
+            # archive is counted rather than dropped, or the plan says
+            # nothing at all about a volume that is already converted.
+            if (settings.skip_existing
+                    and _out_path(zip_path.stem, settings.output_dir).exists()):
+                skipped_archives += 1
+                continue
+            pending_archives.append(zip_path.name)
 
     # Selection has to see the archives too. It only ever saw extracted
     # directories, so naming a volume whose archive failed to extract was
     # reported as a typo — exit 3, "no volume matches" — and the failure
     # itself never reached the summary or the exit code.
     selectors = getattr(args, "documents", []) or []
-    exclusions = getattr(args, "exclude", None) or []
 
     if selectors or exclusions_asked:
         failed_archives = [
@@ -834,6 +821,7 @@ def execute(args):
             + escape(", ".join(unmatched))
         )
         sys.exit(EXIT_MISCONFIGURED)
+    skipped_existing += skipped_archives
     if not docs and not failed_archives and not pending_archives:
         if skipped_existing:
             # Resuming a corpus that is already complete is a success, not
@@ -920,6 +908,21 @@ def execute(args):
             f"[yellow]Warning: person metadata not loaded ({escape(str(settings.persons_csv))}) "
             f"— headers will keep placeholder person entries.[/yellow]"
         )
+
+    # Configured here and not at the top: everything above this line can
+    # still refuse to run, and a log directory left behind after refusing
+    # is a write like any other.
+    from teille_douce.cli import options as _options
+    configure_logging(
+        settings,
+        quiet=bool(getattr(args, "quiet", 0)),
+        write=not dry_run,
+        # A level set by the environment or the config file was asked for
+        # too: `debug` used to install a DEBUG console over an explicit
+        # TDOUCE_LOG_LEVEL=ERROR with nothing said.
+        level_asked=(_options.asks_to_be_quieter(args)
+                     or settings.origin("log_level") != "default"),
+    )
 
     # Created here and not earlier: every exit above this line means
     # nothing will be written, and leaving an empty directory behind after

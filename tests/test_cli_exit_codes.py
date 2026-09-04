@@ -145,7 +145,10 @@ def test_dry_run_counts_a_volume_that_is_still_archived(tmp_path):
     res, sortie = _executer_main(tmp_path, ocr, args=("--dry-run",), **MODE_COURT)
 
     assert res.returncode == 0, res.stdout[-2000:]
-    assert "LIV0055_reconciled.zip" in res.stdout
+    # The volume, not the archive: the plan merges archives and directories
+    # and sorts them, so it names what the run would convert.
+    assert "LIV0055_reconciled" in res.stdout
+    assert "still archived" in res.stdout
     assert not (ocr / "LIV0055_reconciled").exists(), "--dry-run unpacked it"
     assert not sortie.exists()
 
@@ -279,3 +282,47 @@ def test_naming_one_volume_does_not_unpack_the_whole_corpus(tmp_path):
     assert res.returncode == 0, res.stdout[-2000:]
     unpacked = sorted(p.name for p in ocr.iterdir() if p.is_dir())
     assert unpacked == ["LIV0044_reconciled"], unpacked
+
+
+def test_a_dry_run_over_a_finished_archive_corpus_is_a_success(tmp_path):
+    """`OCR/` holding only ZIPs is the documented layout. With every output
+    already written, the plan reported a misconfiguration and exited 3,
+    while the real run of the same command exited 0 — so a wrapper that
+    pre-flights with --dry-run read a completed corpus as broken."""
+    import zipfile
+
+    ocr = tmp_path / "ocr"
+    ocr.mkdir()
+    with zipfile.ZipFile(ocr / f"{DOCUMENT}.zip", "w") as archive:
+        for page in sorted(ALTO_MIN.rglob("*.xml")):
+            archive.write(page, page.name)
+
+    first, sortie = _executer_main(tmp_path, ocr, **MODE_COURT)
+    assert first.returncode == 0, first.stdout[-2000:]
+
+    plan, _ = _executer_main(
+        tmp_path, ocr, args=("--skip-existing", "--dry-run"), **MODE_COURT
+    )
+
+    assert plan.returncode == 0, plan.stdout[-2000:]
+    assert "Nothing to do" in plan.stdout
+
+
+def test_require_services_leaves_no_directory_behind(tmp_path):
+    """"nothing written" has to include the log directory and the output
+    directory, both of which were created before the refusal."""
+    ocr = tmp_path / "ocr"
+    shutil.copytree(ALTO_MIN, ocr)
+
+    res, sortie = _executer_main(
+        tmp_path, ocr,
+        args=("--require-services", "--no-ner",
+              "--log-file", str(tmp_path / "logs" / "r.log")),
+        TDOUCE_PYHELLEN_URL="http://127.0.0.1:1",
+        TDOUCE_MODERNIZE_URL="http://127.0.0.1:1",
+        TDOUCE_HEALTH_TIMEOUT="2",
+    )
+
+    assert res.returncode == 3
+    assert not (tmp_path / "logs").exists(), "a log directory survived the refusal"
+    assert not sortie.exists(), "an output directory survived the refusal"
