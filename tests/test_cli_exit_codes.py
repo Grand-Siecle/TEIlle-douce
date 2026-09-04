@@ -833,3 +833,62 @@ def test_a_directory_that_cannot_be_read_is_a_failure_not_an_empty_volume(
     assert "LIV9007_reconciled: directory could not be read" in res.stdout
     assert "held no ALTO" not in res.stdout
     assert "1/2 documents converted" in res.stdout
+
+
+def test_every_volume_offered_lands_in_exactly_one_bucket(tmp_path):
+    """The invariant behind every counting bug this run has had, stated
+    once instead of one scenario at a time.
+
+    A volume can be converted, already converted and skipped, holding no
+    ALTO, unreadable, or a failure — and it must be exactly one of those.
+    The denominator of the fraction covers what was attempted; the skips
+    and the ALTO-less are the notes beside it. Under-counting hid a
+    dropped volume; over-counting announced two documents where the corpus
+    held one."""
+    import re
+
+    ocr = tmp_path / "ocr"
+    shutil.copytree(ALTO_MIN, ocr)                       # LIV9001: converted
+    shutil.copytree(ocr / DOCUMENT, ocr / "LIV9002_reconciled")
+    (ocr / "LIV9003_reconciled").mkdir()                 # no ALTO
+    (ocr / "LIV9003_reconciled" / "n.txt").write_text("x", encoding="utf-8")
+    # Its archive still beside it AND a TEI output already there: three
+    # counters reach for this one volume at once, which is how the double
+    # count happened.
+    with zipfile.ZipFile(ocr / "LIV9003_reconciled.zip", "w") as zf:
+        zf.writestr("LIV9003_reconciled/c/f1.xml", "<alto/>")
+    (ocr / "LIV9005_reconciled.zip").write_bytes(b"not a zip")
+
+    out = tmp_path / "out"                               # LIV9002: skipped
+    out.mkdir()
+    (out / "LIV9002_reconciled.tei.xml").write_text("<TEI/>", encoding="utf-8")
+    (out / "LIV9003_reconciled.tei.xml").write_text("<TEI/>", encoding="utf-8")
+
+    # A wide console on purpose: Rich wraps the summary at 80 columns and
+    # the notes this test reads then land on the following line.
+    res, _ = _executer_main(tmp_path, ocr, args=("--skip-existing",),
+                            COLUMNS="200", **MODE_COURT)
+
+    line = next(l for l in res.stdout.splitlines()
+                if "documents converted" in l)
+    converted, attempted = (int(n) for n in
+                            re.search(r"(\d+)/(\d+) documents", line).groups())
+
+    def note(pattern):
+        found = re.search(pattern, line)
+        return int(found.group(1)) if found else 0
+
+    skipped = note(r"\((\d+) more skipped")
+    no_alto = note(r"\((\d+) more held no ALTO")
+    failed = len([l for l in res.stdout.splitlines() if "FAILED" in l])
+
+    # An archive and its extracted directory are ONE volume.
+    offered = len({e.name if e.is_dir() else e.stem for e in ocr.iterdir()
+                   if e.is_dir() or e.suffix == ".zip"})
+
+    assert (converted, attempted, skipped, no_alto, failed) == (1, 2, 1, 1, 1)
+    assert converted + failed == attempted
+    assert attempted + skipped + no_alto == offered, (
+        f"{offered} volumes offered, {attempted + skipped + no_alto} "
+        f"accounted for, in: {line}"
+    )
