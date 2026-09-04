@@ -286,5 +286,8 @@ def console_level(args):
     if verbose:
         return "INFO" if verbose == 1 else "DEBUG"
     if quiet:
-        return "ERROR" if quiet == 1 else "CRITICAL"
+        # -q reduces chatter; the console handler stays at WARNING so a
+        # logger-emitted warning still reaches the operator. -qq is the
+        # deliberate spelling for "I accept losing those too".
+        return "WARNING" if quiet == 1 else "ERROR"
     return None

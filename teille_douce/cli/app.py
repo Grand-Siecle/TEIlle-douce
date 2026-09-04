@@ -70,6 +70,14 @@ def _config_file(args, parser):
     return find_config_file()
 
 
+def _parser_for(parser, command):
+    """The subparser handling *command*, or the top-level parser."""
+    for action in parser._actions:
+        if getattr(action, "choices", None) and not action.option_strings:
+            return action.choices.get(command, parser)
+    return parser
+
+
 def settings_from(args, env=None, parser=None):
     """Turn parsed arguments into the settings of this run.
 
@@ -140,7 +148,7 @@ def settings_from(args, env=None, parser=None):
     return settings
 
 
-def normalise(argv, commands=("run",)):
+def normalise(argv, commands=None):
     """Put the subcommand first, inserting the default one if absent.
 
     `teille-douce`, `teille-douce --skip-existing` and `teille-douce
@@ -155,6 +163,10 @@ def normalise(argv, commands=("run",)):
     takes one, so an output directory called "run" stays a directory.
     """
     argv = list(argv)
+    # Derived, not hardcoded: the day `validate` is added, a hardcoded list
+    # would rewrite `teille-douce validate out.xml` into a `run` whose
+    # first document selector is "validate".
+    commands = tuple(commands or _subcommands())
     if argv and argv[0] in ("-V", "--version"):
         return argv
     if argv and argv[0] in ("-h", "--help"):
@@ -179,6 +191,14 @@ def normalise(argv, commands=("run",)):
     if index is None:
         return ["run", *argv]
     return [argv[index], *argv[:index], *argv[index + 1:]]
+
+
+def _subcommands():
+    """The subcommand names the parser accepts."""
+    for action in build_parser()._actions:
+        if getattr(action, "choices", None) and not action.option_strings:
+            return tuple(action.choices)
+    return ()
 
 
 def _value_taking_options():
@@ -215,7 +235,9 @@ def main(argv=None):
     args = parser.parse_args(normalise(
         (sys.argv[1:] if argv is None else argv)
     ))
-    set_settings(settings_from(args, parser=parser))
+    # The subcommand's parser, so a usage error shows the usage line that
+    # actually contains the option the message names.
+    set_settings(settings_from(args, parser=_parser_for(parser, args.command)))
 
     # Imported here, not at module scope: run.py configures logging and
     # names this run's log file when it is imported, and `--help` and

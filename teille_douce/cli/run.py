@@ -55,12 +55,11 @@ def _run_log_path(base_path, now):
     return base_path.with_name(f"{base_path.stem}_{now:%Y%m%d_%H%M%S}{base_path.suffix}")
 
 
-def configure_logging(settings, now=None):
+def configure_logging(settings, now=None, quiet=False):
     """Install this run's handlers. Returns the run's log file, or None."""
     global RUN_LOG_FILE, _QUIET
 
-    _QUIET = (not settings.debug
-              and getattr(logging, settings.log_level) >= logging.ERROR)
+    _QUIET = quiet and not settings.debug
 
     handlers = []
     RUN_LOG_FILE = (
@@ -68,6 +67,11 @@ def configure_logging(settings, now=None):
         if settings.log_file else None
     )
     if RUN_LOG_FILE:
+        # --log-file is a user-facing setting now, so its directory may not
+        # exist: without this every record raised FileNotFoundError inside
+        # logging and buried the console in tracebacks, while the summary
+        # still pointed at a file nothing had created.
+        RUN_LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
         # delay=True: the file is only created at the first record, so a run
         # that dies before logging anything leaves no empty file behind.
         file_handler = logging.FileHandler(
@@ -551,7 +555,10 @@ def execute(args):
        - Writes output TEI XML file
     """
     settings = get_settings()
-    configure_logging(settings)
+    # -q silences chatter, never a warning: a mistyped --metadata is
+    # reported by a logger, and hiding it converted a whole corpus with
+    # placeholder headers and exited 0 with nothing said.
+    configure_logging(settings, quiet=bool(getattr(args, "quiet", 0)))
 
     # Verify OCR directory exists
     # is_dir(), not exists(): -i now makes it easy to point the input at a
@@ -710,11 +717,12 @@ def execute(args):
                                   ("modernize", settings.modernize),
                                   ("ner", settings.ner)) if on] or ["none"]
         console.print(
-            f"[dim]  input {settings.ocr_dir} → output {settings.output_dir}"
-            f" · phases {', '.join(phases)} · {settings.max_workers} workers[/dim]"
+            f"[dim]  input {escape(str(settings.ocr_dir))} → output "
+            f"{escape(str(settings.output_dir))} · phases "
+            f"{', '.join(phases)} · {settings.max_workers} workers[/dim]"
         )
         origin = settings.origin("__config__")
-        say(f"[dim]  config {origin}[/dim]" if origin != "default"
+        say(f"[dim]  config {escape(origin)}[/dim]" if origin != "default"
             else "[dim]  no config file[/dim]")
         console.print("[dim]  nothing written (--dry-run)[/dim]")
         return
@@ -725,10 +733,10 @@ def execute(args):
     # Load person metadata database
     person_db = load_person_database(settings.persons_csv)
     if person_db:
-        say(f"[dim]Loaded {len(person_db)} persons from {settings.persons_csv}[/dim]")
+        say(f"[dim]Loaded {len(person_db)} persons from {escape(str(settings.persons_csv))}[/dim]")
     else:
         console.print(
-            f"[yellow]Warning: person metadata not loaded ({settings.persons_csv}) "
+            f"[yellow]Warning: person metadata not loaded ({escape(str(settings.persons_csv))}) "
             f"— headers will keep placeholder person entries.[/yellow]"
         )
 

@@ -193,7 +193,6 @@ _SETTINGS = (
     _Declaration("tei_rng", "TDOUCE_TEI_RNG", None, _as_path, None),
 )
 
-_BY_NAME = {d.name: d for d in _SETTINGS}
 _BY_KEY = {d.key: d for d in _SETTINGS if d.key}
 # declared after _SETTINGS: see _MODERNIZE_URL below
 
@@ -443,9 +442,12 @@ def _resolve_modernize_api(flags, env, from_file, config_path, rejected):
         # Through _resolve like everything else: read raw, a stray space
         # became part of the URL and the service was reported unreachable
         # with nothing naming the variable.
+        # The fallback is what the run would use without this variable, so
+        # a refusal announces the URL that actually takes effect rather
+        # than None.
         per_language = _Declaration(
             f"modernize_url_{ident}", f"{_MODERNIZE_URL_ENV}_{ident.upper()}",
-            None, _as_str, None,
+            None, _as_str, shared or default,
         )
         specific, _ = _resolve(per_language, flags, env, from_file,
                                config_path, rejected)

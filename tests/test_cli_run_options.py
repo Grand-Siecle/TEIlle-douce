@@ -141,7 +141,8 @@ def test_a_resource_option_that_cannot_be_used_is_a_usage_error():
     ([], "WARNING"),
     (["-v"], "INFO"),
     (["-vv"], "DEBUG"),
-    (["-q"], "ERROR"),
+    (["-q"], "WARNING"),
+    (["-qq"], "ERROR"),
     (["--log-level", "CRITICAL"], "CRITICAL"),
 ])
 def test_verbosity_resolves_to_a_console_level(argv, expected):
@@ -330,7 +331,7 @@ def test_an_explicit_console_level_beats_the_debug_setting():
     override what the operator just typed."""
     settings = settings_for(["run", "-q"], env={"TDOUCE_DEBUG": "1"})
 
-    assert settings.log_level == "ERROR"
+    assert settings.log_level == "WARNING"
 
 
 # =============================================================================
@@ -372,7 +373,7 @@ def test_quiet_does_not_switch_the_debug_diagnostics_off():
     touching."""
     settings = settings_for(["run", "-q"], env={"TDOUCE_DEBUG": "1"})
 
-    assert settings.log_level == "ERROR"
+    assert settings.log_level == "WARNING"
     assert settings.debug is True
 
 
@@ -541,3 +542,27 @@ def test_a_flag_beats_a_per_language_environment_variable():
 def test_a_rejected_modernization_url_names_the_option_that_feeds_it():
     with pytest.raises(SystemExit):
         settings_for(["run", "--vieuxparler", ""])
+
+
+def test_quiet_still_lets_a_warning_through():
+    """A mistyped --metadata is reported by a logger, not by a print. `-q`
+    silencing it converted a whole corpus with placeholder headers and
+    exited 0 with nothing said. -qq is the deliberate spelling for
+    accepting that."""
+    assert settings_for(["run", "-q"]).log_level == "WARNING"
+    assert settings_for(["run", "-qq"]).log_level == "ERROR"
+
+
+def test_a_log_file_in_a_directory_that_does_not_exist_is_created(tmp_path):
+    """Every record raised FileNotFoundError inside logging and buried the
+    console in tracebacks, while the summary pointed at a file nothing had
+    created."""
+    import logging
+
+    from teille_douce.cli.run import configure_logging
+
+    settings = settings_for(["run", "--log-file", str(tmp_path / "logs" / "run.log")])
+    path = configure_logging(settings)
+    logging.getLogger("teille_douce.test").warning("a record")
+
+    assert path.exists(), "the run log was never written"
