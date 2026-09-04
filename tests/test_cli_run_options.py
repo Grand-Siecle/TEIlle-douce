@@ -787,3 +787,26 @@ def test_the_ner_probe_names_what_the_code_imports_and_only_that():
     for package in NER_DEPENDENCIES:
         assert f"import {package}" in source or f"from {package}" in source, package
     assert "huggingface_hub" in NER_DEPENDENCIES
+
+
+def test_a_level_set_by_a_lower_layer_is_not_overridden_by_debug(tmp_path):
+    """`level_asked` came from this command line alone, so `debug`
+    installed a DEBUG console over an explicit TDOUCE_LOG_LEVEL=ERROR with
+    nothing said."""
+    import logging
+
+    from teille_douce.cli import options
+    from teille_douce.cli.run import configure_logging
+
+    args = app.parse_args(["run", "--no-log-file"])
+    settings = app.settings_from(
+        args, env={"TDOUCE_DEBUG": "1", "TDOUCE_LOG_LEVEL": "ERROR"}
+    )
+    configure_logging(
+        settings,
+        level_asked=(options.asks_to_be_quieter(args)
+                     or settings.origin("log_level") != "default"),
+    )
+
+    handler = logging.getLogger().handlers[-1]
+    assert logging.getLevelName(handler.level) == "ERROR"

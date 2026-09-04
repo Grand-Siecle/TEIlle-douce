@@ -259,3 +259,23 @@ def test_a_refused_run_leaves_no_log_directory_behind(tmp_path):
 
     assert res.returncode == 3
     assert not (tmp_path / "logs").exists()
+
+
+def test_naming_one_volume_does_not_unpack_the_whole_corpus(tmp_path):
+    """Extraction ran before selection, so converting one named volume
+    unpacked every archive first — the same waste the input and output
+    guards were tightened against."""
+    import zipfile
+
+    ocr = tmp_path / "ocr"
+    ocr.mkdir()
+    for name in ("LIV0044", "LIV0055", "LIV0066"):
+        with zipfile.ZipFile(ocr / f"{name}_reconciled.zip", "w") as archive:
+            for page in sorted(ALTO_MIN.rglob("*.xml")):
+                archive.write(page, page.name)
+
+    res, sortie = _executer_main(tmp_path, ocr, args=("LIV0044",), **MODE_COURT)
+
+    assert res.returncode == 0, res.stdout[-2000:]
+    unpacked = sorted(p.name for p in ocr.iterdir() if p.is_dir())
+    assert unpacked == ["LIV0044_reconciled"], unpacked

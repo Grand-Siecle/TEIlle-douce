@@ -216,7 +216,7 @@ def _extract_archive(zip_path, target):
         raise
 
 
-def expand_archives(ocr_dir, extract=True):
+def expand_archives(ocr_dir, extract=True, wanted=None):
     """
     Extract ZIP archives in the OCR directory.
 
@@ -227,6 +227,10 @@ def expand_archives(ocr_dir, extract=True):
 
     Args:
         ocr_dir (Path): Path to the OCR directory.
+        extract (bool): unpack, or merely report what would be unpacked.
+        wanted (callable): name -> True when this archive is in scope.
+            Unpacking every archive to convert one named volume was the
+            same waste the input and output guards were tightened against.
 
     Returns:
         tuple: (ready_dirs, failed_archives)
@@ -239,6 +243,8 @@ def expand_archives(ocr_dir, extract=True):
 
     # Extract ZIP files that haven't been extracted yet
     for zip_path in sorted(ocr_dir.glob("*.zip")):
+        if wanted is not None and not wanted(zip_path.stem):
+            continue
         target = ocr_dir / zip_path.stem
         if not target.exists() and not extract:
             # --dry-run: unpack nothing. The plan lists these itself, so
@@ -585,7 +591,7 @@ def _process_document(doc_name, filepaths, doc_dir, df_meta, config,
     write_xml(tree.root, out_path)
 
     dt = perf_counter() - t0
-    say(f"[green]OK[/green] Written: {out_path} [dim]({dt:.2f}s)[/dim]")
+    say(f"[green]OK[/green] Written: {escape(str(out_path))} [dim]({dt:.2f}s)[/dim]")
 
     progress.update(task_pages, visible=False)
 
@@ -649,6 +655,11 @@ def execute(args):
     # know a selector matches something.
     selectors = getattr(args, "documents", []) or []
     exclusions_asked = getattr(args, "exclude", None) or []
+
+    def _selected(name):
+        return bool(select_documents([(name, [], None)],
+                                     selectors, exclusions_asked, None)[0])
+
     if selectors or exclusions_asked:
         candidates = [(entry.name if entry.is_dir() else entry.stem, [], None)
                       for entry in settings.ocr_dir.iterdir()
@@ -669,7 +680,11 @@ def execute(args):
         settings,
         quiet=bool(getattr(args, "quiet", 0)),
         write=not dry_run,
-        level_asked=_options.asks_to_be_quieter(args),
+        # A level set by the environment or the config file was asked for
+        # too: `debug` used to install a DEBUG console over an explicit
+        # TDOUCE_LOG_LEVEL=ERROR with nothing said.
+        level_asked=(_options.asks_to_be_quieter(args)
+                     or settings.origin("log_level") != "default"),
     )
 
     unavailable = []
@@ -728,8 +743,10 @@ def execute(args):
         sys.exit(EXIT_MISCONFIGURED)
 
     # Extract ZIP archives (corrupt ones are skipped and reported)
-    ready_dirs, failed_archives = expand_archives(settings.ocr_dir,
-                                                 extract=not dry_run)
+    ready_dirs, failed_archives = expand_archives(
+        settings.ocr_dir, extract=not dry_run,
+        wanted=_selected if (selectors or exclusions_asked) else None,
+    )
 
     # Archives --dry-run did not unpack are prospective work, not absent
     # documents: they are a documented input layout, and the plan has to
@@ -751,11 +768,7 @@ def execute(args):
     selectors = getattr(args, "documents", []) or []
     exclusions = getattr(args, "exclude", None) or []
 
-    def _selected(name):
-        return bool(select_documents([(name, [], None)],
-                                     selectors, exclusions, None)[0])
-
-    if selectors or exclusions:
+    if selectors or exclusions_asked:
         failed_archives = [
             (name, reason) for name, reason in failed_archives
             if _selected(Path(name).stem)
@@ -1003,7 +1016,7 @@ def execute(args):
         for name, reason in failed_docs:
             console.print(f"  [red]FAILED[/red] {escape(f'{name}: {reason}')}")
         if RUN_LOG_FILE:
-            console.print(f"[dim]Tracebacks in {RUN_LOG_FILE}[/dim]")
+            console.print(f"[dim]Tracebacks in {escape(str(RUN_LOG_FILE))}[/dim]")
         sys.exit(EXIT_SOME_FAILED)
 
     console.print(f"\n[bold green]Done.[/bold green] {converted}")

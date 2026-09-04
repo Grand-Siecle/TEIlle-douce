@@ -375,12 +375,17 @@ def build_sourcedoc(
     # send the IIIF mapping eight times to do two pages' work.
     settings = get_settings()
     workers = max(1, min(cpu_count(), settings.max_workers, len(jobs)))
-    if settings.max_workers > cpu_count():
-        # The help documents min(cpu_count, 8) as the DEFAULT, not as a
-        # cap, so a -j above the core count was silently discarded.
+    asked = settings.origin("max_workers")
+    if settings.max_workers > cpu_count() and asked != "default":
+        # Only when someone asked: the default is 8, so an unguarded test
+        # warned on every document of every run on a machine with fewer
+        # cores, naming a flag nobody had typed. And the origin is named,
+        # because the value may have come from TDOUCE_JOBS or limits.jobs
+        # rather than from -j.
         logger.warning(
-            "%s: -j %d exceeds the %d available cores; running %d workers",
-            document_name, settings.max_workers, cpu_count(), workers,
+            "%s: %d workers requested (%s) exceeds the %d available cores; "
+            "running %d", document_name, settings.max_workers, asked,
+            cpu_count(), workers,
         )
 
     # One slot per job, addressed by position: a result can only ever land
