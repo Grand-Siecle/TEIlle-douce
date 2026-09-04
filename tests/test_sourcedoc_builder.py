@@ -11,6 +11,7 @@
 # Run: venv/bin/python -m pytest tests/test_sourcedoc_builder.py -q
 # -----------------------------------------------------------
 import logging
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -20,7 +21,22 @@ from teille_douce.constants import NS_ALTO, XML_ID
 from teille_douce.metadata.iiif import IIIFMapping
 from teille_douce.sourcedoc import builder
 from teille_douce.sourcedoc.builder import extract_labels, build_sourcedoc
+from teille_douce.settings import get_settings, set_settings
 from teille_douce.sourcedoc.elements import SurfaceTree
+
+
+@pytest.fixture(autouse=True)
+def _restore_settings():
+    """The worker count is a setting now. Cases that shrink the pool install
+    their own; this hands the next file an untouched one."""
+    before = get_settings()
+    yield
+    set_settings(before)
+
+
+def _workers(count):
+    """Run this case's pool with `count` workers."""
+    set_settings(replace(get_settings(), max_workers=count))
 
 
 def qlocal(el):
@@ -213,7 +229,7 @@ def test_build_sourcedoc_orders_surfaces_by_page_despite_imap_unordered(tmp_path
     # A small worker pool is enough to make ordering a real (not merely
     # theoretical) concern; the two files are also handed in reversed
     # order to make sure input order isn't what saves us.
-    monkeypatch.setattr(builder, "MAX_WORKERS", 2)
+    _workers(2)
 
     f1 = write_alto(tmp_path, "f1.xml", GOOD_ALTO_TMPL.format(word="pageone"))
     f2 = write_alto(tmp_path, "f2.xml", GOOD_ALTO_TMPL.format(word="pagetwo"))
@@ -242,7 +258,7 @@ def test_build_sourcedoc_orders_surfaces_by_page_despite_imap_unordered(tmp_path
 def test_build_sourcedoc_ids_are_deterministic_across_runs(tmp_path, monkeypatch):
     """Audit 2.8 : memes ALTO en entree -> memes xml:id en sortie (uuid5),
     et un document different produit des ids differents."""
-    monkeypatch.setattr(builder, "MAX_WORKERS", 1)
+    _workers(1)
     f1 = write_alto(tmp_path, "f1.xml", GOOD_ALTO_TMPL.format(word="hello"))
 
     def ids_pour(document):
@@ -283,7 +299,7 @@ def test_build_sourcedoc_reports_duplicate_alto_ids_from_workers(tmp_path, monke
     forkserver : un logger appele la-bas n'atteint jamais le log du parent.
     Le signalement doit donc voyager par le tuple de retour du worker et
     ressortir en warning cote parent."""
-    monkeypatch.setattr(builder, "MAX_WORKERS", 1)
+    _workers(1)
     f = write_alto(tmp_path, "f1.xml", DUPLICATE_BLOCK_ALTO)
 
     output_root = etree.Element("TEI")
@@ -329,7 +345,7 @@ UNRECOVERABLE_ALTO = "\x00\x01ceci n'est pas du XML\x02"
 
 
 def test_malformed_alto_page_does_not_crash_the_run(tmp_path, monkeypatch, caplog):
-    monkeypatch.setattr(builder, "MAX_WORKERS", 1)
+    _workers(1)
 
     good = write_alto(tmp_path, "f1.xml", GOOD_ALTO_TMPL.format(word="hello"))
     write_alto(tmp_path, "f2.xml", MALFORMED_ALTO)
@@ -391,7 +407,7 @@ def test_build_sourcedoc_keeps_both_pages_when_page_numbers_collide(
 ):
     """f1.xml and f1-np.xml both yield page number 1. Both are real pages
     and both must reach the output, each with its own surface."""
-    monkeypatch.setattr(builder, "MAX_WORKERS", 2)
+    _workers(2)
 
     first = write_alto(tmp_path, "f1.xml", GOOD_ALTO_TMPL.format(word="pageone"))
     second = write_alto(tmp_path, "f1-np.xml", GOOD_ALTO_TMPL.format(word="pagetwo"))
@@ -427,7 +443,7 @@ def test_build_sourcedoc_keeps_both_pages_when_no_filename_has_a_number(
     """Binding plates are often named without a page number. They all get
     one sentinel sort key, so they collide with each other -- and the
     sentinel must not be reported to the operator as a page number."""
-    monkeypatch.setattr(builder, "MAX_WORKERS", 2)
+    _workers(2)
 
     plate = write_alto(tmp_path, "plat-sup.xml", GOOD_ALTO_TMPL.format(word="plate"))
     cover = write_alto(tmp_path, "couverture.xml", GOOD_ALTO_TMPL.format(word="cover"))
@@ -463,7 +479,7 @@ def test_build_sourcedoc_refuses_two_pages_under_one_surface_id(
     """xml_id_safe() prefixes a leading digit, so 1.xml and f1.xml both
     give the surface id "f1". Writing both welds two pages into one and
     produces a file lxml refuses to read back: the document fails instead."""
-    monkeypatch.setattr(builder, "MAX_WORKERS", 1)
+    _workers(1)
 
     bare = write_alto(tmp_path, "1.xml", GOOD_ALTO_TMPL.format(word="pageone"))
     prefixed = write_alto(tmp_path, "f1.xml", GOOD_ALTO_TMPL.format(word="pagetwo"))

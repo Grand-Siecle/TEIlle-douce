@@ -26,9 +26,8 @@ import math
 import os
 import tomllib
 import warnings
-from dataclasses import dataclass, field, fields, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
-from types import MappingProxyType
 
 from teille_douce import config
 
@@ -203,7 +202,7 @@ class Settings:
     pyhellen_timeout: float
     pyhellen_concurrency: int
     pyhellen_max_consecutive_failures: int
-    modernize_api: MappingProxyType
+    modernize_api: dict
     modernize_timeout: float
     modernize_batch_size: int
     modernize_concurrency: int
@@ -215,7 +214,11 @@ class Settings:
     log_file: Path | None
     log_level: str
     tei_rng: Path | None
-    origins: MappingProxyType = field(default_factory=lambda: MappingProxyType({}))
+    # Plain dicts, not MappingProxyType: this object is an initarg of the
+    # multiprocessing pool, and a mappingproxy cannot be pickled. The
+    # dataclass being frozen is what protects the settings; the mappings
+    # inside it are a detail nobody reaches for.
+    origins: dict = field(default_factory=dict)
     rejected: tuple = ()
 
     # -- introspection ----------------------------------------------------
@@ -268,14 +271,8 @@ class Settings:
             if origin != "default":
                 origins[declaration.name] = origin
 
-        values["modernize_api"] = MappingProxyType(
-            _resolve_modernize_api(env, from_file)
-        )
-        return cls(
-            **values,
-            origins=MappingProxyType(origins),
-            rejected=tuple(rejected),
-        )
+        values["modernize_api"] = _resolve_modernize_api(env, from_file)
+        return cls(**values, origins=origins, rejected=tuple(rejected))
 
 
 def _read_config_file(path):

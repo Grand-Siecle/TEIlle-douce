@@ -194,3 +194,37 @@ def test_settings_are_frozen():
 
     with pytest.raises(Exception):
         settings.ocr_dir = Path("/nope")
+
+
+# =============================================================================
+# The worker boundary
+# =============================================================================
+
+def test_a_worker_is_given_the_parent_s_settings():
+    """A forkserver/spawn child re-imports in a fresh interpreter, where
+    get_settings() would rebuild from the environment alone and therefore
+    ignore every command-line flag. The pool already ships one document's
+    invariants through its initializer; the settings travel with them.
+
+    Nothing inside a worker reads a runtime setting today. The plumbing is
+    here so that the first one to do so is correct rather than silently
+    reading the environment behind the CLI's back.
+    """
+    from teille_douce.sourcedoc.builder import _init_worker
+
+    chosen = Settings.load(env={"TDOUCE_OCR_DIR": "/from-the-parent"}, flags={})
+
+    with use_settings(None):
+        _init_worker("DOC1", [], [], {}, None, chosen)
+        assert get_settings() is chosen
+
+
+def test_settings_survive_a_process_boundary():
+    """Settings is an initarg of the multiprocessing pool, so it has to
+    pickle. A mappingproxy field does not — the frozen dataclass is what
+    protects the settings, not the type of the mappings inside it."""
+    import pickle
+
+    settings = Settings.load(env={"TDOUCE_MODERNIZE_URL": "http://x:1"}, flags={})
+
+    assert pickle.loads(pickle.dumps(settings)) == settings
