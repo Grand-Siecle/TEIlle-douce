@@ -97,6 +97,10 @@ def _phase_set(parser, raw):
     if raw == "none":
         return set(), set()
     names = {n.strip() for n in raw.split(",") if n.strip()}
+    if not names:
+        # `--phases "$A,$B"` with both variables unset: a comma-only value
+        # meant "none" in silence and disabled every phase for a corpus.
+        parser.error(f"--phases was given no phase name ({raw!r})")
     unknown = names - set(PHASES)
     if unknown:
         parser.error(

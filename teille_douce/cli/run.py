@@ -56,7 +56,8 @@ def _run_log_path(base_path, now):
     return base_path.with_name(f"{base_path.stem}_{now:%Y%m%d_%H%M%S}{base_path.suffix}")
 
 
-def configure_logging(settings, now=None, quiet=False, write=True):
+def configure_logging(settings, now=None, quiet=False, write=True,
+                      level_asked=False):
     """Install this run's handlers. Returns the run's log file, or None."""
     global RUN_LOG_FILE, _QUIET
 
@@ -66,10 +67,19 @@ def configure_logging(settings, now=None, quiet=False, write=True):
     _QUIET = quiet
 
     handlers = []
-    RUN_LOG_FILE = (
-        _run_log_path(Path(settings.log_file), now or datetime.now())
-        if settings.log_file else None
-    )
+    try:
+        RUN_LOG_FILE = (
+            _run_log_path(Path(settings.log_file), now or datetime.now())
+            if settings.log_file else None
+        )
+    except ValueError as reason:
+        # `--log-file .` and `--log-file /` have no name to derive from.
+        warnings.warn(
+            f"cannot use {settings.log_file} as a log file: {reason} — "
+            "continuing without file logging",
+            RuntimeWarning, stacklevel=2,
+        )
+        RUN_LOG_FILE = None
     if RUN_LOG_FILE and not write:
         # --dry-run writes nothing, and a log directory is a write.
         RUN_LOG_FILE = None
@@ -101,9 +111,14 @@ def configure_logging(settings, now=None, quiet=False, write=True):
         handlers.append(file_handler)
 
     console_handler = logging.StreamHandler()
-    console_handler.setLevel(
-        logging.DEBUG if settings.debug else getattr(logging, settings.log_level)
-    )
+    # `debug` lowers the console to DEBUG only when nothing asked for a
+    # level: -q, -qq and --log-level are typed just now, and installing a
+    # DEBUG handler over them handed a fully verbose console to a run that
+    # asked for quiet.
+    level = getattr(logging, settings.log_level)
+    if settings.debug and not level_asked:
+        level = logging.DEBUG
+    console_handler.setLevel(level)
     console_handler.setFormatter(
         logging.Formatter("%(name)s [%(levelname)s] %(message)s")
     )
@@ -593,8 +608,16 @@ def execute(args):
     # -q silences chatter, never a warning: a mistyped --metadata is
     # reported by a logger, and hiding it converted a whole corpus with
     # placeholder headers and exited 0 with nothing said.
-    configure_logging(settings, quiet=bool(getattr(args, "quiet", 0)),
-                      write=not getattr(args, "dry_run", False))
+    # `level_asked` and not the recorded origin: -q resolving to the same
+    # level as the default leaves the origin at "default", and `debug`
+    # would then reinstall a DEBUG console over the quiet just typed.
+    from teille_douce.cli import options as _options
+    configure_logging(
+        settings,
+        quiet=bool(getattr(args, "quiet", 0)),
+        write=not getattr(args, "dry_run", False),
+        level_asked=_options.console_level(args) is not None,
+    )
 
     # Verify OCR directory exists
     # is_dir(), not exists(): -i now makes it easy to point the input at a
@@ -627,6 +650,24 @@ def execute(args):
             "[red]--no-probe and --require-services contradict each other.[/red]"
         )
         sys.exit(EXIT_MISCONFIGURED)
+
+    # Cheap, and before the probes: a typo used to pay up to two health
+    # timeouts of blocking HTTP before being told it was a typo. Names are
+    # taken from the directory listing, so nothing has to be extracted to
+    # know a selector matches something.
+    selectors = getattr(args, "documents", []) or []
+    exclusions_asked = getattr(args, "exclude", None) or []
+    if selectors or exclusions_asked:
+        candidates = [(entry.name if entry.is_dir() else entry.stem, [], None)
+                      for entry in settings.ocr_dir.iterdir()
+                      if entry.is_dir() or entry.suffix == ".zip"]
+        stray = [
+            pattern for pattern in (*selectors, *exclusions_asked)
+            if not select_documents(candidates, [pattern], [], None)[0]
+        ]
+        if stray:
+            console.print("[red]No volume matches:[/red] " + escape(", ".join(stray)))
+            sys.exit(EXIT_MISCONFIGURED)
 
     unavailable = []
 
@@ -682,21 +723,6 @@ def execute(args):
             + " unreachable; nothing written."
         )
         sys.exit(EXIT_MISCONFIGURED)
-
-    # Cheap, and before the probes: a typo used to pay up to two health
-    # timeouts of blocking HTTP before being told it was a typo. Names are
-    # taken from the directory listing, so nothing has to be extracted to
-    # know a selector matches something.
-    selectors = getattr(args, "documents", []) or []
-    if selectors:
-        candidates = [(entry.name if entry.is_dir() else entry.stem, [], None)
-                      for entry in settings.ocr_dir.iterdir()
-                      if entry.is_dir() or entry.suffix == ".zip"]
-        stray = [selector for selector in selectors
-                 if not select_documents(candidates, [selector], [], None)[0]]
-        if stray:
-            console.print("[red]No volume matches:[/red] " + escape(", ".join(stray)))
-            sys.exit(EXIT_MISCONFIGURED)
 
     # Extract ZIP archives (corrupt ones are skipped and reported)
     ready_dirs, failed_archives = expand_archives(settings.ocr_dir,

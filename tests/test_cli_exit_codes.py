@@ -208,13 +208,16 @@ def test_a_typo_is_refused_without_probing_the_services(tmp_path):
     started = time.monotonic()
     res, _ = _executer_main(
         tmp_path, ocr, args=("LIV0O44",),
-        TDOUCE_PYHELLEN_URL="http://127.0.0.1:9",
-        TDOUCE_MODERNIZE_URL="http://127.0.0.1:9",
-        TDOUCE_HEALTH_TIMEOUT="30",
+        # Unroutable, not merely closed: 127.0.0.1 refuses instantly, so
+        # the test could not see the probes it exists to keep out of the
+        # way. This address makes the probe block until it times out.
+        TDOUCE_PYHELLEN_URL="http://10.255.255.1:9",
+        TDOUCE_MODERNIZE_URL="http://10.255.255.1:9",
+        TDOUCE_HEALTH_TIMEOUT="20",
         TDOUCE_NER="0",
     )
     elapsed = time.monotonic() - started
 
     assert res.returncode == 3
     assert "LIV0O44" in res.stdout
-    assert elapsed < 20, f"probed before refusing a typo ({elapsed:.1f}s)"
+    assert elapsed < 10, f"probed before refusing a typo ({elapsed:.1f}s)"

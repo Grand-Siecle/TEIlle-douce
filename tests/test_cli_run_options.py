@@ -721,3 +721,48 @@ def test_an_abbreviated_option_does_not_misplace_the_subcommand(argv, expected):
     """argparse accepts unambiguous prefixes, so `--inp OCR run` read OCR as
     the first positional and `run` as a document selector."""
     assert app.normalise(argv) == expected
+
+
+@pytest.mark.parametrize("argv,expected", [
+    ([], "DEBUG"),
+    (["-q"], "WARNING"),
+    (["--log-level", "ERROR"], "ERROR"),
+])
+def test_the_console_handler_gets_the_level_that_was_asked_for(argv, expected, tmp_path):
+    """The previous tests asserted on `settings.log_level` and never on the
+    handler, so `debug` reinstalling a DEBUG console over `-q` went
+    unnoticed: a run that asked for quiet got a fully verbose one."""
+    import logging
+
+    from teille_douce.cli import options
+    from teille_douce.cli.run import configure_logging
+
+    args = app.parse_args(["run", "--no-log-file", *argv])
+    settings = app.settings_from(args, env={"TDOUCE_DEBUG": "1"})
+    configure_logging(settings, quiet=bool(getattr(args, "quiet", 0)),
+                      level_asked=options.console_level(args) is not None)
+
+    handler = logging.getLogger().handlers[-1]
+    assert logging.getLevelName(handler.level) == expected
+
+
+@pytest.mark.parametrize("raw", [",", " , "])
+def test_a_comma_only_phase_list_is_a_usage_error(raw):
+    """`--phases "$A,$B"` with both unset meant "none" in silence and
+    disabled every annotation phase for a corpus."""
+    with pytest.raises(SystemExit) as excinfo:
+        settings_for(["run", "--phases", raw])
+
+    assert excinfo.value.code == 2
+
+
+@pytest.mark.parametrize("path", [".", "/"])
+def test_a_log_path_with_no_name_costs_the_log_not_the_run(path):
+    """`_run_log_path` raised outside the guard that promises an unusable
+    log path costs the log and not the conversion."""
+    from teille_douce.cli.run import configure_logging
+
+    settings = settings_for(["run", "--log-file", path])
+
+    with pytest.warns(RuntimeWarning, match="continuing without file logging"):
+        assert configure_logging(settings) is None
