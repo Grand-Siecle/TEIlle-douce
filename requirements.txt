@@ -1,2 +1,5 @@
 # Le socle vit dans pyproject.toml ([project].dependencies), source unique.
+# `-e .` designe le repertoire COURANT, pas celui de ce fichier : lancer
+# `pip install -r .../requirements.txt` depuis ailleurs n'installe pas ce
+# depot. Se lancer depuis la racine du depot.
 -e .

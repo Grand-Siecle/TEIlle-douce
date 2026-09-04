@@ -357,15 +357,15 @@ not be indistinguishable from a document that simply had nothing to enrich.
 ## Using modules independently
 
 ```python
-from src import TEI
-from src.teiheader import build_header
-from src.sourcedoc import build_sourcedoc
-from src.body import build_body, Text, link_notes_to_lines
-from src.metadata import load_metadata, load_person_database, IIIFMapping
-from src.enrichment import enrich_body
-from src.enrichment.ner_pipeline import run_ner
-from src.lang import get_detector, build_langusage
-from src.utils import Files, write_xml
+from teille_douce import TEI
+from teille_douce.teiheader import build_header
+from teille_douce.sourcedoc import build_sourcedoc
+from teille_douce.body import build_body, Text, link_notes_to_lines
+from teille_douce.metadata import load_metadata, load_person_database, IIIFMapping
+from teille_douce.enrichment import enrich_body
+from teille_douce.enrichment.ner_pipeline import run_ner
+from teille_douce.lang import get_detector, build_langusage
+from teille_douce.utils import Files, write_xml
 ```
 
 `teille_douce/config.py` is imported by the modules that need settings, so overriding a

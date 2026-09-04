@@ -15,11 +15,6 @@ import argparse
 
 import teille_douce
 
-# The pipeline body configures logging at import time, so it is imported
-# lazily by dispatch() rather than here: `teille-douce --version` and
-# `--help` must not create a run log.
-_COMMANDS = ("run",)
-
 
 def build_parser():
     """Build the argument parser.
@@ -46,7 +41,7 @@ def build_parser():
         description="Convert ALTO XML documents to TEI P5 with the SegmOnto "
                     "taxonomy.",
     )
-    _add_run_arguments(run_parser)
+    _add_run_arguments(run_parser, suppress_defaults=True)
 
     # The same options on the bare parser, so that the historical
     # invocation keeps working without naming a subcommand.
@@ -56,16 +51,27 @@ def build_parser():
     return parser
 
 
-def _add_run_arguments(parser):
+def _add_run_arguments(parser, *, suppress_defaults=False):
     """Declare `run`'s options, on both the subparser and the bare parser.
 
     Declared here rather than in `run.py` so that building the parser does
     not import the pipeline: `--help` and `--version` must not configure
     logging or open a run log.
+
+    `suppress_defaults` is what makes the two declarations safe to keep
+    side by side. argparse's subparser action parses into a namespace of
+    its own and then copies **all** of it over the parent's — defaults
+    included — so an option given before the subcommand was silently reset:
+    `teille-douce --skip-existing run` dropped the flag and reconverted the
+    whole corpus. With SUPPRESS the subparser sets an attribute only when
+    the option is actually given, so it can no longer overwrite the bare
+    parser's answer. Every option declared on both parsers must use it.
     """
+    default = argparse.SUPPRESS if suppress_defaults else False
     parser.add_argument(
         "--skip-existing",
         action="store_true",
+        default=default,
         help="skip volumes whose TEI output already exists "
              "(minimal resume after an interrupted run)",
     )
@@ -81,5 +87,10 @@ def main(argv=None):
     """
     args = build_parser().parse_args(argv)
 
+    # Imported here, not at module scope: run.py configures logging and
+    # names this run's log file when it is imported, and `--help` and
+    # `--version` must do neither.
     from teille_douce.cli import run as run_command
-    return run_command.execute(args)
+
+    commands = {"run": run_command.execute}
+    return commands[args.command](args)

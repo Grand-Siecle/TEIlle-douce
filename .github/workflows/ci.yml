@@ -26,6 +26,7 @@ jobs:
           cache-dependency-path: |
             requirements.txt
             requirements-dev.txt
+            pyproject.toml
 
       # requirements-dev.txt = deps de base + pytest/coverage. Les deps NER
       # (torch, transformers, ...) restent dans requirements-ner.txt : la

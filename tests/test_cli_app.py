@@ -20,16 +20,29 @@ import teille_douce
 from teille_douce.cli import app
 
 
+def build_parser():
+    return app.build_parser()
+
+
 def test_bare_invocation_defaults_to_run():
     """`teille-douce` and `python3 main.py`, with no subcommand, must keep
     converting — that is the whole backwards-compatibility promise."""
-    parser = app.build_parser()
+    parser = build_parser()
 
     assert parser.parse_args([]).command == "run"
     assert parser.parse_args(["--skip-existing"]).command == "run"
     assert parser.parse_args(["--skip-existing"]).skip_existing is True
     assert parser.parse_args(["run", "--skip-existing"]).skip_existing is True
     assert parser.parse_args(["run"]).skip_existing is False
+
+
+def test_an_option_given_before_the_subcommand_survives_it():
+    """argparse's subparser action copies its whole namespace over the
+    parent's, defaults included, so `--skip-existing run` used to reset the
+    flag to False and silently reconvert the corpus."""
+    parser = build_parser()
+
+    assert parser.parse_args(["--skip-existing", "run"]).skip_existing is True
 
 
 def test_the_published_version_is_the_package_version():
@@ -68,6 +81,11 @@ def test_module_entry_point_runs(tmp_path):
     """`python -m teille_douce` is a documented way in, so it is exercised
     rather than merely declared. --version is the cheapest command that
     reaches the module entry point without touching a corpus."""
+    try:
+        importlib.metadata.version("teille-douce")
+    except importlib.metadata.PackageNotFoundError:
+        pytest.skip("teille-douce is not installed in this environment")
+
     from test_e2e_pipeline import _env_couverture_sous_processus
 
     env = {**os.environ, **_env_couverture_sous_processus()}

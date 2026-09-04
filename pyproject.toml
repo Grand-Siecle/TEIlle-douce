@@ -1,5 +1,10 @@
 [build-system]
-requires = ["setuptools>=68"]
+# 77 et non 68 : la licence est declaree en chaine SPDX et
+# `license-files` est une cle de premier niveau — PEP 639, que
+# setuptools n'accepte qu'a partir de 77. En dessous, un
+# `pip install --no-build-isolation -e .` echoue sur une erreur
+# de schema difficile a lire.
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
