@@ -240,7 +240,7 @@ def _extract_archive(zip_path, target):
         raise
 
 
-def expand_archives(ocr_dir, extract=True, wanted=None):
+def expand_archives(ocr_dir, extract=True, wanted=None, keep=None):
     """
     Extract ZIP archives in the OCR directory.
 
@@ -252,9 +252,14 @@ def expand_archives(ocr_dir, extract=True, wanted=None):
     Args:
         ocr_dir (Path): Path to the OCR directory.
         extract (bool): unpack, or merely report what would be unpacked.
-        wanted (callable): name -> True when this archive is in scope.
-            Unpacking every archive to convert one named volume was the
-            same waste the input and output guards were tightened against.
+        wanted (callable): name -> True when this archive is worth
+            unpacking. Unpacking every archive to convert one named volume
+            was the same waste the input and output guards were tightened
+            against.
+        keep (callable): name -> True when an already-extracted directory
+            is in scope. Narrower than `wanted` on purpose: a volume the
+            resume will skip still has to reach select_documents, which is
+            the single place that counts a skip.
 
     Returns:
         tuple: (ready_dirs, failed_archives)
@@ -296,6 +301,11 @@ def expand_archives(ocr_dir, extract=True, wanted=None):
     # ".extracting" directories of an interrupted run)
     for d in ocr_dir.iterdir():
         if d.is_dir() and not d.name.endswith(".extracting"):
+            # Gated like the archives: listing every page of every volume
+            # to throw them away afterwards is the same waste on a
+            # hundred-volume rerun.
+            if keep is not None and not keep(d.name):
+                continue
             if any(d.rglob("*.xml")):
                 ready_dirs.add(d)
 
@@ -782,12 +792,19 @@ def execute(args):
             return False
         if (settings.skip_existing
                 and _out_path(name, settings.output_dir).exists()):
-            unpacked_skips.append(name)
+            # Counted here ONLY when this archive is the sole trace of the
+            # volume. With an extracted directory beside it the directory
+            # pass keeps it and select_documents counts the skip; in a dry
+            # run `skipped_archives` does. Counting in both places
+            # announced "2 documents already converted" for one volume.
+            if not dry_run and not (settings.ocr_dir / name).exists():
+                unpacked_skips.append(name)
             return False
         return True
 
     ready_dirs, failed_archives = expand_archives(
         settings.ocr_dir, extract=not dry_run, wanted=_worth_unpacking,
+        keep=_selected if (selectors or exclusions_asked) else None,
     )
 
     # Archives --dry-run did not unpack are prospective work, not absent

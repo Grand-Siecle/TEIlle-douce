@@ -810,3 +810,14 @@ def test_a_level_set_by_a_lower_layer_is_not_overridden_by_debug(tmp_path):
 
     handler = logging.getLogger().handlers[-1]
     assert logging.getLevelName(handler.level) == "ERROR"
+
+
+def test_a_refused_flag_stays_a_usage_error_whatever_the_other_layers_hold():
+    """Suppressing the warning for a shared URL no language reads is right;
+    suppressing the usage error is not — `--vieuxparler "$URL"` with URL
+    unset exited 0 and ran against the environment's value."""
+    with pytest.raises(SystemExit) as excinfo:
+        settings_for(["run", "--vieuxparler", ""],
+                     env={"TDOUCE_MODERNIZE_URL_FRA": "http://perlang"})
+
+    assert excinfo.value.code == 2

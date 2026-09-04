@@ -457,6 +457,10 @@ def _resolve_modernize_api(flags, env, from_file, config_path, rejected):
     # URL. The fallback is stated so the message names something the
     # reader can act on.
     fallback = next(iter(config.DEFAULT_MODERNIZE_API.values()), None)
+    # Suppressing the *warning* for a shared URL no language reads is
+    # right; suppressing the *usage error* is not. A flag the user typed
+    # and the converter refused stays a usage error whatever the other
+    # layers hold.
     scratch = rejected if shared_is_read else []
     with warnings.catch_warnings():
         if not shared_is_read:
@@ -466,6 +470,8 @@ def _resolve_modernize_api(flags, env, from_file, config_path, rejected):
                          _MODERNIZE_URL.key, _MODERNIZE_URL.convert, fallback),
             flags, env, from_file, config_path, scratch,
         )
+    if scratch is not rejected:
+        rejected.extend(r for r in scratch if r.layer == "flag")
     if shared == fallback and shared_origin == "default":
         shared = None
     flag_given = shared is not None and shared_origin == "flag"

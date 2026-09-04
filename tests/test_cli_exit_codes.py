@@ -421,3 +421,22 @@ def test_the_skip_count_ignores_volumes_no_selector_named(tmp_path):
     )
 
     assert "already converted" not in plan.stdout, plan.stdout
+
+
+def test_the_skip_count_is_one_per_volume_not_one_per_trace(tmp_path):
+    """A volume with both an archive and an extracted directory was counted
+    where it was refused for unpacking AND where selection skipped it, so
+    one volume reported as two."""
+    ocr = tmp_path / "ocr"
+    ocr.mkdir()
+    _archive(ocr, "A_reconciled")
+    _archive(ocr, "B_reconciled")
+    sortie = tmp_path / "out"
+    sortie.mkdir()
+    (sortie / "A_reconciled.tei.xml").write_text("<x/>", encoding="utf-8")
+
+    res, _ = _executer_main(tmp_path, ocr, args=("--skip-existing",), **MODE_COURT)
+
+    assert res.returncode == 0, res.stdout[-2000:]
+    assert "1 document(s) already converted" in res.stdout, res.stdout
+    assert "2 document(s)" not in res.stdout, res.stdout
