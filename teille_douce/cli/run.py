@@ -28,7 +28,7 @@ from rich.markup import escape
 
 # Import configuration
 from teille_douce.config import APP_VERSIONS, IIIF_URI, RESPONSIBILITY
-from teille_douce.settings import get_settings
+from teille_douce.settings import get_settings, use_settings
 
 # Configure logging
 #
@@ -55,7 +55,7 @@ def _run_log_path(base_path, now):
     return base_path.with_name(f"{base_path.stem}_{now:%Y%m%d_%H%M%S}{base_path.suffix}")
 
 
-def configure_logging(settings, now=None, quiet=False):
+def configure_logging(settings, now=None, quiet=False, write=True):
     """Install this run's handlers. Returns the run's log file, or None."""
     global RUN_LOG_FILE, _QUIET
 
@@ -66,6 +66,9 @@ def configure_logging(settings, now=None, quiet=False):
         _run_log_path(Path(settings.log_file), now or datetime.now())
         if settings.log_file else None
     )
+    if RUN_LOG_FILE and not write:
+        # --dry-run writes nothing, and a log directory is a write.
+        RUN_LOG_FILE = None
     if RUN_LOG_FILE:
         # --log-file is a user-facing setting now, so its directory may not
         # exist: without this every record raised FileNotFoundError inside
@@ -111,7 +114,8 @@ from teille_douce.metadata import (load_metadata,
                           load_person_database,
                           select_manifest)
 from teille_douce.utils import write_xml
-from teille_douce.utils.files import parse_document_id
+from teille_douce.utils.files import (canonical_document_id,
+                                      parse_document_id)
 
 
 console = Console()
@@ -320,10 +324,14 @@ def select_documents(docs, selectors, exclusions, limit, skip=None):
         "already converted" that a selector or a limit had dropped.
     """
     def matches(pattern, name):
-        return (name == pattern
-                or parse_document_id(name)[0] == pattern
-                or fnmatch(name, pattern)
-                or fnmatch(parse_document_id(name)[0], pattern))
+        # The canonical id is what the pipeline writes into xml:id and what
+        # a user reads back out of a TEI file, so it has to select: without
+        # it `run LIV0002a` matched nothing while `LIV0002` silently took
+        # every volume of the set.
+        candidates = (name, parse_document_id(name)[0],
+                      canonical_document_id(name))
+        return any(candidate == pattern or fnmatch(candidate, pattern)
+                   for candidate in candidates)
 
     kept, unmatched = list(docs), []
     if selectors:
@@ -331,6 +339,10 @@ def select_documents(docs, selectors, exclusions, limit, skip=None):
         unmatched = [p for p in selectors
                      if not any(matches(p, d[0]) for d in docs)]
     for pattern in exclusions or []:
+        if not any(matches(pattern, d[0]) for d in docs):
+            # Same rule as a selector: `-x LIV0038_reconcilied` converted
+            # at full cost the volume it was meant to hold back.
+            unmatched.append(pattern)
         kept = [d for d in kept if not matches(pattern, d[0])]
     skipped = 0
     if skip is not None:
@@ -378,15 +390,20 @@ def _process_document(doc_name, filepaths, doc_dir, df_meta, config,
     config["iiifURI"] = _document_iiif_config(doc_manifest)
 
     # Build TEI header
-    tree.root, tree.segmonto_zones, tree.segmonto_lines = build_header(
-        tree.metadata,
-        tree.d,
-        tree.root,
-        len(tree.fp),
-        config,
-        APP_VERSIONS,
-        tree.fp,
-    )
+    # The header states what ran, not what was asked for. A service that
+    # failed its probe disables its phase for the whole run, and every file
+    # still declared <normalization> asserting that reg readings had been
+    # generated — an editorial claim about a file that carries none.
+    with use_settings(enrich=do_enrich, modernize=do_modernize):
+        tree.root, tree.segmonto_zones, tree.segmonto_lines = build_header(
+            tree.metadata,
+            tree.d,
+            tree.root,
+            len(tree.fp),
+            config,
+            APP_VERSIONS,
+            tree.fp,
+        )
 
     # Build sourceDoc (parallel processing)
     tree.build_sourcedoc(
@@ -508,7 +525,7 @@ def _process_document(doc_name, filepaths, doc_dir, df_meta, config,
             resolved = run_ner(tree.root, person_db, doc_name)
             summary = summarize(resolved)
             if summary:
-                console.print(f"  [dim]NER: {summary}[/dim]")
+                say(f"  [dim]NER: {summary}[/dim]")
 
         except ImportError as e:
             console.print(
@@ -558,7 +575,8 @@ def execute(args):
     # -q silences chatter, never a warning: a mistyped --metadata is
     # reported by a logger, and hiding it converted a whole corpus with
     # placeholder headers and exited 0 with nothing said.
-    configure_logging(settings, quiet=bool(getattr(args, "quiet", 0)))
+    configure_logging(settings, quiet=bool(getattr(args, "quiet", 0)),
+                      write=not getattr(args, "dry_run", False))
 
     # Verify OCR directory exists
     # is_dir(), not exists(): -i now makes it easy to point the input at a
@@ -579,6 +597,41 @@ def execute(args):
         # promises to fail before a single write.
         console.print(
             "[red]--no-probe and --require-services contradict each other.[/red]"
+        )
+        sys.exit(EXIT_MISCONFIGURED)
+
+    unavailable = []
+
+    # Check modernization API availability
+    do_modernize = False
+    if settings.modernize:
+        from teille_douce.modernize import check_api as check_modernize_api
+        if no_probe or check_modernize_api():
+            do_modernize = True
+            say("[green]Modernization API (VieuxParler) available.[/green]")
+        else:
+            unavailable.append("VieuxParler (modernization)")
+            console.print("[yellow]Warning: Modernization API unreachable — continuing without modernization.[/yellow]")
+
+    # Check linguistic enrichment API availability
+    do_enrich = False
+    if settings.enrich:
+        from teille_douce.enrichment.client import check_server as check_enrichment_api
+        if no_probe or check_enrichment_api():
+            do_enrich = True
+            say("[green]Enrichment API (PyHellen) available.[/green]")
+        else:
+            unavailable.append("PyHellen (enrichment)")
+            console.print("[yellow]Warning: Enrichment API unreachable — continuing without linguistic annotation.[/yellow]")
+
+    if require_services and unavailable:
+        # Asked for explicitly: a phase whose service is down is fatal
+        # BEFORE anything is written, rather than a whole corpus quietly
+        # converted without its annotations.
+        console.print(
+            "[bold red]--require-services:[/bold red] "
+            + escape(", ".join(unavailable))
+            + " unreachable; nothing written."
         )
         sys.exit(EXIT_MISCONFIGURED)
 
@@ -742,41 +795,6 @@ def execute(args):
 
     no_probe = getattr(args, "no_probe", False)
     require_services = getattr(args, "require_services", False)
-    unavailable = []
-
-    # Check modernization API availability
-    do_modernize = False
-    if settings.modernize:
-        from teille_douce.modernize import check_api as check_modernize_api
-        if no_probe or check_modernize_api():
-            do_modernize = True
-            say("[green]Modernization API (VieuxParler) available.[/green]")
-        else:
-            unavailable.append("VieuxParler (modernization)")
-            console.print("[yellow]Warning: Modernization API unreachable — continuing without modernization.[/yellow]")
-
-    # Check linguistic enrichment API availability
-    do_enrich = False
-    if settings.enrich:
-        from teille_douce.enrichment.client import check_server as check_enrichment_api
-        if no_probe or check_enrichment_api():
-            do_enrich = True
-            say("[green]Enrichment API (PyHellen) available.[/green]")
-        else:
-            unavailable.append("PyHellen (enrichment)")
-            console.print("[yellow]Warning: Enrichment API unreachable — continuing without linguistic annotation.[/yellow]")
-
-    if require_services and unavailable:
-        # Asked for explicitly: a phase whose service is down is fatal
-        # BEFORE anything is written, rather than a whole corpus quietly
-        # converted without its annotations.
-        console.print(
-            "[bold red]--require-services:[/bold red] "
-            + escape(", ".join(unavailable))
-            + " unreachable; nothing written."
-        )
-        sys.exit(EXIT_MISCONFIGURED)
-
     # Created here and not earlier: every exit above this line means
     # nothing will be written, and leaving an empty directory behind after
     # refusing to run is a write like any other.

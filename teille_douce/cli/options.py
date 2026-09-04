@@ -8,6 +8,8 @@ name a run log.
 
 import argparse
 
+import teille_douce
+
 PHASES = ("enrich", "modernize", "ner")
 
 # A usage error must name the option the user typed, not the setting it
@@ -140,6 +142,14 @@ def add_run_arguments(parser):
     `teille-douce.cli.app.normalise` puts the subcommand first instead.
     """
     none = None
+
+    # Also on the subcommand: the options moved here, so `teille-douce
+    # --skip-existing --version` would otherwise be an unrecognised
+    # argument, where any ordering used to work.
+    parser.add_argument(
+        "-V", "--version", action="version",
+        version=f"teille-douce {teille_douce.__version__}",
+    )
 
     selection = parser.add_argument_group("document selection")
     selection.add_argument(

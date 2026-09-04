@@ -566,3 +566,35 @@ def test_a_log_file_in_a_directory_that_does_not_exist_is_created(tmp_path):
     logging.getLogger("teille_douce.test").warning("a record")
 
     assert path.exists(), "the run log was never written"
+
+
+def test_the_canonical_document_id_selects():
+    """It is what the pipeline writes into xml:id and what a user reads back
+    out of a TEI file. Without it `run LIV0002a` matched nothing, while
+    `LIV0002` silently took every volume of the set."""
+    from teille_douce.cli.run import select_documents
+
+    docs = [("LIV0002a_reconciled", [], None), ("LIV0002b_reconciled", [], None)]
+
+    kept, missed, _ = select_documents(docs, ["LIV0002a"], [], None)
+
+    assert [d[0] for d in kept] == ["LIV0002a_reconciled"]
+    assert missed == []
+
+
+def test_an_exclusion_that_matches_nothing_is_reported():
+    """`-x LIV0038_reconcilied` converted at full cost the volume it was
+    meant to hold back, and said nothing."""
+    from teille_douce.cli.run import select_documents
+
+    docs = [("LIV0044_reconciled", [], None)]
+
+    _, missed, _ = select_documents(docs, [], ["LIV0038_reconcilied"], None)
+
+    assert missed == ["LIV0038_reconcilied"]
+
+
+def test_quiet_never_raises_the_level_a_lower_layer_set():
+    settings = settings_for(["run", "-q"], env={"TDOUCE_LOG_LEVEL": "ERROR"})
+
+    assert settings.log_level == "ERROR"

@@ -109,7 +109,17 @@ def settings_from(args, env=None, parser=None):
 
     level = options.console_level(args)
     if level is not None:
-        flags["log_level"] = level
+        if getattr(args, "quiet", 0):
+            # -q asks for less, never for more: an operator whose wrapper
+            # set TDOUCE_LOG_LEVEL=ERROR and who adds -q must not get every
+            # WARNING back. The chatter is silenced by `say()` either way.
+            order = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
+            floor = Settings.load(flags={}, env=env).log_level
+            if order.index(level) > order.index(floor):
+                flags["log_level"] = level
+        else:
+            flags["log_level"] = level
+
         # Only a level that asks FOR debug turns the diagnostics on. `-q`
         # asks for a quiet console; the debug setting also gates what goes
         # into the run log, which console verbosity has no business

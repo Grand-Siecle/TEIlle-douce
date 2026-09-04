@@ -18,7 +18,19 @@ from pathlib import Path
 DEFAULT_OCR_DIR = "OCR"
 DEFAULT_OUTPUT_DIR = "tei_output"
 DEFAULT_ENTITIES_DIR = "entities"
+# One row per volume, semicolon-delimited, matched on the BDD column.
+# Expected columns: BDD, Titre_long, Titre_abrege, ID_auteur, ID_imprimeurs,
+#                   ID_Editeur, ID_Traducteurs, Lieu_publication, Date_01,
+#                   Date_02, Localisation, Cote, langues, Sujet, Matiere,
+#                   ARK, manifest_iiif, Format
 DEFAULT_METADATA_CSV = "metadata_livre.csv"
+
+# One row per person, keyed on BDD (PERSXXXX).
+# Expected columns: BDD, ARK, ISNI, Label_categ, Prenoms, Nom, Sexe,
+#                   RoleName, GenName, Surnoms, Annee_naissance,
+#                   ID_Ville_naissance, Ville_naissance, Annee_mort,
+#                   ID_Ville_mort, Ville_mort, Confession, Formation,
+#                   Professions, Notes
 DEFAULT_PERSONS_CSV = "metadata_personne.csv"
 DEFAULT_LOG_FILE = "pipeline.log"
 DEFAULT_PYHELLEN_URL = "http://localhost:8000"
@@ -29,47 +41,6 @@ DEFAULT_PYHELLEN_TIMEOUT = 120.0
 # nothing until "lat" appears below.
 DEFAULT_MODERNIZE_API = {"fra": "http://localhost:8011"}
 
-
-# =============================================================================
-# DEBUG & LOGGING
-# =============================================================================
-
-# Enable verbose logging in console for modernization, enrichment, etc.
-
-# Log file path (all DEBUG+ messages are always written here, regardless of DEBUG flag)
-# Set to None to disable file logging
-
-# =============================================================================
-# DIRECTORIES
-# =============================================================================
-
-# Input directory containing ALTO XML files or ZIP archives
-
-# Output directory for generated TEI XML files
-
-# =============================================================================
-# METADATA SOURCE
-# =============================================================================
-
-# CSV file containing document metadata (semicolon-delimited)
-# Expected columns: BDD, Titre_long, Titre_abrege, ID_auteur, ID_imprimeurs,
-#                   ID_Editeur, ID_Traducteurs, Lieu_publication, Date_01,
-#                   Date_02, Localisation, Cote, langues, Sujet, Matiere,
-#                   ARK, manifest_iiif, Format
-
-# CSV file containing person metadata (semicolon-delimited)
-# Expected columns: BDD (PERSXXXX), ARK, ISNI, Label_categ, Prenoms, Nom,
-#                   Sexe, RoleName, GenName, Surnoms, Annee_naissance,
-#                   ID_Ville_naissance, Ville_naissance, Annee_mort,
-#                   ID_Ville_mort, Ville_mort, Confession, Formation,
-#                   Professions, Notes
-
-# =============================================================================
-# PROCESSING PARAMETERS
-# =============================================================================
-
-# Maximum number of parallel workers for multiprocessing
-# Set to a lower value if you experience memory issues
 
 # =============================================================================
 # APPLICATION VERSIONS
