@@ -153,7 +153,7 @@ def _resolve_settings(args, env, parser, config_file, flags):
         # asks for a quiet console; the debug setting also gates what goes
         # into the run log, which console verbosity has no business
         # touching.
-        if level.upper() == "DEBUG":
+        if level.strip().upper() == "DEBUG":
             flags["debug"] = True
 
     settings = Settings.load(flags=flags, env=env, config_file=config_file)

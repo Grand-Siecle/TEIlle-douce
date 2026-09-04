@@ -582,16 +582,19 @@ def test_the_canonical_document_id_selects():
     assert missed == []
 
 
-def test_an_exclusion_that_matches_nothing_is_reported():
-    """`-x LIV0038_reconcilied` converted at full cost the volume it was
-    meant to hold back, and said nothing."""
+def test_select_documents_does_not_judge_an_exclusion_it_cannot_see():
+    """A mistyped `-x` is caught in `execute`, against the raw directory
+    listing. Judging it here — after archives have been left unpacked and
+    non-selected directories left unscanned — answered "no match" for
+    patterns that matched perfectly well, and made every working exclusion
+    exit 3."""
     from teille_douce.cli.run import select_documents
 
     docs = [("LIV0044_reconciled", [], None)]
 
     _, missed, _ = select_documents(docs, [], ["LIV0038_reconcilied"], None)
 
-    assert missed == ["LIV0038_reconcilied"]
+    assert missed == []
 
 
 def test_quiet_never_raises_the_level_a_lower_layer_set():

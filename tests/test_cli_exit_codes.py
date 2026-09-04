@@ -479,3 +479,34 @@ def test_naming_an_archived_volume_the_resume_will_skip(tmp_path):
 
     assert res.returncode == 0, res.stdout[-2000:]
     assert "Nothing to do" in res.stdout
+
+
+@pytest.mark.parametrize("args", [
+    ("-x", "LIV0038_reconciled"),                       # an extracted directory
+    ("-x", "LIV0099_reconciled"),                       # a volume still archived
+    ("LIV0001_reconciled", "-x", "LIV0038_reconciled"),  # outside the selector
+])
+def test_every_shape_of_exclusion_works(tmp_path, args):
+    """The first fix covered one shape of three. An excluded archive is
+    never unpacked and a non-selected directory is never scanned, so
+    judging the pattern after that narrowing answered "no match" for
+    patterns that matched."""
+    ocr = tmp_path / "ocr"
+    ocr.mkdir()
+    for name in ("LIV0001_reconciled", "LIV0038_reconciled"):
+        shutil.copytree(ALTO_MIN / DOCUMENT, ocr / name)
+    _archive(ocr, "LIV0099_reconciled")
+
+    res, _ = _executer_main(tmp_path, ocr, args=args, **MODE_COURT)
+
+    assert res.returncode == 0, res.stdout[-2000:]
+
+
+def test_a_mistyped_exclusion_is_still_refused(tmp_path):
+    ocr = tmp_path / "ocr"
+    shutil.copytree(ALTO_MIN, ocr)
+
+    res, _ = _executer_main(tmp_path, ocr, args=("-x", "NEXISTEPAS"), **MODE_COURT)
+
+    assert res.returncode == 3
+    assert "NEXISTEPAS" in res.stdout

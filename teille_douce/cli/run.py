@@ -411,10 +411,12 @@ def select_documents(docs, selectors, exclusions, limit, skip=None):
         unmatched = [p for p in selectors
                      if not any(matches(p, d[0]) for d in docs)]
     for pattern in exclusions or []:
-        if not any(matches(pattern, d[0]) for d in docs):
-            # Same rule as a selector: `-x LIV0038_reconcilied` converted
-            # at full cost the volume it was meant to hold back.
-            unmatched.append(pattern)
+        # Exclusions are NOT reported unmatched here. By the time this runs
+        # the list has already been narrowed — an excluded archive was
+        # never unpacked, a non-selected directory was never scanned — so
+        # this could only ever answer "no match" for patterns that matched
+        # perfectly well. `execute` validates every selector and exclusion
+        # against the raw directory listing before any of that.
         kept = [d for d in kept if not matches(pattern, d[0])]
     skipped = 0
     if skip is not None:
