@@ -360,3 +360,64 @@ def test_quiet_suppresses_the_lines_printed_during_setup(tmp_path):
 
     plan, _ = _executer_main(tmp_path, ocr, args=("-q", "--dry-run"), **MODE_COURT)
     assert "Loaded" not in plan.stdout, plan.stdout
+
+
+def _archive(ocr, name):
+    import zipfile
+
+    with zipfile.ZipFile(ocr / f"{name}.zip", "w") as archive:
+        for page in sorted(ALTO_MIN.rglob("*.xml")):
+            archive.write(page, page.name)
+
+
+def test_a_resume_does_not_unpack_what_it_is_about_to_skip(tmp_path):
+    """Unlike --limit, the resume predicate is name-based and knowable
+    without unpacking: a resumed corpus extracted every archive and only
+    then skipped it."""
+    ocr = tmp_path / "ocr"
+    ocr.mkdir()
+    _archive(ocr, "LIV0009_reconciled")
+    sortie = tmp_path / "out"
+    sortie.mkdir()
+    (sortie / "LIV0009_reconciled.tei.xml").write_text("<x/>", encoding="utf-8")
+
+    res, _ = _executer_main(tmp_path, ocr, args=("--skip-existing",), **MODE_COURT)
+
+    assert res.returncode == 0, res.stdout[-2000:]
+    assert not (ocr / "LIV0009_reconciled").exists(), "unpacked what it skipped"
+
+
+def test_a_plan_over_a_finished_archive_corpus_that_was_never_unpacked(tmp_path):
+    """The earlier test let a real run leave the extracted directory
+    behind, so it never saw the archives-only case: the plan dropped them
+    as converted and then reported a misconfiguration."""
+    ocr = tmp_path / "ocr"
+    ocr.mkdir()
+    _archive(ocr, "LIV0009_reconciled")
+    sortie = tmp_path / "out"
+    sortie.mkdir()
+    (sortie / "LIV0009_reconciled.tei.xml").write_text("<x/>", encoding="utf-8")
+
+    plan, _ = _executer_main(
+        tmp_path, ocr, args=("--skip-existing", "--dry-run"), **MODE_COURT
+    )
+
+    assert plan.returncode == 0, plan.stdout[-2000:]
+    assert "Nothing to do" in plan.stdout
+
+
+def test_the_skip_count_ignores_volumes_no_selector_named(tmp_path):
+    ocr = tmp_path / "ocr"
+    ocr.mkdir()
+    _archive(ocr, "LIV0009_reconciled")
+    _archive(ocr, "LIV0100_reconciled")
+    sortie = tmp_path / "out"
+    sortie.mkdir()
+    (sortie / "LIV0009_reconciled.tei.xml").write_text("<x/>", encoding="utf-8")
+
+    plan, _ = _executer_main(
+        tmp_path, ocr, args=("LIV0100", "--skip-existing", "--dry-run"),
+        **MODE_COURT,
+    )
+
+    assert "already converted" not in plan.stdout, plan.stdout

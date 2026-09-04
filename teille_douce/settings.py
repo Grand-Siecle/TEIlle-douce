@@ -438,8 +438,36 @@ def _resolve_modernize_api(flags, env, from_file, config_path, rejected):
     own. Only a language config.py already declares can be overridden — a
     variable naming an unknown ident is read for nobody and does nothing.
     """
-    shared, shared_origin = _resolve(_MODERNIZE_URL, flags, env, from_file,
-                                     config_path, rejected)
+    # The declared default is None, so a refusal here used to announce
+    # "using None (the default)" while the run went on to pick a
+    # per-language URL or the configured one. The fallback is stated so the
+    # message names something the reader can act on.
+    # A shared URL that no language will read cannot be worth a warning:
+    # when every ident has its own TDOUCE_MODERNIZE_URL_<IDENT>, the shared
+    # one affects nothing, and announcing a fallback for it named a value
+    # the run does not use.
+    overridden = {
+        ident for ident in config.DEFAULT_MODERNIZE_API
+        if env.get(f"{_MODERNIZE_URL_ENV}_{ident.upper()}")
+    }
+    shared_is_read = overridden != set(config.DEFAULT_MODERNIZE_API)
+
+    # The declared default is None, so a refusal used to announce "using
+    # None (the default)" while the run went on to pick the configured
+    # URL. The fallback is stated so the message names something the
+    # reader can act on.
+    fallback = next(iter(config.DEFAULT_MODERNIZE_API.values()), None)
+    scratch = rejected if shared_is_read else []
+    with warnings.catch_warnings():
+        if not shared_is_read:
+            warnings.simplefilter("ignore", RuntimeWarning)
+        shared, shared_origin = _resolve(
+            _Declaration(_MODERNIZE_URL.name, _MODERNIZE_URL.env,
+                         _MODERNIZE_URL.key, _MODERNIZE_URL.convert, fallback),
+            flags, env, from_file, config_path, scratch,
+        )
+    if shared == fallback and shared_origin == "default":
+        shared = None
     flag_given = shared is not None and shared_origin == "flag"
     resolved = {}
     for ident, default in config.DEFAULT_MODERNIZE_API.items():

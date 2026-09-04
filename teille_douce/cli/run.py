@@ -770,9 +770,24 @@ def execute(args):
     # convert nothing; and whether an archive yields a volume is not
     # knowable without unpacking it. The limit caps conversions, not
     # discovery. Selectors do bound it, because they are name-based.
+    unpacked_skips = []
+
+    def _worth_unpacking(name):
+        # Unlike --limit, the resume predicate is name-based and knowable
+        # without unpacking: a resumed corpus used to extract every
+        # archive and only then skip it, minutes and gigabytes of pure
+        # waste on a multi-volume rerun. What is skipped here is counted,
+        # or a finished archive corpus would look empty.
+        if (selectors or exclusions_asked) and not _selected(name):
+            return False
+        if (settings.skip_existing
+                and _out_path(name, settings.output_dir).exists()):
+            unpacked_skips.append(name)
+            return False
+        return True
+
     ready_dirs, failed_archives = expand_archives(
-        settings.ocr_dir, extract=not dry_run,
-        wanted=_selected if (selectors or exclusions_asked) else None,
+        settings.ocr_dir, extract=not dry_run, wanted=_worth_unpacking,
     )
 
     # Archives --dry-run did not unpack are prospective work, not absent
@@ -783,9 +798,13 @@ def execute(args):
         for zip_path in sorted(settings.ocr_dir.glob("*.zip")):
             if (settings.ocr_dir / zip_path.stem).exists():
                 continue
-            # The plan applies the filters the run would — but a skipped
-            # archive is counted rather than dropped, or the plan says
-            # nothing at all about a volume that is already converted.
+            # Selection first: counting before it reported a volume the
+            # user never selected as "already converted".
+            if (selectors or exclusions_asked) and not _selected(zip_path.stem):
+                continue
+            # A skipped archive is counted rather than dropped, or the plan
+            # says nothing at all about a volume already converted — and a
+            # finished, still-archived corpus read as a misconfiguration.
             if (settings.skip_existing
                     and _out_path(zip_path.stem, settings.output_dir).exists()):
                 skipped_archives += 1
@@ -814,7 +833,8 @@ def execute(args):
         if xmls:
             docs.append((d.name, xmls, d))
 
-    if not docs and not pending_archives:
+    if not docs and not pending_archives and not skipped_archives \
+            and not unpacked_skips:
         # The directory actually configured, not the literal "OCR/": the
         # message used to name a path the run was not reading.
         if failed_archives:
@@ -864,7 +884,7 @@ def execute(args):
             + escape(", ".join(unmatched))
         )
         sys.exit(EXIT_MISCONFIGURED)
-    skipped_existing += skipped_archives
+    skipped_existing += skipped_archives + len(unpacked_skips)
     if not docs and not failed_archives and not pending_archives:
         if skipped_existing:
             # Resuming a corpus that is already complete is a success, not

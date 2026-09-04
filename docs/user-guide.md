@@ -194,7 +194,7 @@ teille-douce run --fast --dry-run     # what would happen, writing nothing
 | `-n, --dry-run` | Resolve everything, list the plan, write nothing. |
 | `--fail-fast` | Stop at the first volume that fails. |
 | `--max-failures N` | Stop after N failed volumes. |
-| `-v` / `-vv` / `-q` · `--log-level` · `--log-file` / `--no-log-file` | Console detail and the run log. `-q` drops the per-document chatter and the progress bars; warnings, failures and the summary stay. `-qq` also drops the warnings, which is a deliberate spelling, not a default. |
+| `-v` / `-vv` / `-q` · `--log-level` · `--log-file` / `--no-log-file` | Console detail and the run log. `-q` drops the per-document chatter and the progress bars; the warnings a phase prints about what it lost, the failures and the summary stay. `-qq` additionally raises the log threshold to ERROR, which silences logger-emitted warnings — not the ones a phase prints itself, which are never hidden. |
 
 **Phases resolve left to right.** `--phases` replaces the set, then each
 `--X` / `--no-X` applies as a delta — so `--fast --enrich` means *no service
