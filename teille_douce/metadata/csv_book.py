@@ -23,9 +23,9 @@ from ..dates import date_attributes
 from teille_douce.config import (
     CSV_DELIMITER,
     BDD_PREFIX_PATTERN,
-    METADATA_PERSON_CSV,
     PLACEHOLDER_INFO_UNAVAILABLE,
 )
+from teille_douce.settings import get_settings
 
 logger = logging.getLogger(__name__)
 from .csv_person import load_person_database, get_person_database
@@ -253,7 +253,7 @@ def build_metadata_dict(row):
     # Load person database if not already loaded
     person_db = get_person_database()
     if person_db is None:
-        person_db = load_person_database(METADATA_PERSON_CSV)
+        person_db = load_person_database(get_settings().persons_csv)
 
     # Extract author information (split on |) - enriched with person data
     authors = []
@@ -615,7 +615,7 @@ def override_teiheader_from_csv(root, row, document_name=None):
     # Load person database for enrichment
     person_db = get_person_database()
     if person_db is None:
-        person_db = load_person_database(METADATA_PERSON_CSV)
+        person_db = load_person_database(get_settings().persons_csv)
 
     # titleStmt: only authors and translators (intellectual contributors)
     titleStmt = root.find(".//teiHeader/fileDesc/titleStmt")

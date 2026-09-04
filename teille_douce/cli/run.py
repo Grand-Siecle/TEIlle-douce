@@ -26,31 +26,26 @@ from rich.console import Console
 from rich.markup import escape
 
 # Import configuration
-from teille_douce.config import (
-    OCR_DIR,
-    OUTPUT_DIR,
-    METADATA_CSV,
-    METADATA_PERSON_CSV,
-    APP_VERSIONS,
-    IIIF_URI,
-    RESPONSIBILITY,
-    ENRICHMENT_ENABLED,
-    MODERNIZE_ENABLED,
-    NER_ENABLED,
-    NER_OUTPUT_DIR,
-    DEBUG,
-    LOG_FILE,
-)
+from teille_douce.config import APP_VERSIONS, IIIF_URI, RESPONSIBILITY
+from teille_douce.settings import get_settings
 
 # Configure logging
+#
+# In a function, not in this module's body: the log file's name and the
+# console level are settings, and settings are resolved after the arguments
+# are parsed. Configuring at import time froze both before the command line
+# had been read — and made `teille-douce --help` name a run log.
 _log_format = "%(asctime)s %(name)s [%(levelname)s] %(message)s"
 _log_datefmt = "%Y-%m-%d %H:%M:%S"
-_handlers = []
 
-# File handler: always write DEBUG+ to log file
+# Log file of the run in progress, or None. Read by the end-of-run summary.
+RUN_LOG_FILE = None
+
+
 def _run_log_path(base_path, now):
     """
-    Per-run, timestamped log file derived from LOG_FILE (audit 2.10).
+    Per-run, timestamped log file derived from the log_file setting
+    (audit 2.10).
 
     mode="w" on a fixed name destroyed the previous run's log: a failed
     nightly run relaunched in the morning became undiagnosable. Each run
@@ -59,31 +54,43 @@ def _run_log_path(base_path, now):
     return base_path.with_name(f"{base_path.stem}_{now:%Y%m%d_%H%M%S}{base_path.suffix}")
 
 
-# Actual log file of this run (None when file logging is disabled)
-RUN_LOG_FILE = _run_log_path(Path(LOG_FILE), datetime.now()) if LOG_FILE else None
+def configure_logging(settings, now=None):
+    """Install this run's handlers. Returns the run's log file, or None."""
+    global RUN_LOG_FILE
 
-if RUN_LOG_FILE:
-    # delay=True: the file is only created at the first record, so importing
-    # this module (tests) does not litter the working directory with logs.
-    _file_handler = logging.FileHandler(
-        str(RUN_LOG_FILE), mode="w", encoding="utf-8", delay=True
+    handlers = []
+    RUN_LOG_FILE = (
+        _run_log_path(Path(settings.log_file), now or datetime.now())
+        if settings.log_file else None
     )
-    _file_handler.setLevel(logging.DEBUG)
-    _file_handler.setFormatter(logging.Formatter(_log_format, datefmt=_log_datefmt))
-    _handlers.append(_file_handler)
+    if RUN_LOG_FILE:
+        # delay=True: the file is only created at the first record, so a run
+        # that dies before logging anything leaves no empty file behind.
+        file_handler = logging.FileHandler(
+            str(RUN_LOG_FILE), mode="w", encoding="utf-8", delay=True
+        )
+        file_handler.setLevel(logging.DEBUG)
+        file_handler.setFormatter(logging.Formatter(_log_format, datefmt=_log_datefmt))
+        handlers.append(file_handler)
 
-# Console handler: WARNING+ by default, DEBUG+ if DEBUG is enabled
-_console_handler = logging.StreamHandler()
-_console_handler.setLevel(logging.DEBUG if DEBUG else logging.WARNING)
-_console_handler.setFormatter(logging.Formatter("%(name)s [%(levelname)s] %(message)s"))
-_handlers.append(_console_handler)
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(
+        logging.DEBUG if settings.debug else getattr(logging, settings.log_level, logging.WARNING)
+    )
+    console_handler.setFormatter(
+        logging.Formatter("%(name)s [%(levelname)s] %(message)s")
+    )
+    handlers.append(console_handler)
 
-logging.basicConfig(level=logging.DEBUG, handlers=_handlers)
+    logging.basicConfig(level=logging.DEBUG, handlers=handlers, force=True)
 
-# Third-party HTTP libs are extremely chatty at DEBUG and were filling
-# pipeline.log with megabytes of connection traces.
-for _noisy in ("httpx", "httpcore", "urllib3", "asyncio"):
-    logging.getLogger(_noisy).setLevel(logging.WARNING)
+    # Third-party HTTP libs are extremely chatty at DEBUG and were filling
+    # the run log with megabytes of connection traces.
+    for noisy in ("httpx", "httpcore", "urllib3", "asyncio"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
+
+    return RUN_LOG_FILE
+
 
 # Import modules
 from teille_douce import TEI
@@ -241,10 +248,10 @@ def _gallica_image_base(manifest_url):
     return m.group(1) if m else None
 
 
-def _out_path(doc_name):
+def _out_path(doc_name, output_dir):
     """Final TEI output path of a document — single spelling for the writer,
     the --skip-existing filter and the failure cleanup."""
-    return OUTPUT_DIR / f"{doc_name}.tei.xml"
+    return output_dir / f"{doc_name}.tei.xml"
 
 
 # =============================================================================
@@ -259,6 +266,7 @@ def _process_document(doc_name, filepaths, doc_dir, df_meta, config,
     Raises on failure: error isolation lives in main()'s loop (audit 2.1),
     so one broken document cannot kill a multi-hour run.
     """
+    settings = get_settings()
     t0 = perf_counter()
     console.print(f"\n[bold cyan]-> {escape(doc_name)}[/bold cyan]")
 
@@ -403,7 +411,7 @@ def _process_document(doc_name, filepaths, doc_dir, df_meta, config,
             )
 
     # Step 5: Named Entity Recognition (after enrichment + modernization)
-    if NER_ENABLED:
+    if get_settings().ner:
         task_ner = progress.add_task(
             f"[cyan]{escape(doc_name)}: Reconnaissance d'entites nommees[/cyan]",
             total=None,
@@ -439,7 +447,7 @@ def _process_document(doc_name, filepaths, doc_dir, df_meta, config,
     tree.finalize_extent()
 
     # Write output file
-    out_path = _out_path(doc_name)
+    out_path = _out_path(doc_name, settings.output_dir)
     write_xml(tree.root, out_path)
 
     dt = perf_counter() - t0
@@ -462,16 +470,19 @@ def execute(args):
        - Builds body from extracted text
        - Writes output TEI XML file
     """
+    settings = get_settings()
+    configure_logging(settings)
+
     # Verify OCR directory exists
-    if not OCR_DIR.exists():
-        console.print(f"[red]Directory not found: {OCR_DIR}[/red]")
+    if not settings.ocr_dir.exists():
+        console.print(f"[red]Directory not found: {settings.ocr_dir}[/red]")
         sys.exit(1)
 
     # Create output directory
-    OUTPUT_DIR.mkdir(exist_ok=True)
+    settings.output_dir.mkdir(parents=True, exist_ok=True)
 
     # Extract ZIP archives (corrupt ones are skipped and reported)
-    ready_dirs, failed_archives = expand_archives(OCR_DIR)
+    ready_dirs, failed_archives = expand_archives(settings.ocr_dir)
 
     # Collect documents to process
     docs = []
@@ -487,7 +498,7 @@ def execute(args):
     # Audit 2.5: minimal resume after a crash — skip already-converted docs
     skipped_existing = 0
     if args.skip_existing:
-        pending = [d for d in docs if not _out_path(d[0]).exists()]
+        pending = [d for d in docs if not _out_path(d[0], settings.output_dir).exists()]
         skipped_existing = len(docs) - len(pending)
         if skipped_existing:
             console.print(
@@ -500,21 +511,21 @@ def execute(args):
             return
 
     # Load global metadata CSV
-    df_meta = load_metadata(METADATA_CSV)
+    df_meta = load_metadata(settings.metadata_csv)
 
     # Load person metadata database
-    person_db = load_person_database(METADATA_PERSON_CSV)
+    person_db = load_person_database(settings.persons_csv)
     if person_db:
-        console.print(f"[dim]Loaded {len(person_db)} persons from {METADATA_PERSON_CSV}[/dim]")
+        console.print(f"[dim]Loaded {len(person_db)} persons from {settings.persons_csv}[/dim]")
     else:
         console.print(
-            f"[yellow]Warning: person metadata not loaded ({METADATA_PERSON_CSV}) "
+            f"[yellow]Warning: person metadata not loaded ({settings.persons_csv}) "
             f"— headers will keep placeholder person entries.[/yellow]"
         )
 
     # Check modernization API availability
     do_modernize = False
-    if MODERNIZE_ENABLED:
+    if settings.modernize:
         from teille_douce.modernize import check_api as check_modernize_api
         if check_modernize_api():
             do_modernize = True
@@ -524,7 +535,7 @@ def execute(args):
 
     # Check linguistic enrichment API availability
     do_enrich = False
-    if ENRICHMENT_ENABLED:
+    if settings.enrich:
         from teille_douce.enrichment.client import check_server as check_enrichment_api
         if check_enrichment_api():
             do_enrich = True
@@ -566,8 +577,8 @@ def execute(args):
                 failed_docs.append((doc_name, str(e)))
                 # No orphan side effects: entity CSVs written before the
                 # failure would reference a TEI that was never produced
-                if not _out_path(doc_name).exists():
-                    shutil.rmtree(NER_OUTPUT_DIR / doc_name, ignore_errors=True)
+                if not _out_path(doc_name, settings.output_dir).exists():
+                    shutil.rmtree(settings.entities_dir / doc_name, ignore_errors=True)
                 # And no zombie progress rows left spinning forever
                 for tid in progress.task_ids:
                     if tid != task_docs:

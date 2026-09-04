@@ -146,8 +146,8 @@ def test_default_tree_taxonomy_created_with_segmonto_id():
 
 def test_default_tree_editorial_decl_present_when_enabled(monkeypatch):
     monkeypatch.setattr(
-        "teille_douce.teiheader.default.EDITORIAL_DECLARATIONS",
-        {"normalization": {"enabled": True, "attrs": {}, "text": "norm text"}},
+        "teille_douce.teiheader.default.editorial_declarations",
+        lambda: {"normalization": {"enabled": True, "attrs": {}, "text": "norm text"}},
     )
     root, tree = make_default_tree()
     editorial_decl = root.find(".//encodingDesc/editorialDecl")
@@ -163,8 +163,8 @@ def test_default_tree_editorial_decl_keeps_the_language_prose_when_all_disabled(
     tout ; il en faut un desormais, la detection de langue tournant quoi
     qu'il arrive."""
     monkeypatch.setattr(
-        "teille_douce.teiheader.default.EDITORIAL_DECLARATIONS",
-        {"normalization": {"enabled": False, "attrs": {}, "text": "norm text"}},
+        "teille_douce.teiheader.default.editorial_declarations",
+        lambda: {"normalization": {"enabled": False, "attrs": {}, "text": "norm text"}},
     )
     root, tree = make_default_tree()
     editorial_decl = root.find(".//encodingDesc/editorialDecl")
@@ -780,7 +780,7 @@ def test_the_language_prose_is_written_even_with_every_editorial_decl_off(monkey
     (modernisation, enrichissement, NER) ; la detection de langue, elle,
     tourne toujours. Une execution ou les trois phases sont coupees doit
     quand meme publier la methode qui a produit les xml:lang."""
-    monkeypatch.setattr(teiheader_default, "EDITORIAL_DECLARATIONS", {})
+    monkeypatch.setattr(teiheader_default, "editorial_declarations", dict)
     root, _ = make_default_tree()
     build_langusage(root, {"fra": 10})
 

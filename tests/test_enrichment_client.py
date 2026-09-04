@@ -4,10 +4,27 @@
 #
 # Run: venv/bin/python -m pytest tests/test_enrichment_client.py -q
 import httpx
+from dataclasses import replace
+
 import pytest
+
+from teille_douce.settings import get_settings, set_settings
 
 from teille_douce.enrichment import client as client_mod
 from teille_douce.enrichment.client import tag_texts
+
+
+@pytest.fixture(autouse=True)
+def _restore_settings():
+    """Settings are process-wide now; hand the next file an untouched one."""
+    before = get_settings()
+    yield
+    set_settings(before)
+
+
+def _setting(**overrides):
+    """Install overrides for the current case."""
+    set_settings(replace(get_settings(), **overrides))
 
 
 def _reponse_ok(texte):
@@ -64,9 +81,9 @@ def test_tag_texts_isolated_failure_does_not_stop_the_rest():
 def test_tag_texts_circuit_breaker_opens_after_consecutive_failures(monkeypatch):
     """Audit 2.7 : apres N echecs consecutifs, plus aucune requete n'est
     envoyee — un serveur fige ne se transforme plus en heures de timeouts."""
-    monkeypatch.setattr(client_mod, "PYHELLEN_MAX_CONSECUTIVE_FAILURES", 3)
+    _setting(pyhellen_max_consecutive_failures=3)
     # concurrence 1 pour rendre l'ordre d'execution deterministe
-    monkeypatch.setattr(client_mod, "PYHELLEN_MAX_CONCURRENT", 1)
+    _setting(pyhellen_concurrency=1)
     envoyees = {"n": 0}
 
     def handler(request):
@@ -84,8 +101,8 @@ def test_tag_texts_circuit_breaker_opens_after_consecutive_failures(monkeypatch)
 
 
 def test_tag_texts_success_resets_the_failure_counter(monkeypatch):
-    monkeypatch.setattr(client_mod, "PYHELLEN_MAX_CONSECUTIVE_FAILURES", 3)
-    monkeypatch.setattr(client_mod, "PYHELLEN_MAX_CONCURRENT", 1)
+    _setting(pyhellen_max_consecutive_failures=3)
+    _setting(pyhellen_concurrency=1)
     # echec, echec, succes, echec, echec : jamais 3 consecutifs
     reponses = iter([500, 500, 200, 500, 500])
 

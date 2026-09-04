@@ -228,3 +228,22 @@ def test_settings_survive_a_process_boundary():
     settings = Settings.load(env={"TDOUCE_MODERNIZE_URL": "http://x:1"}, flags={})
 
     assert pickle.loads(pickle.dumps(settings)) == settings
+
+
+def test_a_similarity_written_as_a_percentage_is_refused():
+    """0.95 typed as 95: readable, out of range, and a guard that accepted
+    it would reject every modernization the pipeline produces."""
+    with pytest.warns(RuntimeWarning, match=r"outside \[0.0, 1.0\]"):
+        settings = Settings.load(
+            env={"TDOUCE_MODERNIZE_SIMILARITY_MIN": "95"}, flags={}
+        )
+
+    assert settings.modernize_similarity_min == 0.8
+
+
+@pytest.mark.parametrize("raw", ["oui", "2", "", "  "])
+def test_a_boolean_it_cannot_read_keeps_the_default(raw):
+    with pytest.warns(RuntimeWarning, match="TDOUCE_NER"):
+        settings = Settings.load(env={"TDOUCE_NER": raw}, flags={})
+
+    assert settings.ner is True
