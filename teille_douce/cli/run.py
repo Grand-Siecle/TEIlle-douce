@@ -405,11 +405,15 @@ def select_documents(docs, selectors, exclusions, limit, skip=None):
         return any(candidate == pattern or fnmatch(candidate, pattern)
                    for candidate in candidates)
 
+    # No pattern is judged here, selector or exclusion. By the time this
+    # runs the list has been narrowed by those very patterns — an excluded
+    # or non-selected archive was never unpacked — so a "no match" verdict
+    # would be about this function's own filtering. `execute` validates
+    # every pattern against the raw directory listing beforehand, which is
+    # the only place that sees the whole corpus.
     kept, unmatched = list(docs), []
     if selectors:
         kept = [d for d in docs if any(matches(p, d[0]) for p in selectors)]
-        unmatched = [p for p in selectors
-                     if not any(matches(p, d[0]) for d in docs)]
     for pattern in exclusions or []:
         # Exclusions are NOT reported unmatched here. By the time this runs
         # the list has already been narrowed — an excluded archive was
@@ -665,13 +669,17 @@ def execute(args):
     # corpus and both catalogues had been read.
     entities = settings.entities_dir.resolve()
     corpus = settings.ocr_dir.resolve()
-    if entities == corpus or corpus in entities.parents or entities in corpus.parents:
+    entities_asked = settings.origin("entities_dir") != "default"
+    if entities_asked and (entities == corpus or corpus in entities.parents
+                           or entities in corpus.parents):
         # A per-document failure removes that document's entity directory.
         # Pointing --entities at the corpus made that removal delete the
         # ALTO it had just read.
         console.print(
-            f"[red]--entities must not overlap the input directory:[/red] "
-            f"{escape(str(settings.entities_dir))}"
+            f"[red]The entity directory must not overlap the input "
+            f"directory[/red] — {escape(str(settings.entities_dir))} "
+            f"({escape(settings.origin('entities_dir'))}) against "
+            f"{escape(str(settings.ocr_dir))}"
         )
         sys.exit(EXIT_MISCONFIGURED)
 
@@ -732,6 +740,13 @@ def execute(args):
         if stray:
             console.print("[red]No volume matches:[/red] " + escape(", ".join(stray)))
             sys.exit(EXIT_MISCONFIGURED)
+
+    config_origin = settings.origin("__config__")
+    if config_origin != "default":
+        # Named in every run, not only in the plan: a teille-douce.toml
+        # found by walking up can redirect paths.output, and an operator
+        # who has forgotten it has nothing to read.
+        say(f"[dim]Reading {escape(config_origin)}[/dim]")
 
     unavailable = []
 
@@ -867,8 +882,13 @@ def execute(args):
         if xmls:
             docs.append((d.name, xmls, d))
 
+    everything_excluded = bool(selectors or exclusions_asked) and not any(
+        _selected(entry.name if entry.is_dir() else entry.stem)
+        for entry in settings.ocr_dir.iterdir()
+        if entry.is_dir() or entry.suffix == ".zip"
+    )
     if not docs and not pending_archives and not skipped_archives \
-            and not unpacked_skips:
+            and not unpacked_skips and not everything_excluded:
         # The directory actually configured, not the literal "OCR/": the
         # message used to name a path the run was not reading.
         if failed_archives:
@@ -909,13 +929,6 @@ def execute(args):
         getattr(args, "exclude", None) or [], getattr(args, "limit", None),
         skip=already_converted,
     )
-    # A selector that named an archive matched something real, even if that
-    # something failed or is still zipped.
-    unmatched = [
-        selector for selector in unmatched
-        if not any(select_documents([(name, [], None)], [selector], [], None)[0]
-                   for name in known)
-    ]
     if unmatched:
         console.print(
             "[red]No volume matches:[/red] "
@@ -1046,14 +1059,18 @@ def execute(args):
         stopped_early = False
         # Entity directories this run brought into existence. A failure
         # cleans up only these, never a directory that was already there.
-        entity_dirs_created = set()
+        entity_dirs_created, entity_files_before = set(), {}
         # Corrupt archives belong in the summary and in the exit code, but
         # not in the failure budget: seeding the list with them made
         # --fail-fast stop after the first SUCCESSFUL document.
         failed_docs = []
         for doc_name, filepaths, doc_dir in docs:
-            if not (settings.entities_dir / doc_name).exists():
+            entity_dir = settings.entities_dir / doc_name
+            if not entity_dir.exists():
                 entity_dirs_created.add(doc_name)
+                entity_files_before[doc_name] = set()
+            else:
+                entity_files_before[doc_name] = set(entity_dir.rglob("*"))
             try:
                 _process_document(
                     doc_name, filepaths, doc_dir, df_meta, config,
@@ -1076,9 +1093,20 @@ def execute(args):
                 # any per-document failure deleted the source volume.
                 stray = settings.entities_dir / doc_name
                 if (not _out_path(doc_name, settings.output_dir).exists()
-                        and doc_name in entity_dirs_created
                         and stray.is_dir()):
-                    shutil.rmtree(stray, ignore_errors=True)
+                    if doc_name in entity_dirs_created:
+                        shutil.rmtree(stray, ignore_errors=True)
+                    else:
+                        # A directory that was already there keeps what it
+                        # held; only the files this run wrote are removed,
+                        # or they would reference a TEI that does not
+                        # exist (audit 2.4).
+                        for path in sorted(stray.rglob("*"), reverse=True):
+                            if path not in entity_files_before[doc_name]:
+                                if path.is_file():
+                                    path.unlink(missing_ok=True)
+                                elif path.is_dir():
+                                    path.rmdir()
                 # And no zombie progress rows left spinning forever
                 for tid in progress.task_ids:
                     if tid != task_docs:

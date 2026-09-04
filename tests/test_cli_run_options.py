@@ -214,12 +214,17 @@ def test_a_selector_matches_a_name_an_internal_id_or_a_glob():
         == ["LIV0038_t2_reconciled"]
 
 
-def test_a_selector_that_matches_nothing_is_reported():
-    """A typo must not look like an empty corpus."""
+def test_select_documents_judges_no_pattern_at_all():
+    """Neither selectors nor exclusions. By the time this runs the list has
+    been narrowed by those very patterns — an excluded or non-selected
+    archive was never unpacked — so a "no match" verdict would be about its
+    own filtering. `execute` validates every pattern against the raw
+    directory listing, which is the only place that sees the whole corpus;
+    tests/test_cli_exit_codes.py exercises that end to end."""
     kept, missed, _ = select_documents(_docs("LIV0044"), ["LIV9999"], [], None)
 
     assert kept == []
-    assert missed == ["LIV9999"]
+    assert missed == []
 
 
 def test_exclusions_apply_after_selection():

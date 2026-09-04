@@ -547,3 +547,45 @@ def test_a_failure_removes_only_the_entity_directory_it_created(tmp_path):
         sortie.chmod(0o700)
 
     assert (entities / "keep.txt").exists(), "pre-existing content was removed"
+
+
+def test_excluding_everything_in_an_archive_corpus_says_so(tmp_path):
+    """An excluded archive is never unpacked, so the emptiness guard fired
+    before the exclusion branch and blamed a missing corpus."""
+    ocr = tmp_path / "ocr"
+    ocr.mkdir()
+    _archive(ocr, "LIV0001_reconciled")
+
+    res, _ = _executer_main(
+        tmp_path, ocr, args=("LIV0001", "-x", "LIV0001"), **MODE_COURT
+    )
+
+    assert res.returncode == 3
+    assert "Every volume was excluded" in res.stdout, res.stdout
+
+
+def test_the_config_file_is_named_in_a_real_run(tmp_path):
+    """It was printed only under --dry-run, so a teille-douce.toml found by
+    walking up could redirect paths.output with nothing naming it."""
+    ocr = tmp_path / "ocr"
+    shutil.copytree(ALTO_MIN, ocr)
+    (tmp_path / "teille-douce.toml").write_text(
+        "[limits]\njobs = 2\n", encoding="utf-8"
+    )
+
+    res, _ = _executer_main(tmp_path, ocr, **MODE_COURT)
+
+    assert res.returncode == 0, res.stdout[-2000:]
+    # Rich wraps a long path, so the name can straddle a newline.
+    assert "teille-douce.toml" in res.stdout.replace("\n", ""), res.stdout
+
+
+def test_the_default_entity_directory_never_blocks_a_run(tmp_path):
+    """The overlap guard fired on invocations that never passed --entities:
+    `run -i .` refused, naming a flag the user had not typed."""
+    ocr = tmp_path / "ocr"
+    shutil.copytree(ALTO_MIN, ocr)
+
+    res, _ = _executer_main(tmp_path, tmp_path / "ocr", **MODE_COURT)
+
+    assert res.returncode == 0, res.stdout[-2000:]

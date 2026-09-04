@@ -223,13 +223,21 @@ def normalise(argv, commands=None):
             # must not read OCR as the first positional and `run` as a
             # document selector.
             name = token.split("=", 1)[0]
-            skip = ("=" not in token and (
-                name in takes_a_value
-                or (name.startswith("--") and len(name) > 2
-                    and sum(option.startswith(name)
-                            for option in _long_options()) == 1
-                    and any(option.startswith(name) for option in takes_a_value))
-            ))
+            if "=" in token:
+                continue
+            if name in takes_a_value:
+                skip = True
+                continue
+            if name.startswith("--") and len(name) > 2:
+                # argparse accepts unambiguous prefixes.
+                matches = [o for o in _long_options() if o.startswith(name)]
+                skip = len(matches) == 1 and matches[0] in takes_a_value
+                continue
+            # A short cluster: `-nj 4` is `-n -j 4`, so the value belongs to
+            # its LAST letter. Testing the whole token left `4` looking like
+            # a positional and the real subcommand behind it a selector.
+            if len(name) > 2 and not name.startswith("--"):
+                skip = f"-{name[-1]}" in takes_a_value
             continue
         if token in commands:
             index = position
