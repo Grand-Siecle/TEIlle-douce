@@ -982,3 +982,81 @@ def test_an_existing_entity_directory_is_snapshotted_whole(tmp_path):
 
     assert kept in existing
     assert not created and reason is None
+
+
+def test_an_unreadable_entity_directory_is_never_cleaned(tmp_path):
+    """The guard the snapshot exists to feed. Removing it broke nothing
+    visible: the three tests above cover `entity_snapshot` alone, and
+    nothing pinned the site it protects — which is exactly the kind of
+    line a later round drops on the way past."""
+    from teille_douce.cli.run import may_remove_entity_files
+
+    stray = tmp_path / "ents" / "DOC1"
+    stray.mkdir(parents=True)
+
+    assert may_remove_entity_files(stray, wrote_entities=True,
+                                   snapshot_failed=False, tei_exists=False)
+    assert not may_remove_entity_files(stray, wrote_entities=True,
+                                       snapshot_failed=True, tei_exists=False)
+
+
+def test_nothing_is_cleaned_when_the_phase_that_writes_it_did_not_run(tmp_path):
+    """`--fast` writes no entity file, so every file under that directory
+    belongs to someone else."""
+    from teille_douce.cli.run import may_remove_entity_files
+
+    stray = tmp_path / "ents" / "DOC1"
+    stray.mkdir(parents=True)
+
+    assert not may_remove_entity_files(stray, wrote_entities=False,
+                                       snapshot_failed=False, tei_exists=False)
+
+
+def test_a_document_that_did_produce_its_tei_keeps_its_entities(tmp_path):
+    from teille_douce.cli.run import may_remove_entity_files
+
+    stray = tmp_path / "ents" / "DOC1"
+    stray.mkdir(parents=True)
+
+    assert not may_remove_entity_files(stray, wrote_entities=True,
+                                       snapshot_failed=False, tei_exists=True)
+
+
+def test_the_unreadable_case_is_settled_before_the_call_that_would_raise():
+    """`stray.is_dir()` raises PermissionError when the parent is not
+    traversable — the very situation `snapshot_failed` reports — and that
+    exception would escape the per-document handler and end a run one
+    broken volume must not end. So the order of the conditions is part of
+    the fix, not a style choice."""
+    from teille_douce.cli.run import may_remove_entity_files
+
+    class Explodes:
+        def is_dir(self):
+            raise PermissionError(13, "Permission denied")
+
+    assert not may_remove_entity_files(Explodes(), wrote_entities=True,
+                                       snapshot_failed=True, tei_exists=False)
+
+
+def test_an_unreadable_directory_is_reported_even_though_rglob_is_silent(
+        tmp_path):
+    """`rglob` swallows the error and yields nothing, so a directory full
+    of a previous run's files that this process cannot read came back as
+    an EMPTY before-set — which reads as "this run wrote all of it"."""
+    import os
+    import stat
+
+    entities = tmp_path / "ents"
+    entities.mkdir()
+    (entities / "from-a-previous-run.csv").write_text("x", encoding="utf-8")
+    os.chmod(entities, 0o000)
+    try:
+        if os.access(entities, os.R_OK):
+            pytest.skip("running as a user that ignores file permissions")
+        existing, created, reason = entity_snapshot_of(entities)
+    finally:
+        os.chmod(entities, stat.S_IRWXU)
+
+    assert reason is not None, "an unreadable directory answered as readable"
+    assert not created
+    assert existing == set()

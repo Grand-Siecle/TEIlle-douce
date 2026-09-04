@@ -280,6 +280,14 @@ The keys are the ones in the table below, second column: each setting has
 one, and it is not derivable from the variable name — `TDOUCE_OCR_DIR` is
 `paths.input`.
 
+**A relative path in the config file is read next to that file**, not next
+to the working directory: the file is found by walking up, so one line has
+to mean the same thing from every subdirectory it was written to serve.
+`output = "tei"` in `/corpus/teille-douce.toml` is `/corpus/tei` wherever
+you launch the run from. An empty value is refused like any other, and
+`~` means your home directory — in the config file, in a `TDOUCE_*`
+variable and in a quoted flag alike, since only a shell expands it for you.
+
 **Environment variables** override what moves between machines and between runs
 — paths, service URLs, timeouts, and the phase switches. The prefix is
 `TDOUCE_`, from the pipeline's original name; it is kept so that existing

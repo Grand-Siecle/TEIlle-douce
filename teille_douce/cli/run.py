@@ -262,11 +262,40 @@ def entity_snapshot(entity_dir):
     directory alone.
     """
     try:
-        if entity_dir.exists():
-            return set(entity_dir.rglob("*")), False, None
-        return set(), True, None
+        if not entity_dir.exists():
+            return set(), True, None
+        # iterdir() and not rglob(): rglob swallows the error and yields
+        # nothing, so a directory full of a previous run's entity files
+        # that this process cannot read came back as an EMPTY before-set —
+        # which reads as "this run wrote all of it", the licence to delete.
+        # Asking for one entry is enough to find out, and cheap.
+        for _ in entity_dir.iterdir():
+            break
+        return set(entity_dir.rglob("*")), False, None
     except OSError as reason:
         return set(), False, reason
+
+
+def may_remove_entity_files(stray, wrote_entities, snapshot_failed,
+                           tei_exists):
+    """Whether a failed document's entity directory may be touched at all.
+
+    Four conditions, and the order is load-bearing. `stray.is_dir()` is
+    last because it raises PermissionError on a directory whose parent is
+    not traversable -- exactly the case `snapshot_failed` describes -- and
+    that exception would escape the per-document handler and end a run
+    that one broken volume is not allowed to end.
+
+    A predicate rather than an inline `if` because each of these has
+    already been the whole bug once: without `wrote_entities`, a --fast
+    run deleted files it never wrote; without `snapshot_failed`, a
+    directory this process could not even read counted as one this run
+    had written whole.
+    """
+    return (wrote_entities
+            and not snapshot_failed
+            and not tei_exists
+            and stray.is_dir())
 
 
 def expand_archives(ocr_dir, extract=True, wanted=None, keep=None):
@@ -326,17 +355,28 @@ def expand_archives(ocr_dir, extract=True, wanted=None, keep=None):
                 continue
         ready_dirs.add(target)
 
-    # Include existing directories with XML files (never the temporary
-    # ".extracting" directories of an interrupted run)
+    # Include the volume directories already there (never the temporary
+    # ".extracting" directories of an interrupted run, nor the noise a
+    # zip tool leaves beside them).
+    #
+    # Directories holding no ALTO come through too, and the caller says
+    # so out loud. Requiring an *.xml here dropped them before anything
+    # could count them, and dropped them ONLY on this path: the archive
+    # loop above adds its target whatever the archive turned out to hold.
+    # The same empty volume was therefore reported when it arrived as a
+    # zip and invisible once the operator deleted that zip — the one
+    # difference being which of the two runs you happened to look at.
     for d in ocr_dir.iterdir():
-        if d.is_dir() and not d.name.endswith(".extracting"):
-            # Gated like the archives: listing every page of every volume
-            # to throw them away afterwards is the same waste on a
-            # hundred-volume rerun.
-            if keep is not None and not keep(d.name):
-                continue
-            if any(d.rglob("*.xml")):
-                ready_dirs.add(d)
+        if not d.is_dir() or d.name.endswith(".extracting"):
+            continue
+        if d.name.startswith(".") or d.name == "__MACOSX":
+            continue
+        # Gated like the archives: listing every page of every volume
+        # to throw them away afterwards is the same waste on a
+        # hundred-volume rerun.
+        if keep is not None and not keep(d.name):
+            continue
+        ready_dirs.add(d)
 
     return sorted(ready_dirs), failed_archives
 
@@ -1002,9 +1042,15 @@ def execute(args):
             # Resuming a corpus that is already complete is a success, not
             # a misconfiguration — it is the idiom the user guide
             # recommends for a nightly wrapper.
+            # "every document" has to mean every document. A volume that
+            # held no ALTO has no TEI output and never will, and saying
+            # otherwise on the line right under the warning that named it
+            # contradicts the warning.
+            note = ("" if not without_alto else
+                    f" ({len(without_alto)} held no ALTO and produced none)")
             console.print(
-                "[bold green]Nothing to do:[/bold green] every document "
-                "already has a TEI output."
+                f"[bold green]Nothing to do:[/bold green] every document "
+                f"that could be converted already has a TEI output.{note}"
             )
             return
         console.print("[red]Every volume was excluded.[/red]")
@@ -1170,10 +1216,12 @@ def execute(args):
                 # remove — and removing anything would be removing someone
                 # else's files.
                 stray = settings.entities_dir / doc_name
-                if (do_ner
-                        and doc_name not in entity_snapshot_failed
-                        and not _out_path(doc_name, settings.output_dir).exists()
-                        and stray.is_dir()):
+                if may_remove_entity_files(
+                        stray,
+                        wrote_entities=do_ner,
+                        snapshot_failed=doc_name in entity_snapshot_failed,
+                        tei_exists=_out_path(
+                            doc_name, settings.output_dir).exists()):
                     if doc_name in entity_dirs_created:
                         shutil.rmtree(stray, ignore_errors=True)
                     else:

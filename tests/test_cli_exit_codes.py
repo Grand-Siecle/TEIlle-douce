@@ -693,6 +693,41 @@ def test_a_volume_that_holds_no_alto_is_named_not_dropped(tmp_path):
     assert "held no ALTO" in res.stdout
 
 
+def test_a_plain_directory_with_no_alto_is_named_like_an_archived_one(tmp_path):
+    """The documented input layout is directories, not archives, and that
+    is the shape this missed: `expand_archives` required an *.xml before
+    letting an existing directory through, while the archive loop added
+    its target whatever the archive held. The same empty volume was
+    therefore reported when it arrived as a zip and invisible the day the
+    operator deleted that zip."""
+    ocr = tmp_path / "ocr"
+    shutil.copytree(ALTO_MIN, ocr)
+    (ocr / "LIV9004_reconciled").mkdir()
+    (ocr / "LIV9004_reconciled" / "notes.txt").write_text("no ALTO here",
+                                                          encoding="utf-8")
+
+    res, _ = _executer_main(tmp_path, ocr, **MODE_COURT)
+
+    assert res.returncode == 0
+    assert "no ALTO file, nothing to convert: LIV9004_reconciled" in res.stdout
+    assert "held no ALTO" in res.stdout
+
+
+def test_a_hidden_directory_is_not_a_volume_that_lost_its_alto(tmp_path):
+    """`.git`, `__MACOSX` and the `.extracting` residue of an interrupted
+    run are not volumes, and naming them as losses would train the
+    operator to ignore the line."""
+    ocr = tmp_path / "ocr"
+    shutil.copytree(ALTO_MIN, ocr)
+    for noise in (".git", "__MACOSX", "LIV9005_reconciled.extracting"):
+        (ocr / noise).mkdir()
+
+    res, _ = _executer_main(tmp_path, ocr, **MODE_COURT)
+
+    assert res.returncode == 0
+    assert "held no ALTO" not in res.stdout
+
+
 def test_a_corpus_of_only_alto_less_volumes_says_which_ones(tmp_path):
     """Exit 3 is right — nothing there could be converted — but the
     message named the directory and left the operator to work out which
@@ -720,3 +755,25 @@ def test_a_volume_with_no_alto_that_was_not_selected_stays_quiet(tmp_path):
     assert res.returncode == 0
     assert "held no ALTO" not in res.stdout
     assert name not in res.stdout
+
+
+def test_resuming_does_not_claim_a_volume_with_no_alto_was_converted(tmp_path):
+    """"every document already has a TEI output" printed on the line under
+    the warning naming a volume that has none, and never will. The resume
+    path returns before the summary, so the suffix added there did not
+    reach it."""
+    ocr = tmp_path / "ocr"
+    shutil.copytree(ALTO_MIN, ocr)
+    (ocr / "LIV9004_reconciled").mkdir()
+    (ocr / "LIV9004_reconciled" / "notes.txt").write_text("no ALTO",
+                                                          encoding="utf-8")
+
+    first, _ = _executer_main(tmp_path, ocr, args=("--skip-existing",),
+                              **MODE_COURT)
+    again, _ = _executer_main(tmp_path, ocr, args=("--skip-existing",),
+                              **MODE_COURT)
+
+    assert (first.returncode, again.returncode) == (0, 0)
+    assert "Nothing to do" in again.stdout
+    assert "every document already has a TEI output" not in again.stdout
+    assert "held no ALTO and produced none" in again.stdout
