@@ -326,3 +326,37 @@ def test_require_services_leaves_no_directory_behind(tmp_path):
     assert res.returncode == 3
     assert not (tmp_path / "logs").exists(), "a log directory survived the refusal"
     assert not sortie.exists(), "an output directory survived the refusal"
+
+
+def test_the_summary_points_at_a_log_that_holds_the_failure(tmp_path):
+    """Logging was configured after the records emitted during setup, so an
+    archive failure reached the console and never the file the summary
+    names."""
+    ocr = tmp_path / "ocr"
+    shutil.copytree(ALTO_MIN, ocr)
+    (ocr / "BROKEN.zip").write_bytes(b"not a zip")
+
+    res, _ = _executer_main(
+        tmp_path, ocr,
+        args=("--log-file", str(tmp_path / "run.log")), **MODE_COURT,
+    )
+
+    assert res.returncode == 1
+    written = sorted(tmp_path.glob("run_*.log"))
+    assert written, "no run log was written"
+    assert "BROKEN.zip" in written[0].read_text(encoding="utf-8")
+
+
+def test_quiet_suppresses_the_lines_printed_during_setup(tmp_path):
+    """`_QUIET` was set inside configure_logging, which ran after them, and
+    was never set at all under --dry-run."""
+    ocr = tmp_path / "ocr"
+    ocr.mkdir()
+    shutil.make_archive(str(ocr / "LIV0001_reconciled"), "zip",
+                        ALTO_MIN / DOCUMENT)
+
+    res, _ = _executer_main(tmp_path, ocr, args=("-q",), **MODE_COURT)
+    assert "Extracting" not in res.stdout, res.stdout
+
+    plan, _ = _executer_main(tmp_path, ocr, args=("-q", "--dry-run"), **MODE_COURT)
+    assert "Loaded" not in plan.stdout, plan.stdout

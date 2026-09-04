@@ -13,6 +13,8 @@ Usage:
 """
 
 import logging
+import os
+import pathlib
 import re
 import warnings
 from fnmatch import fnmatch
@@ -56,6 +58,34 @@ def _run_log_path(base_path, now):
     return base_path.with_name(f"{base_path.stem}_{now:%Y%m%d_%H%M%S}{base_path.suffix}")
 
 
+def _log_path_is_usable(path):
+    """Whether a log file could be written there, without writing anything.
+
+    Walks up to the nearest existing ancestor: it has to be a directory we
+    may write into. Everything below it will be created on the first
+    record.
+    """
+    for ancestor in (path.parent, *path.parent.parents):
+        if ancestor.exists():
+            return ancestor.is_dir() and os.access(ancestor, os.W_OK)
+    return False
+
+
+class _LazyFileHandler(logging.FileHandler):
+    """A file handler that creates its directory only when it writes.
+
+    Installing the handler early is what lets the records emitted during
+    setup — a corrupt archive, a metadata CSV that is not there — reach the
+    run log the summary points at. Creating the directory early is what
+    left one behind after a run refused to start. `delay=True` plus this
+    override gives both.
+    """
+
+    def _open(self):
+        pathlib.Path(self.baseFilename).parent.mkdir(parents=True, exist_ok=True)
+        return super()._open()
+
+
 def configure_logging(settings, now=None, quiet=False, write=True,
                       level_asked=False):
     """Install this run's handlers. Returns the run's log file, or None."""
@@ -80,30 +110,24 @@ def configure_logging(settings, now=None, quiet=False, write=True,
             RuntimeWarning, stacklevel=2,
         )
         RUN_LOG_FILE = None
+    if RUN_LOG_FILE and not _log_path_is_usable(RUN_LOG_FILE):
+        # Checked without creating anything: the handler makes the
+        # directory at its first record, and an OSError there would be
+        # swallowed by logging as "--- Logging error ---" on every record.
+        warnings.warn(
+            f"cannot write the run log to {RUN_LOG_FILE} — continuing "
+            "without file logging",
+            RuntimeWarning, stacklevel=2,
+        )
+        RUN_LOG_FILE = None
     if RUN_LOG_FILE and not write:
         # --dry-run writes nothing, and a log directory is a write.
         RUN_LOG_FILE = None
     if RUN_LOG_FILE:
-        # --log-file is a user-facing setting now, so its directory may not
-        # exist: without this every record raised FileNotFoundError inside
-        # logging and buried the console in tracebacks, while the summary
-        # still pointed at a file nothing had created.
-        try:
-            RUN_LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
-        except OSError as reason:
-            # A log is a diagnostic, not the job: an unusable path costs the
-            # log, not the conversion. Said on stderr, since the console is
-            # not configured yet.
-            warnings.warn(
-                f"cannot write the run log to {RUN_LOG_FILE}: {reason} — "
-                "continuing without file logging",
-                RuntimeWarning, stacklevel=2,
-            )
-            RUN_LOG_FILE = None
-    if RUN_LOG_FILE:
-        # delay=True: the file is only created at the first record, so a run
-        # that dies before logging anything leaves no empty file behind.
-        file_handler = logging.FileHandler(
+        # delay=True plus _LazyFileHandler: the file and its directory are
+        # created at the first record, so a run that refuses to start
+        # leaves neither behind.
+        file_handler = _LazyFileHandler(
             str(RUN_LOG_FILE), mode="w", encoding="utf-8", delay=True
         )
         file_handler.setLevel(logging.DEBUG)
@@ -637,6 +661,20 @@ def execute(args):
     # Create output directory
     dry_run = getattr(args, "dry_run", False)
 
+    # Installed before anything logs. The handler creates neither its file
+    # nor its directory until a record arrives, so a run that refuses to
+    # start still leaves nothing behind — while the records emitted during
+    # setup (a corrupt archive, a metadata CSV that is not there) reach the
+    # log the summary points at, which they did not when this ran last.
+    from teille_douce.cli import options as _options
+    configure_logging(
+        settings,
+        quiet=bool(getattr(args, "quiet", 0)),
+        write=not dry_run,
+        level_asked=(_options.asks_to_be_quieter(args)
+                     or settings.origin("log_level") != "default"),
+    )
+
     no_probe = getattr(args, "no_probe", False)
     require_services = getattr(args, "require_services", False)
     if no_probe and require_services:
@@ -727,6 +765,11 @@ def execute(args):
         sys.exit(EXIT_MISCONFIGURED)
 
     # Extract ZIP archives (corrupt ones are skipped and reported)
+    # --limit deliberately does NOT bound extraction. Ordering it by name
+    # would let a corrupt archive, sorted first, eat the whole budget and
+    # convert nothing; and whether an archive yields a volume is not
+    # knowable without unpacking it. The limit caps conversions, not
+    # discovery. Selectors do bound it, because they are name-based.
     ready_dirs, failed_archives = expand_archives(
         settings.ocr_dir, extract=not dry_run,
         wanted=_selected if (selectors or exclusions_asked) else None,
@@ -908,21 +951,6 @@ def execute(args):
             f"[yellow]Warning: person metadata not loaded ({escape(str(settings.persons_csv))}) "
             f"— headers will keep placeholder person entries.[/yellow]"
         )
-
-    # Configured here and not at the top: everything above this line can
-    # still refuse to run, and a log directory left behind after refusing
-    # is a write like any other.
-    from teille_douce.cli import options as _options
-    configure_logging(
-        settings,
-        quiet=bool(getattr(args, "quiet", 0)),
-        write=not dry_run,
-        # A level set by the environment or the config file was asked for
-        # too: `debug` used to install a DEBUG console over an explicit
-        # TDOUCE_LOG_LEVEL=ERROR with nothing said.
-        level_asked=(_options.asks_to_be_quieter(args)
-                     or settings.origin("log_level") != "default"),
-    )
 
     # Created here and not earlier: every exit above this line means
     # nothing will be written, and leaving an empty directory behind after
