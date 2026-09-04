@@ -4,7 +4,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src.metadata.csv_book import select_manifest
+from teille_douce.metadata.csv_book import select_manifest
 
 M1 = "https://gallica.bnf.fr/iiif/ark:/12148/bpt6k8720514m/manifest.json"
 M2 = "https://gallica.bnf.fr/iiif/ark:/12148/bpt6k8720519p/manifest.json"

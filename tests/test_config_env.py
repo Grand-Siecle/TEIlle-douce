@@ -2,8 +2,8 @@
 # la source unique du seuil de divergence.
 #
 # config est un module a effets de bord a l'import : chaque cas le
-# recharge avec un environnement prepare. src.modernize lit config par
-# `from config import ...`, donc une valeur figee a SON import : les cas
+# recharge avec un environnement prepare. teille_douce.modernize lit config par
+# `from teille_douce.config import ...`, donc une valeur figee a SON import : les cas
 # qui verifient le comportement le rechargent aussi, et la fixture le
 # remet d'aplomb — sans quoi un seuil de test resterait en place pour
 # tous les fichiers suivants de la session pytest.
@@ -17,27 +17,27 @@ import pytest
 def _recharger_config(monkeypatch, **env):
     for cle, valeur in env.items():
         monkeypatch.setenv(cle, valeur)
-    import config
+    import teille_douce.config as config
     return importlib.reload(config)
 
 
 def _recharger_modernize():
-    import src.modernize
-    return importlib.reload(src.modernize)
+    import teille_douce.modernize
+    return importlib.reload(teille_douce.modernize)
 
 
 def _recharger_prose():
     """La prose de l'editorialDecl lit le seuil a SON import, comme
-    src.modernize : elle doit etre rendue dans le meme etat."""
-    import src.teiheader.prose
-    return importlib.reload(src.teiheader.prose)
+    teille_douce.modernize : elle doit etre rendue dans le meme etat."""
+    import teille_douce.teiheader.prose
+    return importlib.reload(teille_douce.teiheader.prose)
 
 
 @pytest.fixture(autouse=True)
 def _config_propre():
     """Rendre a la suite un config non pollue par les surcharges."""
     yield
-    import config
+    import teille_douce.config as config
     importlib.reload(config)
     _recharger_modernize()
     _recharger_prose()
@@ -72,7 +72,7 @@ def test_numeric_settings_are_overridable_and_survive_garbage(monkeypatch):
 
     # une valeur illisible garde le defaut ET le signale : ignorer une
     # faute de frappe en silence laisserait croire au reglage applique
-    import config as config_mod
+    import teille_douce.config as config_mod
     defaut = config_mod.MODERNIZE_TIMEOUT
     with pytest.warns(RuntimeWarning, match="not a number"):
         cfg = _recharger_config(monkeypatch, TDOUCE_MODERNIZE_TIMEOUT="pas-un-nombre")
@@ -85,7 +85,7 @@ def test_numeric_settings_reject_readable_nonsense(monkeypatch, valeur):
     `float("nan")` reussit, et un seuil NaN rend toute comparaison fausse
     — le garde-fou cesse de rejeter quoi que ce soit sans rien dire. Un
     timeout negatif, lui, est accepte tel quel par httpx."""
-    import config as config_mod
+    import teille_douce.config as config_mod
     defaut = config_mod.MODERNIZE_TIMEOUT
     with pytest.warns(RuntimeWarning):
         cfg = _recharger_config(monkeypatch, TDOUCE_MODERNIZE_TIMEOUT=valeur)
@@ -120,12 +120,12 @@ def test_booleans_refuse_a_value_they_cannot_read(monkeypatch):
 
 
 def test_divergence_threshold_has_a_single_home(monkeypatch):
-    """Audit 2.13 : le seuil vivait dans src/modernize.py ET dans la prose
+    """Audit 2.13 : le seuil vivait dans teille_douce/modernize.py ET dans la prose
     de l'editorialDecl, libres de diverger. La prose le lit maintenant."""
     cfg = _recharger_config(monkeypatch, TDOUCE_MODERNIZE_SIMILARITY_MIN="0.93")
     assert cfg.MODERNIZE_SIMILARITY_MIN == 0.93
 
-    # la prose vit desormais dans src/teiheader/prose.py, mais elle lit
+    # la prose vit desormais dans teille_douce/teiheader/prose.py, mais elle lit
     # toujours la meme valeur : c'est la seule chose qui compte ici
     prose = _recharger_prose().EDITORIAL_DECLARATIONS["normalization"]["text"]
     assert "0.93" in prose, prose
@@ -147,7 +147,7 @@ def test_config_holds_settings_and_not_the_encoding_schema():
     dont le code depend structurellement, et la prose editoriale. Un
     lecteur venu changer un repertoire de sortie ne doit pas enjamber
     cent lignes de correspondance TEI."""
-    import config
+    import teille_douce.config as config
 
     for schema in ("NER_ENTITY_TYPES", "NER_VOCABULARIES", "EDITORIAL_DECLARATIONS",
                    "POS_TAGSETS", "KEYWORDS_TAXONOMY", "LANGUAGE_DETECTION_DESCRIPTION"):
@@ -160,9 +160,9 @@ def test_config_holds_settings_and_not_the_encoding_schema():
 
 
 def test_the_moved_blocks_are_reachable_where_they_now_live():
-    from src.constants import KEYWORDS_TAXONOMY, POS_TAGSETS
-    from src.enrichment.entity_schema import NER_ENTITY_TYPES, NER_VOCABULARIES
-    from src.teiheader.prose import EDITORIAL_DECLARATIONS, LANGUAGE_DETECTION_DESCRIPTION
+    from teille_douce.constants import KEYWORDS_TAXONOMY, POS_TAGSETS
+    from teille_douce.enrichment.entity_schema import NER_ENTITY_TYPES, NER_VOCABULARIES
+    from teille_douce.teiheader.prose import EDITORIAL_DECLARATIONS, LANGUAGE_DETECTION_DESCRIPTION
 
     assert "person" in NER_ENTITY_TYPES
     assert "materials" in NER_VOCABULARIES["art-vocabulary"]["categories"]
@@ -176,7 +176,7 @@ def test_ner_certainty_prose_has_a_single_home(monkeypatch):
     « mid 0.6-0.85 » a la main quand le code emet @cert="medium" — chaque
     document annote documentait une valeur qu'aucun element ne porte. Les
     bandes se construisent desormais depuis NER_CERT_THRESHOLDS."""
-    import config
+    import teille_douce.config as config
 
     monkeypatch.setattr(
         config, "NER_CERT_THRESHOLDS", {"low": 0.0, "medium": 0.5, "high": 0.9}
@@ -190,7 +190,7 @@ def test_ner_certainty_prose_has_a_single_home(monkeypatch):
 def test_the_prose_names_the_cert_values_the_code_emits():
     """Les cles de la table SONT les valeurs emises (teidata.certainty) :
     la prose doit nommer celles-la, et pas une etiquette inventee."""
-    from config import NER_CERT_THRESHOLDS
+    from teille_douce.config import NER_CERT_THRESHOLDS
 
     prose = _recharger_prose().EDITORIAL_DECLARATIONS["interpretation"]["text"]
     for etiquette in NER_CERT_THRESHOLDS:
@@ -202,7 +202,7 @@ def test_the_langusage_prose_lists_the_containers_actually_scanned():
     """La detection de langue tourne sur TEXT_CONTAINERS : <head> et
     <titlePart> l'ont rejointe (une page de titre est detectee comme le
     reste) sans que la phrase publiee le dise."""
-    from src.constants import TEXT_CONTAINERS
+    from teille_douce.constants import TEXT_CONTAINERS
 
     prose = _recharger_prose().LANGUAGE_DETECTION_DESCRIPTION
     assert ", ".join(TEXT_CONTAINERS) in prose, prose

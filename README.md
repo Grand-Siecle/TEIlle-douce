@@ -53,13 +53,13 @@ Every document is also validated against the project's own TEI customization
 git clone https://github.com/rayondemiel/TEIlle-douce.git
 cd TEIlle-douce
 python3.12 -m venv venv && source venv/bin/activate
-pip install -r requirements.txt
+pip install -e .
 
 # Put ALTO XML files (or ZIP archives of them) in OCR/, one directory per volume
 cp -r /path/to/my-volume OCR/
 
 # Convert, without the phases that need external services
-TDOUCE_NER=0 TDOUCE_ENRICHMENT=0 TDOUCE_MODERNIZE=0 python3 main.py
+TDOUCE_NER=0 TDOUCE_ENRICHMENT=0 TDOUCE_MODERNIZE=0 teille-douce run
 
 # Check the result
 python3 scripts/validate_tei.py --odd tei_output/*.xml
@@ -91,9 +91,9 @@ file.
 Three dependency tiers, installed as needed:
 
 ```bash
-pip install -r requirements.txt      # core: lxml, pandas, rich, lingua, httpx
-pip install -r requirements-dev.txt  # + pytest, coverage, saxonche (what CI installs)
-pip install -r requirements-ner.txt  # + torch, transformers, gliner, flair (several GB)
+pip install -e .          # core: lxml, pandas, rich, lingua, httpx
+pip install -e '.[dev]'   # + pytest, coverage, saxonche (what CI installs)
+pip install -e '.[ner]'   # + torch, transformers, gliner, flair (several GB)
 ```
 
 ## Project status
@@ -131,6 +131,6 @@ The `sourceDoc` and header construction descend from work by **Kelly
 Christensen**, credited in the headers of the files concerned.
 
 Please cite this pipeline using [`CITATION.cff`](CITATION.cff). Responsibility
-for the encoding is stated in `config.py` and written into every output header:
+for the encoding is stated in `teille_douce/config.py` and written into every output header:
 Maxime Humeau, Jan Blanc, Antoine Gallay, Gabriel Batalla-Lagleyre, Pauline
 Randonneix, Léonie Marquaille.

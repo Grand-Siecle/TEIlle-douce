@@ -1,6 +1,6 @@
 # -----------------------------------------------------------
 # Characterization / boundary tests for the <foreign> inline
-# splicing arithmetic in src/body/builder.py, flagged by
+# splicing arithmetic in teille_douce/body/builder.py, flagged by
 # docs/rapport_audit.md as a major risk (offset off-by-one,
 # silent text loss/duplication, 0% covered):
 #
@@ -11,7 +11,7 @@
 # These three functions are called directly with hand-built
 # line_texts / segments -- never through the real Lingua detector
 # (slow, non-deterministic). Fixtures mirror the real pipeline's
-# invariant (src/body/builder.py ~L376-377): each <lb/> is a direct
+# invariant (teille_douce/body/builder.py ~L376-377): each <lb/> is a direct
 # child of the container and its .tail equals the corresponding
 # line_texts[i] string.
 #
@@ -20,7 +20,7 @@
 import pytest
 from lxml import etree
 
-from src.body.builder import (
+from teille_douce.body.builder import (
     _build_offset_to_line,
     _insert_foreign_inline,
     _splice_lb_tail,
@@ -465,7 +465,7 @@ def test_a_degenerate_segment_is_ignored_without_claiming_an_overlap(caplog):
 
 
 def test_word_start_at_or_after_boundaries():
-    from src.body.builder import _word_start_at_or_after as debut
+    from teille_douce.body.builder import _word_start_at_or_after as debut
 
     assert debut("un deux trois", 0) == 0
     assert debut("un deux trois", 3) == 3        # deja sur un debut de mot

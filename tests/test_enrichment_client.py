@@ -1,4 +1,4 @@
-# Tests de src/enrichment/client.py::tag_texts -- envoi concurrent avec
+# Tests de teille_douce/enrichment/client.py::tag_texts -- envoi concurrent avec
 # keep-alive (audit 3.3) et disjoncteur (audit 2.7). Aucun reseau : le
 # transport httpx est un MockTransport.
 #
@@ -6,8 +6,8 @@
 import httpx
 import pytest
 
-from src.enrichment import client as client_mod
-from src.enrichment.client import tag_texts
+from teille_douce.enrichment import client as client_mod
+from teille_douce.enrichment.client import tag_texts
 
 
 def _reponse_ok(texte):

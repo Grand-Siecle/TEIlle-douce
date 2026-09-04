@@ -7,11 +7,18 @@ from datetime import datetime
 from pathlib import Path
 from zipfile import ZipFile
 
-from main import _parse_args, _run_log_path, expand_archives
+from teille_douce.cli.app import build_parser
+from teille_douce.cli.run import _run_log_path, expand_archives
+
+
+def _parse_args(argv):
+    """Argument parsing moved to teille_douce.cli.app; the behaviour these
+    tests pin did not."""
+    return build_parser().parse_args(argv)
 
 
 # =============================================================================
-# _parse_args -- audit 2.5 : --skip-existing
+# Analyse des arguments -- audit 2.5 : --skip-existing
 # =============================================================================
 
 def test_parse_args_skip_existing_flag():

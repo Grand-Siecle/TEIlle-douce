@@ -1,11 +1,11 @@
-# Tests de src/enrichment/ner_pipeline.py -- la facade des phases 7-9,
+# Tests de teille_douce/enrichment/ner_pipeline.py -- la facade des phases 7-9,
 # sans charger les modeles NER (torch/transformers/gliner sont bouchonnes).
 #
 # Run: venv/bin/python -m pytest tests/test_ner_pipeline.py -q
 from lxml import etree
 
-from src.enrichment import ner_pipeline
-from src.enrichment.ner_resolve import ResolvedEntity
+from teille_douce.enrichment import ner_pipeline
+from teille_douce.enrichment.ner_resolve import ResolvedEntity
 
 
 def _ent(entity_type, name, mentions=1):
@@ -39,7 +39,7 @@ def test_get_models_loads_once_per_run(monkeypatch):
         def __init__(self, config):
             charges.append(config)
 
-    import src.enrichment.ner_models as ner_models_mod
+    import teille_douce.enrichment.ner_models as ner_models_mod
     monkeypatch.setattr(ner_models_mod, "NERModels", FauxModeles)
     ner_pipeline.reset_models()
     try:
@@ -60,9 +60,9 @@ def test_run_ner_chains_the_three_phases(monkeypatch):
     vus = {}
     BLOCKS, SPANS, ALIGNED = ["bloc"], ["span"], ["aligne"]
 
-    import src.enrichment.ner_detect as detect_mod
-    import src.enrichment.ner_align as align_mod
-    import src.enrichment.ner_resolve as resolve_mod
+    import teille_douce.enrichment.ner_detect as detect_mod
+    import teille_douce.enrichment.ner_align as align_mod
+    import teille_douce.enrichment.ner_resolve as resolve_mod
 
     def faux_extract(root, containers):
         vus["extract"] = (root, containers)
@@ -119,8 +119,8 @@ def test_the_cert_thresholds_reach_the_entity_as_well_as_its_mentions():
     """Un seuil passe a run_ner graduait les mentions d'un cote et les
     entites de l'autre : le fichier portait deux certitudes pour une
     meme lecture."""
-    from src.enrichment.ner_resolve import _entity_cert
-    from src.enrichment.ner_align import AlignedEntity
+    from teille_douce.enrichment.ner_resolve import _entity_cert
+    from teille_douce.enrichment.ner_align import AlignedEntity
 
     mention = AlignedEntity(
         entity_type="person", text="Poussin", confidence=0.6,

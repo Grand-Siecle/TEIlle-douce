@@ -1,6 +1,6 @@
 # Run: venv/bin/python -m pytest tests/test_ner_filter.py -q
 #
-# Targets: src/enrichment/ner_filter.py exclusively (the three-pass NER
+# Targets: teille_douce/enrichment/ner_filter.py exclusively (the three-pass NER
 # noise-filtering layer: span-level text checks, POS-based checks, and
 # entity-level dedup/pruning). The other enrichment modules (ner_detect,
 # ner_resolve, ner_align) are covered by sibling test files running in
@@ -16,10 +16,10 @@
 import pytest
 from lxml import etree
 
-from src.enrichment.ner_detect import NERSpan
-from src.enrichment.ner_align import AlignedEntity
-from src.enrichment.ner_resolve import ResolvedEntity
-from src.enrichment.ner_filter import (
+from teille_douce.enrichment.ner_detect import NERSpan
+from teille_douce.enrichment.ner_align import AlignedEntity
+from teille_douce.enrichment.ner_resolve import ResolvedEntity
+from teille_douce.enrichment.ner_filter import (
     _check_span,
     _fuzzy_merge_group,
     extract_title_from_tei,
@@ -639,7 +639,7 @@ def test_the_prefilters_reproduce_the_reference_decisions():
     naif produit, sur des variantes d'OCR realistes."""
     import random
     from difflib import SequenceMatcher
-    from src.enrichment.ner_filter import _fuzzy_merge_group, _normalize
+    from teille_douce.enrichment.ner_filter import _fuzzy_merge_group, _normalize
 
     bases = ["tertulus", "raphael", "le sueur", "poussin", "michelange"]
     random.seed(7)
@@ -653,7 +653,7 @@ def test_the_prefilters_reproduce_the_reference_decisions():
                 lettres[pos] = random.choice("abcdefghilmnoprstu")
             noms.append("".join(lettres))
 
-    from src.enrichment.ner_resolve import ResolvedEntity
+    from teille_douce.enrichment.ner_resolve import ResolvedEntity
 
     seuil, minimum = 0.78, 4
     entites = [

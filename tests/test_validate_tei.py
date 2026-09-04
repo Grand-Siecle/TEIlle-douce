@@ -168,7 +168,7 @@ def test_url_iiif_construite_sur_le_nom_de_fichier_est_une_erreur(tmp_path):
         '<surface xml:id="f1">',
         '<surface xml:id="f1" source="https://gallica.bnf.fr/iiif/LIV0001_reconciled/f1">',
     )
-    errors, _ = validate(_ecrire(tmp_path, contenu, nom="src.xml"))
+    errors, _ = validate(_ecrire(tmp_path, contenu, nom="teille_douce.xml"))
     assert any("URL IIIF construite" in e for e in errors), errors
 
 

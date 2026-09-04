@@ -26,21 +26,27 @@ git clone https://github.com/rayondemiel/TEIlle-douce.git
 cd TEIlle-douce
 python3.12 -m venv venv
 source venv/bin/activate
-pip install -r requirements.txt
+pip install -e .
 ```
 
-The repository is **run, not installed**: `python3 main.py` from the project
-root. There is no `pip install teille-douce`, and `pyproject.toml` deliberately
-declares no `[project]` table — `config.py` and `main.py` live at the root,
-outside any package.
+This installs the `teille-douce` command. Install it **editable** (`-e`): the
+package then points at your clone, so `teille_douce/config.py` — which is meant
+to be edited — stays the file you actually edit rather than a copy buried in
+`site-packages`.
 
-Three dependency tiers:
+Three dependency tiers. The versions live in `pyproject.toml`; the
+`requirements*.txt` files are one-line references kept so that the commands in
+this documentation and in CI keep working:
 
-| File | Adds | Install it when |
+| Command | Adds | Use it when |
 |---|---|---|
-| `requirements.txt` | lxml, pandas, rich, lingua, httpx | Always |
-| `requirements-dev.txt` | pytest, coverage, saxonche | You run the tests, or recompile the ODD |
-| `requirements-ner.txt` | torch, transformers, gliner, flair, huggingface_hub | You want named-entity recognition (several GB of wheels and models) |
+| `pip install -e .` | lxml, pandas, rich, lingua, httpx | Always |
+| `pip install -e '.[dev]'` | pytest, coverage, saxonche | You run the tests, or recompile the ODD |
+| `pip install -e '.[ner]'` | torch, transformers, gliner, flair, huggingface_hub | You want named-entity recognition (several GB of wheels and models) |
+
+`python3 main.py` still works, and does exactly what `teille-douce` does — the
+launcher at the repository root is kept for wrapper scripts written before the
+package existed.
 
 `saxonche` is a pip wheel providing XSLT 2.0 with no JVM. It is needed to apply
 the Schematron half of the project schema and to recompile the ODD; RELAX NG
@@ -149,13 +155,13 @@ Page images are referenced, never copied. Two ways to supply them:
    filenames is rejected rather than half-applied.
 
 For a non-Gallica server whose Image API base cannot be guessed from its
-manifest URL, set `IIIF_URI["image_base"]` in `config.py`.
+manifest URL, set `IIIF_URI["image_base"]` in `teille_douce/config.py`.
 
 ## Running the pipeline
 
 ```bash
 source venv/bin/activate
-python3 main.py
+teille-douce run
 ```
 
 Output goes to `tei_output/`, one `<name>.tei.xml` per volume. Progress is shown
@@ -173,7 +179,7 @@ nothing references a TEI that was never produced.
 
 **Logs.** Each run writes its own timestamped file, `pipeline_YYYYmmdd_HHMMSS.log`,
 at DEBUG level. The console shows warnings and errors only, unless you set
-`DEBUG = True` in `config.py`. Change or disable the log file with `LOG_FILE`.
+`DEBUG = True` in `teille_douce/config.py`. Change or disable the log file with `LOG_FILE`.
 
 **Cost.** With every annotation phase enabled, a full volume takes tens of
 minutes — most of it waiting on the two HTTP services. Page parsing itself is
@@ -184,7 +190,7 @@ parallel, capped at `min(cpu_count(), 8)` workers.
 To convert without the three annotation phases — no services, no models:
 
 ```bash
-TDOUCE_NER=0 TDOUCE_ENRICHMENT=0 TDOUCE_MODERNIZE=0 python3 main.py
+TDOUCE_NER=0 TDOUCE_ENRICHMENT=0 TDOUCE_MODERNIZE=0 teille-douce run
 ```
 
 You get a complete base TEI: header, `sourceDoc`, text structure, notes,
@@ -195,7 +201,7 @@ your input is shaped correctly, before committing to a long run.
 
 Two mechanisms, with different purposes.
 
-**`config.py`** holds settings that describe *your project*: paths, catalogue
+**`teille_douce/config.py`** holds settings that describe *your project*: paths, catalogue
 column expectations, software versions written into `<appInfo>`, the
 responsibility statement, the languages to detect, the confidence thresholds. It
 is meant to be edited.
@@ -303,7 +309,7 @@ from the text actually assembled, not from the catalogue.
 
 - `<editorialDecl>` — prose stating how language detection, modernization and
   entity recognition were performed, including the numeric thresholds actually
-  used. It is generated from `config.py`, so it cannot drift from the code.
+  used. It is generated from `teille_douce/config.py`, so it cannot drift from the code.
 - `<appInfo>` — the OCR/HTR software and versions from `APP_VERSIONS`.
 - `<classDecl>` — the full SegmOnto taxonomy as `<catDesc>` entries with links
   to the SegmOnto guidelines, which is what `zone/@corresp` points at.
@@ -535,4 +541,4 @@ with `--skip-existing` to convert only what is missing.
 **No images in a TEI viewer** — the volume has neither a `manifest_iiif` value
 nor a mapping CSV, or the mapping matched under 30 % of the filenames and was
 rejected. For a non-Gallica IIIF server, set `IIIF_URI["image_base"]` in
-`config.py`.
+`teille_douce/config.py`.

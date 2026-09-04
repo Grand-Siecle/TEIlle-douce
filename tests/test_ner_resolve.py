@@ -1,5 +1,5 @@
 # -----------------------------------------------------------
-# Characterization tests for src/enrichment/ner_resolve.py (Phase 9).
+# Characterization tests for teille_douce/enrichment/ner_resolve.py (Phase 9).
 # Run: venv/bin/python -m pytest tests/test_ner_resolve.py -q
 #
 # Scope: group_mentions, link_local, write_entity_csvs,
@@ -11,7 +11,7 @@
 # indirectly, as one step of the end-to-end resolve_entities() test.
 #
 # Namespace note (audit 4.2): real body/header construction (src/body,
-# src/teiheader/default.py) uses BARE tags. ner_resolve.py always injects
+# teille_douce/teiheader/default.py) uses BARE tags. ner_resolve.py always injects
 # TEI-NAMESPACED elements (via its local _tei()/_sub() helpers) into that
 # bare tree. Test fixtures below mirror that mismatch on purpose; `qlocal()`
 # strips whichever form is present so assertions survive it.
@@ -21,11 +21,11 @@ import csv
 import pytest
 from lxml import etree
 
-from src.enrichment.entity_schema import NER_ENTITY_TYPES
-from src.constants import XML_ID
-from src.enrichment.ner_align import AlignedEntity, inject_entities
-from src.enrichment.ner_resolve import _make_xml_id
-from src.enrichment.ner_resolve import (
+from teille_douce.enrichment.entity_schema import NER_ENTITY_TYPES
+from teille_douce.constants import XML_ID
+from teille_douce.enrichment.ner_align import AlignedEntity, inject_entities
+from teille_douce.enrichment.ner_resolve import _make_xml_id
+from teille_douce.enrichment.ner_resolve import (
     ResolvedEntity,
     group_mentions,
     inject_editorial_declaration,
@@ -492,7 +492,7 @@ def _sub(parent, tag, text=None, **attrs):
 
 def _build_integration_tree():
     """A minimal TEI tree using the SAME bare-tag construction style as the
-    real pipeline (src/teiheader/default.py, src/body/builder.py):
+    real pipeline (teille_douce/teiheader/default.py, teille_douce/body/builder.py):
     profileDesc pre-exists as a bare container, exactly as DefaultTree
     leaves it — inject_header_entities must find and reuse it rather than
     creating a duplicate namespaced one."""
@@ -660,7 +660,7 @@ def test_link_mentions_writes_the_way_back():
     """Le corps pointait vers le standOff ; rien ne pointait en sens
     inverse, donc lire la liste d'entites obligeait a parcourir tout le
     texte pour savoir ou un nom apparait."""
-    from src.enrichment.ner_resolve import link_mentions
+    from teille_douce.enrichment.ner_resolve import link_mentions
 
     root = etree.fromstring(
         b'<TEI><text><body><div>'
@@ -686,7 +686,7 @@ def test_link_mentions_writes_the_way_back():
 
 
 def test_link_mentions_rebuilds_rather_than_appends():
-    from src.enrichment.ner_resolve import link_mentions
+    from teille_douce.enrichment.ner_resolve import link_mentions
 
     root = etree.fromstring(
         b'<TEI><text><body><div><ab>'
@@ -744,7 +744,7 @@ def test_a_type_configured_under_the_profile_desc_still_lands_there():
 
 
 def test_link_mentions_on_a_document_without_annotations():
-    from src.enrichment.ner_resolve import link_mentions
+    from teille_douce.enrichment.ner_resolve import link_mentions
 
     sans_corps = etree.fromstring(b"<TEI><teiHeader/></TEI>")
     assert link_mentions(sans_corps) == 0
@@ -759,7 +759,7 @@ def test_link_mentions_on_a_document_without_annotations():
 def test_link_mentions_keeps_an_identifier_a_mention_already_has():
     """Les fragments d'une entite coupee par une ligne portent deja un
     xml:id, pose a l'ancrage : le lien doit designer celui-la."""
-    from src.enrichment.ner_resolve import link_mentions
+    from teille_douce.enrichment.ner_resolve import link_mentions
 
     root = etree.fromstring(
         b'<TEI><text><body><div><ab>'
@@ -777,7 +777,7 @@ def test_a_mention_written_on_both_layers_counts_once():
     """L'ancrage double injecte la meme occurrence dans <orig> et dans
     <reg> : compter les elements donnerait deux passages la ou la page en
     porte un."""
-    from src.enrichment.ner_resolve import link_mentions
+    from teille_douce.enrichment.ner_resolve import link_mentions
 
     root = etree.fromstring(
         b'<TEI><text><body><div><ab><choice>'
@@ -795,7 +795,7 @@ def test_a_mention_written_on_both_layers_counts_once():
 def test_a_mention_cut_by_a_line_break_counts_once():
     """Une mention coupee par une ligne donne une enveloppe par fragment,
     chainees par @next/@prev : c'est un passage, pas deux."""
-    from src.enrichment.ner_resolve import link_mentions
+    from teille_douce.enrichment.ner_resolve import link_mentions
 
     root = etree.fromstring(
         b'<TEI><text><body><div><ab>'
@@ -814,7 +814,7 @@ def test_a_mention_cut_by_a_line_break_counts_once():
 def test_a_ref_pointer_list_does_not_leak_into_an_xml_id():
     """@ref est une liste de pointeurs en TEI, et csv_book en ecrit
     d'externes (geonames) a cote des notres."""
-    from src.enrichment.ner_resolve import link_mentions
+    from teille_douce.enrichment.ner_resolve import link_mentions
 
     root = etree.fromstring(
         b'<TEI><text><body><div><ab>'
@@ -915,7 +915,7 @@ def test_a_vocabulary_cannot_be_declared_without_an_encoding_desc():
 
 
 def test_an_unknown_vocabulary_pointer_declares_nothing():
-    from src.enrichment.ner_resolve import _declare_vocabulary
+    from teille_douce.enrichment.ner_resolve import _declare_vocabulary
 
     root, header = _header_root()
     etree.SubElement(header, "encodingDesc")

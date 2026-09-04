@@ -34,8 +34,8 @@ The customization constrains on three levels.
    module, which is imported whole for the reasons set out under
    [Implementation constraints](#implementation-constraints).
 2. **Closed value lists.** `zone/@type` mirrors the SegmOnto taxonomy in
-   `src/constants.py`, `rs/@type` the entity table in
-   `src/enrichment/entity_schema.py`.
+   `teille_douce/constants.py`, `rs/@type` the entity table in
+   `teille_douce/enrichment/entity_schema.py`.
 3. **Schematron constraints.** Eleven specifications covering what a content
    model cannot express: the completeness of a `<choice>`, the presence of
    `@cert` on every automatic annotation, the unit of measure on a

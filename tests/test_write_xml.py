@@ -1,4 +1,4 @@
-# Tests de src/utils/xml.py::write_xml -- ecriture atomique.
+# Tests de teille_douce/utils/xml.py::write_xml -- ecriture atomique.
 #
 # --skip-existing considere l'existence du fichier final comme preuve de
 # conversion : un fichier tronque par une interruption serait alors saute
@@ -8,8 +8,8 @@
 import pytest
 from lxml import etree
 
-from src.utils import xml as xml_mod
-from src.utils.xml import write_xml
+from teille_douce.utils import xml as xml_mod
+from teille_douce.utils.xml import write_xml
 
 
 def qlocal(el):

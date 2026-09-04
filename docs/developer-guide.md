@@ -21,7 +21,7 @@ git clone https://github.com/rayondemiel/TEIlle-douce.git
 cd TEIlle-douce
 python3.12 -m venv venv
 source venv/bin/activate
-pip install -r requirements-dev.txt   # core + pytest + coverage + saxonche
+pip install -e '.[dev]'   # core + pytest + coverage + saxonche
 venv/bin/python -m pytest             # should be green in ~15 s
 ```
 
@@ -32,7 +32,7 @@ Two optional extras:
 
 ```bash
 # NER work — several GB
-pip install -r requirements-ner.txt
+pip install -e '.[ner]'
 
 # tei_all validation in the tests (~1 MB, not versioned)
 curl -sSL -o tei_all.rng https://tei-c.org/release/xml/tei/custom/schema/relaxng/tei_all.rng
@@ -48,7 +48,7 @@ symlinks into the private corpus (gitignored, as are `tei_test/`, `tei_full/`,
 
 ```bash
 TDOUCE_OCR_DIR=OCR_test TDOUCE_OUTPUT_DIR=tei_test \
-TDOUCE_NER=0 TDOUCE_ENRICHMENT=0 TDOUCE_MODERNIZE=0 python3 main.py
+TDOUCE_NER=0 TDOUCE_ENRICHMENT=0 TDOUCE_MODERNIZE=0 teille-douce run
 ```
 
 ## The test suite
@@ -78,7 +78,7 @@ venv/bin/python -m coverage report
 ```
 
 `combine` is not optional. `sourcedoc/builder.py` runs inside `multiprocessing`
-workers and the end-to-end tests launch `main.py` as a subprocess; each writes
+workers and the end-to-end tests launch `teille_douce/cli/run.py` as a subprocess; each writes
 its own data file, and without `combine` those lines look uncovered. The
 `concurrency`, `parallel` and `sigterm` options in `pyproject.toml` are what
 make the fork data collectable at all.
@@ -99,7 +99,7 @@ Both run on the versioned fixture, never on the real corpus.
 `e2e_full` is deselected by `addopts` in `pyproject.toml`; a plain `pytest` runs
 everything else.
 
-The e2e tests launch `main.py` as a real subprocess and compare its output to a
+The e2e tests launch `teille_douce/cli/run.py` as a real subprocess and compare its output to a
 reference file **byte for byte**, normalizing only the generation date. Since
 identifiers became `uuid5`-derived this is possible: two runs over the same
 input produce identical files. It also means any intended change to the output
@@ -197,7 +197,7 @@ emitted element is declared there. See [schema.md](schema.md).
 ### Settings validate their input
 
 Anything read from the environment goes through the `_env*` helpers in
-`config.py`, which reject unusable values — empty, unreadable, non-finite, out of
+`teille_douce/config.py`, which reject unusable values — empty, unreadable, non-finite, out of
 range — keep the default, and warn. A new setting that parses with a bare
 `float(os.environ[...])` will accept `nan`, and a NaN threshold turns every
 comparison against it into `False`, which silently disables the guard reading it.
@@ -231,7 +231,7 @@ The order below is the one the conventions above imply.
 6. **Validate real output**, not just the fixture:
    ```bash
    TDOUCE_OCR_DIR=OCR_test TDOUCE_OUTPUT_DIR=tei_test \
-   TDOUCE_NER=0 TDOUCE_ENRICHMENT=0 TDOUCE_MODERNIZE=0 python3 main.py
+   TDOUCE_NER=0 TDOUCE_ENRICHMENT=0 TDOUCE_MODERNIZE=0 teille-douce run
    venv/bin/python scripts/validate_tei.py --odd tei_test/*.xml
    ```
 
@@ -239,7 +239,7 @@ The order below is the one the conventions above imply.
 
 ## Debugging
 
-**Turn on verbose logging.** `DEBUG = True` in `config.py` sends DEBUG records to
+**Turn on verbose logging.** `DEBUG = True` in `teille_douce/config.py` sends DEBUG records to
 the console; they always go to the run's `pipeline_*.log` regardless. Third-party
 HTTP libraries are pinned to WARNING because they were filling the log with
 megabytes of connection traces.
@@ -274,7 +274,7 @@ covers that path; when in doubt, reduce to one page so the pool is trivial.
 1. Python **3.12 pinned** — on 3.10, pip resolves `lingua-language-detector`
    2.1.1 instead of 2.2.0, language detection changes, and the golden comparison
    fails on different `usage=` values in `<langUsage>`.
-2. `pip install -r requirements-dev.txt` — no NER models, no services, so
+2. `pip install -e '.[dev]'` — no NER models, no services, so
    `e2e_full` deselects itself.
 3. `tei_all.rng` downloaded and cached. The schema is ~1 MB and not versioned;
    without it the tei_all tests would skip and TEI conformance would be checked

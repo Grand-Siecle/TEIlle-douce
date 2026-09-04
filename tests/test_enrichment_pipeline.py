@@ -1,12 +1,12 @@
-# Tests unitaires de src/enrichment/pipeline.py -- les trois passes de
+# Tests unitaires de teille_douce/enrichment/pipeline.py -- les trois passes de
 # l'orchestrateur (preparation, tagging, mutation DOM), sans service
 # PyHellen (les phases reseau sont bouchonnees).
 #
 # Run: venv/bin/python -m pytest tests/test_enrichment_pipeline.py -q
 from lxml import etree
 
-from src.enrichment import pipeline
-from src.enrichment.client import NLPToken
+from teille_douce.enrichment import pipeline
+from teille_douce.enrichment.client import NLPToken
 
 
 def _tok(form="mot"):
@@ -125,7 +125,7 @@ def test_finish_container_failed_tagging_leaves_dom_untouched(monkeypatch):
 def test_align_tokens_counts_cursor_fallbacks():
     """Audit 2.12 : _align_tokens compte les tokens introuvables (places
     au curseur) au lieu de les avaler en silence."""
-    from src.enrichment.client import _align_tokens
+    from teille_douce.enrichment.client import _align_tokens
 
     raw = [
         {"form": "Bonjour", "lemma": "", "pos": "", "morph": "",

@@ -1,5 +1,5 @@
 # -----------------------------------------------------------
-# Tests ciblés pour src/enrichment/ner_detect.py (Phase 7 :
+# Tests ciblés pour teille_douce/enrichment/ner_detect.py (Phase 7 :
 # extraction de blocs de texte et inférence NER).
 # -----------------------------------------------------------
 """
@@ -15,7 +15,7 @@ le module lui-même :
   - detect_entities reçoit un objet factice portant les attributs
     ``.camembert`` (callable) et ``.gliner`` (objet à ``.inference``).
 
-filter_spans / extract_title_from_tei (src/enrichment/ner_filter.py) sont
+filter_spans / extract_title_from_tei (teille_douce/enrichment/ner_filter.py) sont
 appelés tels quels par detect_entities : ce sont de vraies fonctions pures,
 sans dépendance modèle, donc on les laisse s'exécuter normalement dans les
 tests d'intégration.
@@ -23,8 +23,8 @@ tests d'intégration.
 
 from lxml import etree
 
-from src.constants import NS_XML
-from src.enrichment.ner_detect import (
+from teille_douce.constants import NS_XML
+from teille_douce.enrichment.ner_detect import (
     NERBlock,
     NERSpan,
     extract_ner_blocks,

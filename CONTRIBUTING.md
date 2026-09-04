@@ -119,14 +119,14 @@ venv/bin/python -m coverage report
 Code, comments, docstrings, test names, log messages and CLI help are in
 English. The exceptions are deliberate and narrow:
 
-- **TEI editorial prose** written into the output header (`src/teiheader/prose.py`,
-  `RESPONSIBILITY` in `config.py`) stays in French — it is addressed to readers
+- **TEI editorial prose** written into the output header (`teille_douce/teiheader/prose.py`,
+  `RESPONSIBILITY` in `teille_douce/config.py`) stays in French — it is addressed to readers
   of a French corpus.
 - **The ODD's documentary prose** stays in French, marked on the `<div>`
   carrying it. Never above `<schemaSpec>`: an `xml:lang="fr"` there silently
   drops every project constraint from the generated Schematron.
 - **Corpus data** — test fixtures quoting early modern French, the keyword lists
-  in `src/lang/heuristics.py`, SegmOnto labels, CSV column names — is data, not
+  in `teille_douce/lang/heuristics.py`, SegmOnto labels, CSV column names — is data, not
   prose. It stays as it is.
 
 ## Before opening a pull request
@@ -144,7 +144,7 @@ documents rather than only on the fixture:
 
 ```bash
 TDOUCE_OCR_DIR=OCR_test TDOUCE_OUTPUT_DIR=tei_test \
-TDOUCE_NER=0 TDOUCE_ENRICHMENT=0 TDOUCE_MODERNIZE=0 python3 main.py
+TDOUCE_NER=0 TDOUCE_ENRICHMENT=0 TDOUCE_MODERNIZE=0 teille-douce run
 venv/bin/python scripts/validate_tei.py --odd tei_test/*.xml
 ```
 

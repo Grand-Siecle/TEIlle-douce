@@ -1,5 +1,5 @@
 # -----------------------------------------------------------
-# Characterization tests for src/teiheader/{default,full,builder}.py
+# Characterization tests for teille_douce/teiheader/{default,full,builder}.py
 # Run: venv/bin/python -m pytest tests/test_teiheader.py -q
 #
 # These tests fix *behavior* (results), not implementation, so they
@@ -11,21 +11,21 @@
 import pytest
 from lxml import etree
 
-from src.constants import KEYWORDS_TAXONOMY, POS_TAGSETS, SEGMONTO
-from config import (
+from teille_douce.constants import KEYWORDS_TAXONOMY, POS_TAGSETS, SEGMONTO
+from teille_douce.config import (
     PLACEHOLDER_INFO_UNAVAILABLE,
     PLACEHOLDER_NO_METADATA,
     RESPONSIBILITY,
     APP_VERSIONS,
 )
-from src.constants import NS_ALTO, NS_TEI, XML_ID
-from src.lang import build_langusage
-from src.teiheader import default as teiheader_default
-from src.teiheader.default import DefaultTree
-from src.teiheader.prose import LANGUAGE_DETECTION_DESCRIPTION
-from src.teiheader.full import FullTree, _extract_labels
-from src.teiheader.builder import build_header, update_extent
-from src.utils.files import canonical_document_id
+from teille_douce.constants import NS_ALTO, NS_TEI, XML_ID
+from teille_douce.lang import build_langusage
+from teille_douce.teiheader import default as teiheader_default
+from teille_douce.teiheader.default import DefaultTree
+from teille_douce.teiheader.prose import LANGUAGE_DETECTION_DESCRIPTION
+from teille_douce.teiheader.full import FullTree, _extract_labels
+from teille_douce.teiheader.builder import build_header, update_extent
+from teille_douce.utils.files import canonical_document_id
 
 
 # -----------------------------------------------------------
@@ -39,7 +39,7 @@ def ln(el):
 
 
 def make_root(document="LIV0001_reconciled"):
-    """Mirrors src.tei.TEI.build_tree() without importing TEI (out of scope)."""
+    """Mirrors teille_douce.tei.TEI.build_tree() without importing TEI (out of scope)."""
     xml_id_att = {XML_ID: canonical_document_id(document)}
     return etree.Element("TEI", xml_id_att, nsmap={None: NS_TEI})
 
@@ -146,7 +146,7 @@ def test_default_tree_taxonomy_created_with_segmonto_id():
 
 def test_default_tree_editorial_decl_present_when_enabled(monkeypatch):
     monkeypatch.setattr(
-        "src.teiheader.default.EDITORIAL_DECLARATIONS",
+        "teille_douce.teiheader.default.EDITORIAL_DECLARATIONS",
         {"normalization": {"enabled": True, "attrs": {}, "text": "norm text"}},
     )
     root, tree = make_default_tree()
@@ -163,7 +163,7 @@ def test_default_tree_editorial_decl_keeps_the_language_prose_when_all_disabled(
     tout ; il en faut un desormais, la detection de langue tournant quoi
     qu'il arrive."""
     monkeypatch.setattr(
-        "src.teiheader.default.EDITORIAL_DECLARATIONS",
+        "teille_douce.teiheader.default.EDITORIAL_DECLARATIONS",
         {"normalization": {"enabled": False, "attrs": {}, "text": "norm text"}},
     )
     root, tree = make_default_tree()
@@ -672,7 +672,7 @@ def test_volumetry_ignores_lines_it_cannot_place():
     """Une <line> sans zone parente identifiee ne peut etre creditee ni a
     une langue ni a un type de zone : elle ne doit pas non plus faire
     planter la mesure."""
-    from src.volumetry import line_word_counts, text_volume, token_count
+    from teille_douce.volumetry import line_word_counts, text_volume, token_count
 
     root = etree.fromstring(b"""<TEI><sourceDoc><surface>
       <zone type="MainZone"><zone><line>sans identifiant</line></zone></zone>
@@ -689,7 +689,7 @@ def test_volumetry_ignores_lines_it_cannot_place():
 def test_a_foreign_span_in_the_container_language_is_not_double_counted():
     """<foreign> dans la meme langue que son conteneur : ses mots ne
     doivent pas etre retires puis re-ajoutes ailleurs."""
-    from src.volumetry import language_volume
+    from teille_douce.volumetry import language_volume
 
     root = etree.fromstring(b"""<TEI><sourceDoc><surface>
       <zone type="MainZone"><zone xml:id="l1"><line>trois mots ici</line></zone></zone>
@@ -706,7 +706,7 @@ def test_only_the_tagsets_actually_used_are_declared():
     run sans enrichissement n'annote rien, et annoncer CATTEX, LASLA et
     Perseus dans un fichier qui n'a pas un seul @pos serait la meme
     fausse declaration que l'on vient de corriger ailleurs."""
-    from src.teiheader import declare_pos_tagsets
+    from teille_douce.teiheader import declare_pos_tagsets
 
     root, _ = make_default_tree()
     ids = lambda: [t.get(XML_ID) for t in root.findall(".//classDecl/taxonomy")]
@@ -725,7 +725,7 @@ def test_only_the_tagsets_actually_used_are_declared():
 
 
 def test_declaring_a_tagset_twice_writes_it_once():
-    from src.teiheader import declare_pos_tagsets
+    from teille_douce.teiheader import declare_pos_tagsets
 
     root, _ = make_default_tree()
     declare_pos_tagsets(root, ["fra"])
@@ -735,7 +735,7 @@ def test_declaring_a_tagset_twice_writes_it_once():
 
 
 def test_a_language_with_no_model_declares_nothing():
-    from src.teiheader import declare_pos_tagsets
+    from teille_douce.teiheader import declare_pos_tagsets
 
     root, _ = make_default_tree()
     assert declare_pos_tagsets(root, ["ita", ""]) == []

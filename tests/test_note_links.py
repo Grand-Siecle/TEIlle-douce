@@ -5,7 +5,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from lxml import etree
-from src.body.note_links import link_notes_to_lines
+from teille_douce.body.note_links import link_notes_to_lines
 
 XML_ID = "{http://www.w3.org/XML/1998/namespace}id"
 

@@ -4,9 +4,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src.utils.files import parse_document_id, canonical_document_id
-from src.tei import TEI
-from src.constants import XML_ID
+from teille_douce.utils.files import parse_document_id, canonical_document_id
+from teille_douce.tei import TEI
+from teille_douce.constants import XML_ID
 
 
 def test_parse():
