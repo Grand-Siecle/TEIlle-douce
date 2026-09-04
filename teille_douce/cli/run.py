@@ -222,7 +222,8 @@ def expand_archives(ocr_dir, extract=True):
     for zip_path in sorted(ocr_dir.glob("*.zip")):
         target = ocr_dir / zip_path.stem
         if not target.exists() and not extract:
-            # --dry-run: say what would happen, unpack nothing.
+            # --dry-run: unpack nothing. The plan lists these itself, so
+            # saying it here as well printed every archive twice.
             say(f"[dim]Would extract: {escape(zip_path.name)}[/dim]")
             continue
         if not target.exists():
@@ -673,6 +674,21 @@ def execute(args):
         )
         sys.exit(EXIT_MISCONFIGURED)
 
+    # Cheap, and before the probes: a typo used to pay up to two health
+    # timeouts of blocking HTTP before being told it was a typo. Names are
+    # taken from the directory listing, so nothing has to be extracted to
+    # know a selector matches something.
+    selectors = getattr(args, "documents", []) or []
+    if selectors:
+        candidates = [(entry.name if entry.is_dir() else entry.stem, [], None)
+                      for entry in settings.ocr_dir.iterdir()
+                      if entry.is_dir() or entry.suffix == ".zip"]
+        stray = [selector for selector in selectors
+                 if not select_documents(candidates, [selector], [], None)[0]]
+        if stray:
+            console.print("[red]No volume matches:[/red] " + escape(", ".join(stray)))
+            sys.exit(EXIT_MISCONFIGURED)
+
     # Extract ZIP archives (corrupt ones are skipped and reported)
     ready_dirs, failed_archives = expand_archives(settings.ocr_dir,
                                                  extract=not dry_run)
@@ -683,6 +699,11 @@ def execute(args):
     pending_archives = [
         zip_path.name for zip_path in sorted(settings.ocr_dir.glob("*.zip"))
         if not (settings.ocr_dir / zip_path.stem).exists()
+        # The plan must apply the same filters the run would: a pending
+        # archive whose TEI already exists is not work, and a limit counts
+        # it like anything else.
+        and not (settings.skip_existing
+                 and _out_path(zip_path.stem, settings.output_dir).exists())
     ] if dry_run else []
 
     # Selection has to see the archives too. It only ever saw extracted
@@ -797,9 +818,9 @@ def execute(args):
             f"already converted, skipped[/dim]"
         )
     if dry_run:
-        for name in pending_archives:
-            say(f"  {escape(name)}  [dim]still archived, would be "
-                f"extracted[/dim]")
+        limit = getattr(args, "limit", None)
+        if limit is not None:
+            pending_archives = pending_archives[:max(0, limit - len(docs))]
         console.print(
             f"\n[bold]Plan[/bold] — {len(docs) + len(pending_archives)} "
             f"volume(s), {sum(len(f) for _, f, _ in docs)} pages"
@@ -807,6 +828,9 @@ def execute(args):
         )
         for name, filepaths, _ in docs:
             console.print(f"  {escape(name)}  [dim]{len(filepaths)} pages[/dim]")
+        for name in pending_archives:
+            console.print(f"  {escape(name)}  [dim]still archived, pages "
+                          f"unknown until it is unpacked[/dim]")
         # The probes ran above, so the plan states what would actually
         # happen rather than what was asked — the one command whose whole
         # job is to say what would happen must not contradict what it just
@@ -820,8 +844,8 @@ def execute(args):
             f"{', '.join(phases)} · {settings.max_workers} workers[/dim]"
         )
         origin = settings.origin("__config__")
-        say(f"[dim]  config {escape(origin)}[/dim]" if origin != "default"
-            else "[dim]  no config file[/dim]")
+        console.print(f"[dim]  config {escape(origin)}[/dim]" if origin != "default"
+                      else "[dim]  no config file[/dim]")
         console.print("[dim]  nothing written (--dry-run)[/dim]")
         return
 

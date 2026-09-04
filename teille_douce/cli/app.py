@@ -208,6 +208,10 @@ def normalise(argv, commands=None):
         if skip:
             skip = False
             continue
+        if token == "--":
+            # End of options: what follows is a positional, so no token
+            # past it can be the subcommand.
+            break
         if token.startswith("-"):
             skip = token in takes_a_value
             continue

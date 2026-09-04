@@ -177,3 +177,44 @@ def test_an_unusable_log_path_costs_the_log_not_the_conversion(tmp_path):
     assert res.returncode == 0, res.stdout[-2000:] + res.stderr[-2000:]
     assert (sortie / f"{DOCUMENT}.tei.xml").exists()
     assert "cannot write the run log" in res.stderr
+
+
+def test_resuming_a_finished_corpus_is_a_success(tmp_path):
+    """The idiom the user guide recommends for a nightly wrapper: once
+    everything is converted, a rerun says so and exits 0."""
+    ocr = tmp_path / "ocr"
+    shutil.copytree(ALTO_MIN, ocr)
+
+    first, sortie = _executer_main(tmp_path, ocr, **MODE_COURT)
+    assert first.returncode == 0
+
+    again, _ = _executer_main(
+        tmp_path, ocr, args=("--skip-existing",), **MODE_COURT
+    )
+
+    assert again.returncode == 0, again.stdout[-2000:]
+    assert "Nothing to do" in again.stdout
+
+
+def test_a_typo_is_refused_without_probing_the_services(tmp_path):
+    """Selectors are validated from the directory listing, before the
+    probes: a typo used to pay up to two health timeouts of blocking HTTP
+    before being told it was a typo."""
+    import time
+
+    ocr = tmp_path / "ocr"
+    shutil.copytree(ALTO_MIN, ocr)
+
+    started = time.monotonic()
+    res, _ = _executer_main(
+        tmp_path, ocr, args=("LIV0O44",),
+        TDOUCE_PYHELLEN_URL="http://127.0.0.1:9",
+        TDOUCE_MODERNIZE_URL="http://127.0.0.1:9",
+        TDOUCE_HEALTH_TIMEOUT="30",
+        TDOUCE_NER="0",
+    )
+    elapsed = time.monotonic() - started
+
+    assert res.returncode == 3
+    assert "LIV0O44" in res.stdout
+    assert elapsed < 20, f"probed before refusing a typo ({elapsed:.1f}s)"

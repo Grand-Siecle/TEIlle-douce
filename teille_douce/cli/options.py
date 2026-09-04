@@ -84,9 +84,10 @@ def _phase_set(parser, raw):
     `none` are aliases, and naming no phase they cannot contradict a later
     `--no-X`. `--phases all --no-ner` is the same idiom as `--fast --enrich`.
     """
+    raw = raw.strip()
     if raw == "all":
         return set(PHASES), set()
-    if not raw.strip():
+    if not raw:
         # Set but empty. For an environment variable the rule is "keep the
         # default and warn"; for something typed on the command line it is
         # a usage error, like any other unusable flag value. Silently

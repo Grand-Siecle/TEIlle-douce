@@ -665,3 +665,22 @@ def test_a_flag_silences_the_per_language_variable_it_overrides():
 
     assert settings.modernize_api["fra"] == "http://flag:1"
     assert not [w for w in raised if "MODERNIZE_URL_FRA" in str(w.message)]
+
+
+@pytest.mark.parametrize("raw", ["all", " all ", " enrich , ner "])
+def test_the_phase_list_tolerates_the_spacing_a_wrapper_produces(raw):
+    """The aliases were compared against the unstripped string, so
+    `--phases "$PHASES"` with a padded value failed with a message that
+    listed 'all' among the choices it had just refused."""
+    settings = settings_for(["run", "--phases", raw])
+
+    assert settings.enrich is True
+
+
+def test_the_end_of_options_marker_protects_a_selector():
+    """`--` means what follows is positional, so no token past it can be
+    read as the subcommand."""
+    args = app.parse_args(["--", "run"])
+
+    assert args.command == "run"
+    assert args.documents == ["run"]
