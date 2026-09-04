@@ -244,6 +244,27 @@ pass does not shadow what the environment supplied, so `-o /tmp/out` leaves
 flag  >  environment (TDOUCE_*)  >  config file  >  config.py default
 ```
 
+The config file is a `teille-douce.toml` found by walking up from the
+working directory, or the one `--config PATH` names; `--no-config` skips
+discovery. It may set only the runtime settings — a key it does not know is
+an error naming the nearest valid one, because silently ignoring it is how
+you spend an afternoon.
+
+```toml
+[paths]
+input = "OCR"
+output = "tei_output"
+
+[phases]
+ner = false            # no GPU on this machine
+
+[services]
+pyhellen = "http://pyhellen.labo:9000"
+
+[limits]
+jobs = 4
+```
+
 **Environment variables** override what moves between machines and between runs
 — paths, service URLs, timeouts, and the phase switches. The prefix is
 `TDOUCE_`, from the pipeline's original name; it is kept so that existing

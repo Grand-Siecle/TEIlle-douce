@@ -76,7 +76,7 @@ def configure_logging(settings, now=None):
 
     console_handler = logging.StreamHandler()
     console_handler.setLevel(
-        logging.DEBUG if settings.debug else getattr(logging, settings.log_level, logging.WARNING)
+        logging.DEBUG if settings.debug else getattr(logging, settings.log_level)
     )
     console_handler.setFormatter(
         logging.Formatter("%(name)s [%(levelname)s] %(message)s")
@@ -157,7 +157,7 @@ def _extract_archive(zip_path, target):
         raise
 
 
-def expand_archives(ocr_dir):
+def expand_archives(ocr_dir, extract=True):
     """
     Extract ZIP archives in the OCR directory.
 
@@ -181,6 +181,10 @@ def expand_archives(ocr_dir):
     # Extract ZIP files that haven't been extracted yet
     for zip_path in sorted(ocr_dir.glob("*.zip")):
         target = ocr_dir / zip_path.stem
+        if not target.exists() and not extract:
+            # --dry-run: say what would happen, unpack nothing.
+            console.print(f"[dim]Would extract: {escape(zip_path.name)}[/dim]")
+            continue
         if not target.exists():
             console.print(f"[dim]Extracting: {escape(zip_path.name)} -> {escape(target.name)}/[/dim]")
             # Broad on purpose: zipfile surfaces corruption as BadZipFile,
@@ -524,10 +528,11 @@ def execute(args):
         sys.exit(EXIT_MISCONFIGURED)
 
     # Create output directory
-    settings.output_dir.mkdir(parents=True, exist_ok=True)
+    dry_run = getattr(args, "dry_run", False)
 
     # Extract ZIP archives (corrupt ones are skipped and reported)
-    ready_dirs, failed_archives = expand_archives(settings.ocr_dir)
+    ready_dirs, failed_archives = expand_archives(settings.ocr_dir,
+                                                 extract=not dry_run)
 
     # Collect documents to process
     docs = []
@@ -539,6 +544,15 @@ def execute(args):
     if not docs:
         # The directory actually configured, not the literal "OCR/": the
         # message used to name a path the run was not reading.
+        if failed_archives:
+            # Not a misconfiguration: the input was there and unreadable.
+            console.print(
+                f"[bold red]No document could be read:[/bold red] "
+                f"{len(failed_archives)} archive(s) failed to extract."
+            )
+            for name, reason in failed_archives:
+                console.print(f"  [red]FAILED[/red] {escape(f'{name}: {reason}')}")
+            sys.exit(EXIT_SOME_FAILED)
         console.print(
             f"[red]No ALTO documents found in {escape(str(settings.ocr_dir))}.[/red]"
         )
@@ -575,7 +589,7 @@ def execute(args):
             console.print("[bold green]Nothing to do:[/bold green] every document already has a TEI output.")
             return
 
-    if getattr(args, "dry_run", False):
+    if dry_run:
         console.print(
             f"\n[bold]Plan[/bold] — {len(docs)} volume(s), "
             f"{sum(len(f) for _, f, _ in docs)} pages"
@@ -605,25 +619,47 @@ def execute(args):
             f"— headers will keep placeholder person entries.[/yellow]"
         )
 
+    no_probe = getattr(args, "no_probe", False)
+    require_services = getattr(args, "require_services", False)
+    unavailable = []
+
     # Check modernization API availability
     do_modernize = False
     if settings.modernize:
         from teille_douce.modernize import check_api as check_modernize_api
-        if check_modernize_api():
+        if no_probe or check_modernize_api():
             do_modernize = True
             console.print("[green]Modernization API (VieuxParler) available.[/green]")
         else:
+            unavailable.append("VieuxParler (modernization)")
             console.print("[yellow]Warning: Modernization API unreachable — continuing without modernization.[/yellow]")
 
     # Check linguistic enrichment API availability
     do_enrich = False
     if settings.enrich:
         from teille_douce.enrichment.client import check_server as check_enrichment_api
-        if check_enrichment_api():
+        if no_probe or check_enrichment_api():
             do_enrich = True
             console.print("[green]Enrichment API (PyHellen) available.[/green]")
         else:
+            unavailable.append("PyHellen (enrichment)")
             console.print("[yellow]Warning: Enrichment API unreachable — continuing without linguistic annotation.[/yellow]")
+
+    if require_services and unavailable:
+        # Asked for explicitly: a phase whose service is down is fatal
+        # BEFORE anything is written, rather than a whole corpus quietly
+        # converted without its annotations.
+        console.print(
+            "[bold red]--require-services:[/bold red] "
+            + escape(", ".join(unavailable))
+            + " unreachable; nothing written."
+        )
+        sys.exit(EXIT_MISCONFIGURED)
+
+    # Created here and not earlier: every exit above this line means
+    # nothing will be written, and leaving an empty directory behind after
+    # refusing to run is a write like any other.
+    settings.output_dir.mkdir(parents=True, exist_ok=True)
 
     # Build pipeline configuration
     config = build_config()
@@ -669,6 +705,18 @@ def execute(args):
                 ok_docs.append(doc_name)
             progress.advance(task_docs)
 
+            # Both asked for explicitly; the default is still to convert
+            # every volume, because per-document isolation is the contract.
+            if failed_docs and getattr(args, "fail_fast", False):
+                console.print("[yellow]--fail-fast: stopping at the first failure.[/yellow]")
+                break
+            max_failures = getattr(args, "max_failures", None)
+            if max_failures is not None and len(failed_docs) >= max_failures:
+                console.print(
+                    f"[yellow]--max-failures {max_failures}: reached, stopping.[/yellow]"
+                )
+                break
+
     # Audit 2.10: end-of-run summary + non-zero exit code on failures
     total = len(docs) + len(failed_archives)
     converted = f"{len(ok_docs)}/{total} documents converted"
@@ -680,7 +728,7 @@ def execute(args):
             console.print(f"  [red]FAILED[/red] {escape(f'{name}: {reason}')}")
         if RUN_LOG_FILE:
             console.print(f"[dim]Tracebacks in {RUN_LOG_FILE}[/dim]")
-        sys.exit(1)
+        sys.exit(EXIT_SOME_FAILED)
 
     console.print(f"\n[bold green]Done.[/bold green] {converted}")
 

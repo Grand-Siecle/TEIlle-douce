@@ -202,11 +202,11 @@ def service_disponible(url, timeout=2.0):
 
 
 def services_manquants():
-    from teille_douce.config import MODERNIZE_API, PYHELLEN_URL
+    from teille_douce.settings import get_settings
     manquants = []
-    if not service_disponible(PYHELLEN_URL):
-        manquants.append(f"PyHellen ({PYHELLEN_URL})")
-    for lang, url in MODERNIZE_API.items():
+    if not service_disponible(get_settings().pyhellen_url):
+        manquants.append(f"PyHellen ({get_settings().pyhellen_url})")
+    for lang, url in get_settings().modernize_api.items():
         if not service_disponible(url):
             manquants.append(f"VieuxParler {lang} ({url})")
     return manquants

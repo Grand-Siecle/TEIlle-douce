@@ -59,6 +59,19 @@ def _as_bool(raw):
     raise ValueError("is not a boolean")
 
 
+# The names logging understands. `getattr(logging, "info")` resolves to a
+# *function*, which a handler then rejects with an unreadable TypeError, so
+# the level is validated here rather than trusted downstream.
+_LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
+
+
+def _as_level(raw):
+    value = str(raw).strip().upper()
+    if value not in _LOG_LEVELS:
+        raise ValueError(f"is not one of {', '.join(_LOG_LEVELS)}")
+    return value
+
+
 def _as_int(minimum=None):
     def convert(raw):
         try:
@@ -163,7 +176,11 @@ _SETTINGS = (
     _Declaration("log_file", "TDOUCE_LOG_FILE", "output.log_file",
                  _as_path, config.DEFAULT_LOG_FILE),
     _Declaration("log_level", "TDOUCE_LOG_LEVEL", "output.log_level",
-                 _as_str, "WARNING"),
+                 _as_level, "WARNING"),
+    # A resume asked for by a config file or the environment is what
+    # --force cancels; without a layer of its own it had nothing to cancel.
+    _Declaration("skip_existing", "TDOUCE_SKIP_EXISTING", "output.skip_existing",
+                 _as_bool, False),
     # tests
     _Declaration("tei_rng", "TDOUCE_TEI_RNG", None, _as_path, None),
 )
@@ -175,6 +192,23 @@ _BY_KEY = {d.key: d for d in _SETTINGS if d.key}
 # resolved on their own: TDOUCE_MODERNIZE_URL moves every language that has
 # no TDOUCE_MODERNIZE_URL_<IDENT> of its own.
 _MODERNIZE_URL_ENV = "TDOUCE_MODERNIZE_URL"
+
+CONFIG_FILENAME = "teille-douce.toml"
+
+
+def find_config_file(start=None):
+    """The nearest teille-douce.toml, walking up from *start*.
+
+    Returns None when there is none. A file found this way and forgotten is
+    the least debuggable thing in the design, which is why the origin
+    records its path and `info` names it.
+    """
+    directory = Path(start or Path.cwd()).resolve()
+    for candidate in (directory, *directory.parents):
+        found = candidate / CONFIG_FILENAME
+        if found.is_file():
+            return found
+    return None
 
 
 @dataclass(frozen=True, slots=True)
@@ -213,6 +247,7 @@ class Settings:
     debug: bool
     log_file: Path | None
     log_level: str
+    skip_existing: bool
     tei_rng: Path | None
     # Plain dicts, not MappingProxyType: this object is an initarg of the
     # multiprocessing pool, and a mappingproxy cannot be pickled. The
@@ -318,12 +353,16 @@ def _resolve(declaration, flags, env, from_file, config_path, rejected):
     for origin, label, raw in layers:
         if raw is None:
             continue
+        # A value typed on the command line becomes a usage error upstream,
+        # so promising to keep the default here would be a lie in transit.
+        announce = origin != "flag"
         if isinstance(raw, str) and not raw.strip():
-            warnings.warn(
-                f"{label} is set but empty — keeping the default "
-                f"{declaration.default!r}",
-                RuntimeWarning, stacklevel=4,
-            )
+            if announce:
+                warnings.warn(
+                    f"{label} is set but empty — keeping the default "
+                    f"{declaration.default!r}",
+                    RuntimeWarning, stacklevel=4,
+                )
             rejected.append(
                 Rejection(label or declaration.name, origin, raw, "is empty")
             )
@@ -334,11 +373,12 @@ def _resolve(declaration, flags, env, from_file, config_path, rejected):
             ), origin
         except ValueError as reason:
             name = label or declaration.name
-            warnings.warn(
-                f"{name}={raw!r} {reason} — keeping the default "
-                f"{declaration.default!r}",
-                RuntimeWarning, stacklevel=4,
-            )
+            if announce:
+                warnings.warn(
+                    f"{name}={raw!r} {reason} — keeping the default "
+                    f"{declaration.default!r}",
+                    RuntimeWarning, stacklevel=4,
+                )
             rejected.append(Rejection(name, origin, str(raw), str(reason)))
 
     default = declaration.default

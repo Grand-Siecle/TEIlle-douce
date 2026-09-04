@@ -13,10 +13,11 @@ all do what the pipeline has always done.
 
 import argparse
 from dataclasses import replace
+from pathlib import Path
 
 import teille_douce
 from teille_douce.cli import options
-from teille_douce.settings import Settings, set_settings
+from teille_douce.settings import Settings, find_config_file, set_settings
 
 
 def build_parser():
@@ -59,13 +60,31 @@ def _add_run_arguments(parser, *, suppress_defaults=False):
     return options.add_run_arguments(parser, suppress_defaults=suppress_defaults)
 
 
-def settings_from(args, env=None):
+def _config_file(args, parser):
+    """The config file this run reads, or None.
+
+    A file named explicitly and missing is a misconfiguration (exit 3), not
+    a reason to fall back silently on a different one.
+    """
+    if getattr(args, "no_config", False):
+        return None
+    named = getattr(args, "config_file", None)
+    if named:
+        path = Path(named)
+        if not path.is_file():
+            parser.exit(3, f"teille-douce: config file not found: {path}\n")
+        return path
+    return find_config_file()
+
+
+def settings_from(args, env=None, parser=None):
     """Turn parsed arguments into the settings of this run.
 
     A flag that was not given is absent from the mapping, so it falls
     through to the environment, the config file and finally the default —
     which is what makes precedence per setting rather than per layer.
     """
+    parser = parser or build_parser()
     flags = {}
     for name in ("ocr_dir", "output_dir", "entities_dir", "metadata_csv",
                  "persons_csv", "pyhellen_url", "health_timeout",
@@ -79,18 +98,22 @@ def settings_from(args, env=None):
         flags["modernize_concurrency"] = concurrency
         flags["pyhellen_concurrency"] = concurrency
 
-    enabled = options.resolve_phases(
-        build_parser(), getattr(args, "phase_ops", None)
-    )
-    if enabled is not None:
-        for phase in options.PHASES:
-            flags[phase] = phase in enabled
+    flags.update(options.resolve_phases(parser, getattr(args, "phase_ops", None)))
+
+    if getattr(args, "force", False):
+        flags["skip_existing"] = False
+    elif getattr(args, "skip_existing", False):
+        flags["skip_existing"] = True
 
     level = options.console_level(args)
     if level is not None:
         flags["log_level"] = level
+        # An explicit level answers the question the debug setting answers,
+        # and it was typed just now: it wins.
+        flags["debug"] = level == "DEBUG"
 
-    settings = Settings.load(flags=flags, env=env)
+    settings = Settings.load(flags=flags, env=env,
+                             config_file=_config_file(args, parser))
 
     # A value the environment offers is refused with a warning and the
     # default is kept -- that is the documented contract. A value the user
@@ -98,10 +121,9 @@ def settings_from(args, env=None):
     # explicitly overrode would be answering a different question.
     typed = [r for r in settings.rejected if r.layer == "flag"]
     if typed:
-        build_parser().error(
-            "; ".join(f"--{r.name.replace('_', '-')}={r.raw!r} {r.reason}"
-                      for r in typed)
-        )
+        parser.error("; ".join(
+            f"{options.option_for(r.name)}={r.raw!r} {r.reason}" for r in typed
+        ))
 
     # Two answers a flag gives that no layer below it can express.
     if getattr(args, "no_log_file", False):

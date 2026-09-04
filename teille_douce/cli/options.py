@@ -10,6 +10,30 @@ import argparse
 
 PHASES = ("enrich", "modernize", "ner")
 
+# A usage error must name the option the user typed, not the setting it
+# feeds: reporting `--max-workers` for `-j` sends the reader looking for a
+# flag that does not exist.
+_OPTION_FOR_SETTING = {
+    "ocr_dir": "-i/--input",
+    "output_dir": "-o/--output",
+    "entities_dir": "--entities",
+    "metadata_csv": "--metadata",
+    "persons_csv": "--persons",
+    "pyhellen_url": "--pyhellen",
+    "health_timeout": "--health-timeout",
+    "max_workers": "-j/--jobs",
+    "modernize_batch_size": "--batch-size",
+    "modernize_concurrency": "--concurrency",
+    "pyhellen_concurrency": "--concurrency",
+    "log_file": "--log-file",
+    "log_level": "--log-level",
+}
+
+
+def option_for(setting):
+    """The option that feeds *setting*, for an error message."""
+    return _OPTION_FOR_SETTING.get(setting, "--" + setting.replace("_", "-"))
+
 
 class _PhaseAction(argparse.Action):
     """Record phase operations in the order they were typed.
@@ -33,11 +57,16 @@ class _PhaseAction(argparse.Action):
 
 
 def _phase_set(parser, raw):
-    """Parse the argument of --phases into a set of phase names."""
+    """Parse the argument of --phases into (set, names typed literally).
+
+    The literal names matter for the contradiction check below: `all` and
+    `none` are aliases, and naming no phase they cannot contradict a later
+    `--no-X`. `--phases all --no-ner` is the same idiom as `--fast --enrich`.
+    """
     if raw in ("all", ""):
-        return set(PHASES)
+        return set(PHASES), set()
     if raw == "none":
-        return set()
+        return set(), set()
     names = {n.strip() for n in raw.split(",") if n.strip()}
     unknown = names - set(PHASES)
     if unknown:
@@ -45,37 +74,34 @@ def _phase_set(parser, raw):
             f"unknown phase(s) {', '.join(sorted(unknown))}; "
             f"choose from {', '.join(PHASES)}, or 'all' / 'none'"
         )
-    return names
+    return names, set(names)
 
 
 def resolve_phases(parser, operations):
-    """Fold the recorded operations into the set of phases to run.
+    """Fold the recorded operations into {phase: enabled}.
 
-    Returns None when nothing was asked, so that the lower layers — the
-    environment, the config file — stay in charge.
+    Only phases the command line actually decided appear in the result:
+    a lone `--no-modernize` says nothing about enrichment or NER, so it
+    must leave them to the environment, the config file and the default.
+    Seeding from all three phases switched them back on — precedence is
+    per setting, not per layer.
+
+    Returns an empty mapping when nothing was asked.
     """
-    if not operations:
-        return None
-
-    enabled = None
-    named_in_set = set()
-    for kind, value in operations:
+    decided = {}
+    typed_in_set = set()
+    for kind, value in operations or []:
         if kind == "set":
-            enabled = _phase_set(parser, value)
-            named_in_set = set(enabled)
+            enabled, typed_in_set = _phase_set(parser, value)
+            decided = {phase: phase in enabled for phase in PHASES}
             continue
-        if enabled is None:
-            enabled = set(PHASES)
-        if kind == "add":
-            enabled.add(value)
-        else:
-            if value in named_in_set:
-                parser.error(
-                    f"--phases names '{value}' and --no-{value} removes it; "
-                    "there is no reading of that which says what you meant"
-                )
-            enabled.discard(value)
-    return enabled
+        if kind == "remove" and value in typed_in_set:
+            parser.error(
+                f"--phases names '{value}' and --no-{value} removes it; "
+                "there is no reading of that which says what you meant"
+            )
+        decided[value] = (kind == "add")
+    return decided
 
 
 def add_run_arguments(parser, *, suppress_defaults=False):
@@ -125,6 +151,15 @@ def add_run_arguments(parser, *, suppress_defaults=False):
         help="convert even those (cancels skip_existing from a config file "
              "or the environment)",
     )
+
+    configuration = parser.add_argument_group("configuration")
+    where = configuration.add_mutually_exclusive_group()
+    where.add_argument("--config", dest="config_file", metavar="PATH",
+                       default=none,
+                       help="use this config file instead of discovering one")
+    where.add_argument("--no-config", action="store_true",
+                       default=argparse.SUPPRESS if suppress_defaults else False,
+                       help="skip config-file discovery entirely")
 
     paths = parser.add_argument_group("paths")
     paths.add_argument("-i", "--input", dest="ocr_dir", metavar="DIR",

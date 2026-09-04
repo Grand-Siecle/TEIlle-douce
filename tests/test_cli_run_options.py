@@ -234,3 +234,99 @@ def test_limit_keeps_the_first_n_in_order():
     kept, _ = select_documents(docs, [], [], 2)
 
     assert [d[0] for d in kept] == ["LIV0044", "LIV0021"]
+
+
+# =============================================================================
+# What the review caught
+# =============================================================================
+
+def test_a_phase_delta_leaves_the_other_phases_to_the_lower_layers():
+    """`--no-modernize` says nothing about enrichment or NER, so it must
+    not switch them back on. Precedence is per setting — the contract this
+    surface documents."""
+    settings = settings_for(["run", "--no-modernize"],
+                            env={"TDOUCE_NER": "0", "TDOUCE_ENRICHMENT": "0"})
+
+    assert (settings.enrich, settings.modernize, settings.ner) == (False, False, False)
+    assert settings.origin("ner") == "env:TDOUCE_NER"
+    assert settings.origin("modernize") == "flag"
+
+
+def test_the_all_alias_does_not_forbid_a_later_delta():
+    """`--phases all --no-ner` is the same idiom as `--fast --enrich`. The
+    refusal is meant for a phase the user typed in the list."""
+    settings = settings_for(["run", "--phases", "all", "--no-ner"])
+
+    assert (settings.enrich, settings.modernize, settings.ner) == (True, True, False)
+
+
+@pytest.mark.parametrize("raw", ["info", "INFO", "Debug"])
+def test_a_log_level_is_read_whatever_its_case(raw):
+    """getattr(logging, "info") is a function, not a level: configuring a
+    handler with it raised TypeError and killed the run before any work."""
+    assert settings_for(["run", "--log-level", raw]).log_level == raw.upper()
+
+
+def test_a_log_level_that_is_not_one_is_a_usage_error():
+    with pytest.raises(SystemExit) as excinfo:
+        settings_for(["run", "--log-level", "chatty"])
+
+    assert excinfo.value.code == 2
+
+
+def test_a_usage_error_names_the_option_the_user_typed():
+    """Reporting `--max-workers` for `-j` sends the reader looking for a
+    flag that does not exist."""
+    parser = app.build_parser()
+    with pytest.raises(SystemExit):
+        app.settings_from(parser.parse_args(["run", "-j", "0"]), env={})
+
+
+def test_force_cancels_a_resume_asked_for_by_a_lower_layer():
+    """--force had nothing to cancel: skip_existing was not a setting, so
+    no environment or config file could ask for it."""
+    assert settings_for(["run"], env={"TDOUCE_SKIP_EXISTING": "1"}).skip_existing is True
+    assert settings_for(["run", "--force"],
+                        env={"TDOUCE_SKIP_EXISTING": "1"}).skip_existing is False
+    assert settings_for(["run", "--skip-existing"]).skip_existing is True
+
+
+def test_a_config_file_is_found_by_walking_up_from_the_working_directory(tmp_path, monkeypatch):
+    """The chain the documentation advertises has to exist. A file found by
+    walking up is also the least debuggable thing in the design, so `info`
+    names the one that was read."""
+    (tmp_path / "teille-douce.toml").write_text(
+        '[paths]\noutput = "from-the-file"\n', encoding="utf-8"
+    )
+    deep = tmp_path / "a" / "b"
+    deep.mkdir(parents=True)
+    monkeypatch.chdir(deep)
+
+    settings = settings_for(["run"])
+
+    assert settings.output_dir == Path("from-the-file")
+    assert "teille-douce.toml" in settings.origin("output_dir")
+
+
+def test_no_config_skips_discovery(tmp_path, monkeypatch):
+    (tmp_path / "teille-douce.toml").write_text(
+        '[paths]\noutput = "from-the-file"\n', encoding="utf-8"
+    )
+    monkeypatch.chdir(tmp_path)
+
+    assert settings_for(["run", "--no-config"]).output_dir == Path("tei_output")
+
+
+def test_a_config_file_named_and_missing_is_an_error(tmp_path):
+    with pytest.raises(SystemExit) as excinfo:
+        settings_for(["run", "--config", str(tmp_path / "absent.toml")])
+
+    assert excinfo.value.code == 3
+
+
+def test_an_explicit_console_level_beats_the_debug_setting():
+    """-q asks for quiet. A debug flag left on in a config file must not
+    override what the operator just typed."""
+    settings = settings_for(["run", "-q"], env={"TDOUCE_DEBUG": "1"})
+
+    assert settings.log_level == "ERROR"
