@@ -776,4 +776,60 @@ def test_resuming_does_not_claim_a_volume_with_no_alto_was_converted(tmp_path):
     assert (first.returncode, again.returncode) == (0, 0)
     assert "Nothing to do" in again.stdout
     assert "every document already has a TEI output" not in again.stdout
-    assert "held no ALTO and produced none" in again.stdout
+    assert "held no ALTO" in again.stdout
+
+
+def test_a_volume_is_counted_once_however_many_traces_it_left(tmp_path):
+    """An ALTO-less directory with its archive still beside it and a TEI
+    output already on disk hits three counters at once. It used to land in
+    two of them: `_worth_unpacking` skipped it as already converted AND the
+    directory pass held it as having no ALTO, so one volume appeared twice
+    in one summary line. The condition that decided this was written when
+    the directory pass still dropped ALTO-less directories."""
+    ocr = tmp_path / "ocr"
+    shutil.copytree(ALTO_MIN, ocr)
+    empty = ocr / "LIV9004_reconciled"
+    empty.mkdir()
+    (empty / "notes.txt").write_text("no ALTO", encoding="utf-8")
+    with zipfile.ZipFile(ocr / "LIV9004_reconciled.zip", "w") as zf:
+        zf.writestr("LIV9004_reconciled/c/f1.xml", "<alto/>")
+    out = tmp_path / "out"
+    out.mkdir()
+    (out / "LIV9004_reconciled.tei.xml").write_text("<TEI/>", encoding="utf-8")
+
+    res, _ = _executer_main(tmp_path, ocr, args=("--skip-existing",),
+                            **MODE_COURT)
+
+    assert res.returncode == 0
+    assert "held no ALTO" in res.stdout
+    assert "already converted" not in res.stdout, (
+        "the same volume was counted as a skip and as holding no ALTO"
+    )
+
+
+def test_a_directory_that_cannot_be_read_is_a_failure_not_an_empty_volume(
+        tmp_path):
+    """`rglob` answers "no ALTO" for a directory it may not open, which is
+    a different diagnosis and sends the operator to repack a volume whose
+    only problem is its mode. And it is the corrupt-archive case — the
+    input was there and could not be read — so it answers with the same
+    exit code rather than telling a wrapper to fix its configuration."""
+    import os
+    import stat
+
+    ocr = tmp_path / "ocr"
+    shutil.copytree(ALTO_MIN, ocr)
+    shut = ocr / "LIV9007_reconciled"
+    shutil.copytree(ocr / DOCUMENT, shut)
+    os.chmod(shut, 0o000)
+    try:
+        if os.access(shut, os.R_OK):
+            pytest.skip("running as a user that ignores file permissions")
+        res, _ = _executer_main(tmp_path, ocr, **MODE_COURT)
+    finally:
+        os.chmod(shut, stat.S_IRWXU)
+
+    assert res.returncode == 1
+    assert "LIV9007_reconciled: directory could not be read" in res.stdout
+    assert "held no ALTO" not in res.stdout
+    assert "1/2 documents converted" in res.stdout

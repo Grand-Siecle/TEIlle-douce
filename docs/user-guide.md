@@ -609,6 +609,12 @@ continues on the rest: nothing was converted from them, and nothing failed
 either. The exit status stays 0, because the corpus is what it is — the run
 did not lose anything, it was handed nothing.
 
+**`N directories could not be read`** — a different diagnosis, and a
+failure: the volume may well hold ALTO, this process is simply not allowed
+to list the directory. It is named like a corrupt archive, counted in the
+denominator, and the run exits 1. Check the mode of the directory rather
+than repacking the volume.
+
 **The header is full of `Information not available.`** — no catalogue row
 matched. Check that the `BDD` column of `metadata_livre.csv` contains exactly
 the internal id parsed from the directory name (`LIV0002a_reconciled` →

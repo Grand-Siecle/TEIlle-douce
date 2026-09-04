@@ -248,6 +248,22 @@ def _extract_archive(zip_path, target):
         raise
 
 
+def _is_readable(directory):
+    """Whether this process may actually list *directory*.
+
+    `rglob` swallows a permission error and yields nothing, so an
+    unreadable volume is indistinguishable from an empty one by its
+    contents alone — and calling it empty sends the operator to repack a
+    volume whose only problem is its mode.
+    """
+    try:
+        for _ in directory.iterdir():
+            break
+    except OSError:
+        return False
+    return True
+
+
 def entity_snapshot(entity_dir):
     """What a document's entity directory already holds, before NER writes.
 
@@ -908,12 +924,16 @@ def execute(args):
             # run `skipped_archives` does. Counting in both places
             # announced "2 documents already converted" for one volume.
             extracted = settings.ocr_dir / name
-            if not dry_run and not (
-                extracted.is_dir() and any(extracted.rglob("*.xml"))
-            ):
-                # Counted here unless the directory pass will count it:
-                # that pass keeps only directories holding ALTO, so an
-                # archive beside an empty one was counted nowhere.
+            if not dry_run and not extracted.is_dir():
+                # Counted here only when this archive is the volume's ONLY
+                # trace. The directory pass now hands on every directory,
+                # ALTO or not, and the caller counts each one exactly
+                # once — as a document, as a skip, or as a volume that
+                # held no ALTO. Testing for *.xml as well, as this did
+                # while the directory pass still filtered on it, made an
+                # empty directory with its archive still beside it arrive
+                # in two of those three at the same time: one volume,
+                # counted twice in one summary line.
                 unpacked_skips.append(name)
             return False
         return True
@@ -960,12 +980,19 @@ def execute(args):
     # Names the selectors could legitimately match, whether or not they
     # produced a directory to walk.
     # Collect documents to process
-    docs, without_alto = [], []
+    docs, without_alto, unreadable = [], [], []
     for d in ready_dirs:
         xmls = sorted(d.rglob("*.xml"))
         if xmls:
             docs.append((d.name, xmls, d))
-        elif _selected(d.name):
+        elif not _selected(d.name):
+            continue
+        elif not _is_readable(d):
+            # rglob answers "no ALTO" for a directory it is not allowed to
+            # open, which is a different thing and sends the operator to
+            # repack a volume whose only problem is its permissions.
+            unreadable.append(d.name)
+        else:
             # A directory that is there and holds no ALTO is a defect of
             # the source, not an absence — and it used to fall out of
             # `docs` with no counter, no log line and no summary mention.
@@ -974,6 +1001,20 @@ def execute(args):
             # and the run still exited 0 claiming every document it had
             # kept was every document there was.
             without_alto.append(d.name)
+
+    if unreadable:
+        console.print(
+            f"[yellow]Warning: {len(unreadable)} "
+            f"director{'y' if len(unreadable) == 1 else 'ies'} could not be "
+            f"read, so nothing was converted from "
+            f"{'it' if len(unreadable) == 1 else 'them'}:[/yellow] "
+            f"{escape(', '.join(sorted(unreadable)))}"
+        )
+        for name in sorted(unreadable):
+            logging.getLogger(__name__).warning(
+                "%s: cannot list this directory; whatever ALTO it holds was "
+                "not read", name,
+            )
 
     if without_alto:
         console.print(
@@ -997,13 +1038,20 @@ def execute(args):
             and not unpacked_skips and not everything_excluded:
         # The directory actually configured, not the literal "OCR/": the
         # message used to name a path the run was not reading.
-        if failed_archives:
+        if failed_archives or unreadable:
             # Not a misconfiguration: the input was there and unreadable.
+            # A directory this process may not open is that same case, so
+            # it answers with the same exit code — 3 would have told a
+            # wrapper to go and fix its own configuration.
+            broken = list(failed_archives) + [
+                (name, "directory could not be read")
+                for name in sorted(unreadable)
+            ]
             console.print(
                 f"[bold red]No document could be read:[/bold red] "
-                f"{len(failed_archives)} archive(s) failed to extract."
+                f"{len(broken)} volume(s) could not be opened."
             )
-            for name, reason in failed_archives:
+            for name, reason in broken:
                 console.print(f"  [red]FAILED[/red] {escape(f'{name}: {reason}')}")
             sys.exit(EXIT_SOME_FAILED)
         if selectors:
@@ -1047,7 +1095,7 @@ def execute(args):
             # otherwise on the line right under the warning that named it
             # contradicts the warning.
             note = ("" if not without_alto else
-                    f" ({len(without_alto)} held no ALTO and produced none)")
+                    f" ({len(without_alto)} held no ALTO)")
             console.print(
                 f"[bold green]Nothing to do:[/bold green] every document "
                 f"that could be converted already has a TEI output.{note}"
@@ -1273,8 +1321,10 @@ def execute(args):
                 break
 
     # Audit 2.10: end-of-run summary + non-zero exit code on failures
-    failed_docs = failed_docs + list(failed_archives)
-    total = len(docs) + len(failed_archives)
+    failed_docs = failed_docs + list(failed_archives) + [
+        (name, "directory could not be read") for name in sorted(unreadable)
+    ]
+    total = len(docs) + len(failed_archives) + len(unreadable)
     converted = f"{len(ok_docs)}/{total} documents converted"
     if skipped_existing:
         converted += f" ({skipped_existing} more skipped, already converted)"
