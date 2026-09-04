@@ -598,3 +598,30 @@ def test_quiet_never_raises_the_level_a_lower_layer_set():
     settings = settings_for(["run", "-q"], env={"TDOUCE_LOG_LEVEL": "ERROR"})
 
     assert settings.log_level == "ERROR"
+
+
+def test_quiet_lowers_a_level_the_config_file_raised(tmp_path, monkeypatch):
+    """The floor was resolved without the config file, so a DEBUG set there
+    was invisible to it and -q left the console at DEBUG."""
+    (tmp_path / "teille-douce.toml").write_text(
+        '[output]\nlog_level = "DEBUG"\n', encoding="utf-8"
+    )
+    monkeypatch.chdir(tmp_path)
+
+    assert settings_for(["run", "-q"]).log_level == "WARNING"
+
+
+def test_a_rejected_value_is_announced_once(recwarn):
+    """The floor probe re-resolved every layer, so each refusal warned
+    twice as soon as -q was passed."""
+    settings_for(["run", "-q"], env={"TDOUCE_HEALTH_TIMEOUT": "wat"})
+
+    named = [w for w in recwarn if "TDOUCE_HEALTH_TIMEOUT" in str(w.message)]
+    assert len(named) == 1, [str(w.message) for w in named]
+
+
+def test_an_empty_log_level_is_a_usage_error():
+    with pytest.raises(SystemExit) as excinfo:
+        settings_for(["run", "--log-level", ""])
+
+    assert excinfo.value.code == 2

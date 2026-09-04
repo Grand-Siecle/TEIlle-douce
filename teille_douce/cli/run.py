@@ -14,6 +14,7 @@ Usage:
 
 import logging
 import re
+import warnings
 from fnmatch import fnmatch
 import shutil
 import sys
@@ -74,7 +75,19 @@ def configure_logging(settings, now=None, quiet=False, write=True):
         # exist: without this every record raised FileNotFoundError inside
         # logging and buried the console in tracebacks, while the summary
         # still pointed at a file nothing had created.
-        RUN_LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            RUN_LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+        except OSError as reason:
+            # A log is a diagnostic, not the job: an unusable path costs the
+            # log, not the conversion. Said on stderr, since the console is
+            # not configured yet.
+            warnings.warn(
+                f"cannot write the run log to {RUN_LOG_FILE}: {reason} — "
+                "continuing without file logging",
+                RuntimeWarning, stacklevel=2,
+            )
+            RUN_LOG_FILE = None
+    if RUN_LOG_FILE:
         # delay=True: the file is only created at the first record, so a run
         # that dies before logging anything leaves no empty file behind.
         file_handler = logging.FileHandler(
@@ -798,7 +811,17 @@ def execute(args):
     # Created here and not earlier: every exit above this line means
     # nothing will be written, and leaving an empty directory behind after
     # refusing to run is a write like any other.
-    settings.output_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        settings.output_dir.mkdir(parents=True, exist_ok=True)
+    except (FileExistsError, NotADirectoryError, PermissionError) as reason:
+        # -o makes it as easy to name an existing file as -i does, and the
+        # input guard above already refuses that. Same answer here: exit 3,
+        # not a traceback after the metadata have been loaded.
+        console.print(
+            f"[red]Cannot use {escape(str(settings.output_dir))} as an "
+            f"output directory:[/red] {escape(str(reason))}"
+        )
+        sys.exit(EXIT_MISCONFIGURED)
 
     # Build pipeline configuration
     config = build_config()

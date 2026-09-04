@@ -14,6 +14,7 @@ all do what the pipeline has always done.
 import argparse
 import sys
 import tomllib
+import warnings
 from dataclasses import replace
 from pathlib import Path
 
@@ -86,6 +87,10 @@ def settings_from(args, env=None, parser=None):
     which is what makes precedence per setting rather than per layer.
     """
     parser = parser or build_parser()
+    # Resolved once: computing it twice made every rejected TDOUCE_* value
+    # warn twice, and the second resolution below used to omit it entirely,
+    # so a level set in the config file was invisible to the -q floor.
+    config_file = _config_file(args, parser)
     flags = {}
     for name in ("ocr_dir", "output_dir", "entities_dir", "metadata_csv",
                  "persons_csv", "pyhellen_url", "modernize_url",
@@ -114,7 +119,12 @@ def settings_from(args, env=None, parser=None):
             # set TDOUCE_LOG_LEVEL=ERROR and who adds -q must not get every
             # WARNING back. The chatter is silenced by `say()` either way.
             order = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
-            floor = Settings.load(flags={}, env=env).log_level
+            with warnings.catch_warnings():
+                # The layers are about to be resolved for real; warning
+                # here would say everything twice.
+                warnings.simplefilter("ignore", RuntimeWarning)
+                floor = Settings.load(flags={}, env=env,
+                                      config_file=config_file).log_level
             if order.index(level) > order.index(floor):
                 flags["log_level"] = level
         else:
@@ -128,8 +138,7 @@ def settings_from(args, env=None, parser=None):
             flags["debug"] = True
 
     try:
-        settings = Settings.load(flags=flags, env=env,
-                                 config_file=_config_file(args, parser))
+        settings = Settings.load(flags=flags, env=env, config_file=config_file)
     except (ValueError, tomllib.TOMLDecodeError, OSError) as reason:
         # Exit 3, not a traceback and not 1: nothing ran, and 1 is
         # reserved for "some volumes failed".

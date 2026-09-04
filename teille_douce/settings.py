@@ -166,6 +166,10 @@ _SETTINGS = (
                  _as_int(minimum=1), 8),
     _Declaration("modernize_batch_size", "TDOUCE_MODERNIZE_BATCH_SIZE",
                  "limits.batch_size", _as_int(minimum=1), 64),
+    # Both answer to one config key on purpose, matching --concurrency,
+    # which sets both services at once. The consequence is deliberate: from
+    # a config file the two cannot be set apart, only through their own
+    # TDOUCE_* variables.
     _Declaration("modernize_concurrency", "TDOUCE_MODERNIZE_CONCURRENCY",
                  "limits.concurrency", _as_int(minimum=1), 8),
     _Declaration("pyhellen_concurrency", "TDOUCE_PYHELLEN_CONCURRENCY",

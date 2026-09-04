@@ -18,7 +18,7 @@ import zipfile
 
 import pytest
 
-from test_e2e_pipeline import ALTO_MIN, MODE_COURT, _executer_main
+from test_e2e_pipeline import ALTO_MIN, DOCUMENT, MODE_COURT, _executer_main
 
 pytestmark = pytest.mark.e2e
 
@@ -148,3 +148,32 @@ def test_dry_run_counts_a_volume_that_is_still_archived(tmp_path):
     assert "LIV0055_reconciled.zip" in res.stdout
     assert not (ocr / "LIV0055_reconciled").exists(), "--dry-run unpacked it"
     assert not sortie.exists()
+
+
+def test_an_output_path_that_is_a_file_is_a_misconfiguration(tmp_path):
+    """`-o` makes it as easy to name an existing file as `-i` does, and the
+    input guard already refuses that."""
+    ocr = tmp_path / "ocr"
+    shutil.copytree(ALTO_MIN, ocr)
+    (tmp_path / "out").write_text("not a directory", encoding="utf-8")
+
+    res, _ = _executer_main(tmp_path, ocr, **MODE_COURT)
+
+    assert res.returncode == 3
+    assert "output directory" in res.stdout
+
+
+def test_an_unusable_log_path_costs_the_log_not_the_conversion(tmp_path):
+    """A log is a diagnostic, not the job."""
+    ocr = tmp_path / "ocr"
+    shutil.copytree(ALTO_MIN, ocr)
+    (tmp_path / "notadir").write_text("x", encoding="utf-8")
+
+    res, sortie = _executer_main(
+        tmp_path, ocr, args=("--log-file", str(tmp_path / "notadir" / "x.log")),
+        **MODE_COURT,
+    )
+
+    assert res.returncode == 0, res.stdout[-2000:] + res.stderr[-2000:]
+    assert (sortie / f"{DOCUMENT}.tei.xml").exists()
+    assert "cannot write the run log" in res.stderr

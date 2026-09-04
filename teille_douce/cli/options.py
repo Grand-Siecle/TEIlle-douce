@@ -289,8 +289,12 @@ def add_run_arguments(parser):
 
 def console_level(args):
     """The console log level asked for, or None when nothing was asked."""
-    if getattr(args, "log_level", None):
-        return args.log_level
+    level = getattr(args, "log_level", None)
+    if level is not None:
+        # Not `if level:` — an empty string must reach the converter and be
+        # refused, like every other flag. `--log-level "$LEVEL"` with LEVEL
+        # unset is the same wrapper idiom `--phases` already guards against.
+        return level
     verbose = getattr(args, "verbose", 0) or 0
     quiet = getattr(args, "quiet", 0) or 0
     if verbose:
