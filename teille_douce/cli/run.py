@@ -782,6 +782,9 @@ def execute(args):
     # discovery. Selectors do bound it, because they are name-based.
     unpacked_skips = []
 
+    def _only_selected(name):
+        return bool(select_documents([(name, [], None)], selectors, [], None)[0])
+
     def _worth_unpacking(name):
         # Unlike --limit, the resume predicate is name-based and knowable
         # without unpacking: a resumed corpus used to extract every
@@ -804,13 +807,17 @@ def execute(args):
 
     ready_dirs, failed_archives = expand_archives(
         settings.ocr_dir, extract=not dry_run, wanted=_worth_unpacking,
-        keep=_selected if (selectors or exclusions_asked) else None,
+        # Selectors only. An exclusion has to reach select_documents,
+        # which is what tells a matched `-x` from a mistyped one: dropping
+        # the volume here made every working `-x` report "No volume
+        # matches" and exit 3, the documented example included.
+        keep=_only_selected if selectors else None,
     )
 
     # Archives --dry-run did not unpack are prospective work, not absent
     # documents: they are a documented input layout, and the plan has to
     # be right precisely before the first run.
-    pending_archives, skipped_archives = [], 0
+    pending_archives, skipped_archives, skipped_names = [], 0, []
     if dry_run:
         for zip_path in sorted(settings.ocr_dir.glob("*.zip")):
             if (settings.ocr_dir / zip_path.stem).exists():
@@ -825,6 +832,7 @@ def execute(args):
             if (settings.skip_existing
                     and _out_path(zip_path.stem, settings.output_dir).exists()):
                 skipped_archives += 1
+                skipped_names.append(zip_path.stem)
                 continue
             pending_archives.append(zip_path.name)
 
@@ -871,7 +879,11 @@ def execute(args):
     # Only directories that actually hold ALTO: an extracted archive with
     # no *.xml is not a volume a selector can match, and treating it as one
     # answered "every volume was excluded" when nothing had been.
+    # A volume the resume skipped is a name the selector legitimately
+    # found: without it, naming an already-converted, still-archived
+    # volume was reported as a typo.
     known = ({name for name, _, _ in docs}
+             | set(unpacked_skips) | set(skipped_names)
              | {Path(n).stem for n, _ in failed_archives}
              | {Path(n).stem for n in pending_archives})
 

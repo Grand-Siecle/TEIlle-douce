@@ -440,3 +440,42 @@ def test_the_skip_count_is_one_per_volume_not_one_per_trace(tmp_path):
     assert res.returncode == 0, res.stdout[-2000:]
     assert "1 document(s) already converted" in res.stdout, res.stdout
     assert "2 document(s)" not in res.stdout, res.stdout
+
+
+def test_excluding_one_volume_of_several_works(tmp_path):
+    """The documented example. Gating the directory scan on a predicate
+    that applied exclusions dropped the volume before select_documents
+    could tell a matched `-x` from a mistyped one, so every working `-x`
+    reported "No volume matches" and exited 3."""
+    ocr = tmp_path / "ocr"
+    ocr.mkdir()
+    for name in ("LIV0031_reconciled", "LIV0038_reconciled"):
+        shutil.copytree(ALTO_MIN / DOCUMENT, ocr / name)
+
+    res, sortie = _executer_main(
+        tmp_path, ocr, args=("LIV003*", "-x", "LIV0038"), **MODE_COURT
+    )
+
+    assert res.returncode == 0, res.stdout[-2000:]
+    produced = sorted(p.name for p in sortie.glob("*.tei.xml"))
+    assert produced == ["LIV0031_reconciled.tei.xml"], produced
+
+
+def test_naming_an_archived_volume_the_resume_will_skip(tmp_path):
+    """A volume the resume skips is a name the selector legitimately found;
+    without it, naming an already-converted, still-archived volume was
+    reported as a typo."""
+    ocr = tmp_path / "ocr"
+    ocr.mkdir()
+    _archive(ocr, "LIV0044_reconciled")
+    sortie = tmp_path / "out"
+    sortie.mkdir()
+    (sortie / "LIV0044_reconciled.tei.xml").write_text("<x/>", encoding="utf-8")
+
+    res, _ = _executer_main(
+        tmp_path, ocr, args=("LIV0044_reconciled", "--skip-existing"),
+        **MODE_COURT,
+    )
+
+    assert res.returncode == 0, res.stdout[-2000:]
+    assert "Nothing to do" in res.stdout
