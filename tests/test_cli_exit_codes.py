@@ -1032,3 +1032,185 @@ def test_resume_does_not_reopen_a_volume_it_has_nothing_left_to_do_to(tmp_path):
 
     assert plain.returncode == 1
     assert "LIV9002_reconciled: directory could not be read" in plain.stdout
+
+
+def test_a_corpus_kept_alive_only_by_an_unread_skip_is_not_called_empty(
+        tmp_path):
+    """The fifth bucket, forgotten the same way the fourth was one commit
+    earlier. A volume skipped without being read is still a volume, and
+    the "is there anything here" guard did not know about it: the corpus
+    answered "No ALTO documents found" and exited 3 — the code that tells
+    a wrapper to go and fix its own configuration — for a corpus that had
+    nothing left to convert. The readable and archive-only shapes of the
+    same volume both answered 0."""
+    import stat
+
+    ocr = tmp_path / "ocr"
+    ocr.mkdir()
+    shut = ocr / "LIV9002_reconciled"
+    shutil.copytree(ALTO_MIN / DOCUMENT, shut)
+    out = tmp_path / "out"
+    out.mkdir()
+    (out / "LIV9002_reconciled.tei.xml").write_text("<TEI/>", encoding="utf-8")
+
+    if not _unreadable(shut):
+        __import__("os").chmod(shut, stat.S_IRWXU)
+        pytest.skip("running as a user that ignores file permissions")
+    try:
+        res, _ = _executer_main(tmp_path, ocr, args=("--skip-existing",),
+                                COLUMNS="200", **MODE_COURT)
+    finally:
+        __import__("os").chmod(shut, stat.S_IRWXU)
+
+    assert res.returncode == 0
+    assert "Nothing to do: 1 document(s) already converted" in res.stdout
+
+
+def test_an_unread_skip_is_still_counted_when_something_else_failed(tmp_path):
+    """Same guard, the other way out of it: with a corrupt archive beside
+    it the run reported the archive and the skipped volume appeared in no
+    note at all."""
+    import stat
+
+    ocr = tmp_path / "ocr"
+    ocr.mkdir()
+    (ocr / "LIV9005_reconciled.zip").write_bytes(b"not a zip")
+    shut = ocr / "LIV9002_reconciled"
+    shutil.copytree(ALTO_MIN / DOCUMENT, shut)
+    out = tmp_path / "out"
+    out.mkdir()
+    (out / "LIV9002_reconciled.tei.xml").write_text("<TEI/>", encoding="utf-8")
+
+    if not _unreadable(shut):
+        __import__("os").chmod(shut, stat.S_IRWXU)
+        pytest.skip("running as a user that ignores file permissions")
+    try:
+        res, _ = _executer_main(tmp_path, ocr, args=("--skip-existing",),
+                                COLUMNS="200", **MODE_COURT)
+    finally:
+        __import__("os").chmod(shut, stat.S_IRWXU)
+
+    assert res.returncode == 1
+    assert "0/1 documents converted (1 more skipped, already converted)" \
+        in res.stdout
+
+
+def test_the_refusal_to_read_anything_still_names_what_held_no_alto(tmp_path):
+    """Both "Completed with errors" summaries carry the ALTO-less note;
+    this branch did not, so its line did not balance against the corpus."""
+    ocr = tmp_path / "ocr"
+    ocr.mkdir()
+    (ocr / "LIV9005_reconciled.zip").write_bytes(b"not a zip")
+    (ocr / "LIV9003_reconciled").mkdir()
+    (ocr / "LIV9003_reconciled" / "n.txt").write_text("x", encoding="utf-8")
+
+    res, _ = _executer_main(tmp_path, ocr, COLUMNS="200", **MODE_COURT)
+
+    assert res.returncode == 1
+    assert "1 volume(s) could not be opened. (1 more held no ALTO)" \
+        in res.stdout
+
+
+# =============================================================================
+# The accounting, on every path out of a run
+# =============================================================================
+
+def _accounting(stdout):
+    """Every number the run claims about volumes, whichever line it used.
+
+    A run leaves by one of four doors — the full summary, the early
+    failure summary, the finished-resume return, the nothing-readable
+    refusal — and each writes its own sentence. Three of the four have
+    already been caught telling a different story from the others.
+    """
+    import re
+
+    def one(pattern):
+        found = re.search(pattern, stdout)
+        return int(found.group(1)) if found else 0
+
+    fraction = re.search(r"(\d+)/(\d+) documents converted", stdout)
+    return {
+        "converted": int(fraction.group(1)) if fraction else 0,
+        "attempted": (int(fraction.group(2)) if fraction else
+                      one(r"(\d+) volume\(s\) could not be opened")),
+        "skipped": (one(r"\((\d+) more skipped, already converted\)")
+                    or one(r"Nothing to do: (\d+) document\(s\)")),
+        "no_alto": one(r"\((\d+) more held no ALTO\)"),
+        "never_tried": one(r"\((\d+) never attempted"),
+        "failed": len([l for l in stdout.splitlines() if "FAILED" in l]),
+    }
+
+
+def _volumes_offered(ocr):
+    """An archive and the directory it was extracted into are ONE volume."""
+    return len({entry.name if entry.is_dir() else entry.stem
+                for entry in ocr.iterdir()
+                if entry.is_dir() or entry.suffix == ".zip"})
+
+
+def _corpus_full_summary(ocr, out):
+    shutil.copytree(ALTO_MIN / DOCUMENT, ocr / "LIV9001_reconciled")
+    (ocr / "LIV9003_reconciled").mkdir()
+    (ocr / "LIV9003_reconciled" / "n.txt").write_text("x", encoding="utf-8")
+    (ocr / "LIV9005_reconciled.zip").write_bytes(b"not a zip")
+    return ("--skip-existing",), 1
+
+
+def _corpus_early_failure(ocr, out):
+    """No convertible document left, but something failed: the early
+    "Completed with errors" door."""
+    shutil.copytree(ALTO_MIN / DOCUMENT, ocr / "LIV9001_reconciled")
+    (out / "LIV9001_reconciled.tei.xml").write_text("<TEI/>", encoding="utf-8")
+    (ocr / "LIV9005_reconciled.zip").write_bytes(b"not a zip")
+    # One of each note, so a door that forgets one is caught here.
+    (ocr / "LIV9003_reconciled").mkdir()
+    (ocr / "LIV9003_reconciled" / "n.txt").write_text("x", encoding="utf-8")
+    return ("--skip-existing",), 1
+
+
+def _corpus_finished_resume(ocr, out):
+    """Everything already converted: the "Nothing to do" door."""
+    shutil.copytree(ALTO_MIN / DOCUMENT, ocr / "LIV9001_reconciled")
+    (out / "LIV9001_reconciled.tei.xml").write_text("<TEI/>", encoding="utf-8")
+    (ocr / "LIV9003_reconciled").mkdir()
+    (ocr / "LIV9003_reconciled" / "n.txt").write_text("x", encoding="utf-8")
+    return ("--skip-existing",), 0
+
+
+def _corpus_nothing_readable(ocr, out):
+    """Nothing could be opened at all: the refusal door."""
+    (ocr / "LIV9005_reconciled.zip").write_bytes(b"not a zip")
+    (ocr / "LIV9003_reconciled").mkdir()
+    (ocr / "LIV9003_reconciled" / "n.txt").write_text("x", encoding="utf-8")
+    return (), 1
+
+
+@pytest.mark.parametrize("build", [
+    _corpus_full_summary,
+    _corpus_early_failure,
+    _corpus_finished_resume,
+    _corpus_nothing_readable,
+], ids=["full-summary", "early-failure", "finished-resume", "nothing-readable"])
+def test_the_accounting_balances_on_every_way_out_of_a_run(tmp_path, build):
+    """One volume, one bucket — whichever door the run leaves by.
+
+    Stated per door because that is where it kept breaking: a new bucket
+    would be taught to the final summary and forgotten by one of the three
+    early returns, and the volume then appeared twice, or in no line at
+    all while the run exited 0 or, worse, 3."""
+    ocr = tmp_path / "ocr"
+    ocr.mkdir()
+    out = tmp_path / "out"
+    out.mkdir()
+    args, expected_code = build(ocr, out)
+
+    res, _ = _executer_main(tmp_path, ocr, args=args, COLUMNS="200",
+                            **MODE_COURT)
+
+    assert res.returncode == expected_code, res.stdout
+    seen = _accounting(res.stdout)
+    assert seen["converted"] + seen["failed"] + seen["never_tried"] \
+        == seen["attempted"], f"{seen} in:\n{res.stdout}"
+    assert seen["attempted"] + seen["skipped"] + seen["no_alto"] \
+        == _volumes_offered(ocr), f"{seen} in:\n{res.stdout}"

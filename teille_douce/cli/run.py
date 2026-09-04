@@ -1052,8 +1052,14 @@ def execute(args):
         for entry in settings.ocr_dir.iterdir()
         if entry.is_dir() or entry.suffix == ".zip"
     )
-    if not docs and not pending_archives and not skipped_archives \
-            and not unpacked_skips and not everything_excluded:
+    # Every bucket that means "there IS something here", in one place.
+    # Naming them one by one in a boolean chain is what let the newest of
+    # them be forgotten twice running: a resumed corpus whose only volume
+    # was skipped unread answered "No ALTO documents found" and exited 3,
+    # the code that tells a wrapper to go and fix its own configuration.
+    resumed = skipped_archives + len(unpacked_skips) + len(unreadable_skips)
+    if not docs and not pending_archives and not resumed \
+            and not everything_excluded:
         # The directory actually configured, not the literal "OCR/": the
         # message used to name a path the run was not reading.
         if broken:
@@ -1061,9 +1067,11 @@ def execute(args):
             # A directory this process may not open is that same case, so
             # it answers with the same exit code — 3 would have told a
             # wrapper to go and fix its own configuration.
+            note = ("" if not without_alto else
+                    f" ({len(without_alto)} more held no ALTO)")
             console.print(
                 f"[bold red]No document could be read:[/bold red] "
-                f"{len(broken)} volume(s) could not be opened."
+                f"{len(broken)} volume(s) could not be opened.{note}"
             )
             for name, reason in broken:
                 console.print(f"  [red]FAILED[/red] {escape(f'{name}: {reason}')}")
@@ -1110,10 +1118,11 @@ def execute(args):
             # otherwise on the line right under the warning that named it
             # contradicts the warning.
             note = ("" if not without_alto else
-                    f" ({len(without_alto)} held no ALTO)")
+                    f" ({len(without_alto)} more held no ALTO)")
             console.print(
-                f"[bold green]Nothing to do:[/bold green] every document "
-                f"that could be converted already has a TEI output.{note}"
+                f"[bold green]Nothing to do:[/bold green] "
+                f"{skipped_existing} document(s) already converted"
+                f"{note}."
             )
             return
         console.print("[red]Every volume was excluded.[/red]")
