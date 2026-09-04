@@ -143,7 +143,7 @@ And, if you touched anything that reaches the output, validate on real
 documents rather than only on the fixture:
 
 ```bash
-teille-douce run --fast
+teille-douce run --fast -i OCR_test -o tei_test
 venv/bin/python scripts/validate_tei.py --odd tei_test/*.xml
 ```
 

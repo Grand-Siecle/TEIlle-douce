@@ -47,7 +47,7 @@ symlinks into the private corpus (gitignored, as are `tei_test/`, `tei_full/`,
 `tei_mini/`):
 
 ```bash
-teille-douce run --fast
+teille-douce run --fast -i OCR_test -o tei_test
 ```
 
 ## The test suite
@@ -229,7 +229,7 @@ The order below is the one the conventions above imply.
    ```
 6. **Validate real output**, not just the fixture:
    ```bash
-      teille-douce run --fast
+   teille-douce run --fast -i OCR_test -o tei_test
    venv/bin/python scripts/validate_tei.py --odd tei_test/*.xml
    ```
 

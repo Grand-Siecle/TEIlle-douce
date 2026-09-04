@@ -79,9 +79,11 @@ def _phase_set(parser, raw):
     if raw == "all":
         return set(PHASES), set()
     if not raw.strip():
-        # Set but empty: keep what the layers below decided, like every
-        # other setting. `--phases "$PHASES"` with PHASES unset must not
-        # turn everything back on.
+        # Set but empty. For an environment variable the rule is "keep the
+        # default and warn"; for something typed on the command line it is
+        # a usage error, like any other unusable flag value. Silently
+        # meaning "all" turned every phase back on for a wrapper doing
+        # `--phases "$PHASES"` with PHASES unset.
         parser.error("--phases was given an empty list")
     if raw == "none":
         return set(), set()

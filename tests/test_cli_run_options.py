@@ -303,7 +303,9 @@ def test_a_config_file_is_found_by_walking_up_from_the_working_directory(tmp_pat
 
     settings = settings_for(["run"])
 
-    assert settings.output_dir == Path("from-the-file")
+    # Anchored on the file, not on the working directory — see
+    # test_a_config_file_anchors_its_relative_paths_to_itself.
+    assert settings.output_dir == tmp_path / "from-the-file"
     assert "teille-douce.toml" in settings.origin("output_dir")
 
 
@@ -459,3 +461,44 @@ def test_the_pyhellen_timeout_default_is_the_one_config_declares():
 def test_an_option_feeding_two_settings_is_reported_once():
     with pytest.raises(SystemExit):
         settings_for(["run", "--concurrency", "zero"])
+
+
+# =============================================================================
+# What the fourth review caught
+# =============================================================================
+
+def test_a_config_file_anchors_its_relative_paths_to_itself(tmp_path, monkeypatch):
+    """Discovery walks up, so the file is found from a subdirectory — and a
+    relative path in it then has to mean the same thing from there."""
+    (tmp_path / "teille-douce.toml").write_text(
+        '[paths]\ninput = "corpus"\n', encoding="utf-8"
+    )
+    deep = tmp_path / "a" / "b"
+    deep.mkdir(parents=True)
+    monkeypatch.chdir(deep)
+
+    assert settings_for(["run"]).ocr_dir == tmp_path / "corpus"
+
+
+def test_the_modernization_url_flag_is_validated_like_its_sibling():
+    """--pyhellen strips; --vieuxparler bypassed _resolve entirely and let a
+    stray space into the URL, which the service then refuses."""
+    settings = settings_for(["run", "--vieuxparler", "  http://x:1  "])
+
+    assert settings.modernize_api["fra"] == "http://x:1"
+
+
+def test_limit_counts_what_will_actually_be_converted():
+    """Applied before --skip-existing, `--skip-existing --limit N` stalled:
+    every run took the same first N, skipped them all, and reported
+    nothing to do while the rest of the corpus went untouched."""
+    from teille_douce.cli.run import select_documents
+
+    docs = [(f"LIV{n:04d}", [], None) for n in range(1, 5)]
+    already_done = {"LIV0001", "LIV0002"}
+
+    kept, _ = select_documents(
+        docs, [], [], limit=1, skip=lambda name: name in already_done
+    )
+
+    assert [d[0] for d in kept] == ["LIV0003"]

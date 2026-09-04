@@ -350,6 +350,14 @@ def _read_config_file(path):
                 near = _nearest_key(name)
                 hint = f" — did you mean '{near}'?" if near else ""
                 raise ValueError(f"{path}: unknown setting '{name}'{hint}")
+            # A relative path in the file means "next to the file". The
+            # file is found by walking up, so anchoring on the working
+            # directory would make it mean something different from every
+            # subdirectory it was meant to serve.
+            if _BY_KEY[name].convert is _as_path and isinstance(value, str):
+                candidate = Path(value)
+                if not candidate.is_absolute():
+                    value = str(path.parent / candidate)
             flat[name] = value
     return flat
 

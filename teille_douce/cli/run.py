@@ -290,7 +290,7 @@ EXIT_SOME_FAILED = 1
 EXIT_MISCONFIGURED = 3
 
 
-def select_documents(docs, selectors, exclusions, limit):
+def select_documents(docs, selectors, exclusions, limit, skip=None):
     """Narrow the discovered documents to what was asked for.
 
     A selector matches a directory name, the internal id parsed from it,
@@ -303,6 +303,10 @@ def select_documents(docs, selectors, exclusions, limit):
         selectors (list): names, internal ids or globs; empty means all.
         exclusions (list): patterns to drop afterwards.
         limit (int): keep at most this many, or None.
+        skip (callable): name -> True when the volume is already
+            converted. Applied BEFORE the limit, so `--skip-existing
+            --limit N` advances through the corpus instead of taking the
+            same N volumes and skipping them all on every run.
 
     Returns:
         tuple: (kept, unmatched) — unmatched holds the selectors that named
@@ -321,6 +325,8 @@ def select_documents(docs, selectors, exclusions, limit):
                      if not any(matches(p, d[0]) for d in docs)]
     for pattern in exclusions or []:
         kept = [d for d in kept if not matches(pattern, d[0])]
+    if skip is not None:
+        kept = [d for d in kept if not skip(d[0])]
     if limit is not None:
         kept = kept[:limit]
     return kept, unmatched
@@ -542,7 +548,10 @@ def execute(args):
     configure_logging(settings)
 
     # Verify OCR directory exists
-    if not settings.ocr_dir.exists():
+    # is_dir(), not exists(): -i now makes it easy to point the input at a
+    # file, and iterdir() would then raise NotADirectoryError instead of
+    # the exit 3 the contract promises.
+    if not settings.ocr_dir.is_dir():
         console.print(f"[red]Directory not found: {escape(str(settings.ocr_dir))}[/red]")
         sys.exit(EXIT_MISCONFIGURED)
 
@@ -552,6 +561,15 @@ def execute(args):
     # Extract ZIP archives (corrupt ones are skipped and reported)
     ready_dirs, failed_archives = expand_archives(settings.ocr_dir,
                                                  extract=not dry_run)
+
+    # An archive nobody selected is none of this run's business: reporting
+    # it made `run LIV0044` say "1/2 documents converted" and exit 1.
+    selectors = getattr(args, "documents", []) or []
+    if selectors:
+        failed_archives = [
+            (name, reason) for name, reason in failed_archives
+            if select_documents([(Path(name).stem, [], None)], selectors, [], None)[0]
+        ]
 
     # Collect documents to process
     docs = []
@@ -579,9 +597,17 @@ def execute(args):
 
     # Narrow to what was asked for. A selector that names nothing stops the
     # run: a typo must not look like an empty corpus.
+    # Both filters live in one place, in the order that makes the pair
+    # usable: skip what is already converted, then count.
+    already_converted = (
+        (lambda name: _out_path(name, settings.output_dir).exists())
+        if settings.skip_existing else None
+    )
+    before = len(docs)
     docs, unmatched = select_documents(
         docs, getattr(args, "documents", []) or [],
         getattr(args, "exclude", None) or [], getattr(args, "limit", None),
+        skip=already_converted,
     )
     if unmatched:
         console.print(
@@ -595,21 +621,18 @@ def execute(args):
 
     # Audit 2.5: minimal resume after a crash — skip already-converted docs
     skipped_existing = 0
-    # The setting, not the flag: --skip-existing and --force feed it,
-    # and so do TDOUCE_SKIP_EXISTING and the config file. Reading the
-    # flag made the whole layer dead — the corpus was reconverted.
-    if settings.skip_existing:
-        pending = [d for d in docs if not _out_path(d[0], settings.output_dir).exists()]
-        skipped_existing = len(docs) - len(pending)
-        if skipped_existing:
-            console.print(
-                f"[dim]--skip-existing: {skipped_existing} document(s) "
-                f"already converted, skipped[/dim]"
-            )
-        docs = pending
-        if not docs and not failed_archives:
-            console.print("[bold green]Nothing to do:[/bold green] every document already has a TEI output.")
-            return
+    skipped_existing = before - len(docs) if settings.skip_existing else 0
+    if skipped_existing:
+        say(
+            f"[dim]--skip-existing: {skipped_existing} document(s) "
+            f"already converted, skipped[/dim]"
+        )
+    if settings.skip_existing and not docs and not failed_archives:
+        console.print(
+            "[bold green]Nothing to do:[/bold green] every document already "
+            "has a TEI output."
+        )
+        return
 
     if dry_run:
         console.print(

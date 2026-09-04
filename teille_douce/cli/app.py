@@ -12,6 +12,7 @@ all do what the pipeline has always done.
 """
 
 import argparse
+import sys
 import tomllib
 from dataclasses import replace
 from pathlib import Path
@@ -79,8 +80,9 @@ def settings_from(args, env=None, parser=None):
     parser = parser or build_parser()
     flags = {}
     for name in ("ocr_dir", "output_dir", "entities_dir", "metadata_csv",
-                 "persons_csv", "pyhellen_url", "health_timeout",
-                 "max_workers", "modernize_batch_size", "log_file"):
+                 "persons_csv", "pyhellen_url", "modernize_url",
+                 "health_timeout", "max_workers", "modernize_batch_size",
+                 "log_file"):
         value = getattr(args, name, None)
         if value is not None:
             flags[name] = value
@@ -135,12 +137,6 @@ def settings_from(args, env=None, parser=None):
     # Two answers a flag gives that no layer below it can express.
     if getattr(args, "no_log_file", False):
         settings = replace(settings, log_file=None)
-    modernize_url = getattr(args, "modernize_url", None)
-    if modernize_url:
-        settings = replace(
-            settings,
-            modernize_api={k: modernize_url for k in settings.modernize_api},
-        )
     return settings
 
 
@@ -211,8 +207,11 @@ def main(argv=None):
         int or None: the process exit status; ``None`` means success. The
         pipeline raises SystemExit itself on the paths that already did.
     """
-    args = parse_args(argv)
-    set_settings(settings_from(args))
+    parser = build_parser()
+    args = parser.parse_args(normalise(
+        (sys.argv[1:] if argv is None else argv)
+    ))
+    set_settings(settings_from(args, parser=parser))
 
     # Imported here, not at module scope: run.py configures logging and
     # names this run's log file when it is imported, and `--help` and
