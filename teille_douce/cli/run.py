@@ -564,9 +564,26 @@ def execute(args):
     # Create output directory
     dry_run = getattr(args, "dry_run", False)
 
+    if getattr(args, "no_probe", False) and getattr(args, "require_services", False):
+        # One says "assume they answer", the other "prove they do". Checked
+        # here, before expand_archives unpacks anything: --require-services
+        # promises to fail before a single write.
+        console.print(
+            "[red]--no-probe and --require-services contradict each other.[/red]"
+        )
+        sys.exit(EXIT_MISCONFIGURED)
+
     # Extract ZIP archives (corrupt ones are skipped and reported)
     ready_dirs, failed_archives = expand_archives(settings.ocr_dir,
                                                  extract=not dry_run)
+
+    # Archives --dry-run did not unpack are prospective work, not absent
+    # documents: they are a documented input layout, and the plan has to
+    # be right precisely before the first run.
+    pending_archives = [
+        zip_path.name for zip_path in sorted(settings.ocr_dir.glob("*.zip"))
+        if not (settings.ocr_dir / zip_path.stem).exists()
+    ] if dry_run else []
 
     # An archive nobody selected is none of this run's business: reporting
     # it made `run LIV0044` say "1/2 documents converted" and exit 1.
@@ -586,7 +603,7 @@ def execute(args):
         if xmls:
             docs.append((d.name, xmls, d))
 
-    if not docs:
+    if not docs and not pending_archives:
         # The directory actually configured, not the literal "OCR/": the
         # message used to name a path the run was not reading.
         if failed_archives:
@@ -622,18 +639,33 @@ def execute(args):
             + escape(", ".join(unmatched))
         )
         sys.exit(EXIT_MISCONFIGURED)
-    if not docs and skipped_existing:
-        # Resuming a corpus that is already complete is a success, not a
-        # misconfiguration — and it is the idiom the user guide recommends
-        # for a nightly wrapper.
-        console.print(
-            "[bold green]Nothing to do:[/bold green] every document already "
-            "has a TEI output."
-        )
-        return
-    if not docs:
+    if not docs and not failed_archives and not pending_archives:
+        if skipped_existing:
+            # Resuming a corpus that is already complete is a success, not
+            # a misconfiguration — it is the idiom the user guide
+            # recommends for a nightly wrapper.
+            console.print(
+                "[bold green]Nothing to do:[/bold green] every document "
+                "already has a TEI output."
+            )
+            return
         console.print("[red]Every volume was excluded.[/red]")
         sys.exit(EXIT_MISCONFIGURED)
+
+    if not docs and pending_archives:
+        pass
+    elif not docs:
+        # Nothing left to convert, but an archive failed: that is a
+        # failure to report, not a success to return. Exiting early here
+        # let a nightly wrapper announce success forever while one archive
+        # never converted.
+        console.print(
+            f"[bold yellow]Completed with errors:[/bold yellow] "
+            f"0/{len(failed_archives)} documents converted"
+        )
+        for name, reason in failed_archives:
+            console.print(f"  [red]FAILED[/red] {escape(f'{name}: {reason}')}")
+        sys.exit(EXIT_SOME_FAILED)
 
     # Audit 2.5: minimal resume after a crash — skip already-converted docs
     if skipped_existing:
@@ -642,9 +674,13 @@ def execute(args):
             f"already converted, skipped[/dim]"
         )
     if dry_run:
+        for name in pending_archives:
+            say(f"  {escape(name)}  [dim]still archived, would be "
+                f"extracted[/dim]")
         console.print(
-            f"\n[bold]Plan[/bold] — {len(docs)} volume(s), "
-            f"{sum(len(f) for _, f, _ in docs)} pages"
+            f"\n[bold]Plan[/bold] — {len(docs) + len(pending_archives)} "
+            f"volume(s), {sum(len(f) for _, f, _ in docs)} pages"
+            + (" (archived volumes not counted)" if pending_archives else "")
         )
         for name, filepaths, _ in docs:
             console.print(f"  {escape(name)}  [dim]{len(filepaths)} pages[/dim]")
@@ -673,14 +709,8 @@ def execute(args):
 
     no_probe = getattr(args, "no_probe", False)
     require_services = getattr(args, "require_services", False)
-    if no_probe and require_services:
-        # One says "assume they answer", the other "prove they do". There
-        # is no reading of the pair that says what the user meant.
-        console.print(
-            "[red]--no-probe and --require-services contradict each other."
-            "[/red]"
-        )
-        sys.exit(EXIT_MISCONFIGURED)
+    no_probe = getattr(args, "no_probe", False)
+    require_services = getattr(args, "require_services", False)
     unavailable = []
 
     # Check modernization API availability

@@ -108,3 +108,43 @@ def test_require_services_refuses_to_start_when_a_service_is_down(tmp_path):
     assert res.returncode == 3
     assert "require-services" in res.stdout
     assert not sortie.exists(), "a file was written despite --require-services"
+
+
+def test_a_broken_archive_is_not_forgiven_by_a_finished_corpus(tmp_path):
+    """`--skip-existing` returning early skipped the summary, so a nightly
+    wrapper would report success forever while one archive never
+    converted."""
+    ocr = tmp_path / "ocr"
+    shutil.copytree(ALTO_MIN, ocr)
+    (ocr / "LIV0009.zip").write_bytes(b"not a zip")
+
+    res, sortie = _executer_main(tmp_path, ocr, **MODE_COURT)
+    assert res.returncode == 1
+
+    # Everything convertible is converted; only the archive is left.
+    again, _ = _executer_main(
+        tmp_path, ocr, args=("--skip-existing",), **MODE_COURT
+    )
+
+    assert again.returncode == 1, again.stdout[-2000:]
+    assert "LIV0009.zip" in again.stdout
+
+
+def test_dry_run_counts_a_volume_that_is_still_archived(tmp_path):
+    """Archives are a documented input layout and --dry-run unpacks
+    nothing, so it reported "no documents found" and exited 3 exactly when
+    the plan is most useful: before the first run."""
+    import zipfile
+
+    ocr = tmp_path / "ocr"
+    ocr.mkdir()
+    with zipfile.ZipFile(ocr / "LIV0055_reconciled.zip", "w") as archive:
+        for page in sorted(ALTO_MIN.rglob("*.xml")):
+            archive.write(page, page.name)
+
+    res, sortie = _executer_main(tmp_path, ocr, args=("--dry-run",), **MODE_COURT)
+
+    assert res.returncode == 0, res.stdout[-2000:]
+    assert "LIV0055_reconciled.zip" in res.stdout
+    assert not (ocr / "LIV0055_reconciled").exists(), "--dry-run unpacked it"
+    assert not sortie.exists()

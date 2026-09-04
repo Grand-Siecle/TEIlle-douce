@@ -38,7 +38,12 @@ def _at_least_one(raw):
     failed nothing, and `--limit -1` — a plausible "no limit" idiom —
     silently dropped the last volume and exited 0.
     """
-    value = int(raw)
+    try:
+        value = int(raw)
+    except ValueError:
+        # Without this, argparse falls back to the callable's __name__ and
+        # says "invalid _at_least_one value".
+        raise argparse.ArgumentTypeError("must be a whole number, at least 1")
     if value < 1:
         raise argparse.ArgumentTypeError("must be at least 1")
     return value
@@ -259,9 +264,9 @@ def add_run_arguments(parser):
     verbosity.add_argument("-q", "--quiet", action="count",
                            default=0,
                            help="-q: summary and errors only")
-    output.add_argument("--log-level", dest="log_level", metavar="LEVEL",
-                        default=none,
-                        help="set the console level outright (DEBUG…CRITICAL)")
+    verbosity.add_argument("--log-level", dest="log_level", metavar="LEVEL",
+                           default=none,
+                           help="set the console level outright (DEBUG…CRITICAL)")
     log = output.add_mutually_exclusive_group()
     log.add_argument("--log-file", dest="log_file", metavar="PATH", default=none,
                      help="run log, timestamped per run  [pipeline.log]")

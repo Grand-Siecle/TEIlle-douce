@@ -189,7 +189,11 @@ teille-douce run --fast --dry-run     # what would happen, writing nothing
 | `--enrich`/`--no-enrich`, and likewise for `modernize` and `ner` | Add or remove one phase from the current set. |
 | `--pyhellen URL` · `--vieuxparler URL` · `--health-timeout S` | The two services. |
 | `-j, --jobs N` · `--batch-size N` · `--concurrency N` | Workers, lines per request, in-flight requests. |
+| `--no-probe` | Do not probe the services; assume they answer. |
+| `--require-services` | A phase whose service is down is fatal (exit 3) **before anything is written**, instead of a warning and a run without that annotation. |
 | `-n, --dry-run` | Resolve everything, list the plan, write nothing. |
+| `--fail-fast` | Stop at the first volume that fails. |
+| `--max-failures N` | Stop after N failed volumes. |
 | `-v` / `-vv` / `-q` · `--log-level` · `--log-file` / `--no-log-file` | Console detail and the run log. `-q` leaves the failures and the summary; it does not hide what went wrong. |
 
 **Phases resolve left to right.** `--phases` replaces the set, then each
@@ -197,9 +201,15 @@ teille-douce run --fast --dry-run     # what would happen, writing nothing
 work except enrichment*. Naming a phase in `--phases` and removing it with
 `--no-X` is refused: there is no reading of that which says what you meant.
 
+A document that fails never stops the others: it is logged, reported
+`FAILED`, and the run moves on. `--fail-fast` and `--max-failures` are the
+only ways to change that, and both are off by default. When either stops a
+run, the summary says how many volumes were never attempted.
+
 **Exit codes.** `0` everything asked for succeeded · `1` some volumes failed
 · `2` usage error · `3` misconfiguration, nothing ran (input directory
-missing, no volumes found, a selector matched nothing).
+missing, no volumes found, a selector matched nothing, `--require-services`
+with a service down).
 
 A document that fails does not kill the run: the error is logged with its
 traceback, the document is reported as `FAILED`, and processing continues. The

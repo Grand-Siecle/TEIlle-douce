@@ -155,8 +155,12 @@ def normalise(argv, commands=("run",)):
     takes one, so an output directory called "run" stays a directory.
     """
     argv = list(argv)
-    if argv and argv[0] in ("-h", "--help", "-V", "--version"):
+    if argv and argv[0] in ("-V", "--version"):
         return argv
+    if argv and argv[0] in ("-h", "--help"):
+        # The bare invocation IS `run`, so its help is `run`'s: the bare
+        # parser alone would list a command and nothing you can pass it.
+        return ["run", *argv]
 
     takes_a_value = _value_taking_options()
     index = None
