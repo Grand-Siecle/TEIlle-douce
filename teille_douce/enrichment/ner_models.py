@@ -9,7 +9,19 @@ Models are only loaded when first accessed, avoiding unnecessary
 memory usage when a corpus contains only one language family.
 """
 
+import importlib.util
 import logging
+
+# What this module imports lazily, named so the CLI can tell before a run
+# whether entity recognition can happen at all. Every import below is
+# deferred into a method body, so importing this module proves nothing.
+NER_DEPENDENCIES = ("flair", "gliner", "torch", "transformers")
+
+
+def missing_ner_dependencies():
+    """The NER packages that are not installed, in declaration order."""
+    return tuple(name for name in NER_DEPENDENCIES
+                 if importlib.util.find_spec(name) is None)
 
 logger = logging.getLogger(__name__)
 

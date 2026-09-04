@@ -213,7 +213,17 @@ def normalise(argv, commands=None):
             # past it can be the subcommand.
             break
         if token.startswith("-"):
-            skip = token in takes_a_value
+            # argparse accepts unambiguous prefixes, so `--inp OCR run`
+            # must not read OCR as the first positional and `run` as a
+            # document selector.
+            name = token.split("=", 1)[0]
+            skip = ("=" not in token and (
+                name in takes_a_value
+                or (name.startswith("--") and len(name) > 2
+                    and sum(option.startswith(name)
+                            for option in _long_options()) == 1
+                    and any(option.startswith(name) for option in takes_a_value))
+            ))
             continue
         if token in commands:
             index = position
@@ -229,6 +239,22 @@ def _subcommands():
     for action in build_parser()._actions:
         if getattr(action, "choices", None) and not action.option_strings:
             return tuple(action.choices)
+    return ()
+
+
+def _long_options():
+    """Every long option string the parser knows, for prefix matching."""
+    names = set()
+    for parser in (build_parser(), *_subparsers()):
+        for action in parser._actions:
+            names.update(o for o in action.option_strings if o.startswith("--"))
+    return names
+
+
+def _subparsers():
+    for action in build_parser()._actions:
+        if getattr(action, "choices", None) and not action.option_strings:
+            return tuple(action.choices.values())
     return ()
 
 

@@ -153,24 +153,11 @@ LANG_DEFAULT = "fra"  # fallback to French for ambiguous texts
 # LINGUISTIC ENRICHMENT
 # =============================================================================
 
-# Enable/disable linguistic enrichment (tokenization, POS, lemmatization)
-
-# PyHellen API server URL
-
-# Request timeout in seconds (higher for first request / model loading)
-
 # Timeout of the reachability probe both services answer before a run
 # (PyHellen /api/languages, VieuxParler /health). Shared, and generous:
 # a remote server still loading its model takes seconds to answer, and a
 # probe that gives up first disables the phase for the whole run with a
 # single warning line to explain the missing <w> or <choice>.
-
-# Maximum concurrent PyHellen requests (audit 3.3 — same model as
-# MODERNIZE_MAX_CONCURRENT).
-
-# Circuit breaker (audit 2.7): stop calling PyHellen after this many
-# consecutive failures — a frozen server must not turn into hours of
-# sequential timeouts.
 
 # Fail a container when more than this share of its tokens could not be
 # anchored in the text (audit 2.12): past this, annotations would attach
@@ -200,21 +187,6 @@ ENRICHMENT_MIN_TEXT_LENGTH = 5
 # TEXT MODERNIZATION (API)
 # =============================================================================
 
-# Enable/disable text modernization (old French -> modern French)
-
-# Mapping from TEI language ident to modernization API base URL.
-# Add entries below as APIs become available: each one is overridable by
-# TDOUCE_MODERNIZE_URL_<IDENT> (e.g. TDOUCE_MODERNIZE_URL_FRA), and
-# the bare TDOUCE_MODERNIZE_URL moves every language that has no
-# specific override — so a second entry stays configurable without a
-# patch to this file, which is the whole point.
-
-# Number of lines per batch request to the modernization API
-
-# Timeout in seconds for modernization API calls
-
-# Max concurrent requests to the modernization API (avoid PoolTimeout)
-
 # Similarity (original vs modernized) -> @cert on the reading. Keys ARE
 # the emitted values, so they must belong to TEI's closed vocabulary
 # (teidata.certainty). Boundaries measured on real VieuxParler output
@@ -240,8 +212,6 @@ MODERNIZE_CERT_THRESHOLDS = {"low": 0.0, "medium": 0.90, "high": 0.95}
 # NAMED ENTITY RECOGNITION (NER)
 # =============================================================================
 
-# Enable/disable automatic NER pipeline (runs after modernization)
-
 # NER models configuration
 NER_MODELS = {
     "camembert": {
@@ -262,10 +232,6 @@ NER_MODELS = {
         "overlap_words": 30,
     },
 }
-
-# Minimum confidence score to keep a NER prediction
-
-# Output directory for entity CSV files
 
 # TEI containers to scan for NER (same as enrichment by default)
 # <fw> excluded: running titles and page numbers rarely contain entities

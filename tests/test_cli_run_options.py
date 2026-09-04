@@ -684,3 +684,40 @@ def test_the_end_of_options_marker_protects_a_selector():
 
     assert args.command == "run"
     assert args.documents == ["run"]
+
+
+def test_the_ner_probe_can_actually_fire(monkeypatch):
+    """It imported `ner_pipeline`, which pulls in nothing heavy — every NER
+    import is deferred into a method body — so it could never raise and the
+    header declared entity recognition on runs that produced none."""
+    from teille_douce.enrichment import ner_models
+
+    monkeypatch.setattr(ner_models.importlib.util, "find_spec", lambda name: None)
+
+    assert ner_models.missing_ner_dependencies() == ner_models.NER_DEPENDENCIES
+
+
+def test_the_ner_dependencies_are_the_ones_the_code_imports():
+    """Named rather than imported, so the list has to match what the lazy
+    imports actually reach for."""
+    from pathlib import Path
+
+    from teille_douce.enrichment.ner_models import NER_DEPENDENCIES
+
+    source = (Path(__file__).resolve().parent.parent / "teille_douce"
+              / "enrichment" / "ner_models.py").read_text(encoding="utf-8")
+
+    for package in ("flair", "gliner"):
+        assert f"from {package}" in source
+        assert package in NER_DEPENDENCIES
+
+
+@pytest.mark.parametrize("argv,expected", [
+    (["--inp", "OCR", "run"], ["run", "--inp", "OCR"]),
+    (["--input=OCR", "run"], ["run", "--input=OCR"]),
+    (["-o", "run"], ["run", "-o", "run"]),
+])
+def test_an_abbreviated_option_does_not_misplace_the_subcommand(argv, expected):
+    """argparse accepts unambiguous prefixes, so `--inp OCR run` read OCR as
+    the first positional and `run` as a document selector."""
+    assert app.normalise(argv) == expected

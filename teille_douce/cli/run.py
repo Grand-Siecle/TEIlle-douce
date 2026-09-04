@@ -60,7 +60,10 @@ def configure_logging(settings, now=None, quiet=False, write=True):
     """Install this run's handlers. Returns the run's log file, or None."""
     global RUN_LOG_FILE, _QUIET
 
-    _QUIET = quiet and not settings.debug
+    # -q asks for a quiet console; `debug` gates the diagnostics that also
+    # go to the run log. They answer different questions, so a wrapper that
+    # sets TDOUCE_DEBUG must not lose the -q it just typed.
+    _QUIET = quiet
 
     handlers = []
     RUN_LOG_FILE = (
@@ -119,6 +122,7 @@ def configure_logging(settings, now=None, quiet=False, write=True):
 # Import modules
 from teille_douce import TEI
 from teille_douce.body import link_notes_to_lines
+from teille_douce.enrichment.ner_models import missing_ner_dependencies
 from teille_douce.teiheader import build_header
 from teille_douce.metadata import (load_metadata,
                           find_metadata_row,
@@ -651,16 +655,21 @@ def execute(args):
     # NER has no service to probe, but it has dependencies that are often
     # absent — and without this the header declared entity recognition on
     # every file of a run that produced not one <persName>.
+    #
+    # The packages are named rather than imported: every heavy import in
+    # ner_models.py is deferred into a method body, so importing the
+    # pipeline module succeeds with none of them installed and a probe
+    # written that way could never fire.
     do_ner = settings.ner
     if do_ner:
-        try:
-            import teille_douce.enrichment.ner_pipeline  # noqa: F401
-        except ImportError as reason:
+        missing = missing_ner_dependencies()
+        if missing:
             do_ner = False
             unavailable.append("NER models")
             console.print(
                 f"[yellow]Warning: NER dependencies not installed "
-                f"({escape(str(reason))}) — no entity recognition.[/yellow]"
+                f"({escape(', '.join(missing))}) — no entity recognition."
+                f"[/yellow]"
             )
 
     if require_services and unavailable:
