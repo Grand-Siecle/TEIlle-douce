@@ -134,8 +134,14 @@ def _resolve_settings(args, env, parser, config_file, flags):
                 # The layers are about to be resolved for real; warning
                 # here would say everything twice.
                 warnings.simplefilter("ignore", RuntimeWarning)
-                floor = Settings.load(flags={}, env=env,
-                                      config_file=config_file).log_level
+                without_flags = Settings.load(flags={}, env=env,
+                                              config_file=config_file)
+                # `debug` puts the console at DEBUG, so it IS the current
+                # level: comparing against log_level alone let `-v` lower a
+                # DEBUG console to INFO — the inversion this guard exists
+                # to prevent.
+                floor = ("DEBUG" if without_flags.debug
+                         else without_flags.log_level)
             quieter = bool(getattr(args, "quiet", 0))
             asked, current = order.index(level), order.index(floor)
             if (asked > current) if quieter else (asked < current):

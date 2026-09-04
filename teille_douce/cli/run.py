@@ -611,14 +611,6 @@ def execute(args):
     # `level_asked` and not the recorded origin: -q resolving to the same
     # level as the default leaves the origin at "default", and `debug`
     # would then reinstall a DEBUG console over the quiet just typed.
-    from teille_douce.cli import options as _options
-    configure_logging(
-        settings,
-        quiet=bool(getattr(args, "quiet", 0)),
-        write=not getattr(args, "dry_run", False),
-        level_asked=_options.console_level(args) is not None,
-    )
-
     # Verify OCR directory exists
     # is_dir(), not exists(): -i now makes it easy to point the input at a
     # file, and iterdir() would then raise NotADirectoryError instead of
@@ -668,6 +660,17 @@ def execute(args):
         if stray:
             console.print("[red]No volume matches:[/red] " + escape(", ".join(stray)))
             sys.exit(EXIT_MISCONFIGURED)
+
+    # Configured here and not at the top: everything above this line can
+    # still refuse to run, and a log directory left behind after refusing
+    # is a write like any other.
+    from teille_douce.cli import options as _options
+    configure_logging(
+        settings,
+        quiet=bool(getattr(args, "quiet", 0)),
+        write=not dry_run,
+        level_asked=_options.asks_to_be_quieter(args),
+    )
 
     unavailable = []
 
@@ -853,19 +856,27 @@ def execute(args):
             f"already converted, skipped[/dim]"
         )
     if dry_run:
+        # A real run extracts first, so an archive enters `ready_dirs`
+        # sorted and competes for the limit in name order. Predicting it
+        # means merging the two lists and sorting before counting, not
+        # appending the archives at the end.
+        planned = sorted(
+            [(name, len(filepaths)) for name, filepaths, _ in docs]
+            + [(Path(name).stem, None) for name in pending_archives]
+        )
         limit = getattr(args, "limit", None)
         if limit is not None:
-            pending_archives = pending_archives[:max(0, limit - len(docs))]
+            planned = planned[:limit]
         console.print(
-            f"\n[bold]Plan[/bold] — {len(docs) + len(pending_archives)} "
-            f"volume(s), {sum(len(f) for _, f, _ in docs)} pages"
-            + (" (archived volumes not counted)" if pending_archives else "")
+            f"\n[bold]Plan[/bold] — {len(planned)} volume(s), "
+            f"{sum(pages or 0 for _, pages in planned)} pages"
+            + (" (archived volumes not counted)"
+               if any(pages is None for _, pages in planned) else "")
         )
-        for name, filepaths, _ in docs:
-            console.print(f"  {escape(name)}  [dim]{len(filepaths)} pages[/dim]")
-        for name in pending_archives:
-            console.print(f"  {escape(name)}  [dim]still archived, pages "
-                          f"unknown until it is unpacked[/dim]")
+        for name, pages in planned:
+            detail = (f"{pages} pages" if pages is not None
+                      else "still archived, pages unknown until it is unpacked")
+            console.print(f"  {escape(name)}  [dim]{detail}[/dim]")
         # The probes ran above, so the plan states what would actually
         # happen rather than what was asked — the one command whose whole
         # job is to say what would happen must not contradict what it just

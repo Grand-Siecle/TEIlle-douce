@@ -221,3 +221,41 @@ def test_a_typo_is_refused_without_probing_the_services(tmp_path):
     assert res.returncode == 3
     assert "LIV0O44" in res.stdout
     assert elapsed < 10, f"probed before refusing a typo ({elapsed:.1f}s)"
+
+
+def test_the_plan_names_the_volumes_the_run_would_convert(tmp_path):
+    """A real run extracts first, so an archive enters the work list sorted
+    and competes for the limit in name order. Appending the archives at the
+    end of the plan made `--dry-run --limit 1` name one volume and the run
+    convert another."""
+    import zipfile
+
+    ocr = tmp_path / "ocr"
+    ocr.mkdir()
+    shutil.copytree(ALTO_MIN / DOCUMENT, ocr / "LIV0002_reconciled")
+    with zipfile.ZipFile(ocr / "LIV0001_reconciled.zip", "w") as archive:
+        for page in sorted((ocr / "LIV0002_reconciled").rglob("*.xml")):
+            archive.write(page, page.name)
+
+    plan, _ = _executer_main(tmp_path, ocr, args=("--limit", "1", "--dry-run"),
+                             **MODE_COURT)
+    real, sortie = _executer_main(tmp_path, ocr, args=("--limit", "1"),
+                                  **MODE_COURT)
+
+    converted = [p.name.replace(".tei.xml", "") for p in sortie.glob("*.tei.xml")]
+    assert converted == ["LIV0001_reconciled"], converted
+    assert "LIV0001_reconciled" in plan.stdout
+    assert "LIV0002_reconciled" not in plan.stdout
+
+
+def test_a_refused_run_leaves_no_log_directory_behind(tmp_path):
+    """Logging was configured first thing, so a run refused for a missing
+    input still created the log's parent — the same rule the output
+    directory follows."""
+    res, _ = _executer_main(
+        tmp_path, tmp_path / "absent",
+        args=("--log-file", str(tmp_path / "logs" / "run.log")), **MODE_COURT,
+    )
+
+    assert res.returncode == 3
+    assert not (tmp_path / "logs").exists()

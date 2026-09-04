@@ -15,7 +15,7 @@ import logging
 # What this module imports lazily, named so the CLI can tell before a run
 # whether entity recognition can happen at all. Every import below is
 # deferred into a method body, so importing this module proves nothing.
-NER_DEPENDENCIES = ("flair", "gliner", "torch", "transformers")
+NER_DEPENDENCIES = ("flair", "gliner", "huggingface_hub", "torch")
 
 
 def missing_ner_dependencies():

@@ -292,6 +292,19 @@ def add_run_arguments(parser):
     return parser
 
 
+def asks_to_be_quieter(args):
+    """Whether the command line asked for LESS console output.
+
+    `debug` puts the console at DEBUG; only a request for less contradicts
+    it. `-v` asks for more, so a debug setting that already gives more is
+    not overridden by it — that would make -v less verbose than no flag.
+    """
+    if getattr(args, "quiet", 0):
+        return True
+    level = getattr(args, "log_level", None)
+    return bool(level) and level.strip().upper() != "DEBUG"
+
+
 def console_level(args):
     """The console log level asked for, or None when nothing was asked."""
     level = getattr(args, "log_level", None)

@@ -727,6 +727,9 @@ def test_an_abbreviated_option_does_not_misplace_the_subcommand(argv, expected):
     ([], "DEBUG"),
     (["-q"], "WARNING"),
     (["--log-level", "ERROR"], "ERROR"),
+    # -v asks for MORE, so a debug setting that already gives more is not
+    # contradicted by it: -v must never be less verbose than no flag.
+    (["-v"], "DEBUG"),
 ])
 def test_the_console_handler_gets_the_level_that_was_asked_for(argv, expected, tmp_path):
     """The previous tests asserted on `settings.log_level` and never on the
@@ -740,7 +743,7 @@ def test_the_console_handler_gets_the_level_that_was_asked_for(argv, expected, t
     args = app.parse_args(["run", "--no-log-file", *argv])
     settings = app.settings_from(args, env={"TDOUCE_DEBUG": "1"})
     configure_logging(settings, quiet=bool(getattr(args, "quiet", 0)),
-                      level_asked=options.console_level(args) is not None)
+                      level_asked=options.asks_to_be_quieter(args))
 
     handler = logging.getLogger().handlers[-1]
     assert logging.getLevelName(handler.level) == expected
@@ -766,3 +769,21 @@ def test_a_log_path_with_no_name_costs_the_log_not_the_run(path):
 
     with pytest.warns(RuntimeWarning, match="continuing without file logging"):
         assert configure_logging(settings) is None
+
+
+def test_the_ner_probe_names_what_the_code_imports_and_only_that():
+    """`transformers` was probed and never imported, while
+    `huggingface_hub` — which the CamemBERT loader reaches for on the
+    configured model id — was not probed at all: the probe returned "all
+    present" and the header declared entity recognition on a run that
+    produced none."""
+    from pathlib import Path
+
+    from teille_douce.enrichment.ner_models import NER_DEPENDENCIES
+
+    source = (Path(__file__).resolve().parent.parent / "teille_douce"
+              / "enrichment" / "ner_models.py").read_text(encoding="utf-8")
+
+    for package in NER_DEPENDENCIES:
+        assert f"import {package}" in source or f"from {package}" in source, package
+    assert "huggingface_hub" in NER_DEPENDENCIES
