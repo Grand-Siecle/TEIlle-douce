@@ -109,6 +109,30 @@ def _env_bool(name, default):
 
 
 # =============================================================================
+# DEFAULTS
+#
+# The values teille_douce/settings.py falls back to when no flag, no
+# environment variable and no config file supplies one. They live here
+# because this file is where a project states what it wants; the layers
+# above it belong to a machine or to an invocation.
+# =============================================================================
+
+DEFAULT_OCR_DIR = "OCR"
+DEFAULT_OUTPUT_DIR = "tei_output"
+DEFAULT_ENTITIES_DIR = "entities"
+DEFAULT_METADATA_CSV = "metadata_livre.csv"
+DEFAULT_PERSONS_CSV = "metadata_personne.csv"
+DEFAULT_LOG_FILE = "pipeline.log"
+DEFAULT_PYHELLEN_URL = "http://localhost:8000"
+DEFAULT_PYHELLEN_TIMEOUT = 120.0
+
+# Add entries as APIs become available. Only a language declared here can
+# be overridden: TDOUCE_MODERNIZE_URL_LAT is read for no ident and does
+# nothing until "lat" appears below.
+DEFAULT_MODERNIZE_API = {"fra": "http://localhost:8011"}
+
+
+# =============================================================================
 # DEBUG & LOGGING
 # =============================================================================
 
