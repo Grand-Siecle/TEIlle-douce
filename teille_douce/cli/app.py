@@ -12,8 +12,11 @@ all do what the pipeline has always done.
 """
 
 import argparse
+from dataclasses import replace
 
 import teille_douce
+from teille_douce.cli import options
+from teille_douce.settings import Settings, set_settings
 
 
 def build_parser():
@@ -52,30 +55,81 @@ def build_parser():
 
 
 def _add_run_arguments(parser, *, suppress_defaults=False):
-    """Declare `run`'s options, on both the subparser and the bare parser.
+    """Declare `run`'s options. See teille_douce/cli/options.py."""
+    return options.add_run_arguments(parser, suppress_defaults=suppress_defaults)
 
-    Declared here rather than in `run.py` so that building the parser does
-    not import the pipeline: `--help` and `--version` must not configure
-    logging or open a run log.
 
-    `suppress_defaults` is what makes the two declarations safe to keep
-    side by side. argparse's subparser action parses into a namespace of
-    its own and then copies **all** of it over the parent's — defaults
-    included — so an option given before the subcommand was silently reset:
-    `teille-douce --skip-existing run` dropped the flag and reconverted the
-    whole corpus. With SUPPRESS the subparser sets an attribute only when
-    the option is actually given, so it can no longer overwrite the bare
-    parser's answer. Every option declared on both parsers must use it.
+def settings_from(args, env=None):
+    """Turn parsed arguments into the settings of this run.
+
+    A flag that was not given is absent from the mapping, so it falls
+    through to the environment, the config file and finally the default —
+    which is what makes precedence per setting rather than per layer.
     """
-    default = argparse.SUPPRESS if suppress_defaults else False
-    parser.add_argument(
-        "--skip-existing",
-        action="store_true",
-        default=default,
-        help="skip volumes whose TEI output already exists "
-             "(minimal resume after an interrupted run)",
+    flags = {}
+    for name in ("ocr_dir", "output_dir", "entities_dir", "metadata_csv",
+                 "persons_csv", "pyhellen_url", "health_timeout",
+                 "max_workers", "modernize_batch_size", "log_file"):
+        value = getattr(args, name, None)
+        if value is not None:
+            flags[name] = value
+
+    concurrency = getattr(args, "concurrency", None)
+    if concurrency is not None:
+        flags["modernize_concurrency"] = concurrency
+        flags["pyhellen_concurrency"] = concurrency
+
+    enabled = options.resolve_phases(
+        build_parser(), getattr(args, "phase_ops", None)
     )
-    return parser
+    if enabled is not None:
+        for phase in options.PHASES:
+            flags[phase] = phase in enabled
+
+    level = options.console_level(args)
+    if level is not None:
+        flags["log_level"] = level
+
+    settings = Settings.load(flags=flags, env=env)
+
+    # A value the environment offers is refused with a warning and the
+    # default is kept -- that is the documented contract. A value the user
+    # typed on the command line is a usage error: keeping a default they
+    # explicitly overrode would be answering a different question.
+    typed = [r for r in settings.rejected if r.layer == "flag"]
+    if typed:
+        build_parser().error(
+            "; ".join(f"--{r.name.replace('_', '-')}={r.raw!r} {r.reason}"
+                      for r in typed)
+        )
+
+    # Two answers a flag gives that no layer below it can express.
+    if getattr(args, "no_log_file", False):
+        settings = replace(settings, log_file=None)
+    modernize_url = getattr(args, "modernize_url", None)
+    if modernize_url:
+        settings = replace(
+            settings,
+            modernize_api={k: modernize_url for k in settings.modernize_api},
+        )
+    return settings
+
+
+def normalise(argv, commands=("run",)):
+    """Insert the default subcommand when none was named.
+
+    `teille-douce`, `teille-douce --skip-existing` and `teille-douce
+    LIV0044` all mean `run`. The command is inserted only when no token is
+    one — so `teille-douce --skip-existing run` is left for argparse, and
+    an output directory that happens to be called "run" is not mistaken
+    for the subcommand.
+    """
+    argv = list(argv)
+    if any(token in commands for token in argv):
+        return argv
+    if argv and argv[0] in ("-h", "--help", "-V", "--version"):
+        return argv
+    return ["run", *argv]
 
 
 def main(argv=None):
@@ -85,7 +139,12 @@ def main(argv=None):
         int or None: the process exit status; ``None`` means success. The
         pipeline raises SystemExit itself on the paths that already did.
     """
-    args = build_parser().parse_args(argv)
+    import sys
+
+    args = build_parser().parse_args(
+        normalise(sys.argv[1:] if argv is None else argv)
+    )
+    set_settings(settings_from(args))
 
     # Imported here, not at module scope: run.py configures logging and
     # names this run's log file when it is imported, and `--help` and

@@ -324,7 +324,9 @@ def _resolve(declaration, flags, env, from_file, config_path, rejected):
                 f"{declaration.default!r}",
                 RuntimeWarning, stacklevel=4,
             )
-            rejected.append(Rejection(label, origin, raw, "is empty"))
+            rejected.append(
+                Rejection(label or declaration.name, origin, raw, "is empty")
+            )
             continue
         try:
             return declaration.convert(

@@ -14,6 +14,7 @@ Usage:
 
 import logging
 import re
+from fnmatch import fnmatch
 import shutil
 import sys
 from datetime import datetime
@@ -258,6 +259,50 @@ def _out_path(doc_name, output_dir):
 # MAIN WORKFLOW
 # =============================================================================
 
+# Exit codes. 1 means some units failed; 3 means nothing ran because the
+# run was misconfigured. They used to be the same number, so a wrapper
+# could not tell "fix your path and rerun" from "some volumes broke".
+EXIT_OK = 0
+EXIT_SOME_FAILED = 1
+EXIT_MISCONFIGURED = 3
+
+
+def select_documents(docs, selectors, exclusions, limit):
+    """Narrow the discovered documents to what was asked for.
+
+    A selector matches a directory name, the internal id parsed from it,
+    or a glob over either. Exclusions apply after selection, and the limit
+    last, so `-x` can carve a hole out of a glob and `--limit` still counts
+    what survives.
+
+    Args:
+        docs (list): (name, filepaths, directory) triples, in discovery order.
+        selectors (list): names, internal ids or globs; empty means all.
+        exclusions (list): patterns to drop afterwards.
+        limit (int): keep at most this many, or None.
+
+    Returns:
+        tuple: (kept, unmatched) — unmatched holds the selectors that named
+        nothing, because a typo must not look like an empty corpus.
+    """
+    def matches(pattern, name):
+        return (name == pattern
+                or parse_document_id(name)[0] == pattern
+                or fnmatch(name, pattern)
+                or fnmatch(parse_document_id(name)[0], pattern))
+
+    kept, unmatched = list(docs), []
+    if selectors:
+        kept = [d for d in docs if any(matches(p, d[0]) for p in selectors)]
+        unmatched = [p for p in selectors
+                     if not any(matches(p, d[0]) for d in docs)]
+    for pattern in exclusions or []:
+        kept = [d for d in kept if not matches(pattern, d[0])]
+    if limit is not None:
+        kept = kept[:limit]
+    return kept, unmatched
+
+
 def _process_document(doc_name, filepaths, doc_dir, df_meta, config,
                       person_db, do_enrich, do_modernize, progress):
     """
@@ -475,8 +520,8 @@ def execute(args):
 
     # Verify OCR directory exists
     if not settings.ocr_dir.exists():
-        console.print(f"[red]Directory not found: {settings.ocr_dir}[/red]")
-        sys.exit(1)
+        console.print(f"[red]Directory not found: {escape(str(settings.ocr_dir))}[/red]")
+        sys.exit(EXIT_MISCONFIGURED)
 
     # Create output directory
     settings.output_dir.mkdir(parents=True, exist_ok=True)
@@ -492,12 +537,32 @@ def execute(args):
             docs.append((d.name, xmls, d))
 
     if not docs:
-        console.print("[red]No ALTO documents found in OCR/.[/red]")
-        sys.exit(1)
+        # The directory actually configured, not the literal "OCR/": the
+        # message used to name a path the run was not reading.
+        console.print(
+            f"[red]No ALTO documents found in {escape(str(settings.ocr_dir))}.[/red]"
+        )
+        sys.exit(EXIT_MISCONFIGURED)
+
+    # Narrow to what was asked for. A selector that names nothing stops the
+    # run: a typo must not look like an empty corpus.
+    docs, unmatched = select_documents(
+        docs, getattr(args, "documents", []) or [],
+        getattr(args, "exclude", None) or [], getattr(args, "limit", None),
+    )
+    if unmatched:
+        console.print(
+            "[red]No volume matches:[/red] "
+            + escape(", ".join(unmatched))
+        )
+        sys.exit(EXIT_MISCONFIGURED)
+    if not docs:
+        console.print("[red]Every volume was excluded.[/red]")
+        sys.exit(EXIT_MISCONFIGURED)
 
     # Audit 2.5: minimal resume after a crash — skip already-converted docs
     skipped_existing = 0
-    if args.skip_existing:
+    if args.skip_existing and not getattr(args, 'force', False):
         pending = [d for d in docs if not _out_path(d[0], settings.output_dir).exists()]
         skipped_existing = len(docs) - len(pending)
         if skipped_existing:
@@ -509,6 +574,23 @@ def execute(args):
         if not docs and not failed_archives:
             console.print("[bold green]Nothing to do:[/bold green] every document already has a TEI output.")
             return
+
+    if getattr(args, "dry_run", False):
+        console.print(
+            f"\n[bold]Plan[/bold] — {len(docs)} volume(s), "
+            f"{sum(len(f) for _, f, _ in docs)} pages"
+        )
+        for name, filepaths, _ in docs:
+            console.print(f"  {escape(name)}  [dim]{len(filepaths)} pages[/dim]")
+        phases = [n for n, on in (("enrich", settings.enrich),
+                                  ("modernize", settings.modernize),
+                                  ("ner", settings.ner)) if on] or ["none"]
+        console.print(
+            f"[dim]  input {settings.ocr_dir} → output {settings.output_dir}"
+            f" · phases {', '.join(phases)} · {settings.max_workers} workers[/dim]"
+        )
+        console.print("[dim]  nothing written (--dry-run)[/dim]")
+        return
 
     # Load global metadata CSV
     df_meta = load_metadata(settings.metadata_csv)
