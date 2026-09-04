@@ -326,6 +326,17 @@ class Settings:
         names.add(_MODERNIZE_URL_ENV)
         return frozenset(names)
 
+    @staticmethod
+    def config_keys():
+        """Every "section.key" a config file may set.
+
+        Documented the same way and for the same reason as the environment
+        names: a key the file does not know is refused, so a reader who
+        cannot find the list has no way to guess it -- TDOUCE_OCR_DIR is
+        paths.input, not paths.ocr_dir.
+        """
+        return frozenset(_BY_KEY)
+
     # -- construction -----------------------------------------------------
 
     @classmethod

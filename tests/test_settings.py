@@ -272,6 +272,22 @@ def test_the_documented_table_lists_every_variable_the_code_reads():
     assert not invented, f"documented but unread: {', '.join(sorted(invented))}"
 
 
+def test_the_documented_table_names_every_config_key_too():
+    """A key the file does not know is refused, so the list has to be
+    findable: nothing lets a reader guess that TDOUCE_OCR_DIR is
+    paths.input rather than paths.ocr_dir. The guide carries the mapping in
+    the same table as the variables, and this keeps the two in step."""
+    import re
+    from pathlib import Path
+
+    guide = (Path(__file__).resolve().parent.parent
+             / "docs" / "user-guide.md").read_text(encoding="utf-8")
+    documented = set(re.findall(r"`([a-z_]+\.[a-z_]+)`", guide))
+
+    missing = Settings.config_keys() - documented
+    assert not missing, f"undocumented: {', '.join(sorted(missing))}"
+
+
 def test_a_rejected_value_names_what_the_run_actually_uses(tmp_path):
     """The message promised "keeping the default" even when a lower layer
     supplied something else, misdirecting the reader it exists to inform."""

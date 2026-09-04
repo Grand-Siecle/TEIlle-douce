@@ -275,39 +275,43 @@ pyhellen = "http://pyhellen.labo:9000"
 jobs = 4
 ```
 
+The keys are the ones in the table below, second column: each setting has
+one, and it is not derivable from the variable name — `TDOUCE_OCR_DIR` is
+`paths.input`.
+
 **Environment variables** override what moves between machines and between runs
 — paths, service URLs, timeouts, and the phase switches. The prefix is
 `TDOUCE_`, from the pipeline's original name; it is kept so that existing
 wrapper scripts and CI configurations keep working:
 
-| Variable | Default | Meaning |
-|---|---|---|
-| `TDOUCE_OCR_DIR` | `OCR` | Input directory |
-| `TDOUCE_OUTPUT_DIR` | `tei_output` | Output directory |
-| `TDOUCE_ENRICHMENT` | `1` | Linguistic enrichment on/off |
-| `TDOUCE_MODERNIZE` | `1` | Modernization on/off |
-| `TDOUCE_NER` | `1` | Named-entity recognition on/off |
-| `TDOUCE_PYHELLEN_URL` | `http://localhost:8000` | PyHellen base URL |
-| `TDOUCE_PYHELLEN_TIMEOUT` | `120` | Seconds per PyHellen request |
-| `TDOUCE_MODERNIZE_URL` | `http://localhost:8011` | VieuxParler base URL, for every language with no specific override |
-| `TDOUCE_MODERNIZE_URL_<IDENT>` | — | Same, for one language only (`TDOUCE_MODERNIZE_URL_FRA`) |
-| `TDOUCE_MODERNIZE_TIMEOUT` | `300` | Seconds per modernization batch |
-| `TDOUCE_MODERNIZE_SIMILARITY_MIN` | `0.8` | Below this similarity, a modernized line is rejected as a hallucination |
-| `TDOUCE_HEALTH_TIMEOUT` | `30` | Seconds for the reachability probe both services answer before a run |
-| `TDOUCE_TEI_RNG` | — | Path to a `tei_all.rng`, for the schema-validation tests |
-| `TDOUCE_ENTITIES_DIR` | `entities` | Where the NER entity CSVs go |
-| `TDOUCE_METADATA_CSV` | `metadata_livre.csv` | Volume catalogue |
-| `TDOUCE_PERSONS_CSV` | `metadata_personne.csv` | Person catalogue |
-| `TDOUCE_SKIP_EXISTING` | `0` | Resume: skip volumes already converted |
-| `TDOUCE_JOBS` | `8` | Page-parsing workers |
-| `TDOUCE_MODERNIZE_BATCH_SIZE` | `64` | Lines per modernization request |
-| `TDOUCE_MODERNIZE_CONCURRENCY` | `8` | In-flight requests to VieuxParler |
-| `TDOUCE_PYHELLEN_CONCURRENCY` | `8` | In-flight requests to PyHellen |
-| `TDOUCE_PYHELLEN_MAX_CONSECUTIVE_FAILURES` | `10` | Circuit breaker: stop calling after this many failures in a row |
-| `TDOUCE_NER_CONFIDENCE` | `0.6` | Below this, an entity prediction is dropped |
-| `TDOUCE_DEBUG` | `0` | Verbose diagnostics, in the console and in the run log |
-| `TDOUCE_LOG_LEVEL` | `WARNING` | Console level |
-| `TDOUCE_LOG_FILE` | `pipeline.log` | Run log; each run writes its own timestamped file |
+| Variable | Config key | Default | Meaning |
+|---|---|---|---|
+| `TDOUCE_OCR_DIR` | `paths.input` | `OCR` | Input directory |
+| `TDOUCE_OUTPUT_DIR` | `paths.output` | `tei_output` | Output directory |
+| `TDOUCE_ENRICHMENT` | `phases.enrich` | `1` | Linguistic enrichment on/off |
+| `TDOUCE_MODERNIZE` | `phases.modernize` | `1` | Modernization on/off |
+| `TDOUCE_NER` | `phases.ner` | `1` | Named-entity recognition on/off |
+| `TDOUCE_PYHELLEN_URL` | `services.pyhellen` | `http://localhost:8000` | PyHellen base URL |
+| `TDOUCE_PYHELLEN_TIMEOUT` | `services.pyhellen_timeout` | `120` | Seconds per PyHellen request |
+| `TDOUCE_MODERNIZE_URL` | `services.modernize` | `http://localhost:8011` | VieuxParler base URL, for every language with no specific override |
+| `TDOUCE_MODERNIZE_URL_<IDENT>` | — | — | Same, for one language only (`TDOUCE_MODERNIZE_URL_FRA`) |
+| `TDOUCE_MODERNIZE_TIMEOUT` | `services.modernize_timeout` | `300` | Seconds per modernization batch |
+| `TDOUCE_MODERNIZE_SIMILARITY_MIN` | `limits.similarity_min` | `0.8` | Below this similarity, a modernized line is rejected as a hallucination |
+| `TDOUCE_HEALTH_TIMEOUT` | `services.health_timeout` | `30` | Seconds for the reachability probe both services answer before a run |
+| `TDOUCE_TEI_RNG` | — | — | Path to a `tei_all.rng`, for the schema-validation tests |
+| `TDOUCE_ENTITIES_DIR` | `paths.entities` | `entities` | Where the NER entity CSVs go |
+| `TDOUCE_METADATA_CSV` | `paths.metadata` | `metadata_livre.csv` | Volume catalogue |
+| `TDOUCE_PERSONS_CSV` | `paths.persons` | `metadata_personne.csv` | Person catalogue |
+| `TDOUCE_SKIP_EXISTING` | `output.skip_existing` | `0` | Resume: skip volumes already converted |
+| `TDOUCE_JOBS` | `limits.jobs` | `8` | Page-parsing workers |
+| `TDOUCE_MODERNIZE_BATCH_SIZE` | `limits.batch_size` | `64` | Lines per modernization request |
+| `TDOUCE_MODERNIZE_CONCURRENCY` | `limits.concurrency` | `8` | In-flight requests to VieuxParler |
+| `TDOUCE_PYHELLEN_CONCURRENCY` | `limits.concurrency` | `8` | In-flight requests to PyHellen |
+| `TDOUCE_PYHELLEN_MAX_CONSECUTIVE_FAILURES` | `limits.max_consecutive_failures` | `10` | Circuit breaker: stop calling after this many failures in a row |
+| `TDOUCE_NER_CONFIDENCE` | `limits.ner_confidence` | `0.6` | Below this, an entity prediction is dropped |
+| `TDOUCE_DEBUG` | `output.debug` | `0` | Verbose diagnostics, in the console and in the run log |
+| `TDOUCE_LOG_LEVEL` | `output.log_level` | `WARNING` | Console level |
+| `TDOUCE_LOG_FILE` | `output.log_file` | `pipeline.log` | Run log; each run writes its own timestamped file |
 
 `--concurrency` and `limits.concurrency` set both services at once;
 `TDOUCE_PYHELLEN_CONCURRENCY` and `TDOUCE_MODERNIZE_CONCURRENCY` set one
