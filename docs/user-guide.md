@@ -613,7 +613,9 @@ did not lose anything, it was handed nothing.
 failure: the volume may well hold ALTO, this process is simply not allowed
 to list the directory. It is named like a corrupt archive, counted in the
 denominator, and the run exits 1. Check the mode of the directory rather
-than repacking the volume.
+than repacking the volume. Under `--skip-existing` a volume whose TEI is
+already there is skipped without being opened, mode and all, so a nightly
+wrapper does not go red over one there is nothing left to convert.
 
 **The header is full of `Information not available.`** — no catalogue row
 matched. Check that the `BDD` column of `metadata_livre.csv` contains exactly

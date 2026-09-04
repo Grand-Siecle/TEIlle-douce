@@ -892,3 +892,143 @@ def test_every_volume_offered_lands_in_exactly_one_bucket(tmp_path):
         f"{offered} volumes offered, {attempted + skipped + no_alto} "
         f"accounted for, in: {line}"
     )
+
+
+def _unreadable(path):
+    """chmod 000, or tell the caller this user ignores that."""
+    import os
+
+    os.chmod(path, 0o000)
+    return not os.access(path, os.R_OK)
+
+
+def test_an_unreadable_volume_does_not_vanish_behind_a_finished_resume(
+        tmp_path):
+    """The early "nothing left to convert" return tested `failed_archives`
+    and not the unreadable volumes, so a resumed corpus announced success
+    and exited 0 with one volume it had never been able to open. The same
+    corpus with a corrupt archive in that position exited 1."""
+    import stat
+
+    ocr = tmp_path / "ocr"
+    shutil.copytree(ALTO_MIN, ocr)
+    shut = ocr / "LIV9002_reconciled"
+    shutil.copytree(ocr / DOCUMENT, shut)
+    out = tmp_path / "out"
+    out.mkdir()
+    (out / f"{DOCUMENT}.tei.xml").write_text("<TEI/>", encoding="utf-8")
+
+    if not _unreadable(shut):
+        __import__("os").chmod(shut, stat.S_IRWXU)
+        pytest.skip("running as a user that ignores file permissions")
+    try:
+        res, _ = _executer_main(tmp_path, ocr, args=("--skip-existing",),
+                                COLUMNS="200", **MODE_COURT)
+    finally:
+        __import__("os").chmod(shut, stat.S_IRWXU)
+
+    assert res.returncode == 1
+    assert "0/1 documents converted (1 more skipped, already converted)" \
+        in res.stdout
+    assert "LIV9002_reconciled: directory could not be read" in res.stdout
+
+
+def test_the_early_failure_summary_names_every_volume_it_could_not_open(
+        tmp_path):
+    """It counted and listed `failed_archives` alone while the final
+    summary had been taught the combined list, so a corrupt archive was
+    named and an unreadable directory beside it was not."""
+    import stat
+
+    ocr = tmp_path / "ocr"
+    shutil.copytree(ALTO_MIN, ocr)
+    (ocr / "LIV9002_reconciled.zip").write_bytes(b"not a zip")
+    shut = ocr / "LIV9003_reconciled"
+    shutil.copytree(ocr / DOCUMENT, shut)
+    out = tmp_path / "out"
+    out.mkdir()
+    (out / f"{DOCUMENT}.tei.xml").write_text("<TEI/>", encoding="utf-8")
+
+    if not _unreadable(shut):
+        __import__("os").chmod(shut, stat.S_IRWXU)
+        pytest.skip("running as a user that ignores file permissions")
+    try:
+        res, _ = _executer_main(tmp_path, ocr, args=("--skip-existing",),
+                                COLUMNS="200", **MODE_COURT)
+    finally:
+        __import__("os").chmod(shut, stat.S_IRWXU)
+
+    assert res.returncode == 1
+    assert "0/2 documents converted" in res.stdout
+    assert "LIV9002_reconciled.zip: File is not a zip file" in res.stdout
+    assert "LIV9003_reconciled: directory could not be read" in res.stdout
+
+
+def test_a_volume_that_could_not_be_opened_does_not_hide_the_ones_never_tried(
+        tmp_path):
+    """`never_tried` subtracted only the archives from the failures, so
+    every unreadable volume — which is not one of `docs` either — was
+    taken off a set it had never been in. Two volumes a --fail-fast never
+    reached were reported nowhere."""
+    import stat
+
+    ocr = tmp_path / "ocr"
+    ocr.mkdir()
+    for name in ("LIV9001_reconciled", "LIV9002_reconciled"):
+        (ocr / name).mkdir()
+        (ocr / name / "f1.xml").write_text("not ALTO at all", encoding="utf-8")
+    shutil.copytree(ALTO_MIN / DOCUMENT, ocr / "LIV9003_reconciled")
+    shut = [ocr / "LIV9004_reconciled", ocr / "LIV9005_reconciled"]
+    for directory in shut:
+        shutil.copytree(ALTO_MIN / DOCUMENT, directory)
+
+    if not all(_unreadable(d) for d in shut):
+        for directory in shut:
+            __import__("os").chmod(directory, stat.S_IRWXU)
+        pytest.skip("running as a user that ignores file permissions")
+    try:
+        res, _ = _executer_main(tmp_path, ocr, args=("--fail-fast",),
+                                COLUMNS="200", **MODE_COURT)
+    finally:
+        for directory in shut:
+            __import__("os").chmod(directory, stat.S_IRWXU)
+
+    assert res.returncode == 1
+    assert "0/5 documents converted (2 never attempted, the run stopped early)" \
+        in res.stdout
+
+
+def test_resume_does_not_reopen_a_volume_it_has_nothing_left_to_do_to(tmp_path):
+    """Its mode stops mattering once its TEI is on disk, which is what
+    --skip-existing means and what a corrupt archive in the same position
+    already got: `_worth_unpacking` returns before ever touching it.
+    Failing here turned a nightly wrapper permanently red over one
+    badly-moded volume there was nothing left to convert."""
+    import stat
+
+    ocr = tmp_path / "ocr"
+    shutil.copytree(ALTO_MIN, ocr)
+    shut = ocr / "LIV9002_reconciled"
+    shutil.copytree(ocr / DOCUMENT, shut)
+    out = tmp_path / "out"
+    out.mkdir()
+    (out / "LIV9002_reconciled.tei.xml").write_text("<TEI/>", encoding="utf-8")
+
+    if not _unreadable(shut):
+        __import__("os").chmod(shut, stat.S_IRWXU)
+        pytest.skip("running as a user that ignores file permissions")
+    try:
+        resumed, _ = _executer_main(tmp_path, ocr, args=("--skip-existing",),
+                                    COLUMNS="200", **MODE_COURT)
+        # And without --skip-existing it is still the failure it is.
+        plain, _ = _executer_main(tmp_path, ocr, COLUMNS="200", **MODE_COURT)
+    finally:
+        __import__("os").chmod(shut, stat.S_IRWXU)
+
+    assert resumed.returncode == 0
+    assert "1/1 documents converted (1 more skipped, already converted)" \
+        in resumed.stdout
+    assert "could not be read" not in resumed.stdout
+
+    assert plain.returncode == 1
+    assert "LIV9002_reconciled: directory could not be read" in plain.stdout

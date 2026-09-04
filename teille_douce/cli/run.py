@@ -980,7 +980,7 @@ def execute(args):
     # Names the selectors could legitimately match, whether or not they
     # produced a directory to walk.
     # Collect documents to process
-    docs, without_alto, unreadable = [], [], []
+    docs, without_alto, unreadable, unreadable_skips = [], [], [], []
     for d in ready_dirs:
         xmls = sorted(d.rglob("*.xml"))
         if xmls:
@@ -991,7 +991,16 @@ def execute(args):
             # rglob answers "no ALTO" for a directory it is not allowed to
             # open, which is a different thing and sends the operator to
             # repack a volume whose only problem is its permissions.
-            unreadable.append(d.name)
+            if (settings.skip_existing
+                    and _out_path(d.name, settings.output_dir).exists()):
+                # Already converted, so its mode does not matter: this is
+                # what --skip-existing means, and it is what an archive in
+                # the same position gets. Failing here would turn a
+                # nightly wrapper permanently red over a volume there is
+                # nothing left to do to.
+                unreadable_skips.append(d.name)
+            else:
+                unreadable.append(d.name)
         else:
             # A directory that is there and holds no ALTO is a defect of
             # the source, not an absence — and it used to fall out of
@@ -1001,6 +1010,15 @@ def execute(args):
             # and the run still exited 0 claiming every document it had
             # kept was every document there was.
             without_alto.append(d.name)
+
+    # Built once and read everywhere a volume is accounted for. Adding
+    # `unreadable` to two of the four such places, and not the other two,
+    # is how a volume came to vanish from a resumed run and how the
+    # never-attempted count went wrong: four places is three too many for
+    # a list that has to agree with itself.
+    broken = list(failed_archives) + [
+        (name, "directory could not be read") for name in sorted(unreadable)
+    ]
 
     if unreadable:
         console.print(
@@ -1038,15 +1056,11 @@ def execute(args):
             and not unpacked_skips and not everything_excluded:
         # The directory actually configured, not the literal "OCR/": the
         # message used to name a path the run was not reading.
-        if failed_archives or unreadable:
+        if broken:
             # Not a misconfiguration: the input was there and unreadable.
             # A directory this process may not open is that same case, so
             # it answers with the same exit code — 3 would have told a
             # wrapper to go and fix its own configuration.
-            broken = list(failed_archives) + [
-                (name, "directory could not be read")
-                for name in sorted(unreadable)
-            ]
             console.print(
                 f"[bold red]No document could be read:[/bold red] "
                 f"{len(broken)} volume(s) could not be opened."
@@ -1084,8 +1098,9 @@ def execute(args):
         getattr(args, "exclude", None) or [], getattr(args, "limit", None),
         skip=already_converted,
     )
-    skipped_existing += skipped_archives + len(unpacked_skips)
-    if not docs and not failed_archives and not pending_archives:
+    skipped_existing += (skipped_archives + len(unpacked_skips)
+                         + len(unreadable_skips))
+    if not docs and not broken and not pending_archives:
         if skipped_existing:
             # Resuming a corpus that is already complete is a success, not
             # a misconfiguration — it is the idiom the user guide
@@ -1111,11 +1126,13 @@ def execute(args):
         # failure to report, not a success to return. Exiting early here
         # let a nightly wrapper announce success forever while one archive
         # never converted.
-        early = f"0/{len(failed_archives)} documents converted"
+        early = f"0/{len(broken)} documents converted"
         if skipped_existing:
             early += f" ({skipped_existing} more skipped, already converted)"
+        if without_alto:
+            early += f" ({len(without_alto)} more held no ALTO)"
         console.print(f"[bold yellow]Completed with errors:[/bold yellow] {early}")
-        for name, reason in failed_archives:
+        for name, reason in broken:
             console.print(f"  [red]FAILED[/red] {escape(f'{name}: {reason}')}")
         sys.exit(EXIT_SOME_FAILED)
 
@@ -1321,10 +1338,8 @@ def execute(args):
                 break
 
     # Audit 2.10: end-of-run summary + non-zero exit code on failures
-    failed_docs = failed_docs + list(failed_archives) + [
-        (name, "directory could not be read") for name in sorted(unreadable)
-    ]
-    total = len(docs) + len(failed_archives) + len(unreadable)
+    failed_docs = failed_docs + broken
+    total = len(docs) + len(broken)
     converted = f"{len(ok_docs)}/{total} documents converted"
     if skipped_existing:
         converted += f" ({skipped_existing} more skipped, already converted)"
@@ -1333,7 +1348,11 @@ def execute(args):
         # line is what a nightly wrapper reads, and a volume that yielded
         # no ALTO was absent from both sides of the fraction.
         converted += (f" ({len(without_alto)} more held no ALTO)")
-    never_tried = len(docs) - len(ok_docs) - (len(failed_docs) - len(failed_archives))
+    # Against `broken` and not `failed_archives`: everything in it failed
+    # WITHOUT being one of `docs`, so counting only the archives left the
+    # unreadable volumes subtracted from a set they were never in, and the
+    # volumes a --fail-fast never reached went unreported.
+    never_tried = len(docs) - len(ok_docs) - (len(failed_docs) - len(broken))
     if stopped_early and never_tried > 0:
         # Every phase reports what it lost: a run stopped after one failure
         # out of forty must not read as thirty-nine silent successes.
