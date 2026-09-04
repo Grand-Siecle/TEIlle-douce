@@ -451,3 +451,46 @@ def test_complet_est_valide_selon_tei_all(tei_complet):
     tout fichier annote alors que le TEI de base etait propre."""
     _valider_odd(tei_complet)
     _valider_schema(tei_complet)
+
+
+@pytest.mark.e2e
+def test_court_deux_alto_de_meme_numero_donnent_deux_pages(tmp_path):
+    """
+    Two ALTO files whose names yield the same page number ("f1.xml" and
+    "f1-np.xml") are two real pages. Routing worker results by that number
+    kept only one of them and wrote it twice, under a duplicate xml:id
+    that lxml refuses to read back — while the run reported a success and
+    exited 0.
+    """
+    ocr = tmp_path / "ocr"
+    ocr.mkdir()
+    doc = ocr / "LIV9002_reconciled"
+    doc.mkdir()
+    # Two genuinely different fixture pages, renamed so their first digit
+    # run collides. The shared fixture is never touched: it feeds the golden.
+    pages = sorted(ALTO_MIN.rglob("*.xml"))
+    shutil.copy(pages[0], doc / "f1.xml")
+    shutil.copy(pages[1], doc / "f1-np.xml")
+
+    res, sortie = _executer_main(tmp_path, ocr, **MODE_COURT)
+
+    assert res.returncode == 0, res.stdout[-2000:] + res.stderr[-2000:]
+    produit = sortie / "LIV9002_reconciled.tei.xml"
+    assert produit.exists(), res.stdout[-2000:] + res.stderr[-2000:]
+
+    # Re-parsing IS the duplicate-xml:id check: lxml rejects the file the
+    # bug produced with "ID f1 already defined".
+    arbre = etree.parse(str(produit))
+    surfaces = arbre.findall(".//{*}surface")
+    # Discovery order: main.py globs with sorted(rglob(...)), where
+    # "f1-np.xml" sorts before "f1.xml" ('-' < '.'), and order_files()
+    # sorts on the page number alone, stably. Deterministic — which the
+    # strict golden diff requires — and reported rather than guessed.
+    assert [s.get(XML_ID) for s in surfaces] == ["f1-np", "f1"]
+
+    # Both pages reach the body, not one page break for two files.
+    pbs = arbre.findall(".//{*}text//{*}pb")
+    assert len(pbs) == 2, [p.get("corresp") for p in pbs]
+
+    # And the ambiguity is reported, naming the file the operator must rename.
+    assert "f1-np.xml" in res.stderr, res.stderr[-2000:]

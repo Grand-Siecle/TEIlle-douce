@@ -373,3 +373,105 @@ def test_extract_labels_othertag_without_label_no_keyerror(tmp_path):
     # The label-less entry must not blow up extraction; it's simply not a
     # usable mapping.
     assert "BT1" not in labels
+
+
+# =============================================================================
+# 8. Two ALTO files claiming one page number
+#
+# order_files() derives a page number from the FIRST digit run of the file
+# stem, and hands the same sentinel to every stem holding no digit at all.
+# Two files can therefore claim one number. Routing worker results by that
+# number dropped one of the pages and emitted the other twice, under a
+# duplicate xml:id no XML parser reads back -- while the run reported a
+# success.
+# =============================================================================
+
+def test_build_sourcedoc_keeps_both_pages_when_page_numbers_collide(
+    tmp_path, monkeypatch, caplog
+):
+    """f1.xml and f1-np.xml both yield page number 1. Both are real pages
+    and both must reach the output, each with its own surface."""
+    monkeypatch.setattr(builder, "MAX_WORKERS", 2)
+
+    first = write_alto(tmp_path, "f1.xml", GOOD_ALTO_TMPL.format(word="pageone"))
+    second = write_alto(tmp_path, "f1-np.xml", GOOD_ALTO_TMPL.format(word="pagetwo"))
+
+    output_root = etree.Element("TEI")
+    with caplog.at_level(logging.WARNING, logger="src.sourcedoc.builder"):
+        _, skipped = build_sourcedoc(
+            "DOC1", output_root, [first, second], [], [], {}
+        )
+
+    assert skipped == []
+    surfaces = output_root.findall(".//surface")
+    assert [s.get(XML_ID) for s in surfaces] == ["f1", "f1-np"]
+
+    lines_text = [
+        [el.text for el in s.iter() if qlocal(el) == "line"] for s in surfaces
+    ]
+    assert lines_text == [["pageone"], ["pagetwo"]]
+
+    ids = [el.get(XML_ID) for el in output_root.iter() if el.get(XML_ID)]
+    assert len(ids) == len(set(ids)), "duplicate xml:id in the produced tree"
+
+    messages = [r.getMessage() for r in caplog.records]
+    assert any(
+        "page number 1" in m and "f1.xml" in m and "f1-np.xml" in m
+        for m in messages
+    ), messages
+
+
+def test_build_sourcedoc_keeps_both_pages_when_no_filename_has_a_number(
+    tmp_path, monkeypatch, caplog
+):
+    """Binding plates are often named without a page number. They all get
+    one sentinel sort key, so they collide with each other -- and the
+    sentinel must not be reported to the operator as a page number."""
+    monkeypatch.setattr(builder, "MAX_WORKERS", 2)
+
+    plate = write_alto(tmp_path, "plat-sup.xml", GOOD_ALTO_TMPL.format(word="plate"))
+    cover = write_alto(tmp_path, "couverture.xml", GOOD_ALTO_TMPL.format(word="cover"))
+
+    output_root = etree.Element("TEI")
+    with caplog.at_level(logging.WARNING, logger="src.sourcedoc.builder"):
+        _, skipped = build_sourcedoc(
+            "DOC1", output_root, [plate, cover], [], [], {}
+        )
+
+    assert skipped == []
+    surfaces = output_root.findall(".//surface")
+    assert [s.get(XML_ID) for s in surfaces] == ["plat-sup", "couverture"]
+
+    lines_text = [
+        [el.text for el in s.iter() if qlocal(el) == "line"] for s in surfaces
+    ]
+    assert lines_text == [["plate"], ["cover"]]
+
+    messages = [r.getMessage() for r in caplog.records]
+    assert any(
+        "no page number" in m and "plat-sup.xml" in m and "couverture.xml" in m
+        for m in messages
+    ), messages
+    assert not any("999999" in m for m in messages), (
+        "the sort sentinel must not be shown as a page number", messages
+    )
+
+
+def test_build_sourcedoc_refuses_two_pages_under_one_surface_id(
+    tmp_path, monkeypatch
+):
+    """xml_id_safe() prefixes a leading digit, so 1.xml and f1.xml both
+    give the surface id "f1". Writing both welds two pages into one and
+    produces a file lxml refuses to read back: the document fails instead."""
+    monkeypatch.setattr(builder, "MAX_WORKERS", 1)
+
+    bare = write_alto(tmp_path, "1.xml", GOOD_ALTO_TMPL.format(word="pageone"))
+    prefixed = write_alto(tmp_path, "f1.xml", GOOD_ALTO_TMPL.format(word="pagetwo"))
+
+    output_root = etree.Element("TEI")
+    with pytest.raises(RuntimeError) as excinfo:
+        build_sourcedoc("DOC1", output_root, [bare, prefixed], [], [], {})
+
+    message = str(excinfo.value)
+    assert "f1" in message
+    assert "1.xml" in message and "f1.xml" in message

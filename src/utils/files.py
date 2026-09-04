@@ -20,6 +20,12 @@ logger = logging.getLogger(__name__)
 # Named tuple for file data
 File = namedtuple("File", ["num", "filepath"])
 
+# Sort key given to a file whose name holds no digit: it is ordered last.
+# Named because it is not a page number and must never be reported as one --
+# every such file receives this same value, so they all collide by
+# construction.
+NO_PAGE_NUMBER = 999999
+
 
 class Files:
     """
@@ -72,9 +78,9 @@ class Files:
                     num = int(match.group(1))
                     numbered.append(File(num, filepath))
                 except ValueError:
-                    others.append(File(999999, filepath))
+                    others.append(File(NO_PAGE_NUMBER, filepath))
             else:
-                others.append(File(999999, filepath))
+                others.append(File(NO_PAGE_NUMBER, filepath))
                 logger.warning("File ignored (no page number detected): %s", filepath.name)
 
         if not numbered and not others:

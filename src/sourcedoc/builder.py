@@ -32,8 +32,8 @@ if "forkserver" in multiprocessing.get_all_start_methods():
     _MP_CONTEXT.set_forkserver_preload(["src.sourcedoc.builder"])
 else:  # pragma: no cover - non-POSIX platforms
     _MP_CONTEXT = multiprocessing.get_context("spawn")
-from ..constants import NS_ALTO, NS_ALTO_URI
-from ..utils.files import Files
+from ..constants import NS_ALTO, NS_ALTO_URI, XML_ID
+from ..utils.files import Files, NO_PAGE_NUMBER
 from ..metadata.iiif import IIIFMapping
 from .attributes import Attributes
 from .elements import SurfaceTree, build_alto_id_index
@@ -118,31 +118,35 @@ def _build_surface_fragment(args):
     It processes one ALTO file and returns a serialized surface element.
 
     Args:
-        args (tuple): (filepath, num) — everything else is the document's
-            invariants, set once per worker by _init_worker.
+        args (tuple): (job_index, filepath, num) — everything else is the
+            document's invariants, set once per worker by _init_worker.
+            `job_index` is the file's position in the ordered file list,
+            and it is what routes the result back to its page: `num`
+            cannot, because two files can share one (the same first digit
+            run in their names, or no digit at all).
 
     Returns:
-        tuple: (num, xml_bytes, error, warning) - page number, serialized
-        surface XML (None on failure), an error message (None on success)
-        and a warning (e.g. "recovered malformed XML", None when clean).
-        Errors travel as plain strings: lxml exceptions are not picklable
-        and used to come back as an opaque MaybeEncodingError that killed
-        the whole pool, losing the already-processed pages (audit 5.5).
+        tuple: (job_index, xml_bytes, error, warning) - the job's position,
+        serialized surface XML (None on failure), an error message (None on
+        success) and a warning (e.g. "recovered malformed XML", None when
+        clean). Errors travel as plain strings: lxml exceptions are not
+        picklable and used to come back as an opaque MaybeEncodingError that
+        killed the whole pool, losing the already-processed pages (audit 5.5).
     """
-    filepath, num = args
+    job_index, filepath, num = args
 
     try:
         # Inside the try like everything else: this function must never
         # raise (audit 2.3/5.5), and a worker whose initializer did not
         # run would otherwise take the whole document down with it.
-        num_out, xml_bytes, warning = _build_surface_fragment_inner(
+        _, xml_bytes, warning = _build_surface_fragment_inner(
             _JOB_CONTEXT["document_name"], filepath, num,
             _JOB_CONTEXT["segmonto_zones"], _JOB_CONTEXT["segmonto_lines"],
             _JOB_CONTEXT["config"], _JOB_CONTEXT["iiif_mapping_dict"],
         )
-        return num_out, xml_bytes, None, warning
+        return job_index, xml_bytes, None, warning
     except Exception as e:  # audit 2.3: one bad page must not kill the run
-        return num, None, f"{type(e).__name__}: {e}", None
+        return job_index, None, f"{type(e).__name__}: {e}", None
 
 
 def _parse_alto(filepath):
@@ -300,9 +304,46 @@ def build_sourcedoc(
         tuple: (root, skipped_pages)
             - root: the updated TEI root element
             - skipped_pages: sorted page numbers whose ALTO was unusable
+
+    Raises:
+        RuntimeError: if two pages would be emitted under one surface
+            xml:id, which no XML parser would read back.
     """
     # Order files by page number
     ordered_files = Files(document_name, filepath_list).order_files()
+
+    # That number is not unique. Files.order_files() reads the first digit
+    # run of the file stem ("f12.xml" and "f12-np.xml" both give 12) and
+    # hands every digit-less file the same sentinel. Colliding files are
+    # all converted — the jobs below are routed by position, not by number
+    # — but the number they share is the IIIF view their zones' @source is
+    # built from, and surface/@n derives from the same filename numbers, so
+    # the operator is told which files made this numbering ambiguous.
+    files_by_num = {}
+    for f in ordered_files:
+        files_by_num.setdefault(f.num, []).append(f.filepath)
+    for num, paths in sorted(files_by_num.items()):
+        if len(paths) < 2:
+            continue
+        listed = ", ".join(str(p) for p in paths[:10]) + (
+            f" (+{len(paths) - 10} more)" if len(paths) > 10 else ""
+        )
+        if num == NO_PAGE_NUMBER:
+            logger.warning(
+                "%s: %d files carry no page number in their name (%s). All "
+                "are converted, and placed last, but they share one IIIF "
+                "view number in their zones' @source.",
+                document_name, len(paths), listed,
+            )
+        else:
+            logger.warning(
+                "%s: page number %s is claimed by %d files (%s). All are "
+                "converted, but this document's page numbering is "
+                "ambiguous: those pages share one IIIF view number in "
+                "their zones' @source, and surface/@n derives from the "
+                "same filename numbers.",
+                document_name, num, len(paths), listed,
+            )
     sourceDoc = etree.SubElement(output_tei_root, "sourceDoc")
     total_pages = len(ordered_files)
 
@@ -311,8 +352,12 @@ def build_sourcedoc(
     if iiif_mapping and iiif_mapping.has_mapping():
         iiif_mapping_dict = iiif_mapping.mapping.copy()
 
-    # One job carries only what changes from page to page.
-    jobs = [(f.filepath, f.num) for f in ordered_files]
+    # One job carries only what changes from page to page, plus its
+    # position in the ordered list: that position is the routing key, and
+    # it is unique by construction. Keying the results by `num` dropped one
+    # of two colliding pages and emitted the other twice, under a duplicate
+    # xml:id that lxml itself refuses to read back.
+    jobs = [(i, f.filepath, f.num) for i, f in enumerate(ordered_files)]
 
     # Limit workers to avoid resource exhaustion — and never more than
     # there are pages: each worker now unpickles the document's
@@ -320,7 +365,9 @@ def build_sourcedoc(
     # send the IIIF mapping eight times to do two pages' work.
     workers = max(1, min(cpu_count(), MAX_WORKERS, len(jobs)))
 
-    results = {}
+    # One slot per job, addressed by position: a result can only ever land
+    # in its own slot, and the slots are already in reading order.
+    results = [None] * len(jobs)
 
     skipped_pages = []
 
@@ -340,25 +387,29 @@ def build_sourcedoc(
         ),
     )
     try:
-        for idx, (num, xml_bytes, error, warning) in enumerate(
+        for done, (job_index, xml_bytes, error, warning) in enumerate(
             pool.imap_unordered(_build_surface_fragment, jobs), start=1
         ):
+            page = ordered_files[job_index]
             if warning:
-                logger.warning("%s: page %s %s", document_name, num, warning)
+                logger.warning("%s: page %s (%s) %s", document_name,
+                               page.num, page.filepath.name, warning)
             if error is not None:
-                # Audit 2.3: report and skip the page, keep the document
+                # Audit 2.3: report and skip the page, keep the document.
+                # The filename is part of the report: a page number does
+                # not identify a page when two files share one.
                 logger.error(
-                    "%s: page %s skipped, ALTO unusable (%s)",
-                    document_name, num, error,
+                    "%s: page %s skipped, ALTO unusable (%s: %s)",
+                    document_name, page.num, page.filepath.name, error,
                 )
-                skipped_pages.append(num)
-            results[num] = xml_bytes
+                skipped_pages.append(page.num)
+            results[job_index] = xml_bytes
 
             # Update progress bar if provided
             if progress and parent_task_pages is not None:
                 progress.update(
                     parent_task_pages,
-                    description=f"[cyan]{markup_escape(document_name)}[/cyan] page {idx}/{total_pages}",
+                    description=f"[cyan]{markup_escape(document_name)}[/cyan] page {done}/{total_pages}",
                     advance=1,
                 )
         pool.close()
@@ -368,11 +419,38 @@ def build_sourcedoc(
     finally:
         pool.join()
 
-    # Assemble surfaces in correct order (skipped pages were already
-    # reported above, one ERROR line each)
-    for f in sorted(ordered_files, key=lambda x: x.num):
-        frag = results.get(f.num)
+    # Assemble surfaces in reading order: `results` is addressed by
+    # position in `ordered_files`, which order_files() already returned
+    # sorted by page number, so the two lists zip. (Skipped pages were
+    # reported above, one ERROR line each, and left their slot empty.)
+    emitted = []
+    for f, frag in zip(ordered_files, results):
         if frag:
             sourceDoc.append(etree.fromstring(frag))
+            emitted.append(f.filepath)
+
+    # Every phase reports what it lost. One usable page owes one <surface>
+    # carrying its own xml:id: the body's <pb>, the note anchors and the
+    # IIIF crops all link to that id, so two pages sharing one are welded
+    # into a single page and the file cannot be read back at all — lxml
+    # refuses a duplicate xml:id, and nothing downstream re-parses what
+    # this pipeline writes. Distinct filenames do not guarantee distinct
+    # ids: xml_id_safe() prefixes a leading digit, so "1.xml" and "f1.xml"
+    # both give "f1", and pages are discovered with rglob(), so two
+    # subdirectories of one document can each hold an "f1.xml".
+    id_owners = {}
+    for filepath, surface in zip(emitted, sourceDoc):
+        id_owners.setdefault(surface.get(XML_ID), []).append(filepath)
+    shared = {i: paths for i, paths in id_owners.items() if len(paths) > 1}
+    if shared:
+        detail = "; ".join(
+            f"{i}: {', '.join(str(p) for p in paths)}"
+            for i, paths in sorted(shared.items())
+        )
+        raise RuntimeError(
+            f"{len(shared)} page id(s) claimed by several ALTO files "
+            f"({detail}); their surfaces would share one xml:id and the "
+            f"TEI would be unreadable — rename the files"
+        )
 
     return output_tei_root, sorted(skipped_pages)

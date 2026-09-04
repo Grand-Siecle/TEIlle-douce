@@ -74,7 +74,11 @@ pipeline reads `<Page>`, `<TextBlock>`, `<TextLine>`, `<String>`, `<Polygon>`,
 
 **Page ordering** comes from the first number in each filename — `f12.xml`,
 `page_001.xml`, `001.xml` all work. A file with no number in its name is placed
-at the end and a warning names it.
+at the end and a warning names it. Two files can share that number (`f12.xml`
+and `f12-np.xml` both give 12): both pages are converted, in discovery order,
+and a warning names them — but they then share one IIIF view in their zones'
+`@source`, and `surface/@n` is that same number, so rename them if either
+matters.
 
 ### Zone labels
 
@@ -513,7 +517,16 @@ Empty, unreadable, non-finite and out-of-range values are refused on purpose,
 and the default is kept.
 
 **Pages come out in the wrong order** — ordering uses the first number in each
-filename. `f10.xml` and `page_10.xml` are fine; `vol2_f10.xml` sorts by `2`.
+filename. `f10.xml` and `page_10.xml` are fine; `vol2_f10.xml` sorts by `2` —
+and so does every other page of that volume, so they all share one number: all
+are converted, in discovery order, and one warning names them, but their IIIF
+`@source` and their `surface/@n` are then meaningless.
+
+**`FAILED <document>: N page id(s) claimed by several ALTO files`** — two files
+would produce the same `<surface>` `xml:id` (`1.xml` and `f1.xml` both give
+`f1`, and so does the same filename in two subdirectories of one volume). The
+TEI would carry a duplicate `xml:id` that no XML parser reads back, so nothing
+is written. Rename one of the files the message names.
 
 **`FAILED <document>: …`** — that volume raised; the others were still
 converted. The full traceback is in the run's `pipeline_*.log`. Fix and relaunch
