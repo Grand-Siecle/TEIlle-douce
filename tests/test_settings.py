@@ -247,3 +247,17 @@ def test_a_boolean_it_cannot_read_keeps_the_default(raw):
         settings = Settings.load(env={"TDOUCE_NER": raw}, flags={})
 
     assert settings.ner is True
+
+
+def test_the_documented_table_lists_every_variable_the_code_reads():
+    """The table in the user guide went thirteen entries out of date in one
+    pull request. It is checked against the code rather than trusted."""
+    import re
+    from pathlib import Path
+
+    guide = (Path(__file__).resolve().parent.parent
+             / "docs" / "user-guide.md").read_text(encoding="utf-8")
+    documented = set(re.findall(r"`(TDOUCE_[A-Z_]+)`", guide))
+
+    missing = Settings.environment_variables() - documented
+    assert not missing, f"undocumented: {', '.join(sorted(missing))}"

@@ -7,14 +7,14 @@ from datetime import datetime
 from pathlib import Path
 from zipfile import ZipFile
 
-from teille_douce.cli.app import build_parser
+from teille_douce.cli.app import parse_args
 from teille_douce.cli.run import _run_log_path, expand_archives
 
 
 def _parse_args(argv):
     """Argument parsing moved to teille_douce.cli.app; the behaviour these
     tests pin did not."""
-    return build_parser().parse_args(argv)
+    return parse_args(argv)
 
 
 # =============================================================================

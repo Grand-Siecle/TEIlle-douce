@@ -576,7 +576,10 @@ def execute(args):
 
     # Audit 2.5: minimal resume after a crash — skip already-converted docs
     skipped_existing = 0
-    if args.skip_existing and not getattr(args, 'force', False):
+    # The setting, not the flag: --skip-existing and --force feed it,
+    # and so do TDOUCE_SKIP_EXISTING and the config file. Reading the
+    # flag made the whole layer dead — the corpus was reconverted.
+    if settings.skip_existing:
         pending = [d for d in docs if not _out_path(d[0], settings.output_dir).exists()]
         skipped_existing = len(docs) - len(pending)
         if skipped_existing:

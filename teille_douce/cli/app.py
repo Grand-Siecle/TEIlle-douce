@@ -12,6 +12,7 @@ all do what the pipeline has always done.
 """
 
 import argparse
+import tomllib
 from dataclasses import replace
 from pathlib import Path
 
@@ -45,19 +46,10 @@ def build_parser():
         description="Convert ALTO XML documents to TEI P5 with the SegmOnto "
                     "taxonomy.",
     )
-    _add_run_arguments(run_parser, suppress_defaults=True)
-
-    # The same options on the bare parser, so that the historical
-    # invocation keeps working without naming a subcommand.
-    _add_run_arguments(parser)
+    options.add_run_arguments(run_parser)
     parser.set_defaults(command="run")
 
     return parser
-
-
-def _add_run_arguments(parser, *, suppress_defaults=False):
-    """Declare `run`'s options. See teille_douce/cli/options.py."""
-    return options.add_run_arguments(parser, suppress_defaults=suppress_defaults)
 
 
 def _config_file(args, parser):
@@ -108,12 +100,20 @@ def settings_from(args, env=None, parser=None):
     level = options.console_level(args)
     if level is not None:
         flags["log_level"] = level
-        # An explicit level answers the question the debug setting answers,
-        # and it was typed just now: it wins.
-        flags["debug"] = level == "DEBUG"
+        # Only a level that asks FOR debug turns the diagnostics on. `-q`
+        # asks for a quiet console; the debug setting also gates what goes
+        # into the run log, which console verbosity has no business
+        # touching.
+        if level == "DEBUG":
+            flags["debug"] = True
 
-    settings = Settings.load(flags=flags, env=env,
-                             config_file=_config_file(args, parser))
+    try:
+        settings = Settings.load(flags=flags, env=env,
+                                 config_file=_config_file(args, parser))
+    except (ValueError, tomllib.TOMLDecodeError, OSError) as reason:
+        # Exit 3, not a traceback and not 1: nothing ran, and 1 is
+        # reserved for "some volumes failed".
+        parser.exit(3, f"teille-douce: {reason}\n")
 
     # A value the environment offers is refused with a warning and the
     # default is kept -- that is the documented contract. A value the user
@@ -138,20 +138,63 @@ def settings_from(args, env=None, parser=None):
 
 
 def normalise(argv, commands=("run",)):
-    """Insert the default subcommand when none was named.
+    """Put the subcommand first, inserting the default one if absent.
 
     `teille-douce`, `teille-douce --skip-existing` and `teille-douce
-    LIV0044` all mean `run`. The command is inserted only when no token is
-    one — so `teille-douce --skip-existing run` is left for argparse, and
-    an output directory that happens to be called "run" is not mistaken
-    for the subcommand.
+    LIV0044` all mean `run`, and `teille-douce --fast run --enrich` means
+    what it looks like. Options are declared on the subcommand only —
+    declaring them on both parsers instead was a trap: argparse's
+    subparser action copies its whole namespace over the parent's, so an
+    option given on both sides replaced rather than merged, and `--fast
+    run --enrich` silently lost the --fast.
+
+    A token is the command only if it is not the value of an option that
+    takes one, so an output directory called "run" stays a directory.
     """
     argv = list(argv)
-    if any(token in commands for token in argv):
-        return argv
     if argv and argv[0] in ("-h", "--help", "-V", "--version"):
         return argv
-    return ["run", *argv]
+
+    takes_a_value = _value_taking_options()
+    index = None
+    skip = False
+    for position, token in enumerate(argv):
+        if skip:
+            skip = False
+            continue
+        if token.startswith("-"):
+            skip = token in takes_a_value
+            continue
+        if token in commands:
+            index = position
+        break
+
+    if index is None:
+        return ["run", *argv]
+    return [argv[index], *argv[:index], *argv[index + 1:]]
+
+
+def _value_taking_options():
+    """Option strings that consume the token after them."""
+    parser = build_parser()
+    names = set()
+    for action in parser._actions:
+        if action.nargs != 0 and action.option_strings:
+            names.update(action.option_strings)
+    for subparsers in [a for a in parser._actions if hasattr(a, "choices")]:
+        for sub in (subparsers.choices or {}).values():
+            for action in sub._actions:
+                if action.nargs != 0 and action.option_strings:
+                    names.update(action.option_strings)
+    return names
+
+
+def parse_args(argv=None):
+    """Parse *argv* the way the command line does."""
+    import sys
+    return build_parser().parse_args(
+        normalise(sys.argv[1:] if argv is None else argv)
+    )
 
 
 def main(argv=None):
@@ -161,11 +204,7 @@ def main(argv=None):
         int or None: the process exit status; ``None`` means success. The
         pipeline raises SystemExit itself on the paths that already did.
     """
-    import sys
-
-    args = build_parser().parse_args(
-        normalise(sys.argv[1:] if argv is None else argv)
-    )
+    args = parse_args(argv)
     set_settings(settings_from(args))
 
     # Imported here, not at module scope: run.py configures logging and

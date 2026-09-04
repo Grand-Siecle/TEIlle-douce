@@ -18,8 +18,7 @@ from teille_douce.cli import app
 
 def settings_for(argv, env=None):
     """Resolve *argv* the way the command line does, without running."""
-    args = app.build_parser().parse_args(argv)
-    return app.settings_from(args, env=env or {})
+    return app.settings_from(app.parse_args(argv), env=env or {})
 
 
 # =============================================================================
@@ -330,3 +329,80 @@ def test_an_explicit_console_level_beats_the_debug_setting():
     settings = settings_for(["run", "-q"], env={"TDOUCE_DEBUG": "1"})
 
     assert settings.log_level == "ERROR"
+
+
+# =============================================================================
+# What the second review caught
+# =============================================================================
+
+@pytest.mark.parametrize("argv,expected", [
+    (["--fast", "run", "--enrich"], {"enrich": True, "modernize": False, "ner": False}),
+    (["run", "--fast", "--enrich"], {"enrich": True, "modernize": False, "ner": False}),
+    (["--fast", "--enrich"], {"enrich": True, "modernize": False, "ner": False}),
+])
+def test_options_survive_the_subcommand_wherever_they_are_typed(argv, expected):
+    """argparse's subparser copies its whole namespace over the parent's, so
+    an accumulating option given on both sides replaced rather than merged:
+    `--fast run --enrich` silently dropped the --fast and ran every phase."""
+    settings = settings_for(argv)
+
+    assert {p: getattr(settings, p) for p in expected} == expected
+
+
+def test_repeatable_options_before_the_subcommand_are_not_dropped():
+    args = app.parse_args(["-x", "A", "run", "-x", "B"])
+
+    assert args.exclude == ["A", "B"]
+
+
+def test_max_failures_must_be_a_number_of_failures():
+    """`--max-failures 0` stopped the run after the first document, having
+    converted it and failed nothing."""
+    with pytest.raises(SystemExit) as excinfo:
+        settings_for(["run", "--max-failures", "0"])
+
+    assert excinfo.value.code == 2
+
+
+def test_quiet_does_not_switch_the_debug_diagnostics_off():
+    """-q asks for a quiet console. The debug setting also gates diagnostics
+    written to the run log, which console verbosity has no business
+    touching."""
+    settings = settings_for(["run", "-q"], env={"TDOUCE_DEBUG": "1"})
+
+    assert settings.log_level == "ERROR"
+    assert settings.debug is True
+
+
+def test_an_empty_modernization_url_keeps_the_default_and_says_so():
+    """The one setting that skipped the shared validation — and the exact
+    variable the user guide uses as its example of the guarantee."""
+    from teille_douce.settings import Settings
+
+    with pytest.warns(RuntimeWarning, match="TDOUCE_MODERNIZE_URL"):
+        settings = Settings.load(env={"TDOUCE_MODERNIZE_URL": "  "}, flags={})
+
+    assert settings.modernize_api["fra"] == "http://localhost:8011"
+
+
+def test_a_config_file_value_of_the_wrong_type_is_refused_not_crashed(tmp_path):
+    """TOML supplies integers; _resolve only caught ValueError, so
+    `input = 42` raised TypeError out of Settings.load."""
+    from teille_douce.settings import Settings
+
+    toml = tmp_path / "teille-douce.toml"
+    toml.write_text("[paths]\ninput = 42\n", encoding="utf-8")
+
+    settings = Settings.load(env={}, flags={}, config_file=toml)
+
+    assert settings.ocr_dir == Path("OCR")
+
+
+def test_a_malformed_config_file_is_a_misconfiguration(tmp_path):
+    toml = tmp_path / "teille-douce.toml"
+    toml.write_text("[paths\ninput = 'x'\n", encoding="utf-8")
+
+    with pytest.raises(SystemExit) as excinfo:
+        settings_for(["run", "--config", str(toml)])
+
+    assert excinfo.value.code == 3

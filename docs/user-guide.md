@@ -285,6 +285,24 @@ wrapper scripts and CI configurations keep working:
 | `TDOUCE_MODERNIZE_SIMILARITY_MIN` | `0.8` | Below this similarity, a modernized line is rejected as a hallucination |
 | `TDOUCE_HEALTH_TIMEOUT` | `30` | Seconds for the reachability probe both services answer before a run |
 | `TDOUCE_TEI_RNG` | — | Path to a `tei_all.rng`, for the schema-validation tests |
+| `TDOUCE_ENTITIES_DIR` | `entities` | Where the NER entity CSVs go |
+| `TDOUCE_METADATA_CSV` | `metadata_livre.csv` | Volume catalogue |
+| `TDOUCE_PERSONS_CSV` | `metadata_personne.csv` | Person catalogue |
+| `TDOUCE_SKIP_EXISTING` | `0` | Resume: skip volumes already converted |
+| `TDOUCE_JOBS` | `8` | Page-parsing workers |
+| `TDOUCE_MODERNIZE_BATCH_SIZE` | `64` | Lines per modernization request |
+| `TDOUCE_MODERNIZE_CONCURRENCY` | `8` | In-flight requests to VieuxParler |
+| `TDOUCE_PYHELLEN_CONCURRENCY` | `8` | In-flight requests to PyHellen |
+| `TDOUCE_PYHELLEN_MAX_CONSECUTIVE_FAILURES` | `10` | Circuit breaker: stop calling after this many failures in a row |
+| `TDOUCE_NER_CONFIDENCE` | `0.6` | Below this, an entity prediction is dropped |
+| `TDOUCE_DEBUG` | `0` | Verbose diagnostics, in the console and in the run log |
+| `TDOUCE_LOG_LEVEL` | `WARNING` | Console level |
+| `TDOUCE_LOG_FILE` | `pipeline.log` | Run log; each run writes its own timestamped file |
+
+`--concurrency` and `limits.concurrency` set both services at once;
+`TDOUCE_PYHELLEN_CONCURRENCY` and `TDOUCE_MODERNIZE_CONCURRENCY` set one
+each. The table above is checked against the code by a test, so it cannot
+drift.
 
 Booleans accept `1`/`true`/`yes`/`on` and `0`/`false`/`no`/`off`,
 case-insensitive.

@@ -30,6 +30,15 @@ _OPTION_FOR_SETTING = {
 }
 
 
+def _at_least_one(raw):
+    """A count of failures starts at one: `--max-failures 0` stopped the
+    run after the first document, having converted it and failed nothing."""
+    value = int(raw)
+    if value < 1:
+        raise argparse.ArgumentTypeError("must be at least 1")
+    return value
+
+
 def option_for(setting):
     """The option that feeds *setting*, for an error message."""
     return _OPTION_FOR_SETTING.get(setting, "--" + setting.replace("_", "-"))
@@ -104,32 +113,26 @@ def resolve_phases(parser, operations):
     return decided
 
 
-def add_run_arguments(parser, *, suppress_defaults=False):
+def add_run_arguments(parser):
     """Declare `run`'s options on *parser*.
 
-    `suppress_defaults` is what makes the same options safe to declare on
-    both the bare parser and the `run` subparser. argparse's subparser
-    action parses into a namespace of its own and then copies **all** of it
-    over the parent's — defaults included — so an option given before the
-    subcommand was silently reset: `teille-douce --skip-existing run`
-    dropped the flag and reconverted the whole corpus. With SUPPRESS the
-    subparser sets an attribute only when the option is actually given.
-    Every option declared on both parsers must use it.
+    They live on the `run` subparser alone. Declaring them on the bare
+    parser as well — so that the historical invocation kept working — was a
+    trap: argparse's subparser action copies its whole namespace over the
+    parent's, so an option given on both sides replaced rather than merged.
+    `teille-douce.cli.app.normalise` puts the subcommand first instead.
     """
-    none = argparse.SUPPRESS if suppress_defaults else None
+    none = None
 
     selection = parser.add_argument_group("document selection")
-    if suppress_defaults:
-        selection.add_argument(
-            "documents", nargs="*", metavar="DOC", default=[],
-                help="volumes to convert: directory name (LIV0044_reconciled), "
-                 "internal id (LIV0044), or a glob (LIV003*). Repeatable. "
-                 "Default: every volume found in the input directory. A "
-                 "selector matching nothing stops the run — a typo must "
-                 "not look like an empty corpus.",
-        )
-    else:
-        parser.set_defaults(documents=[])
+    selection.add_argument(
+        "documents", nargs="*", metavar="DOC", default=[],
+        help="volumes to convert: directory name (LIV0044_reconciled), "
+             "internal id (LIV0044), or a glob (LIV003*). Repeatable. "
+             "Default: every volume found in the input directory. A "
+             "selector matching nothing stops the run — a typo must not "
+             "look like an empty corpus.",
+    )
     selection.add_argument(
         "-x", "--exclude", action="append", metavar="PATTERN", default=none,
         help="drop volumes matching PATTERN, after selection (repeatable)",
@@ -141,13 +144,13 @@ def add_run_arguments(parser, *, suppress_defaults=False):
     resume = selection.add_mutually_exclusive_group()
     resume.add_argument(
         "--skip-existing", action="store_true",
-        default=argparse.SUPPRESS if suppress_defaults else False,
+        default=False,
         help="skip volumes whose TEI output already exists "
              "(minimal resume after an interrupted run)",
     )
     resume.add_argument(
         "--force", action="store_true",
-        default=argparse.SUPPRESS if suppress_defaults else False,
+        default=False,
         help="convert even those (cancels skip_existing from a config file "
              "or the environment)",
     )
@@ -158,7 +161,7 @@ def add_run_arguments(parser, *, suppress_defaults=False):
                        default=none,
                        help="use this config file instead of discovering one")
     where.add_argument("--no-config", action="store_true",
-                       default=argparse.SUPPRESS if suppress_defaults else False,
+                       default=False,
                        help="skip config-file discovery entirely")
 
     paths = parser.add_argument_group("paths")
@@ -209,10 +212,10 @@ def add_run_arguments(parser, *, suppress_defaults=False):
                           default=none,
                           help="seconds allowed to the pre-run probe  [30]")
     services.add_argument("--no-probe", action="store_true",
-                          default=argparse.SUPPRESS if suppress_defaults else False,
+                          default=False,
                           help="do not probe; assume the services answer")
     services.add_argument("--require-services", action="store_true",
-                          default=argparse.SUPPRESS if suppress_defaults else False,
+                          default=False,
                           help="a phase whose service is down is a fatal error "
                                "before anything is written, instead of a warning "
                                "and a run without that annotation")
@@ -227,21 +230,22 @@ def add_run_arguments(parser, *, suppress_defaults=False):
 
     failure = parser.add_argument_group("failure handling")
     failure.add_argument("-n", "--dry-run", action="store_true",
-                         default=argparse.SUPPRESS if suppress_defaults else False,
+                         default=False,
                          help="resolve everything, list the plan, write nothing")
     failure.add_argument("--fail-fast", action="store_true",
-                         default=argparse.SUPPRESS if suppress_defaults else False,
+                         default=False,
                          help="stop at the first volume that fails")
-    failure.add_argument("--max-failures", type=int, metavar="N", default=none,
+    failure.add_argument("--max-failures", type=_at_least_one, metavar="N",
+                         default=none,
                          help="stop after N failed volumes  [no limit]")
 
     output = parser.add_argument_group("output")
     verbosity = output.add_mutually_exclusive_group()
     verbosity.add_argument("-v", "--verbose", action="count",
-                           default=argparse.SUPPRESS if suppress_defaults else 0,
+                           default=0,
                            help="-v: per-phase detail; -vv: debug")
     verbosity.add_argument("-q", "--quiet", action="count",
-                           default=argparse.SUPPRESS if suppress_defaults else 0,
+                           default=0,
                            help="-q: summary and errors only")
     output.add_argument("--log-level", dest="log_level", metavar="LEVEL",
                         default=none,
@@ -250,7 +254,7 @@ def add_run_arguments(parser, *, suppress_defaults=False):
     log.add_argument("--log-file", dest="log_file", metavar="PATH", default=none,
                      help="run log, timestamped per run  [pipeline.log]")
     log.add_argument("--no-log-file", action="store_true",
-                     default=argparse.SUPPRESS if suppress_defaults else False,
+                     default=False,
                      help="disable file logging")
 
     return parser

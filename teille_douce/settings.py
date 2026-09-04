@@ -41,11 +41,18 @@ from teille_douce import config
 # =============================================================================
 
 def _as_path(raw):
+    # A TOML file supplies integers and booleans too, and Path(42) raises
+    # TypeError, which is not what the layers promise to do with a value
+    # they cannot use.
+    if not isinstance(raw, (str, Path)):
+        raise ValueError("is not a path")
     return Path(raw)
 
 
 def _as_str(raw):
-    return str(raw)
+    if not isinstance(raw, str):
+        raise ValueError("is not a string")
+    return raw
 
 
 def _as_bool(raw):
@@ -187,11 +194,22 @@ _SETTINGS = (
 
 _BY_NAME = {d.name: d for d in _SETTINGS}
 _BY_KEY = {d.key: d for d in _SETTINGS if d.key}
+# declared after _SETTINGS: see _MODERNIZE_URL below
+
 
 # The modernization base URLs are a mapping, not a scalar, so they are
 # resolved on their own: TDOUCE_MODERNIZE_URL moves every language that has
 # no TDOUCE_MODERNIZE_URL_<IDENT> of its own.
 _MODERNIZE_URL_ENV = "TDOUCE_MODERNIZE_URL"
+
+# The base URL shared by every language that has no override of its own.
+# It is not a Settings field — modernize_api is — but it is a layer like
+# any other, so it is declared here and validated like any other rather
+# than read raw out of the environment.
+_MODERNIZE_URL = _Declaration(
+    "modernize_url", _MODERNIZE_URL_ENV, "services.modernize", _as_str, None,
+)
+_BY_KEY[_MODERNIZE_URL.key] = _MODERNIZE_URL
 
 CONFIG_FILENAME = "teille-douce.toml"
 
@@ -306,7 +324,9 @@ class Settings:
             if origin != "default":
                 origins[declaration.name] = origin
 
-        values["modernize_api"] = _resolve_modernize_api(env, from_file)
+        values["modernize_api"] = _resolve_modernize_api(
+            flags, env, from_file, config_file, rejected
+        )
         return cls(**values, origins=origins, rejected=tuple(rejected))
 
 
@@ -371,7 +391,7 @@ def _resolve(declaration, flags, env, from_file, config_path, rejected):
             return declaration.convert(
                 raw.strip() if isinstance(raw, str) else raw
             ), origin
-        except ValueError as reason:
+        except (ValueError, TypeError) as reason:
             name = label or declaration.name
             if announce:
                 warnings.warn(
@@ -387,7 +407,7 @@ def _resolve(declaration, flags, env, from_file, config_path, rejected):
     return declaration.convert(default), "default"
 
 
-def _resolve_modernize_api(env, from_file):
+def _resolve_modernize_api(flags, env, from_file, config_path, rejected):
     """Base URLs per language.
 
     TDOUCE_MODERNIZE_URL_<IDENT> wins for one language;
@@ -395,7 +415,8 @@ def _resolve_modernize_api(env, from_file):
     own. Only a language config.py already declares can be overridden — a
     variable naming an unknown ident is read for nobody and does nothing.
     """
-    shared = env.get(_MODERNIZE_URL_ENV) or from_file.get("services.modernize")
+    shared, _ = _resolve(_MODERNIZE_URL, flags, env, from_file,
+                         config_path, rejected)
     resolved = {}
     for ident, default in config.DEFAULT_MODERNIZE_API.items():
         specific = env.get(f"{_MODERNIZE_URL_ENV}_{ident.upper()}")

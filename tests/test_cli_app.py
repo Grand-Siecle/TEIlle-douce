@@ -20,29 +20,27 @@ import teille_douce
 from teille_douce.cli import app
 
 
-def build_parser():
-    return app.build_parser()
+def parse(argv):
+    """The real entry path: normalise, then parse. Options live on the
+    subcommand only, and `normalise` is what puts it first."""
+    return app.parse_args(argv)
 
 
 def test_bare_invocation_defaults_to_run():
     """`teille-douce` and `python3 main.py`, with no subcommand, must keep
     converting — that is the whole backwards-compatibility promise."""
-    parser = build_parser()
-
-    assert parser.parse_args([]).command == "run"
-    assert parser.parse_args(["--skip-existing"]).command == "run"
-    assert parser.parse_args(["--skip-existing"]).skip_existing is True
-    assert parser.parse_args(["run", "--skip-existing"]).skip_existing is True
-    assert parser.parse_args(["run"]).skip_existing is False
+    assert parse([]).command == "run"
+    assert parse(["--skip-existing"]).command == "run"
+    assert parse(["--skip-existing"]).skip_existing is True
+    assert parse(["run", "--skip-existing"]).skip_existing is True
+    assert parse(["run"]).skip_existing is False
 
 
 def test_an_option_given_before_the_subcommand_survives_it():
     """argparse's subparser action copies its whole namespace over the
     parent's, defaults included, so `--skip-existing run` used to reset the
     flag to False and silently reconvert the corpus."""
-    parser = build_parser()
-
-    assert parser.parse_args(["--skip-existing", "run"]).skip_existing is True
+    assert parse(["--skip-existing", "run"]).skip_existing is True
 
 
 def test_the_published_version_is_the_package_version():
