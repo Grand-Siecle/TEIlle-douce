@@ -20,6 +20,7 @@ _OPTION_FOR_SETTING = {
     "metadata_csv": "--metadata",
     "persons_csv": "--persons",
     "pyhellen_url": "--pyhellen",
+    "modernize_url": "--vieuxparler",
     "health_timeout": "--health-timeout",
     "max_workers": "-j/--jobs",
     "modernize_batch_size": "--batch-size",

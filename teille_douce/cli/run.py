@@ -309,8 +309,11 @@ def select_documents(docs, selectors, exclusions, limit, skip=None):
             same N volumes and skipping them all on every run.
 
     Returns:
-        tuple: (kept, unmatched) — unmatched holds the selectors that named
-        nothing, because a typo must not look like an empty corpus.
+        tuple: (kept, unmatched, skipped) — unmatched holds the selectors
+        that named nothing, because a typo must not look like an empty
+        corpus; skipped counts what the resume predicate removed, and
+        nothing else. Counting every kind of drop announced volumes as
+        "already converted" that a selector or a limit had dropped.
     """
     def matches(pattern, name):
         return (name == pattern
@@ -325,11 +328,14 @@ def select_documents(docs, selectors, exclusions, limit, skip=None):
                      if not any(matches(p, d[0]) for d in docs)]
     for pattern in exclusions or []:
         kept = [d for d in kept if not matches(pattern, d[0])]
+    skipped = 0
     if skip is not None:
+        before_skip = len(kept)
         kept = [d for d in kept if not skip(d[0])]
+        skipped = before_skip - len(kept)
     if limit is not None:
         kept = kept[:limit]
-    return kept, unmatched
+    return kept, unmatched, skipped
 
 
 def _process_document(doc_name, filepaths, doc_dir, df_meta, config,
@@ -565,10 +571,12 @@ def execute(args):
     # An archive nobody selected is none of this run's business: reporting
     # it made `run LIV0044` say "1/2 documents converted" and exit 1.
     selectors = getattr(args, "documents", []) or []
-    if selectors:
+    exclusions = getattr(args, "exclude", None) or []
+    if selectors or exclusions:
         failed_archives = [
             (name, reason) for name, reason in failed_archives
-            if select_documents([(Path(name).stem, [], None)], selectors, [], None)[0]
+            if select_documents([(Path(name).stem, [], None)],
+                                selectors, exclusions, None)[0]
         ]
 
     # Collect documents to process
@@ -603,8 +611,7 @@ def execute(args):
         (lambda name: _out_path(name, settings.output_dir).exists())
         if settings.skip_existing else None
     )
-    before = len(docs)
-    docs, unmatched = select_documents(
+    docs, unmatched, skipped_existing = select_documents(
         docs, getattr(args, "documents", []) or [],
         getattr(args, "exclude", None) or [], getattr(args, "limit", None),
         skip=already_converted,
@@ -615,25 +622,25 @@ def execute(args):
             + escape(", ".join(unmatched))
         )
         sys.exit(EXIT_MISCONFIGURED)
-    if not docs:
-        console.print("[red]Every volume was excluded.[/red]")
-        sys.exit(EXIT_MISCONFIGURED)
-
-    # Audit 2.5: minimal resume after a crash — skip already-converted docs
-    skipped_existing = 0
-    skipped_existing = before - len(docs) if settings.skip_existing else 0
-    if skipped_existing:
-        say(
-            f"[dim]--skip-existing: {skipped_existing} document(s) "
-            f"already converted, skipped[/dim]"
-        )
-    if settings.skip_existing and not docs and not failed_archives:
+    if not docs and skipped_existing:
+        # Resuming a corpus that is already complete is a success, not a
+        # misconfiguration — and it is the idiom the user guide recommends
+        # for a nightly wrapper.
         console.print(
             "[bold green]Nothing to do:[/bold green] every document already "
             "has a TEI output."
         )
         return
+    if not docs:
+        console.print("[red]Every volume was excluded.[/red]")
+        sys.exit(EXIT_MISCONFIGURED)
 
+    # Audit 2.5: minimal resume after a crash — skip already-converted docs
+    if skipped_existing:
+        say(
+            f"[dim]--skip-existing: {skipped_existing} document(s) "
+            f"already converted, skipped[/dim]"
+        )
     if dry_run:
         console.print(
             f"\n[bold]Plan[/bold] — {len(docs)} volume(s), "
@@ -666,6 +673,14 @@ def execute(args):
 
     no_probe = getattr(args, "no_probe", False)
     require_services = getattr(args, "require_services", False)
+    if no_probe and require_services:
+        # One says "assume they answer", the other "prove they do". There
+        # is no reading of the pair that says what the user meant.
+        console.print(
+            "[red]--no-probe and --require-services contradict each other."
+            "[/red]"
+        )
+        sys.exit(EXIT_MISCONFIGURED)
     unavailable = []
 
     # Check modernization API availability
@@ -724,6 +739,7 @@ def execute(args):
         task_docs = progress.add_task("Processing documents", total=len(docs))
 
         ok_docs = []
+        stopped_early = False
         # Corrupt archives belong in the summary and in the exit code, but
         # not in the failure budget: seeding the list with them made
         # --fail-fast stop after the first SUCCESSFUL document.
@@ -759,12 +775,14 @@ def execute(args):
             # every volume, because per-document isolation is the contract.
             if failed_docs and getattr(args, "fail_fast", False):
                 console.print("[yellow]--fail-fast: stopping at the first failure.[/yellow]")
+                stopped_early = True
                 break
             max_failures = getattr(args, "max_failures", None)
             if max_failures is not None and len(failed_docs) >= max_failures:
                 console.print(
                     f"[yellow]--max-failures {max_failures}: reached, stopping.[/yellow]"
                 )
+                stopped_early = True
                 break
 
     # Audit 2.10: end-of-run summary + non-zero exit code on failures
@@ -773,6 +791,11 @@ def execute(args):
     converted = f"{len(ok_docs)}/{total} documents converted"
     if skipped_existing:
         converted += f" ({skipped_existing} more skipped, already converted)"
+    never_tried = len(docs) - len(ok_docs) - (len(failed_docs) - len(failed_archives))
+    if stopped_early and never_tried > 0:
+        # Every phase reports what it lost: a run stopped after one failure
+        # out of forty must not read as thirty-nine silent successes.
+        converted += f" ({never_tried} never attempted, the run stopped early)"
     if failed_docs:
         console.print(f"\n[bold yellow]Completed with errors:[/bold yellow] {converted}")
         for name, reason in failed_docs:

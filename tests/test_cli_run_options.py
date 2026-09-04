@@ -196,7 +196,7 @@ def _docs(*names):
 
 
 def test_no_selector_keeps_every_document():
-    kept, missed = select_documents(_docs("LIV0044", "LIV0021"), [], [], None)
+    kept, missed, _ = select_documents(_docs("LIV0044", "LIV0021"), [], [], None)
 
     assert [d[0] for d in kept] == ["LIV0044", "LIV0021"]
     assert missed == []
@@ -215,7 +215,7 @@ def test_a_selector_matches_a_name_an_internal_id_or_a_glob():
 
 def test_a_selector_that_matches_nothing_is_reported():
     """A typo must not look like an empty corpus."""
-    kept, missed = select_documents(_docs("LIV0044"), ["LIV9999"], [], None)
+    kept, missed, _ = select_documents(_docs("LIV0044"), ["LIV9999"], [], None)
 
     assert kept == []
     assert missed == ["LIV9999"]
@@ -223,14 +223,14 @@ def test_a_selector_that_matches_nothing_is_reported():
 
 def test_exclusions_apply_after_selection():
     docs = _docs("LIV0044", "LIV0021", "LIV0038")
-    kept, _ = select_documents(docs, [], ["LIV0021"], None)
+    kept, _, _ = select_documents(docs, [], ["LIV0021"], None)
 
     assert [d[0] for d in kept] == ["LIV0044", "LIV0038"]
 
 
 def test_limit_keeps_the_first_n_in_order():
     docs = _docs("LIV0044", "LIV0021", "LIV0038")
-    kept, _ = select_documents(docs, [], [], 2)
+    kept, _, _ = select_documents(docs, [], [], 2)
 
     assert [d[0] for d in kept] == ["LIV0044", "LIV0021"]
 
@@ -497,8 +497,47 @@ def test_limit_counts_what_will_actually_be_converted():
     docs = [(f"LIV{n:04d}", [], None) for n in range(1, 5)]
     already_done = {"LIV0001", "LIV0002"}
 
-    kept, _ = select_documents(
+    kept, _, _ = select_documents(
         docs, [], [], limit=1, skip=lambda name: name in already_done
     )
 
     assert [d[0] for d in kept] == ["LIV0003"]
+
+
+# =============================================================================
+# What the fifth review caught
+# =============================================================================
+
+def test_the_skip_count_counts_only_what_the_resume_skipped():
+    """It counted every kind of drop, so `--skip-existing --limit 1` on an
+    empty output directory announced one document "already converted" when
+    none was. Exactly the dishonest counter the project forbids."""
+    from teille_douce.cli.run import select_documents
+
+    docs = [(f"LIV{n:04d}", [], None) for n in range(1, 4)]
+
+    kept, missed, skipped = select_documents(
+        docs, [], ["LIV0003"], limit=1, skip=lambda name: False
+    )
+
+    assert [d[0] for d in kept] == ["LIV0001"]
+    assert skipped == 0
+
+
+def test_a_flag_beats_a_per_language_environment_variable():
+    """`--vieuxparler` landed in the shared slot and the per-language
+    variable in the specific one, which wins — inverting the documented
+    chain, with nothing saying the flag had been ignored."""
+    from teille_douce.settings import Settings
+
+    settings = Settings.load(
+        flags={"modernize_url": "http://flag:1"},
+        env={"TDOUCE_MODERNIZE_URL_FRA": "http://env:2"},
+    )
+
+    assert settings.modernize_api["fra"] == "http://flag:1"
+
+
+def test_a_rejected_modernization_url_names_the_option_that_feeds_it():
+    with pytest.raises(SystemExit):
+        settings_for(["run", "--vieuxparler", ""])

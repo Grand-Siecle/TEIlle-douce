@@ -424,8 +424,9 @@ def _resolve_modernize_api(flags, env, from_file, config_path, rejected):
     own. Only a language config.py already declares can be overridden — a
     variable naming an unknown ident is read for nobody and does nothing.
     """
-    shared, _ = _resolve(_MODERNIZE_URL, flags, env, from_file,
-                         config_path, rejected)
+    shared, shared_origin = _resolve(_MODERNIZE_URL, flags, env, from_file,
+                                     config_path, rejected)
+    flag_given = shared is not None and shared_origin == "flag"
     resolved = {}
     for ident, default in config.DEFAULT_MODERNIZE_API.items():
         # Through _resolve like everything else: read raw, a stray space
@@ -437,7 +438,14 @@ def _resolve_modernize_api(flags, env, from_file, config_path, rejected):
         )
         specific, _ = _resolve(per_language, flags, env, from_file,
                                config_path, rejected)
-        resolved[ident] = specific or shared or default
+        # The flag lands in `shared` and the per-language variable in
+        # `specific`, so preferring `specific` inverted the chain: a box
+        # exporting TDOUCE_MODERNIZE_URL_FRA could not be redirected from
+        # the command line, and nothing said the flag had been ignored.
+        if flag_given:
+            resolved[ident] = shared
+        else:
+            resolved[ident] = specific or shared or default
     return resolved
 
 
