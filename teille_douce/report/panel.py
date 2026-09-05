@@ -18,14 +18,34 @@ from .counts import PhaseState, _grouped, render_phase_loss
 MAX_WIDTH = 100
 _MARGIN = 1
 
-# The bar's three zones. Written pages, pages read in the volume still
-# open, pages not read yet. The void is a glyph and not a space so the
-# length of the bar can be judged without reading the percentage.
-_ZONES = {
-    True: ("━", "╌", "┄"),
-    False: ("=", "-", "."),
+# This pipeline is named after taille-douce, copperplate engraving, and an
+# engraver renders a value by the density of the hatching. So the bar is a
+# hatch that fills rather than a line that grows: bitten through, half
+# bitten, bare plate. It says what a progress bar says, in the vocabulary
+# of the thing being made — and the bare plate is a glyph, not a space, so
+# the length can be judged without reading the percentage.
+TONES = {
+    True: ("█", "▓", "░"),
+    False: ("#", "+", "."),
 }
-_SPINNER = {True: "◓", False: "*"}
+
+# Colours taken from what a copperplate is made of, not from what a
+# terminal happens to offer. No background is ever painted: a panel that
+# paints its own ground fights the theme the reader chose.
+PALETTE = {
+    "plate": "#B4785A",      # burnished copper — what is done
+    "bitten": "#8A6552",     # bister ink — work in flight
+    "verdigris": "#4A7C74",  # oxidised copper — a service that answers
+    "vermilion": "#C1440E",  # the one alarm
+    "graphite": "#6B7280",   # rules, structure, secondary text
+    "bold": "bold",
+    "dim": "dim",
+}
+
+# Not a braille spinner, which is the default of the genre — and not the
+# tone family either, which is the bar's: one glyph must not carry two
+# meanings on the same line. A turning quadrant, for the press wheel.
+_PULSE = {True: "◜◝◞◟", False: "/-\\|"}
 _MARK = {True: ("✓", "✗", "·", "!"), False: ("v", "x", ".", "!")}
 
 # One ASCII character per glyph, never two: the padding is computed on the
@@ -34,7 +54,8 @@ _MARK = {True: ("✓", "✗", "·", "!"), False: ("v", "x", ".", "!")}
 _ASCII = str.maketrans({
     "→": ">", "·": ".", "—": "-", "×": "x", "─": "-", "═": "=",
     "━": "=", "╌": "-", "┄": ".", "╾": ">", "✓": "v", "✗": "x", "◓": "*",
-    "…": "~", "◒": "*",
+    "…": "~", "◒": "*", "█": "#", "▓": "+", "░": ".", "▒": "-",
+    "◜": "/", "◝": "-", "◞": "\\", "◟": "|",
 })
 
 
@@ -117,6 +138,12 @@ def as_markup(lines):
     return rendered
 
 
+def _pulse(tick, unicode_):
+    """One frame of the plate being inked."""
+    frames = _PULSE[unicode_]
+    return frames[tick % len(frames)]
+
+
 def _clock(seconds):
     seconds = int(seconds)
     hours, rest = divmod(seconds, 3600)
@@ -134,7 +161,7 @@ def _pad(left, right, room):
 
 def _bar(state, cells, unicode_):
     """Three measured zones, in proportion, filling exactly `cells`."""
-    done_glyph, flight_glyph, void_glyph = _ZONES[unicode_]
+    done_glyph, flight_glyph, void_glyph = TONES[unicode_]
     total = max(state.pages_total, 1)
     written = min(state.pages_written, total)
     in_flight = min(state.pages_in_flight, total - written)
@@ -148,9 +175,9 @@ def _bar(state, cells, unicode_):
     done_cells = min(done_cells, cells)
     flight_cells = min(flight_cells, cells - done_cells)
     void_cells = cells - done_cells - flight_cells
-    return [Span(done_glyph * done_cells, "green"),
-            Span(flight_glyph * flight_cells, "yellow"),
-            Span(void_glyph * void_cells, "dim")]
+    return [Span(done_glyph * done_cells, "plate"),
+            Span(flight_glyph * flight_cells, "bitten"),
+            Span(void_glyph * void_cells, "graphite")]
 
 
 def _services(state, room, unicode_):
@@ -158,13 +185,13 @@ def _services(state, room, unicode_):
     spans = [Span(" ")]
     for service in state.services:
         if service.up:
-            spans.append(Span(f"{ok} {service.name}   ", "green"))
+            spans.append(Span(f"{ok} {service.name}   ", "verdigris"))
         else:
             lost = f" LOST {service.lost_at}" if service.lost_at else " DOWN"
-            spans.append(Span(f"{bad} {service.name}{lost}   ", "red"))
+            spans.append(Span(f"{bad} {service.name}{lost}   ", "vermilion"))
     left = "".join(span.text for span in spans).rstrip()
     right = f"log {_short_log(state.log_path)}"
-    spans = [Span(_pad(left, "", room - len(right))), Span(right, "dim")]
+    spans = [Span(_pad(left, "", room - len(right))), Span(right, "graphite")]
     return spans
 
 
@@ -185,21 +212,21 @@ def _short_log(name, room=22):
 def _phase_bar(done, total, cells, unicode_):
     """The small bar on a running phase's line, where "blocked but alive"
     is actually read."""
-    done_glyph, _, void_glyph = _ZONES[unicode_]
+    done_glyph, _, void_glyph = TONES[unicode_]
     filled = min(cells, round(cells * done / max(total, 1)))
     return done_glyph * filled + void_glyph * (cells - filled)
 
 
-def _phase_span(phase, room, unicode_):
+def _phase_span(phase, room, unicode_, tick=0):
     """One phase's line, and what it is allowed to claim."""
     ok, bad, idle, warn = _MARK[unicode_]
     if phase.state is PhaseState.PENDING:
-        return [Span(f"   {phase.name:<12}", ""), Span(f"{idle} pending", "dim")]
+        return [Span(f"   {phase.name:<12}", ""), Span(f"{idle} pending", "graphite")]
 
     if phase.state is PhaseState.LOST:
         body = render_phase_loss(PhaseState.LOST, phase.done, phase.total,
                                  phase.unit, phase.reason or "service lost")
-        return [Span(f"   {phase.name:<12}"), Span(f"{bad} {body}", "red")]
+        return [Span(f"   {phase.name:<12}"), Span(f"{bad} {body}", "vermilion")]
 
     if phase.state is PhaseState.RUNNING:
         measured = f"{_grouped(phase.done)}/{_grouped(phase.total or 0)} {phase.unit}"
@@ -211,7 +238,7 @@ def _phase_span(phase, room, unicode_):
             trailing = f"{phase.rate}/s"
         else:
             trailing = ""
-        left = f"   {phase.name:<12}{_SPINNER[unicode_]} "
+        left = f"   {phase.name:<12}{_pulse(tick, unicode_)} "
         if trailing:
             measured += f" · {trailing}"
         # The bar only when there is room for the numbers first: at sixty
@@ -220,7 +247,7 @@ def _phase_span(phase, room, unicode_):
         spare = room - len(left) - len(measured) - 8
         if spare >= 12:
             left += _phase_bar(phase.done, phase.total or 0, 20, unicode_) + " "
-        return [Span(left + measured, "cyan")]
+        return [Span(left + measured, "bitten")]
 
     mark = warn if phase.note.startswith(("!", "754 pages read")) else ok
     left = f"   {phase.name:<12}{mark} {phase.note}" if phase.note else \
@@ -228,16 +255,17 @@ def _phase_span(phase, room, unicode_):
     return [Span(left)]
 
 
-def render_panel(state, width=92, height=None, unicode=True, color=True):
+def render_panel(state, width=92, height=None, unicode=True, color=True,
+                 tick=0):
     """The whole panel, as a list of lines of spans."""
     room = min(width, MAX_WIDTH) - _MARGIN
     lines = []
 
     header_left = f" TEIlle-douce   {state.input_dir}/ → {state.output_dir}/"
-    header_right = f"elapsed {_clock(state.elapsed)} · eta {state.eta}"
+    header_right = f"elapsed {_clock(state.elapsed)}   eta {state.eta}"
     lines.append([Span(_pad(header_left, header_right, room))])
     lines.append(_services(state, room, unicode))
-    lines.append([Span("─" * room if unicode else "-" * room, "dim")])
+    lines.append([Span("─" * room if unicode else "-" * room, "graphite")])
 
     pages = (f"{_grouped(state.pages_written)}/{_grouped(state.pages_total)} "
              f"pages")
@@ -246,17 +274,21 @@ def render_panel(state, width=92, height=None, unicode=True, color=True):
     lines.append([Span(" "), *_bar(state, cells, unicode),
                   Span("  " + _pad(pages, percent, room - cells - 3))])
 
-    counts = (f" {state.volumes_written} written · {state.volumes_failed} "
-              f"failed · {state.volumes_to_go} to go")
+    # Three facts are three columns, not a string joined with middle
+    # dots: a list pretending not to be a table is the commonest tell of
+    # an interface nobody laid out.
+    counts = (f" {state.volumes_written:>4} written"
+              f"{state.volumes_failed:>8} failed"
+              f"{state.volumes_to_go:>8} to go")
     lines.append([Span(_pad(counts, f"{state.pages_per_second} pages/s", room))])
     lines.append([Span("")])
 
     if state.current is not None:
-        head = f" {_SPINNER[unicode]} {state.current.name}"
+        head = f" {_pulse(tick, unicode)} {state.current.name}"
         tail = f"{_grouped(state.current.pages)} pages   {_clock(state.current.elapsed)}"
         lines.append([Span(_pad(head, tail, room), "bold")])
         for phase in state.current.phases:
-            spans = _phase_span(phase, room, unicode)
+            spans = _phase_span(phase, room, unicode, tick)
             if phase.elapsed is not None:
                 text_so_far = "".join(span.text for span in spans)
                 spans.append(Span(_pad("", _clock(phase.elapsed),
@@ -267,17 +299,17 @@ def render_panel(state, width=92, height=None, unicode=True, color=True):
                 # to. "(was up at start)" is the difference between a
                 # misconfiguration and a service that died mid-run.
                 lines.append([Span(f"               {phase.note}"[:room],
-                                   "red")])
+                                   "vermilion")])
 
     lines.append([
         Span(f" source {_grouped(state.source_lost)}    "),
         Span(f"withheld {_grouped(state.withheld)}    "),
         Span(f"incident {_grouped(state.incidents)}",
-             "red" if state.incidents else ""),
+             "vermilion" if state.incidents else ""),
     ])
 
     for incident in state.incident_lines:
-        lines.append([Span(" " + incident[:room - 1], "red")])
+        lines.append([Span(" " + incident[:room - 1], "vermilion")])
 
     digest_lines = state.digest.lines(limit=3) if state.digest else ()
     if digest_lines:
@@ -289,15 +321,15 @@ def render_panel(state, width=92, height=None, unicode=True, color=True):
             right = (f"{entry.documents} volumes"
                      + (f" · {_grouped(entry.totals[-1])} ids"
                         if entry.totals else ""))
-            lines.append([Span(_pad(left, right, room), "dim")])
+            lines.append([Span(_pad(left, right, room), "graphite")])
         hidden = state.digest.elided(limit=3)
         if hidden:
-            lines.append([Span(f"    +{hidden} more shapes", "dim")])
+            lines.append([Span(f"    +{hidden} more shapes", "graphite")])
 
-    lines.append([Span("─" * room if unicode else "-" * room, "dim")])
+    lines.append([Span("─" * room if unicode else "-" * room, "graphite")])
     lines.append([Span(
         f" ctrl-c  abandon this volume, keep the "
-        f"{state.volumes_written} already written", "dim")])
+        f"{state.volumes_written} already written", "graphite")])
 
     if not unicode:
         # One pass at the end rather than a glyph table threaded through

@@ -66,16 +66,16 @@ def test_the_bar_shows_written_in_flight_and_not_yet_read():
     lines = text(state(pages_written=6412, pages_in_flight=300))
     bar = next(line for line in lines if "6 412" in line)
 
-    assert "━" in bar, "pages already written"
-    assert "╌" in bar, "pages read in the volume still open"
-    assert "┄" in bar, "pages not read yet"
+    assert "█" in bar, "bitten through: pages already written"
+    assert "▓" in bar, "half-bitten: pages read in the volume still open"
+    assert "░" in bar, "bare plate: pages not read yet"
 
 
 def test_the_empty_part_of_the_bar_is_a_glyph_and_not_a_space():
     """So the length of the bar can be judged without reading the
     percentage."""
     bar = next(line for line in text(state()) if "6 412" in line)
-    drawn = bar[bar.index("━"):bar.rindex("┄") + 1]
+    drawn = bar[bar.index("█"):bar.rindex("░") + 1]
 
     assert " " not in drawn
 
@@ -86,7 +86,7 @@ def test_the_bar_never_claims_more_than_was_measured():
     lines = text(state(pages_written=16999, pages_in_flight=0))
     bar = next(line for line in lines if "16 999" in line)
 
-    assert "┄" not in bar or bar.count("┄") == 0
+    assert bar.count("░") == 0
 
 
 def test_the_percentage_is_of_pages_and_not_of_volumes():
@@ -288,7 +288,7 @@ def test_a_running_phase_carries_its_own_small_bar():
     lines = text(state())
     enrich = next(line for line in lines if "318/430" in line)
 
-    assert "━" in enrich and "┄" in enrich
+    assert "█" in enrich and "░" in enrich
 
 
 def test_the_phase_bar_disappears_when_there_is_no_room_for_it():
@@ -297,3 +297,63 @@ def test_the_phase_bar_disappears_when_there_is_no_room_for_it():
     enrich = next(line for line in narrow if "318/430" in line)
 
     assert len(enrich) <= 60
+
+
+# =============================================================================
+# The visual language comes from the subject, not from the terminal
+# =============================================================================
+
+def test_the_bar_is_a_hatch_that_fills_rather_than_a_line_that_grows():
+    """An engraver renders a value by the density of the hatching, and
+    this pipeline is named after copperplate engraving. Three tones —
+    bitten through, half-bitten, bare plate — say the same thing as a
+    progress bar in the vocabulary of the thing being made."""
+    from teille_douce.report.panel import TONES
+
+    assert TONES[True] == ("█", "▓", "░")
+    assert len(set(TONES[False])) == 3, "the ASCII tones stay distinguishable"
+
+
+def test_every_colour_on_the_panel_comes_from_the_named_palette():
+    """One place to change how the panel looks, and a guarantee that no
+    line reached for a raw colour on its own."""
+    from teille_douce.report.panel import PALETTE, render_panel
+
+    used = {span.style for line in render_panel(state(), width=92)
+            for span in line if span.style}
+
+    assert used, "the panel is not entirely unstyled"
+    assert used <= set(PALETTE), f"outside the palette: {used - set(PALETTE)}"
+
+
+def test_the_palette_is_taken_from_the_materials_of_the_subject():
+    """Copper, bister ink, verdigris, vermilion, graphite — chosen for
+    what a copperplate is made of rather than for what a terminal
+    happens to offer."""
+    from teille_douce.report.panel import PALETTE
+
+    assert set(PALETTE) >= {"plate", "bitten", "verdigris", "vermilion",
+                            "graphite"}
+    for name, colour in PALETTE.items():
+        assert colour.startswith("#") or colour in ("bold", "dim"), name
+
+
+def test_the_background_is_never_painted():
+    """A panel that paints its own background fights the theme the reader
+    chose, and looks broken in half of them."""
+    from teille_douce.report.panel import PALETTE
+
+    assert not any("on " in colour for colour in PALETTE.values())
+
+
+def test_the_panel_does_not_string_its_own_facts_with_middle_dots():
+    """`A · B · C` is the commonest tell of an interface nobody laid out:
+    a list pretending not to be a table. The rule is about the chrome the
+    renderer composes — a language distribution handed in as a note
+    genuinely is a list, and gets to look like one."""
+    notes = {phase.note for phase in state().current.phases if phase.note}
+
+    for line in text(state()):
+        if any(note in line for note in notes):
+            continue
+        assert line.count("·") <= 1, repr(line)
