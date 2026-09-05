@@ -189,6 +189,7 @@ teille-douce run --fast --dry-run     # what would happen, writing nothing
 | `--enrich`/`--no-enrich`, and likewise for `modernize` and `ner` | Add or remove one phase from the current set. |
 | `--pyhellen URL` · `--vieuxparler URL` · `--health-timeout S` | The two services. |
 | `-j, --jobs N` · `--batch-size N` · `--concurrency N` | Workers, lines per request, in-flight requests. |
+| `--device DEV` | Where the NER models run: `auto` (the default: a GPU if there is one), `cpu`, `cuda`, `cuda:1`, `mps`. Naming one matters on a shared GPU somebody else has filled and on a machine with more than one — neither of which the pipeline can guess. The run says which device it chose before loading several gigabytes of model. |
 | `--no-probe` | Do not probe the services; assume they answer. |
 | `--require-services` | A phase whose service is down is fatal (exit 3) **before anything is written**, instead of a warning and a run without that annotation. |
 | `-n, --dry-run` | Resolve everything, list the plan, write nothing. |
@@ -318,6 +319,7 @@ wrapper scripts and CI configurations keep working:
 | `TDOUCE_PYHELLEN_CONCURRENCY` | `limits.concurrency` | `8` | In-flight requests to PyHellen |
 | `TDOUCE_PYHELLEN_MAX_CONSECUTIVE_FAILURES` | `limits.max_consecutive_failures` | `10` | Circuit breaker: stop calling after this many failures in a row |
 | `TDOUCE_NER_CONFIDENCE` | `limits.ner_confidence` | `0.6` | Below this, an entity prediction is dropped |
+| `TDOUCE_NER_DEVICE` | `models.device` | `auto` | Where the NER models run: `auto`, `cpu`, `cuda`, `cuda:1`, `mps` |
 | `TDOUCE_DEBUG` | `output.debug` | `0` | Verbose diagnostics, in the console and in the run log |
 | `TDOUCE_LOG_LEVEL` | `output.log_level` | `WARNING` | Console level |
 | `TDOUCE_LOG_FILE` | `output.log_file` | `pipeline.log` | Run log; each run writes its own timestamped file |
@@ -371,7 +373,12 @@ measured on real output for this corpus, where modernized similarity runs
 
 ### NER — named entities
 
-Runs locally, no service, but needs `requirements-ner.txt`. Two models:
+Runs locally, no service, but needs `pip install -e '.[ner]'`. Both models
+load on a GPU when there is one and on the CPU otherwise; `--device` (or
+`TDOUCE_NER_DEVICE`, or `models.device`) overrides that, and the run prints
+the device it chose before downloading several gigabytes of model.
+
+Two models:
 **CamemBERT** (`pjox/camembert-classical-fr-ner`) for persons, places and
 organizations in French, reading the `<orig>` text; **GLiNER**
 (`urchade/gliner_multi-v2.1`) for artworks, literary works, materials,
@@ -606,8 +613,14 @@ exist as directories but hold no `.xml` anywhere under them, usually an
 archive packed without its ALTO subfolder. They are named in the warning, in
 the log and in the summary line (`… (N more held no ALTO)`), and the run
 continues on the rest: nothing was converted from them, and nothing failed
-either. The exit status stays 0, because the corpus is what it is — the run
-did not lose anything, it was handed nothing.
+either, so they do not change the exit status.
+
+The exception is a corpus where they are *all* there is, with nothing
+already converted to resume from: that exits 3, because the exit codes
+describe the run and not the volumes, and a run handed nothing it could
+convert did not run. It is also, far more often than a corpus of empty
+volumes, an `-i` pointing one directory too high — which is the reading
+exit 3 is there to suggest.
 
 **`N directories could not be read`** — a different diagnosis, and a
 failure: the volume may well hold ALTO, this process is simply not allowed

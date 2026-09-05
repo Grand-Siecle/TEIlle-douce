@@ -92,10 +92,7 @@ def settings_from(args, env=None, parser=None):
     # so a level set in the config file was invisible to the -q floor.
     config_file = _config_file(args, parser)
     flags = {}
-    for name in ("ocr_dir", "output_dir", "entities_dir", "metadata_csv",
-                 "persons_csv", "pyhellen_url", "modernize_url",
-                 "health_timeout", "max_workers", "modernize_batch_size",
-                 "log_file"):
+    for name in options.PASSED_THROUGH:
         value = getattr(args, name, None)
         if value is not None:
             flags[name] = value

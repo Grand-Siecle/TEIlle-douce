@@ -28,9 +28,23 @@ _OPTION_FOR_SETTING = {
     "modernize_batch_size": "--batch-size",
     "modernize_concurrency": "--concurrency",
     "pyhellen_concurrency": "--concurrency",
+    "ner_device": "--device",
     "log_file": "--log-file",
     "log_level": "--log-level",
 }
+
+# The settings whose flag carries their value straight through, with no
+# arithmetic on the way: argparse's dest IS the setting name, so the caller
+# copies them across by name. Derived from the map above rather than
+# written out again — a second list is how `--device` was declared,
+# documented, shown in --help, and read by nothing.
+#   - concurrency feeds two settings from one flag
+#   - log_level is decided by the -v/-q floor, not copied
+PASSED_THROUGH = tuple(
+    name for name in _OPTION_FOR_SETTING
+    if name not in ("modernize_concurrency", "pyhellen_concurrency",
+                    "log_level")
+)
 
 
 def _at_least_one(raw):
@@ -259,6 +273,10 @@ def add_run_arguments(parser):
                         default=none, help="lines per modernization request  [64]")
     limits.add_argument("--concurrency", dest="concurrency", metavar="N",
                         default=none, help="in-flight requests per service  [8]")
+    limits.add_argument("--device", dest="ner_device", metavar="DEV",
+                        default=none,
+                        help="where the NER models run: auto, cpu, cuda, "
+                             "cuda:1, mps  [auto]")
 
     failure = parser.add_argument_group("failure handling")
     failure.add_argument("-n", "--dry-run", action="store_true",

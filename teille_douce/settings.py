@@ -25,6 +25,7 @@ import contextlib
 import math
 import os
 import tomllib
+import re
 import warnings
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -53,6 +54,24 @@ def _as_path(raw):
         return Path(raw).expanduser()
     except RuntimeError:
         raise ValueError("names a home directory that cannot be resolved")
+
+
+_DEVICE = re.compile(r"^(auto|cpu|mps|cuda(:\d+)?)$")
+
+
+def _as_device(raw):
+    """Where the NER models run.
+
+    Validated here rather than left to torch: a typo in `--device cdua`
+    would otherwise surface as a RuntimeError several gigabytes of model
+    download later, at the first document of a long run.
+    """
+    if not isinstance(raw, str):
+        raise ValueError("is not a device name")
+    value = raw.strip().lower()
+    if not _DEVICE.match(value):
+        raise ValueError("is not one of auto, cpu, mps, cuda, cuda:<n>")
+    return value
 
 
 def _as_str(raw):
@@ -186,6 +205,11 @@ _SETTINGS = (
     _Declaration("modernize_similarity_min", "TDOUCE_MODERNIZE_SIMILARITY_MIN",
                  "limits.similarity_min", _as_number(minimum=0.0, maximum=1.0),
                  0.8),
+    # Where the NER models run. Automatic is right almost always; the
+    # exceptions are a shared GPU somebody else is filling and a machine
+    # with more than one, neither of which the pipeline can guess.
+    _Declaration("ner_device", "TDOUCE_NER_DEVICE",
+                 "models.device", _as_device, "auto"),
     _Declaration("ner_confidence_threshold", "TDOUCE_NER_CONFIDENCE",
                  "limits.ner_confidence", _as_number(minimum=0.0, maximum=1.0),
                  0.6),
@@ -300,6 +324,7 @@ class Settings:
     modernize_concurrency: int
     modernize_similarity_min: float
     health_timeout: float
+    ner_device: str
     ner_confidence_threshold: float
     max_workers: int
     debug: bool

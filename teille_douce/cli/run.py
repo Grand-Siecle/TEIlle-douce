@@ -885,6 +885,18 @@ def execute(args):
                 f"({escape(', '.join(missing))}) — no entity recognition."
                 f"[/yellow]"
             )
+        else:
+            # Where they will run, before several gigabytes of model load:
+            # "auto" on a shared GPU silently means "whatever is left", and
+            # a run that fell back to CPU is a run that will take hours
+            # rather than minutes. Worth one line.
+            from teille_douce.enrichment.ner_models import resolve_device
+
+            device = resolve_device()
+            asked = settings.origin("ner_device")
+            say(f"[green]Entity recognition on {escape(device)}[/green]"
+                + ("" if asked == "default"
+                   else f" [dim]({escape(asked)})[/dim]"))
 
     if require_services and unavailable:
         # Asked for explicitly: a phase whose service is down is fatal
@@ -950,7 +962,7 @@ def execute(args):
     # Archives --dry-run did not unpack are prospective work, not absent
     # documents: they are a documented input layout, and the plan has to
     # be right precisely before the first run.
-    pending_archives, skipped_archives, skipped_names = [], 0, []
+    pending_archives, skipped_archives = [], 0
     if dry_run:
         for zip_path in sorted(settings.ocr_dir.glob("*.zip")):
             if (settings.ocr_dir / zip_path.stem).exists():
@@ -965,7 +977,6 @@ def execute(args):
             if (settings.skip_existing
                     and _out_path(zip_path.stem, settings.output_dir).exists()):
                 skipped_archives += 1
-                skipped_names.append(zip_path.stem)
                 continue
             pending_archives.append(zip_path.name)
 
@@ -1076,17 +1087,27 @@ def execute(args):
             for name, reason in broken:
                 console.print(f"  [red]FAILED[/red] {escape(f'{name}: {reason}')}")
             sys.exit(EXIT_SOME_FAILED)
+        # Whichever wording follows, say how many volumes were there and
+        # empty. Exit 3 reads as "your input directory is wrong", which is
+        # usually right — but not when the directory is the right one and
+        # its volumes are the problem, and the count is what tells the two
+        # apart at a glance.
+        found = ("" if not without_alto else
+                 f" {len(without_alto)} director"
+                 f"{'y' if len(without_alto) == 1 else 'ies'} there held "
+                 f"none.")
         if selectors:
             # The corpus may be perfectly healthy: it is the selected
             # volume that holds no ALTO, and naming the whole directory
             # sent the operator to inspect the wrong thing.
             console.print(
-                "[red]No ALTO found in:[/red] " + escape(", ".join(selectors))
+                "[red]No ALTO found in:[/red] "
+                + escape(", ".join(selectors)) + f"[red].{found}[/red]"
             )
         else:
             console.print(
                 f"[red]No ALTO documents found in "
-                f"{escape(str(settings.ocr_dir))}.[/red]"
+                f"{escape(str(settings.ocr_dir))}.{found}[/red]"
             )
         sys.exit(EXIT_MISCONFIGURED)
 

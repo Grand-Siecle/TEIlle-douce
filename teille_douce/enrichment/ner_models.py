@@ -18,6 +18,32 @@ import logging
 NER_DEPENDENCIES = ("flair", "gliner", "huggingface_hub", "torch")
 
 
+def resolve_device(asked=None):
+    """The device the models should load on, as torch spells it.
+
+    "auto" is what the pipeline did unconditionally: CUDA when there is
+    any, CPU otherwise. It stays the default, because it is right on a
+    machine with one GPU and nobody else on it. The two cases it cannot
+    guess are the ones the setting exists for — a shared GPU somebody else
+    has filled, and a machine with more than one.
+    """
+    from teille_douce.settings import get_settings
+
+    if asked is None:
+        asked = get_settings().ner_device
+    if asked != "auto":
+        return asked
+    try:
+        import torch
+    except Exception:
+        return "cpu"
+    if torch.cuda.is_available():
+        return "cuda"
+    if getattr(torch.backends, "mps", None) and torch.backends.mps.is_available():
+        return "mps"
+    return "cpu"
+
+
 def missing_ner_dependencies():
     """The NER packages that are not installed, in declaration order.
 
@@ -82,12 +108,17 @@ class NERModels:
     GLiNER is loaded only when needed (any language, extended types).
     """
 
-    def __init__(self, models_config):
+    def __init__(self, models_config, device=None):
         """
         Args:
             models_config: The NER_MODELS dict from config.py.
+            device: Override the resolved device. Left None, each model
+                asks the settings when it loads — which is what the run
+                wants, since a model is loaded lazily and long after the
+                command line was read.
         """
         self._config = models_config
+        self._device = device
         self._camembert = None
         self._gliner = None
 
@@ -97,7 +128,15 @@ class NERModels:
         if self._camembert is None:
             model_id = self._config["camembert"]["model_id"]
             logger.info("Loading CamemBERT NER model (Flair): %s", model_id)
+            import flair
+            import torch
             from flair.models import SequenceTagger
+
+            # Flair reads its global at load time and picks CUDA on its
+            # own, so a --device it never sees is a --device that does
+            # nothing for half the models.
+            flair.device = torch.device(resolve_device(self._device))
+            logger.info("CamemBERT NER model loading on %s", flair.device)
 
             # Flair expects pytorch_model.bin in the repo, but some repos
             # use a custom filename. Download explicitly when model_id
@@ -125,7 +164,7 @@ class NERModels:
             import torch
             from gliner import GLiNER
 
-            device = "cuda" if torch.cuda.is_available() else "cpu"
+            device = resolve_device(self._device)
             self._gliner = GLiNER.from_pretrained(model_id).to(device)
             logger.info("GLiNER model loaded on %s", device)
         return self._gliner

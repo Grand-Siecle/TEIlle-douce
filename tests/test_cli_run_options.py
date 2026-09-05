@@ -1060,3 +1060,206 @@ def test_an_unreadable_directory_is_reported_even_though_rglob_is_silent(
     assert reason is not None, "an unreadable directory answered as readable"
     assert not created
     assert existing == set()
+
+
+# =============================================================================
+# Where the NER models run
+# =============================================================================
+
+def test_the_device_reaches_the_settings_from_every_layer():
+    """It was decided in the model loader and nowhere else: `cuda if
+    available else cpu`, unreachable. A shared GPU somebody else has
+    filled and a machine with more than one are the two cases the
+    pipeline cannot guess, and both were unspeakable."""
+    assert settings_for(["run", "--device", "cuda:1"]).ner_device == "cuda:1"
+    assert settings_for(["run"], env={"TDOUCE_NER_DEVICE": "CPU"}
+                        ).ner_device == "cpu"
+    assert settings_for(["run"]).ner_device == "auto"
+
+
+def test_a_mistyped_device_is_a_usage_error_not_a_crash_later(capsys):
+    """`--device cdua` would otherwise surface as a torch RuntimeError
+    several gigabytes of model download later, at the first document of a
+    long run. Exit 2 and not 3: it was typed just now, so it is a usage
+    error, not a configuration the run could fall back from."""
+    with pytest.raises(SystemExit) as exit:
+        app.settings_from(
+            app.parse_args(["run", "--device", "cdua", "--no-config"]), env={})
+
+    assert exit.value.code == 2
+    assert "auto, cpu, mps, cuda" in capsys.readouterr().err
+
+
+def test_auto_is_what_the_pipeline_already_did(monkeypatch):
+    """The default has to keep meaning exactly what the hard-coded line
+    meant, or every existing run changes machine."""
+    from teille_douce.enrichment import ner_models
+
+    class _Torch:
+        class cuda:
+            @staticmethod
+            def is_available():
+                return True
+        backends = type("b", (), {"mps": None})
+
+    monkeypatch.setitem(__import__("sys").modules, "torch", _Torch)
+    assert ner_models.resolve_device("auto") == "cuda"
+
+    _Torch.cuda.is_available = staticmethod(lambda: False)
+    assert ner_models.resolve_device("auto") == "cpu"
+
+
+def test_auto_falls_back_to_the_cpu_when_torch_cannot_be_imported(monkeypatch):
+    """A half-installed torch must not make the device resolution raise
+    before the dependency probe has had a chance to say what is missing."""
+    from teille_douce.enrichment import ner_models
+
+    monkeypatch.setitem(__import__("sys").modules, "torch", None)
+
+    assert ner_models.resolve_device("auto") == "cpu"
+
+
+def test_auto_finds_apple_silicon_when_there_is_no_cuda(monkeypatch):
+    """A laptop with an M-series chip has no CUDA and is not a CPU-only
+    machine either; resolving it to "cpu" would leave the models an order
+    of magnitude slower for no reason."""
+    from teille_douce.enrichment import ner_models
+
+    class _Torch:
+        class cuda:
+            @staticmethod
+            def is_available():
+                return False
+        backends = type("b", (), {
+            "mps": type("m", (), {"is_available": staticmethod(lambda: True)})
+        })
+
+    monkeypatch.setitem(__import__("sys").modules, "torch", _Torch)
+
+    assert ner_models.resolve_device("auto") == "mps"
+
+
+def test_a_device_that_is_not_even_a_string_is_refused(tmp_path):
+    """TOML supplies integers and booleans, and `models.device = 3` must
+    answer like every other unusable value rather than reaching torch."""
+    toml = tmp_path / "teille-douce.toml"
+    toml.write_text("[models]\ndevice = 3\n", encoding="utf-8")
+
+    with pytest.warns(RuntimeWarning, match="not a device name"):
+        settings = app.settings_from(
+            app.parse_args(["run", "--config", str(toml)]), env={})
+
+    assert settings.ner_device == "auto"
+
+
+def test_a_device_that_was_asked_for_is_never_second_guessed(monkeypatch):
+    """No probing behind the operator's back: --device cpu on a machine
+    with a GPU means CPU, and --device cuda:1 is not quietly downgraded
+    when torch cannot be imported — that must fail loudly at load time."""
+    from teille_douce.enrichment import ner_models
+
+    monkeypatch.setitem(__import__("sys").modules, "torch", None)
+    assert ner_models.resolve_device("cpu") == "cpu"
+    assert ner_models.resolve_device("cuda:1") == "cuda:1"
+
+
+def test_the_flag_is_read_by_the_loader_through_the_settings():
+    """`resolve_device()` with no argument is what the model properties
+    call, long after the command line was parsed."""
+    from teille_douce.enrichment import ner_models
+    from teille_douce.settings import use_settings
+
+    with use_settings(settings_for(["run", "--device", "cpu"])):
+        assert ner_models.resolve_device() == "cpu"
+
+
+def _fake_ner_stack(monkeypatch, seen):
+    """Stand in for flair, torch and gliner so the loaders can be exercised
+    without several gigabytes of model."""
+    import sys
+    import types
+
+    flair = types.ModuleType("flair")
+    flair.device = "untouched"
+    models = types.ModuleType("flair.models")
+
+    class _Tagger:
+        @staticmethod
+        def load(where):
+            seen["loaded"] = where
+            return object()
+
+    models.SequenceTagger = _Tagger
+    flair.models = models
+
+    torch = types.ModuleType("torch")
+    torch.device = lambda name: f"device({name})"
+    torch.cuda = types.SimpleNamespace(is_available=lambda: True)
+    torch.backends = types.SimpleNamespace(mps=None)
+
+    gliner = types.ModuleType("gliner")
+
+    class _GLiNER:
+        @staticmethod
+        def from_pretrained(model_id):
+            seen["gliner"] = model_id
+            return types.SimpleNamespace(
+                to=lambda device: seen.setdefault("gliner_device", device))
+
+    gliner.GLiNER = _GLiNER
+
+    for name, module in (("flair", flair), ("flair.models", models),
+                         ("torch", torch), ("gliner", gliner)):
+        monkeypatch.setitem(sys.modules, name, module)
+    return flair
+
+
+def test_the_device_reaches_the_flair_model_too(monkeypatch):
+    """Flair reads a module-level global at load time and picks CUDA on
+    its own, so a --device it is never told about is a --device that does
+    nothing for half the models — the French one, which is most of the
+    corpus."""
+    from teille_douce.enrichment.ner_models import NERModels
+
+    seen = {}
+    flair = _fake_ner_stack(monkeypatch, seen)
+    models = NERModels({"camembert": {"model_id": "someone/a-model"}},
+                       device="cpu")
+
+    assert models.camembert is not None
+    assert flair.device == "device(cpu)"
+    assert seen["loaded"] == "someone/a-model"
+
+
+def test_the_device_reaches_gliner(monkeypatch):
+    from teille_douce.enrichment.ner_models import NERModels
+
+    seen = {}
+    _fake_ner_stack(monkeypatch, seen)
+    models = NERModels({"gliner": {"model_id": "someone/gliner"}},
+                       device="cuda:1")
+
+    assert models.gliner is not None
+    assert seen["gliner_device"] == "cuda:1"
+
+
+def test_a_model_id_carrying_a_filename_is_downloaded_explicitly(monkeypatch):
+    """Flair expects pytorch_model.bin; the classical French model ships
+    under another name, so `namespace/repo/file` is fetched by hand."""
+    import sys
+    import types
+
+    from teille_douce.enrichment.ner_models import NERModels
+
+    seen = {}
+    _fake_ner_stack(monkeypatch, seen)
+    hub = types.ModuleType("huggingface_hub")
+    hub.hf_hub_download = lambda repo_id, filename: f"/cache/{repo_id}/{filename}"
+    monkeypatch.setitem(sys.modules, "huggingface_hub", hub)
+
+    models = NERModels(
+        {"camembert": {"model_id": "pjox/camembert/final-model.pt"}},
+        device="cpu")
+
+    assert models.camembert is not None
+    assert seen["loaded"] == "/cache/pjox/camembert/final-model.pt"
