@@ -335,4 +335,15 @@ def main(argv=None):
     from teille_douce.cli import run as run_command
 
     commands = {"run": run_command.execute}
-    return commands[args.command](args)
+    try:
+        return commands[args.command](args)
+    except KeyboardInterrupt:
+        # The document loop has its own handler, which stops cleanly and
+        # keeps what it wrote. This one covers everything before and
+        # after it — loading the CSVs, probing the services, unpacking
+        # archives (minutes on the real corpus), writing the manifest —
+        # where a Ctrl-C used to come out as a raw traceback. 130 is what
+        # a shell reports for SIGINT, and it is not a verdict on the
+        # corpus.
+        print("\nInterrupted.", file=sys.stderr)
+        return 130

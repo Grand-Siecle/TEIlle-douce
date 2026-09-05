@@ -185,6 +185,10 @@ async def _modernize_all(texts, base_url, progress_callback=None, losses=None):
         # "withheld on purpose … nothing" over a run that had withheld
         # hundreds.
         losses.setdefault("readings_rejected", 0)
+        # Block 3: a retry the service never answered. `lines_lost`
+        # carries them too, because a line whose retry never arrived is a
+        # line that never reached VieuxParler.
+        losses.setdefault("retries_unreachable", 0)
         losses.setdefault("lines_offered", 0)
         losses["lines_offered"] += len(texts)
     results = list(texts)  # pre-fill with originals as fallback
@@ -264,11 +268,18 @@ async def _modernize_all(texts, base_url, progress_callback=None, losses=None):
 
         retried = 0
         still_bad = 0
+        unreachable = 0
         for (idx, orig), resp in zip(divergent, retry_responses):
             if isinstance(resp, Exception) or resp is None or not resp:
                 if get_settings().debug:
                     logger.debug("Retry failed for line %d: %s", idx, resp)
-                still_bad += 1
+                # The REQUEST failed. Counted apart from a reading the
+                # guard refused: one is the service dying, the other is
+                # the pipeline working. Both went into `still_bad`, so a
+                # VieuxParler that died during the retry phase produced
+                # zero incidents and `--fail-on incident` passed — block
+                # 2 never counts at any level, by design.
+                unreachable += 1
                 continue
             mod = resp[0]
             if _is_divergent(orig, mod):
@@ -285,10 +296,13 @@ async def _modernize_all(texts, base_url, progress_callback=None, losses=None):
 
         if losses is not None:
             losses["readings_rejected"] += still_bad
+            losses["retries_unreachable"] += unreachable
+            losses["lines_lost"] += unreachable
         if get_settings().debug:
             logger.debug(
-                "Retry results: %d fixed, %d still divergent (kept original)",
-                retried, still_bad,
+                "Retry results: %d fixed, %d still divergent (kept "
+                "original), %d never answered",
+                retried, still_bad, unreachable,
             )
 
     return results if any_success else None

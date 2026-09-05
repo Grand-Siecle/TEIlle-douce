@@ -424,7 +424,9 @@ class Settings:
         answerable three days later — by the origin, which is the part
         the value cannot tell you. Keyed on the config key rather than
         the attribute name, because that is what a reader would type to
-        change it.
+        change it — so a setting with no config key (`TDOUCE_TEI_RNG`,
+        which points the schema tests at a `tei_all.rng` and is not a
+        property of the corpus) is not in here.
 
         Everything is coerced to a JSON-safe form here: a Path or an Enum
         surviving into the dump would only be discovered at the end of a

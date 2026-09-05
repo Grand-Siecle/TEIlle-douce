@@ -67,18 +67,34 @@ class Locator:
         return cls(Kind.DOC, document)
 
     def input_path(self, ocr_dir):
-        """The ALTO file this came from, ready to open."""
+        """The ALTO file this came from, ready to open — or None.
+
+        Searched rather than composed. A volume's pages live under
+        `<doc>/content/data/doc_N/`, and the N is not something a
+        locator can know, so `<ocr>/<doc>/<stem>.xml` named a path that
+        has never existed on this corpus. None where the file is gone,
+        which is a thing that happens between a run and the reading of
+        its record.
+        """
         if self.kind is Kind.FILE:
             return self.path
         if self.kind is not Kind.PAGE:
             raise ValueError(f"no page in a {self.kind.value} locator")
-        return Path(ocr_dir) / self.doc / f"{self.page_id}.xml"
+        return next(Path(ocr_dir).joinpath(self.doc)
+                    .rglob(f"{self.page_id}.xml"), None)
 
     def xpath(self):
-        """An XPath into the produced TEI that lands on the right surface."""
+        """An XPath into the produced TEI that lands on the right surface.
+
+        On the local name: the produced file is namespaced, so
+        `//surface` matched nothing in it — an address that does not
+        resolve is worse than no address, because the reader spends the
+        afternoon believing the surface is missing.
+        """
         if self.kind is not Kind.PAGE:
             raise ValueError(f"no page in a {self.kind.value} locator")
-        return f"//surface[@xml:id='{self.page_id}']"
+        return (f"//*[local-name()='surface']"
+                f"[@xml:id='{self.page_id}']")
 
     def render(self):
         if self.kind is Kind.PAGE:

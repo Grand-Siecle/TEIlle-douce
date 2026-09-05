@@ -80,3 +80,17 @@ def test_a_document_with_no_container_says_zero_of_zero_honestly(monkeypatch):
     stats = pipeline.enrich_body(etree.fromstring(empty))
 
     assert stats["containers_found"] == 0
+
+
+def test_a_tree_with_no_body_counts_nothing_rather_than_raising():
+    """`content_root` returns None for a tree whose <body> has not been
+    built, and `apply_modernization_enriched` guards for exactly that —
+    the denominator did not, so the one line that exists to be safe
+    raised from inside it."""
+    tree = TEI.__new__(TEI)
+    tree.root = etree.fromstring(
+        "<TEI xmlns='http://www.tei-c.org/ns/1.0'><teiHeader/></TEI>")
+
+    stats = tree.modernize_body(line_data=[], enriched=False)
+
+    assert stats["containers_found"] == 0

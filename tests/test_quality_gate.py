@@ -260,4 +260,30 @@ def test_a_share_is_never_printed_as_equal_to_the_bar_it_cleared():
         record=RunRecord(), elapsed=3.0, exit_code=5, fail_on="never",
         page_loss_failures=failures, max_page_loss=30.0), width=92)
 
-    assert any("30.03% of its pages unusable" in line for line in shown), shown
+    assert any("30.03%" in line for line in shown), shown
+    assert any("of its pages unusable" in line for line in shown), shown
+
+
+def test_the_gate_keeps_its_verdict_and_its_share_at_every_width():
+    """`NOT MET` is the verdict of the block and the share is why. Both
+    were on lines whose losing half was clipped, so at forty columns the
+    heading read `--max-page-loss 30 NOT…` and the volume line lost the
+    number entirely."""
+    from pathlib import Path
+
+    from teille_douce.report.gate import page_loss_failures
+    from teille_douce.report.record import RunRecord
+    from teille_douce.report.summary import RunOutcome, render_summary
+
+    long = "BDD_1685_Felibien_Entretiens_sur_les_vies_tome_II"
+    failures = page_loss_failures({long: (300, 999)}, 30.0)
+
+    for width in (40, 48, 56, 72, 92, 120):
+        shown = render_summary(RunOutcome(
+            input_dir=Path("OCR"), output_dir=Path("out"), volumes_total=1,
+            volumes_written=1, pages_total=999, pages_written=699,
+            record=RunRecord(), elapsed=3.0, exit_code=5, fail_on="never",
+            page_loss_failures=failures, max_page_loss=30.0), width=width)
+
+        assert any("NOT MET" in line for line in shown), (width, shown)
+        assert any("30.03%" in line for line in shown), (width, shown)

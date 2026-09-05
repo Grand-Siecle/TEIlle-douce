@@ -112,15 +112,30 @@ def _columns(left, right, width):
     return pad(left, right, min(width, MAX_WIDTH) - _MARGIN, keep="left")
 
 
-def _entry(left, right, width):
+def _entry(label, measured, right, width):
     """A block entry, on one line or on two.
 
-    Both halves are load-bearing here and neither may be cut: the count
-    on the left, the cause on the right. Where the width cannot hold
-    both, the cause moves under its own entry rather than either being
-    shortened into a lie.
+    Three parts and a strict order of who gives way: the count never
+    does, the cause moves to a line of its own before it is cut, and the
+    alignment column goes first of all. Aligning the label to
+    twenty-two columns is worth two of the count's characters at ninety
+    and none at forty — where padding it left `1 402 of 4 …`, which is
+    the `11 of 16 pages → 11 of 1…` case this module exists to make
+    impossible, reproduced inside its own remedy.
     """
     room = min(width, MAX_WIDTH) - _MARGIN
+    wide = f"    {label:<22}{measured}"
+    narrow = f"    {label}  {measured}"
+    if cells(wide) <= room:
+        left = wide
+    elif cells(narrow) <= room:
+        left = narrow
+    else:
+        # The LABEL gives way, never the count. A volume named
+        # `BDD_1685_Felibien_Entretiens_sur_les_vies_tome_II` is what
+        # this corpus is full of, and clipping the composed line dropped
+        # the share it was measured by.
+        left = f"    {clip(label, max(1, room - cells(measured) - 6))}  {measured}"
     if cells(left) + cells(right) + 2 <= room:
         return [pad(left, right, room, keep="left")]
     return [clip(left, room), clip("      " + right, room)]
@@ -187,7 +202,7 @@ def _block_lines(outcome, block, width):
         shown = detail
         if code.repaired:
             shown = (shown + " (repaired)").strip()
-        lines.extend(_entry(f"    {label:<22}{measured}", shown, width))
+        lines.extend(_entry(label, measured, shown, width))
     return lines
 
 
@@ -299,7 +314,14 @@ def _verdict(outcome):
             causes.append(
                 f"{_plural(len(outcome.page_loss_failures), 'volume')} "
                 f"lost too many pages to publish")
-        phases = outcome.record.whole_phases_lost()
+        # Only a cause the LEVEL counts. `--fail-on never --max-page-loss
+        # 30` is a supported pair, and a run that also lost a phase named
+        # it on the last line — the one wrappers grep — over a gate block
+        # that had correctly named the one bar it failed. The same defect
+        # as the block blaming a repair, one function later.
+        phases = (outcome.record.whole_phases_lost()
+                  if gate_verdict(outcome.fail_on, outcome.record).tripped_by
+                  else 0)
         if phases:
             # Named, not assumed: with VieuxParler down and PyHellen up,
             # "no enrichment at all" is false and sends the reader to
@@ -372,12 +394,21 @@ def render_summary(outcome, width=92):
         if gate_verdict(outcome.fail_on, outcome.record).tripped_by:
             bars.append(f"--fail-on {outcome.fail_on}")
         asked = " ".join(bars) or f"--fail-on {outcome.fail_on}"
-        lines.append(_columns(f"  quality gate {asked}", "NOT MET", room))
+        # `keep="right"` here, alone in this module: NOT MET is the
+        # verdict of the block and the flag list beside it is the
+        # elastic half. Clipped to `--max-page-loss 30 NOT…` the line
+        # says nothing at all.
+        lines.append(pad(f"  quality gate {asked}", "NOT MET",
+                         min(room, MAX_WIDTH) - _MARGIN, keep="right"))
         for document, share in outcome.page_loss_failures:
-            lines.append(_columns(
-                f"    {document}",
-                f"{_share(share, outcome.max_page_loss)}% of its pages "
-                f"unusable", room))
+            # `_entry`, not `_columns`: this is the line the share was
+            # written for, and a volume name long enough — which is what
+            # this corpus has — pushed the share off it entirely, or
+            # left `30.…`. The remedy landed on the block entries and
+            # not on the block it was written for.
+            lines.extend(_entry(
+                document, f"{_share(share, outcome.max_page_loss)}%",
+                "of its pages unusable", room))
         # The lines that actually tripped it, taken from the gate's own
         # verdict. Re-deriving them from the blocks the level names
         # printed every line of those blocks — including the repaired

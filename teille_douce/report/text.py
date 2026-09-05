@@ -121,8 +121,13 @@ def pad(left, right, room, keep="right"):
     if gap >= 1:
         return left + " " * gap + right
     if keep == "left":
-        return clip(left + " " + right, room) if cells(left) + 2 > room else \
-            left + " " + clip(right, room - cells(left) - 1)
+        if cells(left) >= room:
+            # No room for the right at all. The left is what survives,
+            # whole if it fits exactly — `gap >= 1` above is about the
+            # SPACE between the columns, and falling through on account
+            # of it clipped a left that fitted.
+            return left if cells(left) == room else clip(left, room)
+        return left + " " + clip(right, room - cells(left) - 1)
     if cells(right) + 2 > room:
         return clip(left + " " + right, room)
     return clip(left, room - cells(right) - 1) + " " + right

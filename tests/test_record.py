@@ -25,17 +25,39 @@ from teille_douce.report.record import (Block, Code, Kind, Locator, Loss,
 # Locators: four ways to resolve one page
 # =============================================================================
 
-def test_a_page_locator_resolves_to_the_alto_file_it_came_from():
+def test_a_page_locator_resolves_to_the_alto_file_it_came_from(tmp_path):
+    """Against a real directory, not against a string. It composed
+    `<ocr>/<doc>/<stem>.xml`, and a volume's pages live under
+    `<doc>/content/data/doc_N/` — so the path it returned has never
+    existed on this corpus, and the test asserting it never looked."""
+    real = (tmp_path / "LIV0038_reconciled" / "content" / "data" / "doc_1")
+    real.mkdir(parents=True)
+    (real / "f284-259-0285.xml").write_text("<alto/>", encoding="utf-8")
+
     page = Locator.page("LIV0038_reconciled", "f284-259-0285")
 
-    assert page.input_path(Path("OCR")) == Path(
-        "OCR/LIV0038_reconciled/f284-259-0285.xml")
+    assert page.input_path(tmp_path) == real / "f284-259-0285.xml"
+
+
+def test_a_page_locator_that_cannot_find_its_file_says_so(tmp_path):
+    """A file can be gone between a run and the reading of its record,
+    and a path that does not exist is worse than an admission."""
+    assert Locator.page("LIV0038_reconciled", "f1").input_path(tmp_path) is None
 
 
 def test_a_page_locator_resolves_to_an_xpath_that_lands():
+    """Against the produced TEI, which is namespaced: `//surface` matched
+    nothing in it, and an address that does not resolve costs the reader
+    an afternoon believing the surface is missing."""
+    from lxml import etree
+
+    produced = etree.fromstring(
+        "<TEI xmlns='http://www.tei-c.org/ns/1.0'><sourceDoc>"
+        "<surface xml:id='f284-259-0285'/><surface xml:id='f2'/>"
+        "</sourceDoc></TEI>")
     page = Locator.page("LIV0038_reconciled", "f284-259-0285")
 
-    assert page.xpath() == "//surface[@xml:id='f284-259-0285']"
+    assert len(produced.xpath(page.xpath())) == 1
 
 
 def test_a_page_locator_knows_it_is_the_most_precise_kind():

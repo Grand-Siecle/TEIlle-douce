@@ -995,8 +995,14 @@ def _process_document(doc_name, filepaths, doc_dir, df_meta, config,
             f"[cyan]{escape(doc_name)}: Annotation linguistique[/cyan]", total=None, visible=True
         )
 
+        # "requests", not "containers": the callback fires once per text
+        # sent to PyHellen and a container can be several, so the bar was
+        # measured in one unit and the line it settles on in another. The
+        # DONE line below says containers, which is what the phase's
+        # losses are counted in; both are printed with their unit, and
+        # neither is the other's denominator.
         _enrich_progress = _phase_progress(reporter, progress, task_enrich,
-                                           doc_name, "enrich", "containers")
+                                           doc_name, "enrich", "requests")
 
         enrich_stats = tree.enrich_body(progress_callback=_enrich_progress)
         progress.update(task_enrich, visible=False)
@@ -1042,8 +1048,13 @@ def _process_document(doc_name, filepaths, doc_dir, df_meta, config,
             f"[cyan]{escape(doc_name)}: Modernisation du texte[/cyan]", total=None, visible=True
         )
 
+        # "batches": `_modernize_all` reports one unit per HTTP batch.
+        # Labelled containers, the bar filled to "10 of 10 containers" on
+        # a document with twenty-three and then jumped to 23 of 23 — the
+        # denominator changing meaning mid-phase, on the phase whose bar
+        # an operator watches longest.
         _mod_progress = _phase_progress(reporter, progress, task_mod,
-                                        doc_name, "modernize", "containers")
+                                        doc_name, "modernize", "batches")
 
         mod_stats = tree.modernize_body(
             line_data=line_data,
@@ -1084,6 +1095,19 @@ def _process_document(doc_name, filepaths, doc_dir, df_meta, config,
                     total=mod_stats["batches_failed"],
                     detail=f"{mod_stats.get('lines_lost', 0)} lines never "
                            f"reached VieuxParler"))
+            if mod_stats.get("retries_unreachable"):
+                # Block 3, beside the failed batches: a retry the service
+                # never answered is the service dying, not a guard doing
+                # its job, and filing it in block 2 hid it from every
+                # `--fail-on` level there is.
+                reporter.lost(Loss(
+                    Code.BATCH_FAILED, doc_name, "modernize.retry",
+                    Locator.document(doc_name),
+                    count=mod_stats["retries_unreachable"],
+                    total=mod_stats.get("lines_offered",
+                                        mod_stats["retries_unreachable"]),
+                    detail="VieuxParler did not answer the retry",
+                    unit="lines"))
             if mod_stats.get("readings_rejected"):
                 # Block 2. The service answered and the guard refused
                 # what it answered — a divergent reading kept as its

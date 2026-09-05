@@ -22,6 +22,9 @@ from teille_douce.settings import get_settings, set_settings
 
 logger = logging.getLogger(__name__)
 
+# "no handler was installed", told apart from a handler that IS None.
+_UNSET = object()
+
 # fork() in a multi-threaded parent (rich's progress refresh thread,
 # coverage's tracing) deadlocks intermittently — observed locally and in
 # CI, and warned about by Python itself. The forkserver context forks
@@ -488,20 +491,33 @@ def build_sourcedoc(
     def _hold(signum, frame):
         deferred.append(signum)
 
+    # A sentinel, not None: `signal.signal` legitimately returns None for
+    # a handler set outside Python, and treating that as "we never
+    # installed one" leaks the deferral just as surely as no restore at
+    # all would.
+    held = _UNSET
     try:
-        previous = signal.signal(signal.SIGINT, _hold)
+        held = signal.signal(signal.SIGINT, _hold)
     except ValueError:      # pragma: no cover - not the main thread
-        previous = None
-    pool = _MP_CONTEXT.Pool(
-        workers,
-        initializer=_init_worker,
-        initargs=(
-            document_name, segmonto_zones, segmonto_lines, config,
-            iiif_mapping_dict, settings,
-        ),
-    )
-    if previous is not None:
-        signal.signal(signal.SIGINT, previous)
+        pass
+    try:
+        pool = _MP_CONTEXT.Pool(
+            workers,
+            initializer=_init_worker,
+            initargs=(
+                document_name, segmonto_zones, segmonto_lines, config,
+                iiif_mapping_dict, settings,
+            ),
+        )
+    finally:
+        # In a `finally`, because `Pool()` raises: too many open files,
+        # a forkserver that will not start. `execute` catches Exception
+        # around each document, so without this the run carried on over
+        # every remaining volume with the deferring handler still
+        # installed — Ctrl-C dead for the rest of the process, which is
+        # the outcome deferring instead of ignoring exists to avoid.
+        if held is not _UNSET:
+            signal.signal(signal.SIGINT, held)
     try:
         if deferred:
             raise KeyboardInterrupt

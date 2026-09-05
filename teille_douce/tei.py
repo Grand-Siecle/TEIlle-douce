@@ -253,7 +253,12 @@ class TEI:
         # written after modernization runs — and put back the full-tree
         # Python walk `utils.xml` exists to avoid: 473 elements against
         # 90 on the eight-page fixture.
-        stats["containers_found"] = count_containers(content_root(self.root))
+        # Guarded like its sibling `apply_modernization_enriched`: a tree
+        # with no <body> yet has no content root, and counting nothing is
+        # the right answer rather than an AttributeError from inside the
+        # denominator.
+        body = content_root(self.root)
+        stats["containers_found"] = 0 if body is None else count_containers(body)
 
         # Get line texts
         if line_data is None:

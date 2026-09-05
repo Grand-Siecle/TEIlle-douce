@@ -401,3 +401,23 @@ def test_a_real_run_shows_the_phase_it_is_in(tmp_path):
     # Rich task and no reporter call at all, so the panel drew a finished
     # sourceDoc over an empty gap while the zones were read.
     assert "body+lang" in screen, screen[-4000:]
+
+
+def test_a_phase_measures_its_progress_in_the_unit_it_reports():
+    """The modernize callback fires once per HTTP batch and the phase was
+    declared in containers, so the bar filled to "10 of 10 containers" on
+    a document with twenty-three and then jumped to 23 of 23 — the
+    denominator changing meaning mid-phase. Enrichment had the same
+    shape: its callback counts requests, and a container can be several.
+    """
+    import inspect
+    import re
+
+    source = inspect.getsource(run_module._process_document)
+    running = dict(re.findall(
+        r'_phase_progress\([^)]*?"([^"]+)",\s*\n?\s*"([^"]+)"\)', source,
+        re.S))
+
+    assert running.get("enrich") == "requests", running
+    assert running.get("modernize") == "batches", running
+    assert running.get("sourceDoc", "pages") == "pages", running

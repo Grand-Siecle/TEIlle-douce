@@ -17,6 +17,7 @@ import shutil
 from pathlib import Path
 
 import pytest
+from lxml import etree
 
 from teille_douce.cli import app, run as run_module
 from teille_douce.settings import use_settings
@@ -275,7 +276,41 @@ def test_a_panel_that_would_not_shut_down_says_so_where_it_can_be_read(
     assert "Live.stop blew up" in seen.getvalue()
 
 
-def test_an_interrupt_during_the_pools_birth_is_held_and_not_lost():
+def test_a_pool_that_will_not_start_leaves_ctrl_c_working(monkeypatch,
+                                                          tmp_path):
+    """SIGINT is deferred across the pool's birth so a Ctrl-C cannot
+    catch a worker half-unpickled. Restored on the happy path only, that
+    deferral leaked the moment `Pool()` raised — too many open files, a
+    forkserver that will not start — and `execute` catches Exception
+    around each document, so the run carried on over every remaining
+    volume with Ctrl-C DEAD. Which is the outcome deferring instead of
+    ignoring exists to avoid.
+    """
+    import signal
+
+    from teille_douce.sourcedoc import builder
+
+    class Refuses:
+        def Pool(self, *args, **kwargs):
+            raise OSError(24, "too many open files")
+
+        def get_start_method(self):
+            return "forkserver"
+
+    monkeypatch.setattr(builder, "_MP_CONTEXT", Refuses())
+    before = signal.getsignal(signal.SIGINT)
+
+    page = tmp_path / "f1.xml"
+    page.write_text("<alto/>", encoding="utf-8")
+    with pytest.raises(OSError):
+        builder.build_sourcedoc("D1", etree.Element("TEI"), [page], (), (),
+                                {"iiifURI": None})
+
+    assert signal.getsignal(signal.SIGINT) is before
+
+
+def test_an_interrupt_during_the_pools_birth_is_raised_not_swallowed(
+        monkeypatch, tmp_path):
     """A Ctrl-C arriving while the worker pool is being born catches a
     worker half-unpickled and prints its traceback across the report —
     half of all interrupt timings did, once straight through the final
@@ -284,20 +319,49 @@ def test_an_interrupt_during_the_pools_birth_is_held_and_not_lost():
     worse: a Ctrl-C that does nothing.
 
     So it is DEFERRED, and raised again as soon as there is a pool to
-    shut down.
+    shut down. Sent for real here rather than asserted about the source:
+    a test that greps for `raise KeyboardInterrupt` would have passed
+    over the leak the sibling test above covers.
     """
-    import inspect
+    import os
     import signal
 
     from teille_douce.sourcedoc import builder
 
-    source = inspect.getsource(builder.build_sourcedoc)
-    # The disposition installed across `Pool(...)` records the signal
-    # instead of dropping it, and the handler is put back immediately.
-    assert "signal.SIG_IGN" not in source, (
-        "an ignored SIGINT is a lost Ctrl-C")
-    assert "raise KeyboardInterrupt" in source
-    assert signal.getsignal(signal.SIGINT) is not signal.SIG_IGN
+    stopped = []
+
+    class Pool:
+        def imap_unordered(self, function, jobs):
+            return iter(())
+
+        def close(self):
+            stopped.append("close")
+
+        def join(self):
+            pass
+
+        def terminate(self):
+            stopped.append("terminate")
+
+    class SignalsMidBirth:
+        def Pool(self, *args, **kwargs):
+            os.kill(os.getpid(), signal.SIGINT)
+            return Pool()
+
+        def get_start_method(self):
+            return "forkserver"
+
+    monkeypatch.setattr(builder, "_MP_CONTEXT", SignalsMidBirth())
+    before = signal.getsignal(signal.SIGINT)
+
+    page = tmp_path / "f1.xml"
+    page.write_text("<alto/>", encoding="utf-8")
+    with pytest.raises(KeyboardInterrupt):
+        builder.build_sourcedoc("D1", etree.Element("TEI"), [page], (), (),
+                                {"iiifURI": None})
+
+    assert "terminate" in stopped, "the pool was left running"
+    assert signal.getsignal(signal.SIGINT) is before
 
 
 def test_the_forkserver_is_started_before_there_is_anything_to_interrupt():
@@ -305,9 +369,29 @@ def test_the_forkserver_is_started_before_there_is_anything_to_interrupt():
     live SIGINT handler, and a Ctrl-C landing while it preloads the
     builder killed it mid-import — printing a
     `multiprocessing/forkserver.py` traceback over the report."""
-    import inspect
+    import signal
 
     from teille_douce.sourcedoc import builder
 
-    assert "warm_up" in inspect.getsource(run_module.execute)
-    assert "SIG_IGN" in inspect.getsource(builder.warm_up)
+    builder.warm_up()
+
+    # And it gives the handler back: the window is one instant at
+    # startup, not the rest of the run.
+    assert signal.getsignal(signal.SIGINT) is not signal.SIG_IGN
+
+
+def test_an_interrupt_before_the_loop_is_not_a_traceback(monkeypatch,
+                                                         capsys):
+    """The document loop has its own handler; everything before it —
+    loading the CSVs, probing the services, unpacking archives, which is
+    minutes on the real corpus — had none, so a Ctrl-C there came out as
+    a raw KeyboardInterrupt traceback with no report and no manifest."""
+    from teille_douce.cli import app
+
+    def interrupted(args):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(run_module, "execute", interrupted)
+
+    assert app.main(["run", "--no-config"]) == 130
+    assert "Interrupted" in capsys.readouterr().err

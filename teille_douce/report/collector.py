@@ -88,6 +88,11 @@ class Run:
     # -- what the pipeline tells it ---------------------------------------
 
     def document_started(self, name, pages, at=None):
+        with self.lock:
+            self._document_started(name, pages, at)
+        self._on_change()
+
+    def _document_started(self, name, pages, at=None):
         self._open = name
         self._open_pages = pages
         # None, not 0: `or` cannot tell "not measured yet" from
@@ -95,7 +100,6 @@ class Run:
         self._open_read = None
         self._open_started = at if at is not None else time.monotonic()
         self._phases = {}
-        self._on_change()
 
     def pages_read(self, document, count):
         """Pages read in the volume still open: work done and not saved.
@@ -104,8 +108,9 @@ class Run:
         is exactly "at risk" — claiming it as written would make the bar
         promise more than the disk holds.
         """
-        if document == self._open:
-            self._open_read = count
+        with self.lock:
+            if document == self._open:
+                self._open_read = count
         self._on_change()
 
     def step(self, document, step):
@@ -115,7 +120,8 @@ class Run:
         today, so a document that raises loses the step it raised in —
         which is what a reader needs first.
         """
-        self._steps[document] = step
+        with self.lock:
+            self._steps[document] = step
 
     def phase(self, document, name, state, done=0, total=None, unit="",
               rate=None, waiting=None, timeout=None, note="", reason="",
@@ -209,7 +215,8 @@ class Run:
             self.on_incident(loss)
 
     def archive_failed(self, name, reason):
-        self._failed_archives.append((name, reason))
+        with self.lock:
+            self._failed_archives.append((name, reason))
         self.lost(Loss(Code.ARCHIVE_CORRUPT, name, "expand",
                        Locator.file(self.input_dir / name), count=1, total=1,
                        detail=reason))
@@ -220,12 +227,25 @@ class Run:
         An incident and not a source defect: the ALTO may be perfectly
         good, and the remedy is a mode change rather than a repack.
         """
-        self._failed_archives.append((name, reason))
+        with self.lock:
+            self._failed_archives.append((name, reason))
         self.lost(Loss(Code.VOLUME_UNREADABLE, name, "expand",
                        Locator.document(name), count=1, total=1,
                        detail=reason))
 
     def document_finished(self, name, ok, reason="", at=None):
+        # `lost()` takes the lock itself and calls `on_incident` outside
+        # it, so the failure branch below is deliberately not wrapped
+        # whole: a filesystem write must not run while the drawing thread
+        # is waiting to render.
+        with self.lock:
+            failure = self._document_finished(name, ok, reason, at)
+        if failure is not None:
+            self.lost(failure)
+        self._on_change()
+
+    def _document_finished(self, name, ok, reason, at):
+        failure = None
         if ok:
             if self._open_started is not None and self._open_pages:
                 took = (at if at is not None else time.monotonic()) \
@@ -251,14 +271,14 @@ class Run:
             # Nothing was written, so nothing may be claimed: the at-risk
             # pages go with it, or the bar keeps growing on work that was
             # thrown away.
-            self.lost(Loss(Code.DOCUMENT_FAILED, name,
+            failure = Loss(Code.DOCUMENT_FAILED, name,
                            self._steps.get(name, "run"),
                            Locator.document(name), count=1, total=1,
-                           detail=reason))
+                           detail=reason)
         self._open = None
         self._open_read = None
         self._open_pages = 0
-        self._on_change()
+        return failure
 
     # -- what the reporters read ------------------------------------------
 

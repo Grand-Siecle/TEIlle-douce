@@ -558,3 +558,44 @@ def test_one_volume_is_not_written_as_one_volumes():
     shown = render_summary(outcome(record=record, exit_code=5), width=92)
 
     assert not any("1 volumes" in line for line in shown), shown
+
+
+def test_the_count_is_the_last_thing_a_narrow_line_gives_up():
+    """`_entry`'s two-line form spent the second line on the cause and
+    clipped the count instead: `1 402 of 4 …` at forty columns — the
+    `11 of 16 pages → 11 of 1…` case this module exists to make
+    impossible, reproduced inside its own remedy. The order is fixed:
+    the alignment column goes first, then the cause moves to a line of
+    its own, then the label is shortened. The count never gives way."""
+    from teille_douce.report.text import cells
+
+    record = RunRecord()
+    record.add(Loss(Code.CONTAINER_FAILED, "D1", "enrich",
+                    Locator.document("D1"), count=1402, total=4000,
+                    detail="the pipeline raised on these"))
+
+    for width in range(40, 101):
+        shown = render_summary(outcome(record=record), width=width)
+        assert any("1 402 of 4 000 containers" in line for line in shown), (
+            width, [l for l in shown if "containers" in l])
+        for line in shown:
+            if not _exempt(line):
+                assert cells(line) <= min(width, 100), (width, line)
+
+
+def test_a_verdict_never_names_a_cause_the_level_does_not_count():
+    """`--fail-on never --max-page-loss 30` is a supported pair. A run
+    that also lost a phase named it on the last line — the one wrappers
+    grep — over a gate block that had correctly named the one bar it
+    failed."""
+    record = RunRecord()
+    record.add(Loss(Code.PHASE_LOST, "LIV0001", "enrich",
+                    Locator.document("LIV0001"), count=1402, total=1402,
+                    detail="PyHellen down"))
+
+    shown = rendered(outcome(
+        record=record, exit_code=5, fail_on="never",
+        page_loss_failures=(("LIV0044", 40.0),), max_page_loss=30.0))
+
+    assert "lost too many pages" in shown
+    assert "carries no enrich" not in shown, shown
