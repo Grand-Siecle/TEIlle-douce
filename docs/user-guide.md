@@ -167,9 +167,50 @@ teille-douce run
 Output goes to `tei_output/`, one `<name>.tei.xml` per volume. Progress is shown
 per document and per page.
 
+`run` takes the volumes to convert as arguments — a directory name, the
+internal id parsed from it, or a glob:
+
+```bash
+teille-douce run LIV0044              # one volume
+teille-douce run 'LIV003*' -x LIV0038 # a glob, minus one
+teille-douce run --fast --dry-run     # what would happen, writing nothing
+```
+
 | Option | Effect |
 |---|---|
-| `--skip-existing` | Skip volumes whose TEI output already exists. Minimal resume after an interrupted run. |
+| `DOC ...` | Volumes to convert. A selector matching nothing stops the run — a typo must not look like an empty corpus. |
+| `-x, --exclude PATTERN` | Drop volumes after selection. Repeatable. **A pattern matching nothing stops the run**, like a selector: an exclusion that silently misses converts at full cost the volume it was meant to hold back. A standing `-x` in a wrapper therefore has to be removed the day its volume leaves the corpus. |
+| `--limit N` | Convert at most N of those selected, in order. |
+| `--skip-existing` / `--force` | Skip volumes already converted / convert them anyway. |
+| `-i, --input` · `-o, --output` | Input and output directories. |
+| `--entities` · `--metadata` · `--persons` | Entity CSVs, and the two catalogues. |
+| `--fast` | No annotation phase at all: no service, no model. |
+| `--phases LIST` | Set the phases outright: `enrich,modernize,ner`, `all` or `none`. |
+| `--enrich`/`--no-enrich`, and likewise for `modernize` and `ner` | Add or remove one phase from the current set. |
+| `--pyhellen URL` · `--vieuxparler URL` · `--health-timeout S` | The two services. |
+| `-j, --jobs N` · `--batch-size N` · `--concurrency N` | Workers, lines per request, in-flight requests. |
+| `--device DEV` | Where the NER models run: `auto` (the default: a CUDA GPU if there is one, the CPU otherwise), `cpu`, `cuda`, `cuda:1`, `mps`. Naming one matters on a shared GPU somebody else has filled and on a machine with more than one — neither of which the pipeline can guess. Apple silicon is not chosen automatically: ask for `mps`. The run says which device it chose before loading several gigabytes of model. |
+| `--no-probe` | Do not probe the services; assume they answer. |
+| `--require-services` | A phase whose service is down is fatal (exit 3) **before anything is written**, instead of a warning and a run without that annotation. |
+| `-n, --dry-run` | Resolve everything, list the plan, write nothing. |
+| `--fail-fast` | Stop at the first volume that fails. |
+| `--max-failures N` | Stop after N failed volumes. |
+| `-v` / `-vv` / `-q` · `--log-level` · `--log-file` / `--no-log-file` | Console detail and the run log. `-q` drops the per-document chatter and the progress bars; the warnings a phase prints about what it lost, the failures and the summary stay. `-qq` additionally raises the log threshold to ERROR, which silences logger-emitted warnings — not the ones a phase prints itself, which are never hidden. |
+
+**Phases resolve left to right.** `--phases` replaces the set, then each
+`--X` / `--no-X` applies as a delta — so `--fast --enrich` means *no service
+work except enrichment*. Naming a phase in `--phases` and removing it with
+`--no-X` is refused: there is no reading of that which says what you meant.
+
+A document that fails never stops the others: it is logged, reported
+`FAILED`, and the run moves on. `--fail-fast` and `--max-failures` are the
+only ways to change that, and both are off by default. When either stops a
+run, the summary says how many volumes were never attempted.
+
+**Exit codes.** `0` everything asked for succeeded · `1` some volumes failed
+· `2` usage error · `3` misconfiguration, nothing ran (input directory
+missing, no volumes found, a selector **or an exclusion** matched nothing, `--require-services`
+with a service down).
 
 A document that fails does not kill the run: the error is logged with its
 traceback, the document is reported as `FAILED`, and processing continues. The
@@ -177,9 +218,10 @@ run ends with a summary and exits **non-zero** if anything failed — so it can 
 trusted in a script. Entity CSVs written before a failure are cleaned up, so
 nothing references a TEI that was never produced.
 
-**Logs.** Each run writes its own timestamped file, `pipeline_YYYYmmdd_HHMMSS.log`,
-at DEBUG level. The console shows warnings and errors only, unless you set
-`DEBUG = True` in `teille_douce/config.py`. Change or disable the log file with `LOG_FILE`.
+**Logs.** Each run writes its own file, `pipeline_YYYYmmdd_HHMMSS_PID.log`, at
+DEBUG level — the process id is there so that volumes launched in parallel,
+which start inside the same second, do not truncate each other's log. The console shows warnings and errors only, unless you set
+`-v` (`-vv` for debug). Move or disable the run log with `--log-file` / `--no-log-file`.
 
 **Cost.** With every annotation phase enabled, a full volume takes tens of
 minutes — most of it waiting on the two HTTP services. Page parsing itself is
@@ -190,7 +232,7 @@ parallel, capped at `min(cpu_count(), 8)` workers.
 To convert without the three annotation phases — no services, no models:
 
 ```bash
-TDOUCE_NER=0 TDOUCE_ENRICHMENT=0 TDOUCE_MODERNIZE=0 teille-douce run
+teille-douce run --fast
 ```
 
 You get a complete base TEI: header, `sourceDoc`, text structure, notes,
@@ -206,26 +248,86 @@ column expectations, software versions written into `<appInfo>`, the
 responsibility statement, the languages to detect, the confidence thresholds. It
 is meant to be edited.
 
+**Command-line flags** win over everything, per setting: a flag you did not
+pass does not shadow what the environment supplied, so `-o /tmp/out` leaves
+`TDOUCE_OCR_DIR` in charge of the input. The chain is
+
+```
+flag  >  environment (TDOUCE_*)  >  config file  >  config.py default
+```
+
+The config file is a `teille-douce.toml` found by walking up from the
+working directory, or the one `--config PATH` names; `--no-config` skips
+discovery. It may set only the runtime settings — a key it does not know is
+an error naming the nearest valid one, because silently ignoring it is how
+you spend an afternoon.
+
+```toml
+[paths]
+input = "OCR"
+output = "tei_output"
+
+[phases]
+ner = false            # no GPU on this machine
+
+[services]
+pyhellen = "http://pyhellen.labo:9000"
+
+[limits]
+jobs = 4
+```
+
+The keys are the ones in the table below, second column: each setting has
+one, and it is not derivable from the variable name — `TDOUCE_OCR_DIR` is
+`paths.input`.
+
+**A relative path in the config file is read next to that file**, not next
+to the working directory: the file is found by walking up, so one line has
+to mean the same thing from every subdirectory it was written to serve.
+`output = "tei"` in `/corpus/teille-douce.toml` is `/corpus/tei` wherever
+you launch the run from. An empty value is refused like any other, and
+`~` means your home directory — in the config file, in a `TDOUCE_*`
+variable and in a quoted flag alike, since only a shell expands it for you.
+
 **Environment variables** override what moves between machines and between runs
 — paths, service URLs, timeouts, and the phase switches. The prefix is
 `TDOUCE_`, from the pipeline's original name; it is kept so that existing
 wrapper scripts and CI configurations keep working:
 
-| Variable | Default | Meaning |
-|---|---|---|
-| `TDOUCE_OCR_DIR` | `OCR` | Input directory |
-| `TDOUCE_OUTPUT_DIR` | `tei_output` | Output directory |
-| `TDOUCE_ENRICHMENT` | `1` | Linguistic enrichment on/off |
-| `TDOUCE_MODERNIZE` | `1` | Modernization on/off |
-| `TDOUCE_NER` | `1` | Named-entity recognition on/off |
-| `TDOUCE_PYHELLEN_URL` | `http://localhost:8000` | PyHellen base URL |
-| `TDOUCE_PYHELLEN_TIMEOUT` | `120` | Seconds per PyHellen request |
-| `TDOUCE_MODERNIZE_URL` | `http://localhost:8011` | VieuxParler base URL, for every language with no specific override |
-| `TDOUCE_MODERNIZE_URL_<IDENT>` | — | Same, for one language only (`TDOUCE_MODERNIZE_URL_FRA`) |
-| `TDOUCE_MODERNIZE_TIMEOUT` | `300` | Seconds per modernization batch |
-| `TDOUCE_MODERNIZE_SIMILARITY_MIN` | `0.8` | Below this similarity, a modernized line is rejected as a hallucination |
-| `TDOUCE_HEALTH_TIMEOUT` | `30` | Seconds for the reachability probe both services answer before a run |
-| `TDOUCE_TEI_RNG` | — | Path to a `tei_all.rng`, for the schema-validation tests |
+| Variable | Config key | Default | Meaning |
+|---|---|---|---|
+| `TDOUCE_OCR_DIR` | `paths.input` | `OCR` | Input directory |
+| `TDOUCE_OUTPUT_DIR` | `paths.output` | `tei_output` | Output directory |
+| `TDOUCE_ENRICHMENT` | `phases.enrich` | `1` | Linguistic enrichment on/off |
+| `TDOUCE_MODERNIZE` | `phases.modernize` | `1` | Modernization on/off |
+| `TDOUCE_NER` | `phases.ner` | `1` | Named-entity recognition on/off |
+| `TDOUCE_PYHELLEN_URL` | `services.pyhellen` | `http://localhost:8000` | PyHellen base URL |
+| `TDOUCE_PYHELLEN_TIMEOUT` | `services.pyhellen_timeout` | `120` | Seconds per PyHellen request |
+| `TDOUCE_MODERNIZE_URL` | `services.modernize` | `http://localhost:8011` | VieuxParler base URL, for every language with no specific override |
+| `TDOUCE_MODERNIZE_URL_<IDENT>` | — | — | Same, for one language only (`TDOUCE_MODERNIZE_URL_FRA`) |
+| `TDOUCE_MODERNIZE_TIMEOUT` | `services.modernize_timeout` | `300` | Seconds per modernization batch |
+| `TDOUCE_MODERNIZE_SIMILARITY_MIN` | `limits.similarity_min` | `0.8` | Below this similarity, a modernized line is rejected as a hallucination |
+| `TDOUCE_HEALTH_TIMEOUT` | `services.health_timeout` | `30` | Seconds for the reachability probe both services answer before a run |
+| `TDOUCE_TEI_RNG` | — | — | Path to a `tei_all.rng`, for the schema-validation tests |
+| `TDOUCE_ENTITIES_DIR` | `paths.entities` | `entities` | Where the NER entity CSVs go |
+| `TDOUCE_METADATA_CSV` | `paths.metadata` | `metadata_livre.csv` | Volume catalogue |
+| `TDOUCE_PERSONS_CSV` | `paths.persons` | `metadata_personne.csv` | Person catalogue |
+| `TDOUCE_SKIP_EXISTING` | `output.skip_existing` | `0` | Resume: skip volumes already converted |
+| `TDOUCE_JOBS` | `limits.jobs` | `8` | Page-parsing workers |
+| `TDOUCE_MODERNIZE_BATCH_SIZE` | `limits.batch_size` | `64` | Lines per modernization request |
+| `TDOUCE_MODERNIZE_CONCURRENCY` | `limits.concurrency` | `8` | In-flight requests to VieuxParler |
+| `TDOUCE_PYHELLEN_CONCURRENCY` | `limits.concurrency` | `8` | In-flight requests to PyHellen |
+| `TDOUCE_PYHELLEN_MAX_CONSECUTIVE_FAILURES` | `limits.max_consecutive_failures` | `10` | Circuit breaker: stop calling after this many failures in a row |
+| `TDOUCE_NER_CONFIDENCE` | `limits.ner_confidence` | `0.6` | Below this, an entity prediction is dropped |
+| `TDOUCE_NER_DEVICE` | `models.device` | `auto` | Where the NER models run: `auto`, `cpu`, `cuda`, `cuda:1`, `mps` |
+| `TDOUCE_DEBUG` | `output.debug` | `0` | Verbose diagnostics, in the console and in the run log |
+| `TDOUCE_LOG_LEVEL` | `output.log_level` | `WARNING` | Console level |
+| `TDOUCE_LOG_FILE` | `output.log_file` | `pipeline.log` | Run log; each run writes its own timestamped file |
+
+`--concurrency` and `limits.concurrency` set both services at once;
+`TDOUCE_PYHELLEN_CONCURRENCY` and `TDOUCE_MODERNIZE_CONCURRENCY` set one
+each. The table above is checked against the code by a test, so it cannot
+drift.
 
 Booleans accept `1`/`true`/`yes`/`on` and `0`/`false`/`no`/`off`,
 case-insensitive.
@@ -271,7 +373,15 @@ measured on real output for this corpus, where modernized similarity runs
 
 ### NER — named entities
 
-Runs locally, no service, but needs `requirements-ner.txt`. Two models:
+Runs locally, no service, but needs `pip install -e '.[ner]'`. Both models
+load on a CUDA GPU when there is one and on the CPU otherwise; `--device`
+(or `TDOUCE_NER_DEVICE`, or `models.device`) overrides that, and the run
+prints the device it chose before downloading several gigabytes of model.
+Apple silicon is not picked automatically — `--device mps` asks for it.
+Left on `auto`, the Flair model keeps whatever device Flair itself
+selected, so an existing `FLAIR_DEVICE` still applies.
+
+Two models:
 **CamemBERT** (`pjox/camembert-classical-fr-ner`) for persons, places and
 organizations in French, reading the `<orig>` text; **GLiNER**
 (`urchade/gliner_multi-v2.1`) for artworks, literary works, materials,
@@ -501,6 +611,28 @@ breakdown and for what the eleven rules check.
 `.xml` files. Loose XML files at the top level of `OCR/` are not picked up:
 every volume needs its own directory.
 
+**`N directories with no ALTO file, nothing to convert`** — those volumes
+exist as directories but hold no `.xml` anywhere under them, usually an
+archive packed without its ALTO subfolder. They are named in the warning, in
+the log and in the summary line (`… (N more held no ALTO)`), and the run
+continues on the rest: nothing was converted from them, and nothing failed
+either, so they do not change the exit status.
+
+The exception is a corpus where they are *all* there is, with nothing
+already converted to resume from: that exits 3, because the exit codes
+describe the run and not the volumes, and a run handed nothing it could
+convert did not run. It is also, far more often than a corpus of empty
+volumes, an `-i` pointing one directory too high — which is the reading
+exit 3 is there to suggest.
+
+**`N directories could not be read`** — a different diagnosis, and a
+failure: the volume may well hold ALTO, this process is simply not allowed
+to list the directory. It is named like a corrupt archive, counted in the
+denominator, and the run exits 1. Check the mode of the directory rather
+than repacking the volume. Under `--skip-existing` a volume whose TEI is
+already there is skipped without being opened, mode and all, so a nightly
+wrapper does not go red over one there is nothing left to convert.
+
 **The header is full of `Information not available.`** — no catalogue row
 matched. Check that the `BDD` column of `metadata_livre.csv` contains exactly
 the internal id parsed from the directory name (`LIV0002a_reconciled` →
@@ -515,7 +647,7 @@ answer its probe. There is one warning line at the start of the run saying which
 one. Check the URL, and raise `TDOUCE_HEALTH_TIMEOUT` if the server is remote
 and still loading its model.
 
-**No entities** — `requirements-ner.txt` is not installed, or `TDOUCE_NER=0`.
+**No entities** — the NER extra is not installed, or the phase was off (`--no-ner`, `--fast`, or `TDOUCE_NER=0`).
 The first NER run also downloads several GB of models.
 
 **A setting seems ignored** — look for a `RuntimeWarning` naming the variable.
@@ -541,4 +673,4 @@ with `--skip-existing` to convert only what is missing.
 **No images in a TEI viewer** — the volume has neither a `manifest_iiif` value
 nor a mapping CSV, or the mapping matched under 30 % of the filenames and was
 rejected. For a non-Gallica IIIF server, set `IIIF_URI["image_base"]` in
-`teille_douce/config.py`.
+`teille_douce/config.py` — it describes the project, so it has no flag.

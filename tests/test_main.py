@@ -7,14 +7,14 @@ from datetime import datetime
 from pathlib import Path
 from zipfile import ZipFile
 
-from teille_douce.cli.app import build_parser
+from teille_douce.cli.app import parse_args
 from teille_douce.cli.run import _run_log_path, expand_archives
 
 
 def _parse_args(argv):
     """Argument parsing moved to teille_douce.cli.app; the behaviour these
     tests pin did not."""
-    return build_parser().parse_args(argv)
+    return parse_args(argv)
 
 
 # =============================================================================
@@ -176,9 +176,11 @@ def test_extract_archive_cleans_tmp_dir_when_extraction_fails(tmp_path, monkeypa
 
 def test_run_log_path_is_timestamped_per_run():
     """Audit 2.10 : chaque run ecrit son propre log, plus d'ecrasement."""
+    import os
+
     base = Path("pipeline.log")
     horodate = _run_log_path(base, datetime(2026, 8, 28, 9, 30, 0))
-    assert horodate == Path("pipeline_20260828_093000.log")
+    assert horodate == Path(f"pipeline_20260828_093000_{os.getpid()}.log")
 
 
 def test_run_log_path_two_runs_two_files():
@@ -186,3 +188,23 @@ def test_run_log_path_two_runs_two_files():
     matin = _run_log_path(base, datetime(2026, 8, 28, 9, 30, 0))
     soir = _run_log_path(base, datetime(2026, 8, 28, 21, 0, 5))
     assert matin != soir
+
+
+def test_two_runs_in_the_same_second_do_not_share_a_log_file(monkeypatch):
+    """mode="w" on a shared name is what _run_log_path exists to prevent,
+    and a timestamp to the second does not prevent it: a launcher firing
+    several volumes at once starts them inside the same second, and one
+    run then truncated another's log. Checking the name for existence
+    first would not help — the handler is lazy, so neither file is there
+    when the two runs choose their name."""
+    import os
+
+    base = Path("pipeline.log")
+    instant = datetime(2026, 8, 28, 9, 30, 0)
+
+    monkeypatch.setattr(os, "getpid", lambda: 4711)
+    one = _run_log_path(base, instant)
+    monkeypatch.setattr(os, "getpid", lambda: 4712)
+    other = _run_log_path(base, instant)
+
+    assert one != other

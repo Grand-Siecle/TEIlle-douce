@@ -15,14 +15,8 @@ from urllib.error import URLError, HTTPError
 
 import httpx
 
-from teille_douce.config import (
-    HEALTH_TIMEOUT,
-    PYHELLEN_URL,
-    PYHELLEN_TIMEOUT,
-    PYHELLEN_MODELS,
-    PYHELLEN_MAX_CONCURRENT,
-    PYHELLEN_MAX_CONSECUTIVE_FAILURES,
-)
+from teille_douce.config import PYHELLEN_MODELS
+from teille_douce.settings import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -62,8 +56,8 @@ def check_server():
         bool: True if server responds to health check.
     """
     try:
-        req = Request(f"{PYHELLEN_URL}/api/languages", method="GET")
-        with urlopen(req, timeout=HEALTH_TIMEOUT) as resp:
+        req = Request(f"{get_settings().pyhellen_url}/api/languages", method="GET")
+        with urlopen(req, timeout=get_settings().health_timeout) as resp:
             return resp.status == 200
     except (URLError, HTTPError, OSError):
         return False
@@ -93,11 +87,11 @@ async def _tag_texts_async(requests, progress_callback=None, transport=None):
 
     The old client opened one blocking urllib connection per container:
     thousands of sequential round-trips per document. This sends up to
-    PYHELLEN_MAX_CONCURRENT requests at a time through a single
+    `pyhellen_concurrency` requests at a time through a single
     httpx.AsyncClient — the same model modernize.py already uses.
 
     A circuit breaker (audit 2.7) opens after
-    PYHELLEN_MAX_CONSECUTIVE_FAILURES consecutive failures: a frozen
+    `pyhellen_max_consecutive_failures` consecutive failures: a frozen
     server must not turn into hours of sequential timeouts. Pending
     requests are then skipped and reported as such. One success resets
     the counter.
@@ -113,7 +107,7 @@ async def _tag_texts_async(requests, progress_callback=None, transport=None):
         ("breaker", message).
     """
     results = [None] * len(requests)
-    sem = asyncio.Semaphore(PYHELLEN_MAX_CONCURRENT)
+    sem = asyncio.Semaphore(get_settings().pyhellen_concurrency)
     state = {"consecutive": 0, "open": False, "done": 0}
 
     async def _one(client, i, text, model):
@@ -123,7 +117,7 @@ async def _tag_texts_async(requests, progress_callback=None, transport=None):
             else:
                 try:
                     resp = await client.post(
-                        f"{PYHELLEN_URL}/api/tag/{model}", json={"text": text}
+                        f"{get_settings().pyhellen_url}/api/tag/{model}", json={"text": text}
                     )
                     resp.raise_for_status()
                     tokens, misaligned = _process_response(resp.json(), text)
@@ -132,8 +126,8 @@ async def _tag_texts_async(requests, progress_callback=None, transport=None):
                 except Exception as e:
                     state["consecutive"] += 1
                     results[i] = ("error", f"{type(e).__name__}: {e}")
-                    if (state["consecutive"] >= PYHELLEN_MAX_CONSECUTIVE_FAILURES
-                            and not state["open"]):
+                    breaker = get_settings().pyhellen_max_consecutive_failures
+                    if state["consecutive"] >= breaker and not state["open"]:
                         state["open"] = True
                         logger.error(
                             "PyHellen circuit opened after %d consecutive "
@@ -144,7 +138,7 @@ async def _tag_texts_async(requests, progress_callback=None, transport=None):
         if progress_callback:
             progress_callback(state["done"], len(requests))
 
-    async with httpx.AsyncClient(timeout=PYHELLEN_TIMEOUT, transport=transport) as client:
+    async with httpx.AsyncClient(timeout=get_settings().pyhellen_timeout, transport=transport) as client:
         await asyncio.gather(
             *(_one(client, i, text, model)
               for i, (text, model) in enumerate(requests))

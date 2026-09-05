@@ -21,14 +21,11 @@ did: the prose announced a @cert value ("mid") no element ever carried.
 """
 
 from teille_douce.config import (
-    ENRICHMENT_ENABLED,
-    MODERNIZE_ENABLED,
-    MODERNIZE_SIMILARITY_MIN,
     NER_CERT_THRESHOLDS,
-    NER_ENABLED,
 )
 
 from ..constants import TEXT_CONTAINERS
+from ..settings import get_settings
 
 
 def _cert_bands(thresholds):
@@ -61,45 +58,54 @@ def _cert_bands(thresholds):
 # Each entry produces a child element of <editorialDecl> in the TEI header.
 # Only entries whose "enabled" key is True (or whose matching pipeline flag
 # is True) are injected.  Set to None or remove an entry to skip it.
-EDITORIAL_DECLARATIONS = {
-    "normalization": {
-        "enabled": MODERNIZE_ENABLED,
-        "attrs": {"method": "markup"},
-        "text": (
-            "Original historical spelling is preserved in orig elements. "
-            "Modernized spelling is provided in reg elements, generated "
-            "automatically via a translation API (LSTM Fairseq/FreEM model). "
-            "Lines whose modernized form diverges too far from the original "
-            "(word-count ratio or character-level similarity after "
-            f"normalization below {MODERNIZE_SIMILARITY_MIN}) are left unmodified."
-        ),
-    },
-    "segmentation": {
-        "enabled": ENRICHMENT_ENABLED,
-        "attrs": {},
-        "text": (
-            "Linguistic annotation (tokenization, POS tagging, "
-            "lemmatization, sentence segmentation) was produced "
-            "automatically by the PyHellen NLP API. Tokens are "
-            "encoded as w elements with @lemma, @pos and @msd "
-            "attributes; punctuation as pc elements; sentence "
-            "boundaries as s elements."
-        ),
-    },
-    "interpretation": {
-        "enabled": NER_ENABLED,
-        "attrs": {},
-        "text": (
-            "Named entities were automatically detected using a hybrid "
-            "NER pipeline. French text was processed with "
-            "CamemBERT-classical-fr-ner on original orthography and "
-            "GLiNER-multi-v2.1 on modernized text. Non-French text "
-            "was processed with GLiNER only. Annotations carry "
-            f'@resp="#ner-auto" and @cert ({_cert_bands(NER_CERT_THRESHOLDS)}). '
-            "Identifiers were resolved against local authority files."
-        ),
-    },
-}
+def editorial_declarations():
+    """The <editorialDecl> entries, built from the settings in force.
+
+    A table evaluated at import time froze the phase flags and the
+    similarity floor before the command line had been read, so a run
+    launched with --no-modernize still declared modernization in its
+    header. Reading them per call is what keeps the prose true.
+    """
+    settings = get_settings()
+    return {
+        "normalization": {
+            "enabled": settings.modernize,
+            "attrs": {"method": "markup"},
+            "text": (
+                "Original historical spelling is preserved in orig elements. "
+                "Modernized spelling is provided in reg elements, generated "
+                "automatically via a translation API (LSTM Fairseq/FreEM model). "
+                "Lines whose modernized form diverges too far from the original "
+                "(word-count ratio or character-level similarity after "
+                f"normalization below {settings.modernize_similarity_min}) are left unmodified."
+            ),
+        },
+        "segmentation": {
+            "enabled": settings.enrich,
+            "attrs": {},
+            "text": (
+                "Linguistic annotation (tokenization, POS tagging, "
+                "lemmatization, sentence segmentation) was produced "
+                "automatically by the PyHellen NLP API. Tokens are "
+                "encoded as w elements with @lemma, @pos and @msd "
+                "attributes; punctuation as pc elements; sentence "
+                "boundaries as s elements."
+            ),
+        },
+        "interpretation": {
+            "enabled": settings.ner,
+            "attrs": {},
+            "text": (
+                "Named entities were automatically detected using a hybrid "
+                "NER pipeline. French text was processed with "
+                "CamemBERT-classical-fr-ner on original orthography and "
+                "GLiNER-multi-v2.1 on modernized text. Non-French text "
+                "was processed with GLiNER only. Annotations carry "
+                f'@resp="#ner-auto" and @cert ({_cert_bands(NER_CERT_THRESHOLDS)}). '
+                "Identifiers were resolved against local authority files."
+            ),
+        },
+    }
 
 
 # Description of the language-detection methodology, written as a <p>

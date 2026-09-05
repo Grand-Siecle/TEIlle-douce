@@ -21,11 +21,10 @@ from collections import Counter
 from .entity_schema import NER_ENTITY_TYPES
 from teille_douce.config import (
     NER_CERT_THRESHOLDS,
-    NER_CONFIDENCE_THRESHOLD,
     NER_CONTAINERS,
     NER_MODELS,
-    NER_OUTPUT_DIR,
 )
+from teille_douce.settings import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +58,7 @@ def run_ner(root, person_db, document_name, models=None,
         root: TEI root element (already enriched and modernized).
         person_db: PersonDatabase for local linking, or None.
         document_name: Document name — entity CSVs are written to
-            ``NER_OUTPUT_DIR/<document_name>/`` (audit 2.4).
+            ``get_settings().entities_dir/<document_name>/`` (audit 2.4).
         models: Optional preloaded NERModels; defaults to the run-level
             cache.
         entity_types, ner_models, containers, confidence_threshold,
@@ -86,9 +85,9 @@ def run_ner(root, person_db, document_name, models=None,
     ner_models = NER_MODELS if ner_models is None else ner_models
     containers = NER_CONTAINERS if containers is None else containers
     if confidence_threshold is None:
-        confidence_threshold = NER_CONFIDENCE_THRESHOLD
+        confidence_threshold = get_settings().ner_confidence_threshold
     cert_thresholds = NER_CERT_THRESHOLDS if cert_thresholds is None else cert_thresholds
-    output_dir = NER_OUTPUT_DIR if output_dir is None else output_dir
+    output_dir = get_settings().entities_dir if output_dir is None else output_dir
 
     # Phase 7: extract blocks + inference
     blocks = extract_ner_blocks(root, containers)

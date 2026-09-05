@@ -57,9 +57,9 @@ def elements_que_le_code_peut_emettre():
       d'elements (`normalization`, `segmentation`) ;
     - le golden, pour ce qu'un helper construit sans litteral lisible.
     """
-    from teille_douce.teiheader.prose import EDITORIAL_DECLARATIONS
+    from teille_douce.teiheader.prose import editorial_declarations
 
-    noms = set(EDITORIAL_DECLARATIONS)
+    noms = set(editorial_declarations())
     for entree in NER_ENTITY_TYPES.values():
         for cle, valeur in entree.items():
             if cle.startswith("tei_") and isinstance(valeur, str) and valeur.isalpha():
@@ -235,8 +235,8 @@ def test_l_inventaire_couvre_les_phases_facultatives():
     sont les sources qui le disent sans faire tourner la chaine."""
     declares = _inventaire_declare(etree.parse(str(ODD)))
 
-    from teille_douce.teiheader.prose import EDITORIAL_DECLARATIONS
-    attendus = set(EDITORIAL_DECLARATIONS)          # <normalization>, <segmentation>…
+    from teille_douce.teiheader.prose import editorial_declarations
+    attendus = set(editorial_declarations())          # <normalization>, <segmentation>…
     for entree in NER_ENTITY_TYPES.values():
         for cle, valeur in entree.items():
             if cle.startswith("tei_") and isinstance(valeur, str) and valeur.isalpha():

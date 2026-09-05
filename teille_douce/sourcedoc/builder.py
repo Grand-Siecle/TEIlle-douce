@@ -17,7 +17,7 @@ from multiprocessing import cpu_count
 from lxml import etree
 from rich.markup import escape as markup_escape
 
-from teille_douce.config import MAX_WORKERS
+from teille_douce.settings import get_settings, set_settings
 
 logger = logging.getLogger(__name__)
 
@@ -99,8 +99,18 @@ _JOB_CONTEXT = {}
 
 
 def _init_worker(document_name, segmonto_zones, segmonto_lines, config,
-                 iiif_mapping_dict):
-    """Store one document's invariants in the worker process."""
+                 iiif_mapping_dict, settings=None):
+    """Store one document's invariants in the worker process.
+
+    `settings` travels with them because a forkserver/spawn child
+    re-imports in a fresh interpreter, where get_settings() would rebuild
+    from the environment alone and therefore ignore every command-line
+    flag. Nothing under this function reads a runtime setting today; the
+    plumbing is here so that the first one to do so is correct rather than
+    silently reading the environment behind the CLI's back.
+    """
+    if settings is not None:
+        set_settings(settings)
     _JOB_CONTEXT.update(
         document_name=document_name,
         segmonto_zones=segmonto_zones,
@@ -363,7 +373,20 @@ def build_sourcedoc(
     # there are pages: each worker now unpickles the document's
     # invariants once, so eight of them for a two-page document would
     # send the IIIF mapping eight times to do two pages' work.
-    workers = max(1, min(cpu_count(), MAX_WORKERS, len(jobs)))
+    settings = get_settings()
+    workers = max(1, min(cpu_count(), settings.max_workers, len(jobs)))
+    asked = settings.origin("max_workers")
+    if settings.max_workers > cpu_count() and asked != "default":
+        # Only when someone asked: the default is 8, so an unguarded test
+        # warned on every document of every run on a machine with fewer
+        # cores, naming a flag nobody had typed. And the origin is named,
+        # because the value may have come from TDOUCE_JOBS or limits.jobs
+        # rather than from -j.
+        logger.warning(
+            "%s: %d workers requested (%s) exceeds the %d available cores; "
+            "running %d", document_name, settings.max_workers, asked,
+            cpu_count(), workers,
+        )
 
     # One slot per job, addressed by position: a result can only ever land
     # in its own slot, and the slots are already in reading order.
@@ -383,7 +406,7 @@ def build_sourcedoc(
         initializer=_init_worker,
         initargs=(
             document_name, segmonto_zones, segmonto_lines, config,
-            iiif_mapping_dict,
+            iiif_mapping_dict, settings,
         ),
     )
     try:

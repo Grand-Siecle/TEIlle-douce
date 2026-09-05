@@ -47,8 +47,7 @@ symlinks into the private corpus (gitignored, as are `tei_test/`, `tei_full/`,
 `tei_mini/`):
 
 ```bash
-TDOUCE_OCR_DIR=OCR_test TDOUCE_OUTPUT_DIR=tei_test \
-TDOUCE_NER=0 TDOUCE_ENRICHMENT=0 TDOUCE_MODERNIZE=0 teille-douce run
+teille-douce run --fast -i OCR_test -o tei_test
 ```
 
 ## The test suite
@@ -230,8 +229,7 @@ The order below is the one the conventions above imply.
    ```
 6. **Validate real output**, not just the fixture:
    ```bash
-   TDOUCE_OCR_DIR=OCR_test TDOUCE_OUTPUT_DIR=tei_test \
-   TDOUCE_NER=0 TDOUCE_ENRICHMENT=0 TDOUCE_MODERNIZE=0 teille-douce run
+   teille-douce run --fast -i OCR_test -o tei_test
    venv/bin/python scripts/validate_tei.py --odd tei_test/*.xml
    ```
 

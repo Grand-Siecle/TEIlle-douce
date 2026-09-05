@@ -12,8 +12,15 @@ all do what the pipeline has always done.
 """
 
 import argparse
+import sys
+import tomllib
+import warnings
+from dataclasses import replace
+from pathlib import Path
 
 import teille_douce
+from teille_douce.cli import options
+from teille_douce.settings import Settings, find_config_file, set_settings
 
 
 def build_parser():
@@ -41,41 +48,264 @@ def build_parser():
         description="Convert ALTO XML documents to TEI P5 with the SegmOnto "
                     "taxonomy.",
     )
-    _add_run_arguments(run_parser, suppress_defaults=True)
-
-    # The same options on the bare parser, so that the historical
-    # invocation keeps working without naming a subcommand.
-    _add_run_arguments(parser)
+    options.add_run_arguments(run_parser)
     parser.set_defaults(command="run")
 
     return parser
 
 
-def _add_run_arguments(parser, *, suppress_defaults=False):
-    """Declare `run`'s options, on both the subparser and the bare parser.
+def _config_file(args, parser):
+    """The config file this run reads, or None.
 
-    Declared here rather than in `run.py` so that building the parser does
-    not import the pipeline: `--help` and `--version` must not configure
-    logging or open a run log.
-
-    `suppress_defaults` is what makes the two declarations safe to keep
-    side by side. argparse's subparser action parses into a namespace of
-    its own and then copies **all** of it over the parent's — defaults
-    included — so an option given before the subcommand was silently reset:
-    `teille-douce --skip-existing run` dropped the flag and reconverted the
-    whole corpus. With SUPPRESS the subparser sets an attribute only when
-    the option is actually given, so it can no longer overwrite the bare
-    parser's answer. Every option declared on both parsers must use it.
+    A file named explicitly and missing is a misconfiguration (exit 3), not
+    a reason to fall back silently on a different one.
     """
-    default = argparse.SUPPRESS if suppress_defaults else False
-    parser.add_argument(
-        "--skip-existing",
-        action="store_true",
-        default=default,
-        help="skip volumes whose TEI output already exists "
-             "(minimal resume after an interrupted run)",
-    )
+    if getattr(args, "no_config", False):
+        return None
+    named = getattr(args, "config_file", None)
+    if named:
+        path = Path(named)
+        if not path.is_file():
+            parser.exit(3, f"teille-douce: config file not found: {path}\n")
+        return path
+    return find_config_file()
+
+
+def _parser_for(parser, command):
+    """The subparser handling *command*, or the top-level parser."""
+    for action in parser._actions:
+        if getattr(action, "choices", None) and not action.option_strings:
+            return action.choices.get(command, parser)
     return parser
+
+
+def settings_from(args, env=None, parser=None):
+    """Turn parsed arguments into the settings of this run.
+
+    A flag that was not given is absent from the mapping, so it falls
+    through to the environment, the config file and finally the default —
+    which is what makes precedence per setting rather than per layer.
+    """
+    parser = parser or build_parser()
+    # Resolved once: computing it twice made every rejected TDOUCE_* value
+    # warn twice, and the second resolution below used to omit it entirely,
+    # so a level set in the config file was invisible to the -q floor.
+    config_file = _config_file(args, parser)
+    flags = {}
+    for name in options.PASSED_THROUGH:
+        value = getattr(args, name, None)
+        if value is not None:
+            flags[name] = value
+
+    concurrency = getattr(args, "concurrency", None)
+    if concurrency is not None:
+        flags["modernize_concurrency"] = concurrency
+        flags["pyhellen_concurrency"] = concurrency
+
+    flags.update(options.resolve_phases(parser, getattr(args, "phase_ops", None)))
+
+    if getattr(args, "force", False):
+        flags["skip_existing"] = False
+    elif getattr(args, "skip_existing", False):
+        flags["skip_existing"] = True
+
+    try:
+        return _resolve_settings(args, env, parser, config_file, flags)
+    except (ValueError, tomllib.TOMLDecodeError, OSError) as reason:
+        # Exit 3, not a traceback and not 1: nothing ran, and 1 is
+        # reserved for "some volumes failed".
+        parser.exit(3, f"teille-douce: {reason}\n")
+
+
+def _resolve_settings(args, env, parser, config_file, flags):
+    """Fold the verbosity flags in, then resolve every layer."""
+    level = options.console_level(args)
+    if level is not None:
+        if getattr(args, "quiet", 0) or getattr(args, "verbose", 0):
+            # -q asks for less and -v for more, neither for the opposite:
+            # an operator whose wrapper set ERROR and who adds -q must not
+            # get every WARNING back, and one who set DEBUG and adds -v
+            # must not end up at INFO.
+            order = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
+            with warnings.catch_warnings():
+                # The layers are about to be resolved for real; warning
+                # here would say everything twice.
+                warnings.simplefilter("ignore", RuntimeWarning)
+                without_flags = Settings.load(flags={}, env=env,
+                                              config_file=config_file)
+                # The floor is the console level this run would have had
+                # with no verbosity flag, so it has to be derived by the
+                # rule configure_logging actually applies: `debug` lowers
+                # the console to DEBUG only when nothing else asked for a
+                # level. Reading `debug` alone claimed a DEBUG floor for a
+                # run whose console was really at the level the
+                # environment set, and `-q` then let ERROR back up to
+                # WARNING — louder for asking for less — while `-v` did
+                # nothing at all.
+                floor = ("DEBUG"
+                         if (without_flags.debug
+                             and without_flags.origin("log_level") == "default")
+                         else without_flags.log_level)
+            quieter = bool(getattr(args, "quiet", 0))
+            asked, current = order.index(level), order.index(floor)
+            if (asked > current) if quieter else (asked < current):
+                flags["log_level"] = level
+        else:
+            flags["log_level"] = level
+
+        # Only a level that asks FOR debug turns the diagnostics on. `-q`
+        # asks for a quiet console; the debug setting also gates what goes
+        # into the run log, which console verbosity has no business
+        # touching.
+        if level.strip().upper() == "DEBUG":
+            flags["debug"] = True
+
+    settings = Settings.load(flags=flags, env=env, config_file=config_file)
+
+    # A value the environment offers is refused with a warning and the
+    # default is kept -- that is the documented contract. A value the user
+    # typed on the command line is a usage error: keeping a default they
+    # explicitly overrode would be answering a different question.
+    typed = [r for r in settings.rejected if r.layer == "flag"]
+    if typed:
+        # One option can feed two settings (--concurrency does), and the
+        # reader does not need to be told twice.
+        seen, messages = set(), []
+        for rejection in typed:
+            message = (f"{options.option_for(rejection.name)}="
+                       f"{rejection.raw!r} {rejection.reason}")
+            if message not in seen:
+                seen.add(message)
+                messages.append(message)
+        parser.error("; ".join(messages))
+
+    # Two answers a flag gives that no layer below it can express.
+    if getattr(args, "no_log_file", False):
+        settings = replace(settings, log_file=None)
+    return settings
+
+
+def normalise(argv, commands=None):
+    """Put the subcommand first, inserting the default one if absent.
+
+    `teille-douce`, `teille-douce --skip-existing` and `teille-douce
+    LIV0044` all mean `run`, and `teille-douce --fast run --enrich` means
+    what it looks like. Options are declared on the subcommand only —
+    declaring them on both parsers instead was a trap: argparse's
+    subparser action copies its whole namespace over the parent's, so an
+    option given on both sides replaced rather than merged, and `--fast
+    run --enrich` silently lost the --fast.
+
+    A token is the command only if it is not the value of an option that
+    takes one, so an output directory called "run" stays a directory.
+    """
+    argv = list(argv)
+    # Derived, not hardcoded: the day `validate` is added, a hardcoded list
+    # would rewrite `teille-douce validate out.xml` into a `run` whose
+    # first document selector is "validate".
+    commands = tuple(commands or _subcommands())
+    if argv and argv[0] in ("-V", "--version"):
+        return argv
+    if argv and argv[0] in ("-h", "--help"):
+        # The bare invocation IS `run`, so its help is `run`'s: the bare
+        # parser alone would list a command and nothing you can pass it.
+        return ["run", *argv]
+
+    takes_a_value = _value_taking_options()
+    index = None
+    skip = False
+    for position, token in enumerate(argv):
+        if skip:
+            skip = False
+            continue
+        if token == "--":
+            # End of options: what follows is a positional, so no token
+            # past it can be the subcommand.
+            break
+        if token.startswith("-"):
+            # argparse accepts unambiguous prefixes, so `--inp OCR run`
+            # must not read OCR as the first positional and `run` as a
+            # document selector.
+            name = token.split("=", 1)[0]
+            if "=" in token:
+                continue
+            if name in takes_a_value:
+                skip = True
+                continue
+            if name.startswith("--") and len(name) > 2:
+                # argparse accepts unambiguous prefixes.
+                matches = [o for o in _long_options() if o.startswith(name)]
+                skip = len(matches) == 1 and matches[0] in takes_a_value
+                continue
+            # A short cluster. argparse hands the rest of the token to the
+            # FIRST letter that wants a value, as an ATTACHED one: `-otei`
+            # is `-o tei` and consumes nothing further, while `-qj 4` is
+            # `-q -j 4` and does. Reading the last letter instead agreed
+            # with argparse only until an attached value happened to end
+            # in a short-option letter, and `-otei run` then swallowed
+            # `run` as `-i`'s value and left a phantom selector behind.
+            if len(name) > 2 and not name.startswith("--"):
+                letters = name[1:]
+                skip = False
+                for offset, letter in enumerate(letters):
+                    if f"-{letter}" in takes_a_value:
+                        skip = offset == len(letters) - 1
+                        break
+            continue
+        if token in commands:
+            index = position
+        break
+
+    if index is None:
+        return ["run", *argv]
+    return [argv[index], *argv[:index], *argv[index + 1:]]
+
+
+def _subcommands():
+    """The subcommand names the parser accepts."""
+    for action in build_parser()._actions:
+        if getattr(action, "choices", None) and not action.option_strings:
+            return tuple(action.choices)
+    return ()
+
+
+def _long_options():
+    """Every long option string the parser knows, for prefix matching."""
+    names = set()
+    for parser in (build_parser(), *_subparsers()):
+        for action in parser._actions:
+            names.update(o for o in action.option_strings if o.startswith("--"))
+    return names
+
+
+def _subparsers():
+    for action in build_parser()._actions:
+        if getattr(action, "choices", None) and not action.option_strings:
+            return tuple(action.choices.values())
+    return ()
+
+
+def _value_taking_options():
+    """Option strings that consume the token after them."""
+    parser = build_parser()
+    names = set()
+    for action in parser._actions:
+        if action.nargs != 0 and action.option_strings:
+            names.update(action.option_strings)
+    for subparsers in [a for a in parser._actions if hasattr(a, "choices")]:
+        for sub in (subparsers.choices or {}).values():
+            for action in sub._actions:
+                if action.nargs != 0 and action.option_strings:
+                    names.update(action.option_strings)
+    return names
+
+
+def parse_args(argv=None):
+    """Parse *argv* the way the command line does."""
+    import sys
+    return build_parser().parse_args(
+        normalise(sys.argv[1:] if argv is None else argv)
+    )
 
 
 def main(argv=None):
@@ -85,7 +315,13 @@ def main(argv=None):
         int or None: the process exit status; ``None`` means success. The
         pipeline raises SystemExit itself on the paths that already did.
     """
-    args = build_parser().parse_args(argv)
+    parser = build_parser()
+    args = parser.parse_args(normalise(
+        (sys.argv[1:] if argv is None else argv)
+    ))
+    # The subcommand's parser, so a usage error shows the usage line that
+    # actually contains the option the message names.
+    set_settings(settings_from(args, parser=_parser_for(parser, args.command)))
 
     # Imported here, not at module scope: run.py configures logging and
     # names this run's log file when it is imported, and `--help` and

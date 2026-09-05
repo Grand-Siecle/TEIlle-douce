@@ -21,7 +21,7 @@ from teille_douce.config import (
     PLACEHOLDER_ORCID,
 )
 from ..constants import KEYWORDS_TAXONOMY, SEGMONTO
-from .prose import EDITORIAL_DECLARATIONS, LANGUAGE_DETECTION_DESCRIPTION
+from .prose import editorial_declarations, LANGUAGE_DETECTION_DESCRIPTION
 from ..constants import XML_ID
 from ..utils.files import canonical_document_id
 
@@ -278,7 +278,8 @@ class DefaultTree:
     def _build_encoding_desc(self, encodingDesc):
         """Build the <encodingDesc> section with application info and taxonomy."""
         # <editorialDecl> from config declarations
-        enabled = {k: v for k, v in EDITORIAL_DECLARATIONS.items() if v.get("enabled")}
+        enabled = {k: v for k, v in editorial_declarations().items()
+                   if v.get("enabled")}
         editorialDecl = None
         if enabled:
             editorialDecl = etree.SubElement(encodingDesc, "editorialDecl")

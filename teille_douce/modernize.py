@@ -29,15 +29,9 @@ from .utils.hyphen import (
     strip_trailing_hyphen,
 )
 from teille_douce.config import (
-    DEBUG,
-    HEALTH_TIMEOUT,
-    MODERNIZE_API,
-    MODERNIZE_BATCH_SIZE,
     MODERNIZE_CERT_THRESHOLDS,
-    MODERNIZE_MAX_CONCURRENT,
-    MODERNIZE_SIMILARITY_MIN,
-    MODERNIZE_TIMEOUT,
 )
+from teille_douce.settings import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -93,7 +87,7 @@ def _is_divergent(original, modernized):
         return True
     # Character-level similarity check (catches hallucinations with
     # similar word count, e.g. Greek OCR artifacts → invented French).
-    if similarity(original, modernized) < MODERNIZE_SIMILARITY_MIN:
+    if similarity(original, modernized) < get_settings().modernize_similarity_min:
         return True
     return False
 
@@ -108,11 +102,11 @@ def check_api(lang="fra"):
     Returns:
         bool: True if the API /health endpoint responds OK.
     """
-    base_url = MODERNIZE_API.get(lang)
+    base_url = get_settings().modernize_api.get(lang)
     if not base_url:
         return False
     try:
-        with httpx.Client(timeout=HEALTH_TIMEOUT) as client:
+        with httpx.Client(timeout=get_settings().health_timeout) as client:
             r = client.get(f"{base_url}/health")
             return r.status_code == 200
     except httpx.HTTPError:
@@ -141,7 +135,7 @@ def modernize_texts(texts, lang="fra", progress_callback=None):
                       None: the caller reports a None as a service
                       failure, and a page of digits is not one.
     """
-    base_url = MODERNIZE_API.get(lang)
+    base_url = get_settings().modernize_api.get(lang)
     if not base_url:
         return None
 
@@ -176,12 +170,12 @@ async def _modernize_all(texts, base_url, progress_callback=None):
     """Send all batches with limited concurrency, validate, retry divergent lines."""
     results = list(texts)  # pre-fill with originals as fallback
     batches = [
-        (i, texts[i : i + MODERNIZE_BATCH_SIZE])
-        for i in range(0, len(texts), MODERNIZE_BATCH_SIZE)
+        (i, texts[i : i + get_settings().modernize_batch_size])
+        for i in range(0, len(texts), get_settings().modernize_batch_size)
     ]
     total_batches = len(batches)
     completed = 0
-    sem = asyncio.Semaphore(MODERNIZE_MAX_CONCURRENT)
+    sem = asyncio.Semaphore(get_settings().modernize_concurrency)
 
     async def _tracked_batch(client, batch_texts):
         nonlocal completed
@@ -192,7 +186,7 @@ async def _modernize_all(texts, base_url, progress_callback=None):
             progress_callback(completed, total_batches)
         return result
 
-    async with httpx.AsyncClient(timeout=MODERNIZE_TIMEOUT) as client:
+    async with httpx.AsyncClient(timeout=get_settings().modernize_timeout) as client:
         tasks = [
             _tracked_batch(client, batch_texts)
             for _, batch_texts in batches
@@ -205,7 +199,7 @@ async def _modernize_all(texts, base_url, progress_callback=None):
 
     for (start, _batch_texts), response in zip(batches, responses):
         if isinstance(response, Exception) or response is None:
-            if DEBUG:
+            if get_settings().debug:
                 logger.debug(
                     "Modernize batch at index %d failed: %s", start, response
                 )
@@ -215,7 +209,7 @@ async def _modernize_all(texts, base_url, progress_callback=None):
             idx = start + j
             orig = texts[idx]
             if _is_divergent(orig, mod):
-                if DEBUG:
+                if get_settings().debug:
                     logger.debug(
                         "Divergent line %d: orig(%d words)=%r → mod(%d words)=%r",
                         idx, len(orig.split()), orig[:80],
@@ -227,17 +221,17 @@ async def _modernize_all(texts, base_url, progress_callback=None):
 
     # Phase 2: retry divergent lines individually (batch_size=1)
     if divergent:
-        if DEBUG:
+        if get_settings().debug:
             logger.debug(
                 "Retrying %d divergent lines individually", len(divergent)
             )
-        retry_sem = asyncio.Semaphore(MODERNIZE_MAX_CONCURRENT)
+        retry_sem = asyncio.Semaphore(get_settings().modernize_concurrency)
 
         async def _retry_one(client, orig):
             async with retry_sem:
                 return await _send_batch(client, base_url, [orig], batch_size=1)
 
-        async with httpx.AsyncClient(timeout=MODERNIZE_TIMEOUT) as client:
+        async with httpx.AsyncClient(timeout=get_settings().modernize_timeout) as client:
             retry_tasks = [
                 _retry_one(client, orig)
                 for _, orig in divergent
@@ -250,13 +244,13 @@ async def _modernize_all(texts, base_url, progress_callback=None):
         still_bad = 0
         for (idx, orig), resp in zip(divergent, retry_responses):
             if isinstance(resp, Exception) or resp is None or not resp:
-                if DEBUG:
+                if get_settings().debug:
                     logger.debug("Retry failed for line %d: %s", idx, resp)
                 still_bad += 1
                 continue
             mod = resp[0]
             if _is_divergent(orig, mod):
-                if DEBUG:
+                if get_settings().debug:
                     logger.debug(
                         "Retry still divergent line %d: orig=%r → mod=%r",
                         idx, orig[:80], mod[:80],
@@ -267,7 +261,7 @@ async def _modernize_all(texts, base_url, progress_callback=None):
                 results[idx] = mod
                 retried += 1
 
-        if DEBUG:
+        if get_settings().debug:
             logger.debug(
                 "Retry results: %d fixed, %d still divergent (kept original)",
                 retried, still_bad,
@@ -477,7 +471,7 @@ def _cert_for(score):
 async def _send_batch(client, base_url, batch_texts, batch_size=None):
     """POST a single batch to /translate/batch."""
     if batch_size is None:
-        batch_size = MODERNIZE_BATCH_SIZE
+        batch_size = get_settings().modernize_batch_size
     try:
         r = await client.post(
             f"{base_url}/translate/batch",
@@ -487,6 +481,6 @@ async def _send_batch(client, base_url, batch_texts, batch_size=None):
         data = r.json()
         return data.get("translations")
     except Exception as e:
-        if DEBUG:
+        if get_settings().debug:
             logger.debug("_send_batch error: %s: %r", type(e).__name__, e)
         return None
