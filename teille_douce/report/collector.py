@@ -33,7 +33,7 @@ class Run:
     """Everything one run knows about itself, as it goes."""
 
     def __init__(self, input_dir, output_dir, volumes, pages, log_path=None,
-                 services=(), started_at=None):
+                 services=(), started_at=None, on_change=None):
         self.input_dir = Path(input_dir)
         self.output_dir = Path(output_dir)
         self.volumes_total = volumes
@@ -58,6 +58,10 @@ class Run:
         self._open_started = None
         self._phases = {}
         self._steps = {}
+        # The panel redraws on this. Called after a change and never
+        # before: a frame drawn from half-updated state is worse than one
+        # frame late.
+        self._on_change = on_change or (lambda: None)
 
     # -- what the pipeline tells it ---------------------------------------
 
@@ -68,6 +72,7 @@ class Run:
         self._open_started = at if at is not None else time.monotonic()
         self._phases = {}
         self._events.append(Event("document", name, f"{pages} pages"))
+        self._on_change()
 
     def pages_read(self, document, count):
         """Pages read in the volume still open: work done and not saved.
@@ -78,6 +83,7 @@ class Run:
         """
         if document == self._open:
             self._open_read = count
+        self._on_change()
 
     def step(self, document, step):
         """Where in the sequence this document is.
@@ -95,6 +101,7 @@ class Run:
             name=name, state=state, done=done, total=total, unit=unit,
             rate=rate, waiting=waiting, timeout=timeout, note=note,
             reason=reason, elapsed=elapsed)
+        self._on_change()
         if state is PhaseState.LOST:
             # A reporter must not be able to kill the run it reports on.
             # `render_phase_loss` refuses a lost phase with no cause and
@@ -114,6 +121,7 @@ class Run:
                 "phase-lost", document,
                 render_phase_loss(PhaseState.LOST, count=done, total=total,
                                   unit=unit, reason=reason)))
+        self._on_change()
 
     def warning(self, document, message):
         """Straight to the digest, never to the console.
@@ -168,6 +176,7 @@ class Run:
         self._open = None
         self._open_read = 0
         self._open_pages = 0
+        self._on_change()
 
     # -- what the reporters read ------------------------------------------
 
@@ -210,6 +219,15 @@ class Run:
             lines.append(f"I{index} {loss.locator.render()}  "
                          f"{loss.step}.{loss.code.value}  {loss.detail}".strip())
         return tuple(lines)
+
+    @property
+    def open_document(self):
+        """The volume being converted, or None between two of them.
+
+        The digest counts volumes and a logging record does not name one,
+        so the run is what supplies it.
+        """
+        return self._open
 
     def pages_lost(self, document):
         """Pages of one volume that produced no <surface>."""

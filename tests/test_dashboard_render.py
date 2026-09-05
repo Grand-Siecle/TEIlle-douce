@@ -357,3 +357,83 @@ def test_the_panel_does_not_string_its_own_facts_with_middle_dots():
         if any(note in line for note in notes):
             continue
         assert line.count("·") <= 1, repr(line)
+
+
+# =============================================================================
+# What the header and the digest do when they run out of room
+# =============================================================================
+
+def test_an_unknown_eta_is_not_written_as_an_empty_label():
+    """`eta ` with nothing after it reads as a broken template. A run that
+    has not converted a volume yet cannot estimate anything, and saying so
+    is better than a blank."""
+    header = text(state(eta=""))[0]
+
+    assert "eta" not in header
+    assert "elapsed" in header
+
+
+def test_a_known_eta_is_still_shown():
+    assert "eta ~3h04" in text(state(eta="~3h04"))[0]
+
+
+def test_one_volume_is_not_written_as_one_volumes():
+    digest = WarningDigest()
+    digest.add("D1", "something happened")
+
+    line = next(l for l in text(state(digest=digest)) if "1×" in l)
+
+    assert "1 volume" in line and "1 volumes" not in line
+
+
+def test_a_long_warning_shape_gives_up_its_own_text_not_its_counts():
+    """The counts are the reason the line exists. Truncating from the
+    right dropped them and kept the prose."""
+    digest = WarningDigest()
+    digest.add("D1", "a warning message so long that it cannot possibly fit "
+                     "inside the panel next to its own counters, not even "
+                     "at a hundred columns of terminal width")
+
+    line = next(l for l in text(state(digest=digest)) if "1×" in l)
+
+    assert len(line) <= 92
+    assert "1 volume" in line
+
+
+def test_a_service_nobody_asked_for_is_off_and_not_down():
+    """The four meanings of a zero, applied to the banner. `--fast` asks
+    for no annotation at all, and painting three services red says the
+    machine is broken when the operator simply did not want them."""
+    off = state(services=(Service("PyHellen", up=None),))
+    banner = text(off)[1]
+
+    assert "off" in banner
+    assert "DOWN" not in banner and "✗" not in banner
+
+
+def test_a_service_that_was_asked_for_and_did_not_answer_is_down():
+    banner = text(state(services=(Service("PyHellen", up=False),)))[1]
+
+    assert "DOWN" in banner
+
+
+def test_the_folded_integers_are_shown_only_when_there_is_a_sum_to_show():
+    """One occurrence has nothing summed: the number is already in the
+    shape, and printing it again as a total invites reading an identifier
+    as a count."""
+    digest = WarningDigest()
+    digest.add("D1", "No metadata row for 'LIV9002_reconciled'")
+
+    line = next(l for l in text(state(digest=digest)) if "1×" in l)
+
+    assert "9 002" not in line
+
+
+def test_a_folded_count_is_still_shown_when_it_is_really_a_sum():
+    digest = WarningDigest()
+    digest.add("D1", "page 1: 19 duplicate ALTO id(s) disambiguated")
+    digest.add("D2", "page 2: 23 duplicate ALTO id(s) disambiguated")
+
+    line = next(l for l in text(state(digest=digest)) if "2×" in l)
+
+    assert "42" in line

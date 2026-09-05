@@ -33,8 +33,12 @@ from rich.markup import escape
 from teille_douce.config import APP_VERSIONS, IIIF_URI, RESPONSIBILITY
 from teille_douce.report.collector import Run as ReportRun
 from teille_douce.report.counts import PhaseState
+from teille_douce.report.dashboard import Dashboard
+from teille_douce.report.logging_bridge import DigestHandler
+from teille_douce.report.panel import Service
 from teille_douce.report.gate import (EXIT_GATE_NOT_MET, gate_verdict,
                                       page_loss_failures)
+from teille_douce.report.select import UI, choose_ui
 from teille_douce.report.record import Code, Locator, Loss
 from teille_douce.report.summary import render_summary
 from teille_douce.settings import get_settings, use_settings
@@ -195,6 +199,17 @@ console = Console()
 # every per-document line and both progress bars, and was indistinguishable
 # from a run without it.
 _QUIET = False
+
+
+def _set_quiet(quiet):
+    """Silence the per-document chatter, or let it back.
+
+    The panel uses this: everything `say` would print is already on it,
+    and a print inside a Live region pushes a copy of the frame into the
+    scrollback on every line.
+    """
+    global _QUIET
+    _QUIET = bool(quiet)
 
 
 def say(message):
@@ -458,6 +473,9 @@ def _out_path(doc_name, output_dir):
 # could not tell "fix your path and rerun" from "some volumes broke".
 EXIT_OK = 0
 EXIT_SOME_FAILED = 1
+# Two flags that contradict each other: argparse owns most of these, but
+# the reporter choice is made after parsing.
+EXIT_USAGE = 2
 EXIT_MISCONFIGURED = 3
 # Everything that ran failed. Separated from 1 so a wrapper can tell
 # "retry these two" from "your input or your setup is wrong".
@@ -573,6 +591,12 @@ def _containers_failed(reporter, doc_name, phase, stats, reason):
             reporter.lost(Loss(code, doc_name, phase,
                                Locator.document(doc_name), count=count,
                                total=total, detail=why))
+
+
+def _pages_per_second(reporter, started):
+    """Measured, like everything else on the panel."""
+    elapsed = perf_counter() - started
+    return reporter.panel().pages_written / elapsed if elapsed > 0 else 0.0
 
 
 def _process_document(doc_name, filepaths, doc_dir, df_meta, config,
@@ -1338,6 +1362,21 @@ def execute(args):
     config = build_config()
     run_started = perf_counter()
 
+    # Which reporter this run gets. Refused rather than guessed when the
+    # two flags contradict: no reading of `--plain --dashboard` says what
+    # was wanted.
+    try:
+        ui = choose_ui(
+            env=os.environ, is_tty=console.is_terminal,
+            size=(console.width, console.height),
+            plain=getattr(args, "plain", False),
+            dashboard=getattr(args, "dashboard", False),
+            quiet=getattr(args, "quiet", 0),
+            dry_run=dry_run)
+    except ValueError as reason:
+        console.print(f"[red]{escape(str(reason))}[/red]")
+        sys.exit(EXIT_USAGE)
+
     # Process documents with progress bar
     with Progress(
         SpinnerColumn(),
@@ -1346,8 +1385,10 @@ def execute(args):
         TextColumn("[green]{task.percentage:>3.0f}%"),
         TimeElapsedColumn(),
         console=console,
-        # A progress bar is chatter, and -q asks for none.
-        disable=_QUIET,
+        # A progress bar is chatter, and -q asks for none. The panel is
+        # the same information, drawn better: two of them at once would
+        # fight over the same lines.
+        disable=_QUIET or ui is UI.DASHBOARD,
     ) as progress:
 
         task_docs = progress.add_task("Processing documents", total=len(docs))
@@ -1356,6 +1397,7 @@ def execute(args):
         # because this is the first point at which the run knows what it
         # is about to attempt, which is what every denominator on the
         # summary is measured against.
+        panel_holder = {}
         reporter_run = ReportRun(
             input_dir=settings.ocr_dir, output_dir=settings.output_dir,
             # `broken` and not `failed_archives`: an unreadable directory
@@ -1366,9 +1408,49 @@ def execute(args):
             volumes=len(docs) + len(broken),
             pages=sum(len(paths) for _, paths, _ in docs),
             log_path=RUN_LOG_FILE or settings.log_file,
+            # The probe already answered for each of them. A panel that
+            # does not say which services are up cannot show one dying,
+            # and that is the case the whole design is built around.
+            # None where the phase was never asked for, False where it
+            # was and the probe said no: red for a service nobody wanted
+            # would say the machine is broken.
+            services=tuple(
+                Service(name, up=(up if asked else None))
+                for name, up, asked in (
+                    ("PyHellen", do_enrich, settings.enrich),
+                    ("VieuxParler", do_modernize, settings.modernize),
+                    ("NER local", do_ner, settings.ner))),
+            # Every change redraws, so a phase that has been waiting on a
+            # service for forty seconds looks different from one that has
+            # stopped — which is the state a four-hour run spends most of
+            # its time in.
+            on_change=lambda: (panel_holder["panel"].draw()
+                               if panel_holder.get("panel") else None),
         )
         for name, reason in failed_archives:
             reporter_run.archive_failed(name, reason)
+
+        panel = Dashboard(console, reporter_run) if ui is UI.DASHBOARD else None
+        panel_holder["panel"] = panel
+        if panel is not None:
+            # Silences `say`: everything it would print is on the panel,
+            # and a print inside a Live region pushes the frame down the
+            # scrollback one copy at a time.
+            was_quiet = _QUIET
+            _set_quiet(True)
+            # Eighty WARNING lines a volume printed one at a time push the
+            # panel off the top of the terminal, which is how a run that
+            # is repairing a source defect comes to look like one that is
+            # failing. They are folded instead; the file handler still
+            # receives every record untouched.
+            digest_handler = DigestHandler(reporter_run)
+            console_handlers = [h for h in logging.getLogger().handlers
+                                if isinstance(h, logging.StreamHandler)
+                                and not hasattr(h, "baseFilename")]
+            for handler in console_handlers:
+                logging.getLogger().removeHandler(handler)
+            logging.getLogger().addHandler(digest_handler)
+            panel.__enter__()
         # Per volume, because a share only means something against one
         # volume's own pages: 388 lost out of 400 is a file nobody wants
         # to publish, and out of 16 999 it is a normal Tuesday.
@@ -1405,6 +1487,9 @@ def execute(args):
                     )
             try:
                 reporter_run.document_started(doc_name, len(filepaths))
+                if panel is not None:
+                    panel.draw(pages_per_second=_pages_per_second(
+                        reporter_run, run_started))
                 _process_document(
                     doc_name, filepaths, doc_dir, df_meta, config,
                     person_db, do_enrich, do_modernize, do_ner, progress,
@@ -1473,6 +1558,9 @@ def execute(args):
             else:
                 ok_docs.append(doc_name)
                 reporter_run.document_finished(doc_name, ok=True)
+                if panel is not None:
+                    panel.draw(pages_per_second=_pages_per_second(
+                        reporter_run, run_started))
                 pages_lost_per_document[doc_name] = (
                     reporter_run.pages_lost(doc_name), len(filepaths))
             progress.advance(task_docs)
@@ -1511,6 +1599,16 @@ def execute(args):
         # Every phase reports what it lost: a run stopped after one failure
         # out of forty must not read as thirty-nine silent successes.
         converted += f" ({never_tried} never attempted, the run stopped early)"
+    if panel is not None:
+        # Torn down before the summary, so the summary lands in the
+        # scrollback rather than inside a frame about to be erased.
+        panel.__exit__(None, None, None)
+        panel_holder["panel"] = None
+        logging.getLogger().removeHandler(digest_handler)
+        for handler in console_handlers:
+            logging.getLogger().addHandler(handler)
+        _set_quiet(was_quiet)
+
     for name, reason in broken:
         if any(name == known for known, _ in reporter_run.failed_archives):
             continue

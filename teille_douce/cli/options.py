@@ -295,6 +295,16 @@ def add_run_arguments(parser):
                          help="a volume losing more than PCT%% of its pages "
                               "is a failure, not a degraded success  [100]")
 
+    view = parser.add_argument_group("output")
+    seeing = view.add_mutually_exclusive_group()
+    seeing.add_argument("--dashboard", dest="dashboard", action="store_true",
+                        default=False,
+                        help="draw the live panel even where it would not be "
+                             "chosen automatically")
+    seeing.add_argument("--plain", dest="plain", action="store_true",
+                        default=False,
+                        help="one line per event, no live panel")
+
     failure = parser.add_argument_group("failure handling")
     failure.add_argument("-n", "--dry-run", action="store_true",
                          default=False,

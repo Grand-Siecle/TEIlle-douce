@@ -153,6 +153,10 @@ def _clock(seconds):
     return f"{minutes}:{seconds:02d}"
 
 
+def _plural(count, noun):
+    return f"{count} {noun}" if count == 1 else f"{count} {noun}s"
+
+
 def _pad(left, right, room):
     """Left flush, right flush, one line, never wider than the room."""
     gap = room - len(left) - len(right)
@@ -181,11 +185,16 @@ def _bar(state, cells, unicode_):
 
 
 def _services(state, room, unicode_):
-    ok, bad, _, _ = _MARK[unicode_]
+    ok, bad, idle, _ = _MARK[unicode_]
     spans = [Span(" ")]
     for service in state.services:
         if service.up:
             spans.append(Span(f"{ok} {service.name}   ", "verdigris"))
+        elif service.up is None:
+            # Nobody asked for it. Painting it red says the machine is
+            # broken when the operator simply did not want the phase —
+            # the same four meanings of a zero, on the banner.
+            spans.append(Span(f"{idle} {service.name} off   ", "graphite"))
         else:
             lost = f" LOST {service.lost_at}" if service.lost_at else " DOWN"
             spans.append(Span(f"{bad} {service.name}{lost}   ", "vermilion"))
@@ -266,7 +275,11 @@ def render_panel(state, width=92, height=None, unicode=True, color=True,
     lines = []
 
     header_left = f" TEIlle-douce   {state.input_dir}/ → {state.output_dir}/"
-    header_right = f"elapsed {_clock(state.elapsed)}   eta {state.eta}"
+    # No estimate until a volume has finished: "eta " with nothing after
+    # it reads as a broken template, and a made-up figure would be worse.
+    header_right = f"elapsed {_clock(state.elapsed)}"
+    if state.eta:
+        header_right += f"   eta {state.eta}"
     lines.append([Span(_pad(header_left, header_right, room))])
     lines.append(_services(state, room, unicode))
     lines.append([Span("─" * room if unicode else "-" * room, "graphite")])
@@ -321,14 +334,22 @@ def render_panel(state, width=92, height=None, unicode=True, color=True,
         rule = ("─" if unicode else "-") * max(0, room - len(label))
         lines.append([Span(label), Span(rule, "dim")])
         for entry in digest_lines:
-            left = f"    {entry.occurrences}×  {entry.shape}"
-            # No unit: the fold cannot know what the integers counted,
-            # and "8 ids" over a warning about worker counts is a
-            # confident wrong answer.
-            right = (f"{entry.documents} volumes"
-                     + (f"  {_grouped(entry.totals[-1])}"
-                        if entry.totals else ""))
-            lines.append([Span(_pad(left, right, room), "graphite")])
+            # No unit on the integers: the fold cannot know what they
+            # counted, and "8 ids" over a warning about worker counts is
+            # a confident wrong answer.
+            # Only when something was actually summed: on a single
+            # occurrence the number is already in the shape, and showing
+            # it again as a total invites reading an identifier as a
+            # count.
+            summed = entry.totals and entry.occurrences > 1
+            right = (_plural(entry.documents, "volume")
+                     + (f"  {_grouped(entry.totals[-1])}" if summed else ""))
+            # The counts are why the line exists, so a shape too long to
+            # fit gives up its own prose rather than its numbers. The
+            # verbatim message is in the log either way.
+            head = f"    {entry.occurrences}×  "
+            shape = entry.shape[:max(0, room - len(head) - len(right) - 2)]
+            lines.append([Span(_pad(head + shape, right, room), "graphite")])
         hidden = state.digest.elided(limit=3)
         if hidden:
             lines.append([Span(f"    +{hidden} more shapes", "graphite")])

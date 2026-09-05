@@ -1405,3 +1405,54 @@ def test_an_unreadable_volume_is_an_incident_and_not_a_corrupt_archive(tmp_path)
 
     assert "volumes unreadable" in res.stdout
     assert "archives corrupt" not in res.stdout
+
+
+# =============================================================================
+# The panel, on a real run
+# =============================================================================
+
+def test_the_dashboard_can_actually_be_asked_for(tmp_path):
+    """Nine hundred lines of panel that no run could display would be nine
+    hundred lines of decoration. Forced on with no terminal, because that
+    is the only way a test can see it at all."""
+    ocr = tmp_path / "ocr"
+    shutil.copytree(ALTO_MIN, ocr)
+
+    res, sortie = _executer_main(tmp_path, ocr, args=("--dashboard",),
+                                 COLUMNS="100", **MODE_COURT)
+
+    assert res.returncode == 0
+    assert (sortie / f"{DOCUMENT}.tei.xml").exists()
+    assert "ctrl-c" in res.stdout, "the panel never drew"
+    assert "exit 0" in res.stdout, "the summary must survive the panel"
+
+
+def test_the_two_reporters_end_on_the_same_summary(tmp_path):
+    """One record, two presenters. If the summary differed, there would be
+    two accounts of one run and no way to tell which to believe."""
+    def summary_of(ui, where):
+        ocr = where / "ocr"
+        shutil.copytree(ALTO_MIN, ocr)
+        res, _ = _executer_main(where, ocr, args=(ui,), COLUMNS="100",
+                                **MODE_COURT)
+        start = res.stdout.index("TEIlle-douce finished")
+        body = res.stdout[start:].splitlines()
+        # Two things legitimately differ between two runs: how long they
+        # took, and where each one wrote. Everything else must match.
+        return [line.replace(str(where), "<run>") for line in body
+                if "finished" not in line]
+
+    panel = summary_of("--dashboard", tmp_path / "a")
+    journal = summary_of("--plain", tmp_path / "b")
+
+    assert panel == journal
+
+
+def test_asking_for_both_reporters_is_a_usage_error(tmp_path):
+    ocr = tmp_path / "ocr"
+    shutil.copytree(ALTO_MIN, ocr)
+
+    res, _ = _executer_main(tmp_path, ocr, args=("--plain", "--dashboard"),
+                            **MODE_COURT)
+
+    assert res.returncode == 2
