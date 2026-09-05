@@ -19,7 +19,7 @@ from .counts import (PhaseState, _grouped, render_count,
 # with the summary, which measured in `len()` and kept no control
 # characters out. Two implementations of the same contract is two ways of
 # breaking it.
-from .text import cells, clip, pad, shorten_path
+from .text import cells, clip, clip_left, pad, shorten_path
 
 MAX_WIDTH = 100
 _MARGIN = 1
@@ -288,7 +288,10 @@ def _short_log(name, room=22):
     """
     if cells(name) <= room:
         return name
-    tail = name[-room:]
+    # Measured in cells and CUT in cells, with the ellipsis paid for:
+    # `name[-room:]` counts characters and the "…" was added on top, so
+    # a wide-glyph log name ran four cells past the edge of the banner.
+    tail = clip_left(name, room)[1:]
     boundary = tail.find("_")
     return "…" + (tail[boundary:] if boundary != -1 else tail)
 
@@ -478,9 +481,21 @@ def render_panel(state, width=92, height=None, unicode=True, color=True,
                 # short of the thing it explains. The third literal that
                 # change invalidated, in the caller of the two that were
                 # fixed.
-                under = 3 + cells(phase.name + " " * max(1, 13 - cells(phase.name)))
-                lines.append([Span(clip(f"{' ' * under}{phase.note}", room),
-                                   "vermilion")])
+                # Measured off what was actually DRAWN. Taken from the
+                # unclipped name, the indent landed past the mark it
+                # explains as soon as the head itself was shortened, and
+                # at four-and-twenty columns it consumed the cause
+                # whole — the line that tells a misconfiguration from a
+                # service that died mid-run. Two fixes of the same round
+                # disagreeing with each other.
+                under = cells(spans[0].text)
+                shown = clip(phase.note, room - under)
+                # No line at all rather than a row of blanks and an
+                # ellipsis: at four-and-twenty columns the head takes
+                # everything, and a line that says nothing is worse than
+                # one that is not there.
+                if shown:
+                    lines.append([Span(f"{' ' * under}{shown}", "vermilion")])
 
     # Composed span by span to keep the incident count its own colour.
     # Clipped span by span, the row lost `incident` entirely below fifty

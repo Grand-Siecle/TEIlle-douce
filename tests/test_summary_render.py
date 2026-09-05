@@ -33,7 +33,7 @@ def rendered(outcome_):
     return "\n".join(render_summary(outcome_, width=92))
 
 
-def _exempt(line):
+def _exempt(line, headline=""):
     """The three kinds of line the module says it will not cut, and why.
 
     The headline and the verdict are the run's accounting — a cut number
@@ -44,7 +44,13 @@ def _exempt(line):
     import re
 
     bare = line.lstrip()
-    return (bare.startswith(("exit ", "Done.", "Completed"))
+    # The headline is exempt whatever it says — `run.py` composes it, and
+    # a bare `26/27 documents converted` is as much a headline as
+    # `Done. …`. Matching its usual prefixes let the plainest form of it
+    # through the sweep.
+    if headline and bare == headline.strip():
+        return True
+    return (bare.startswith(("exit ", "Done.", "Completed", "Interrupted:"))
             or bare.startswith(("cat ", "teille-douce "))
             # A bare count on a line of its own: what is left when the
             # terminal is narrower than the figure it is being told. The
@@ -518,8 +524,9 @@ def test_a_wide_glyph_is_measured_in_columns_and_not_in_characters():
                     detail="出力ディレクトリが読めない"))
 
     for width in (56, 72, 80, 92, 100, 140):
-        for line in render_summary(outcome(record=record), width=width):
-            if _exempt(line):
+        shown = outcome(record=record)
+        for line in render_summary(shown, width=width):
+            if _exempt(line, shown.headline):
                 continue
             assert cells(line) <= min(width, 100), (width, cells(line), line)
 
@@ -552,7 +559,7 @@ def test_the_widest_summary_this_pipeline_can_produce_still_fits():
 
     for width in (40, 56, 72, 80, 92, 100, 140):
         for line in render_summary(full, width=width):
-            if _exempt(line):
+            if _exempt(line, full.headline):
                 continue
             assert cells(line) <= min(width, 100), (width, cells(line), line)
 
@@ -720,12 +727,12 @@ def test_every_line_of_a_summary_fits_its_terminal():
                     Locator.document("D1"), count=1699998, total=1699998,
                     detail="the pipeline raised on these"))
 
-    for width in range(28, 141):
-        for line in render_summary(
-                outcome(record=record,
-                        output_dir=Path("/home/rayondemiel/tei_output")),
-                width=width):
-            if _exempt(line):
+    shown = outcome(record=record,
+                    output_dir=Path("/home/rayondemiel/tei_output"),
+                    headline="26/27 documents converted")
+    for width in range(24, 141):
+        for line in render_summary(shown, width=width):
+            if _exempt(line, shown.headline):
                 continue
             assert cells(line) <= min(width, 100), (width, cells(line), line)
 
@@ -758,14 +765,15 @@ def test_every_composed_line_leaves_the_margin_the_module_reserves():
                     Locator.page("D1", "f1"), count=388, total=400,
                     detail="no <surface> could be built"))
 
-    for width in (72, 92, 100, 140):
+    for width in range(24, 141):
         room = min(width, MAX_WIDTH) - _MARGIN
-        for line in render_summary(
-                outcome(record=record,
-                        output_dir=Path("/home/rayondemiel/univ/tei_output")),
-                width=width):
+        shown = outcome(record=record,
+                        output_dir=Path("/home/rayondemiel/univ/tei_output"),
+                        headline="26/27 documents converted")
+        for line in render_summary(shown, width=width):
             # A rule spans the width on purpose; the margin is for the
             # lines that carry words.
-            if _exempt(line) or not line.strip() or set(line) <= {"═", "─"}:
+            if (_exempt(line, shown.headline) or not line.strip()
+                    or set(line) <= {"═", "─"}):
                 continue
             assert cells(line) <= room, (width, cells(line), room, line)

@@ -777,3 +777,78 @@ def test_the_phase_column_is_measured_in_cells_like_everything_else():
 def test_the_foot_groups_its_number_like_every_other_on_the_panel():
     assert "1 699 998 already written" in text(
         state(volumes_written=1699998, current=None))[-1]
+
+
+# =============================================================================
+# The panel, as a property, over names and widths nobody types today
+# =============================================================================
+
+def _every_phase_shape():
+    """Names and states the panel must survive, not the ones it meets."""
+    for name in ("ner", "sourceDoc", "reconstruction-align", "a" * 40,
+                 "漢" * 20, "x"):
+        for phase_state in PhaseState:
+            for note in ("(was up at start)", ""):
+                yield PhaseLine(name, phase_state, done=318, total=430,
+                                unit="containers", elapsed=4360, note=note,
+                                waiting=47, timeout=120,
+                                reason="PyHellen stopped answering at 19:41")
+
+
+def test_the_panel_holds_its_contract_over_names_it_will_never_meet():
+    """Four fixes shipped without one of these: the clipped head, the
+    measured cause indent, the totals row's degradation and `_short_log`
+    in cells. Reverting the module left the suite green.
+
+    Every one of them is about a value wider than the column it was
+    budgeted for, so the property is stated over names and figures wider
+    than production has — `panel.py` says a name that wide must not have
+    to know it is unusual."""
+    from teille_douce.report.text import cells
+
+    for phase in _every_phase_shape():
+        wide = state(
+            source_lost=1699998, withheld=999999, incidents=999999,
+            log_path="漢字巻物のログ_20260906_183307.log",
+            current=DocumentLine(name="D", pages=7, elapsed=3,
+                                 phases=(phase,)))
+        for width in range(24, 141):
+            for unicode_ in (True, False):
+                for line in text(wide, width=width, unicode=unicode_):
+                    assert cells(line) <= min(width, 100), (
+                        phase.name[:8], phase.state, width, cells(line), line)
+                    assert line == line.rstrip(), (
+                        phase.name[:8], phase.state, width, repr(line))
+                    assert not (line.strip() and set(line.strip()) <= {"…"}), (
+                        phase.name[:8], width, repr(line))
+
+
+def test_a_lost_phases_cause_sits_under_the_mark_it_explains():
+    """The indent was measured off the UNCLIPPED name, so as soon as the
+    head itself was shortened it landed past the mark — and at
+    four-and-twenty columns it swallowed the cause whole. Two fixes of
+    one round disagreeing with each other."""
+    phase = PhaseLine("reconstruction-align", PhaseState.LOST, done=0,
+                      total=430, unit="containers", note="(was up at start)",
+                      reason="PyHellen stopped answering")
+    lost = state(current=DocumentLine(name="D", pages=7, elapsed=3,
+                                      phases=(phase,)))
+
+    for width in range(40, 141):
+        lines = text(lost, width=width)
+        head = next(l for l in lines if "reconstruction" in l)
+        cause = next(l for l in lines if "was up" in l)
+        assert cause.index("(") == head.index("✗"), (width, head, cause)
+
+
+def test_the_totals_row_keeps_its_three_counts_or_the_one_that_matters():
+    """Clipped span by span, the row lost `incident` entirely below fifty
+    columns and cut it mid-number up to sixty-two — on the row that
+    exists so a counter is not mistaken for a document that had nothing
+    to process."""
+    big = state(source_lost=1699998, withheld=999999, incidents=999999)
+
+    for width in range(24, 141):
+        row = next(l for l in text(big, width=width)
+                   if "inc" in l and "incident" not in l or "incident" in l)
+        assert "999 999" in row, (width, row)

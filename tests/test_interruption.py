@@ -653,3 +653,60 @@ def test_the_progress_bars_own_teardown_cannot_leave_ctrl_c_held(
     assert signal.getsignal(signal.SIGINT) is before
     with pytest.raises(KeyboardInterrupt):
         os.kill(os.getpid(), signal.SIGINT)
+
+
+def test_a_failure_before_the_loop_names_itself(monkeypatch, tmp_path):
+    """The guard moved out one frame and the holder it reads stayed one
+    frame in, so anything raising before that binding — `Progress()`
+    starting a Live, the first incident write hitting a full disk —
+    reached a handler whose first statement is `interrupts.release()`
+    and came out as an `UnboundLocalError` with the real cause buried in
+    `__context__`. Which is the failure this stretch is guarded against,
+    reproduced one frame outside it."""
+    import signal
+
+    from teille_douce.cli import app
+    from teille_douce.cli.app import settings_from
+    from teille_douce.settings import set_settings
+
+    from test_e2e_pipeline import ALTO_MIN, FIXTURES
+
+    for csv in ("metadata_livre.csv", "metadata_personne.csv"):
+        shutil.copy(FIXTURES / csv, tmp_path / csv)
+    monkeypatch.chdir(tmp_path)
+
+    class RefusesToStart(run_module.Progress):
+        def __enter__(self):
+            raise BrokenPipeError(32, "Broken pipe")
+
+    monkeypatch.setattr(run_module, "Progress", RefusesToStart)
+    for name in ("TDOUCE_NER", "TDOUCE_ENRICHMENT", "TDOUCE_MODERNIZE"):
+        monkeypatch.setenv(name, "0")
+    parser = app.build_parser()
+    args = parser.parse_args(["run", "--no-config", "-i", str(ALTO_MIN),
+                              "-o", str(tmp_path / "out")])
+    set_settings(settings_from(args, parser=parser))
+
+    before = signal.getsignal(signal.SIGINT)
+    with pytest.raises(BrokenPipeError):
+        run_module.execute(args)
+
+    assert signal.getsignal(signal.SIGINT) is before
+
+
+def test_a_handler_set_outside_python_does_not_make_release_raise():
+    """`getsignal` answers None for one, which is the premise `_UNSET`
+    exists for — and `signal(SIGINT, None)` is a TypeError, out of the
+    `finally` that calls `release`, replacing the run's own exit code.
+    The one thing `release`'s docstring promises it will never do."""
+    import signal
+
+    held = run_module.HeldInterrupts()
+    held._held = None          # what `getsignal` gives for a C handler
+
+    with pytest.raises(SystemExit) as verdict:
+        with run_module.finishing(held):
+            raise SystemExit(5)
+
+    assert verdict.value.code == 5
+    assert signal.getsignal(signal.SIGINT) is signal.default_int_handler

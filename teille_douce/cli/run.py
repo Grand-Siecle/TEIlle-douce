@@ -741,7 +741,18 @@ class HeldInterrupts:
         has finished its work has stopped nothing.
         """
         if self._held is not _UNSET_SIGNAL:
-            signal.signal(signal.SIGINT, self._held)
+            try:
+                signal.signal(signal.SIGINT, self._held)
+            except (TypeError, ValueError):
+                # `getsignal` answers None for a handler installed
+                # outside Python — the premise `_UNSET_SIGNAL` exists
+                # for — and `signal(SIGINT, None)` is a TypeError. It
+                # came out of the `finally` that calls this and replaced
+                # the run's own exit code, which is the one thing this
+                # method's docstring promises it will never do. The
+                # default is the honest fallback: a Ctrl-C works again,
+                # which is all the caller needed.
+                signal.signal(signal.SIGINT, signal.default_int_handler)
             self._held = _UNSET_SIGNAL
         held, self._arrived = bool(self._arrived), []
         return held
@@ -771,9 +782,18 @@ def finishing(interrupts=None):
             # stderr, and under `-qq` — the level whose help says the
             # reader accepts losing warnings — only the unsuppressable
             # copy survived, which is the wrong way round.
-            logging.getLogger(__name__).info(
-                "a Ctrl-C arrived while the report was being written; the "
-                "report and the manifest are complete")
+            note = ("a Ctrl-C arrived while the report was being written; "
+                    "the report and the manifest are complete")
+            logging.getLogger(__name__).info(note)
+            # Only when the log line would NOT be seen. At the default
+            # level INFO reaches the file alone, so this print is the one
+            # visible copy; under `-vv` the console shows INFO too and
+            # the note was said twice.
+            spoken = any(
+                isinstance(handler, logging.StreamHandler)
+                and not hasattr(handler, "baseFilename")
+                and handler.level <= logging.INFO
+                for handler in logging.getLogger().handlers)
             try:
                 # `sys.stderr` is None under `2>&-`, and `print(file=None)`
                 # falls back to STDOUT — which puts the note back into
@@ -783,7 +803,7 @@ def finishing(interrupts=None):
                 # this `finally` and replace the run's own exit code:
                 # the failure mode of two rounds ago, inside the guard
                 # written to prevent it.
-                if sys.stderr is not None:
+                if sys.stderr is not None and not spoken:
                     print("  (a Ctrl-C arrived while the report was being "
                           "written; it is complete)", file=sys.stderr)
             except Exception:
@@ -1941,6 +1961,17 @@ def execute(args):
     # `finally` and any release. Guarded one frame too far in, it
     # left the process deaf to Ctrl-C with no report written, which
     # is the state the guard was added to make unreachable.
+    # Bound BEFORE the `try`, not inside it. Moving the guard out one
+    # frame last round left this binding one frame in, so anything that
+    # raised before it — `Progress()` starting a Live, the first
+    # `store.incident` write hitting a full disk — reached the handler
+    # whose first statement reads it and came out as an
+    # `UnboundLocalError` with the real cause buried in `__context__`.
+    # Which is the failure this stretch was guarded against in the first
+    # place, reproduced one frame outside it.
+    # Shared with the finishing section below, so a second Ctrl-C cannot
+    # land between the two.
+    interrupts = HeldInterrupts()
     try:
         with Progress(
             SpinnerColumn(),
@@ -2021,9 +2052,6 @@ def execute(args):
             ok_docs = []
             stopped_early = False
             interrupted = False
-            # Shared with the finishing section below, so a second
-            # Ctrl-C cannot land between the two.
-            interrupts = HeldInterrupts()
             # Entity directories this run brought into existence. A failure
             # cleans up only these, never a directory that was already there.
             entity_dirs_created, entity_files_before = set(), {}

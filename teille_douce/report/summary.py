@@ -18,12 +18,18 @@ from .text import cells, clip, pad, shorten_path
 
 MAX_WIDTH = 100
 
-# Every line fits the width, with three exceptions, all of them the same
-# exception: a NUMBER is printed whole or not at all. The headline and
-# the verdict are the run's accounting; a bare count on its own line is
-# what is left when a terminal is narrower than the figure it is being
-# told. A terminal wraps them and nothing is lost; clipped, they would
-# state a number that is not true.
+# Every line fits the width, with four exceptions and one reason: a
+# number and a command are each printed whole or not at all. The
+# headline and the verdict are the run's accounting; a bare count on a
+# line of its own is what is left when the terminal is narrower than the
+# figure it is being told; and a `next` command is meant to be pasted
+# into a shell. A terminal wraps all four and nothing is lost. Clipped,
+# the first three would state a number that is not true and the fourth
+# would not run.
+#
+# There were three in this comment and four in the code, which is how
+# `Interrupted: …` — a headline like the other two — came to be outside
+# the list the tests check.
 
 # What each line of the three blocks is called, and what it is measured
 # against. Written out rather than derived from the code name so the
@@ -280,9 +286,21 @@ def _located_line(located, room):
     # The indent is spent before the figure is: twelve spaces in front of
     # a seven-figure count runs off a thirty-column terminal, and the
     # count is the only part of the line that cannot be shortened.
-    second = f"{vague} doc-only"
-    return (f"  located   {precise} precise\n"
-            f"{' ' * max(0, min(12, room - cells(second)))}{second}")
+    # BOTH lines. The adaptive indent landed on the second alone, and
+    # the first — which carries the other figure — was left unclipped:
+    # the fix on one line of a two-line pair, which is this branch's own
+    # recurring shape.
+    first, second = f"{precise} precise", f"{vague} doc-only"
+    pair = (f"  located   {first}", f"{' ' * 12}{second}")
+    if all(cells(line) <= room for line in pair):
+        return "\n".join(pair)
+    # And a third fold under that, for a terminal narrower than the
+    # label and a seven-figure count together. The word goes on its own
+    # line before either figure is shortened, because neither can be.
+    return "\n".join((
+        "  located",
+        f"{' ' * max(0, min(4, room - cells(first)))}{first}",
+        f"{' ' * max(0, min(4, room - cells(second)))}{second}"))
 
 
 def _share(value, bar):
@@ -471,11 +489,12 @@ def render_summary(outcome, width=92):
             # the second one loose in the middle of the report — one
             # record for a wrapper reading FAILED lines became two, the
             # second a bare fragment.
-            lines.append(clip(f"    FAILED {name}: {reason}".rstrip(), room))
+            lines.append(clip(f"    FAILED {name}: {reason}".rstrip(),
+                              room - _MARGIN))
         lines.append("")
 
     lines.extend(_located_line(outcome.record.located(),
-                               room).split("\n"))
+                               room - _MARGIN).split("\n"))
     lines.append("")
 
     if outcome.exit_code == 5:
@@ -521,11 +540,11 @@ def render_summary(outcome, width=92):
             # shorter command, it is one that does not run. A terminal
             # wraps it and it is still copy-pasteable. The reason beside
             # it may be shortened, or move under it.
-            if cells(f"    {command}") + cells(why) + 2 <= room:
+            if cells(f"    {command}") + cells(why) + 2 <= room - _MARGIN:
                 lines.append(_columns(f"    {command}", why, room))
             else:
                 lines.append(f"    {command}")
-                lines.append(clip(f"      {why}", room))
+                lines.append(clip(f"      {why}", room - _MARGIN))
         lines.append("")
 
     # Exempt from the width cap for the same reason as the headline
