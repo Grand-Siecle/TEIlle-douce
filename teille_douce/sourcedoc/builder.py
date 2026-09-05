@@ -122,17 +122,23 @@ def warm_up():
         return
     from multiprocessing import forkserver
 
+    # `_UNSET`, for the same reason `build_sourcedoc` uses it: a handler
+    # set outside Python reads back as None, and `previous is not None`
+    # then skips the restore. Here that would leave SIG_IGN installed for
+    # the WHOLE run rather than for one document — Ctrl-C dead from the
+    # first volume to the last.
+    held = _UNSET
     try:
-        previous = signal.signal(signal.SIGINT, signal.SIG_IGN)
+        held = signal.signal(signal.SIGINT, signal.SIG_IGN)
     except ValueError:      # pragma: no cover - not the main thread
-        previous = None
+        pass
     try:
         forkserver.ensure_running()
     except Exception as reason:     # pragma: no cover - defensive
         logger.debug("could not start the forkserver early (%s)", reason)
     finally:
-        if previous is not None:
-            signal.signal(signal.SIGINT, previous)
+        if held is not _UNSET:
+            signal.signal(signal.SIGINT, held)
 
 
 def _init_worker(document_name, segmonto_zones, segmonto_lines, config,
@@ -509,6 +515,16 @@ def build_sourcedoc(
                 iiif_mapping_dict, settings,
             ),
         )
+    except BaseException:
+        # The interrupt outranks whatever `Pool()` raised. Without this
+        # the deferred SIGINT was dropped on the floor: `execute` catches
+        # Exception per document and the run carried on, having been
+        # asked to stop.
+        if held is not _UNSET:
+            signal.signal(signal.SIGINT, held)
+        if deferred:
+            raise KeyboardInterrupt
+        raise
     finally:
         # In a `finally`, because `Pool()` raises: too many open files,
         # a forkserver that will not start. `execute` catches Exception

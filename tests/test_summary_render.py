@@ -599,3 +599,62 @@ def test_a_verdict_never_names_a_cause_the_level_does_not_count():
 
     assert "lost too many pages" in shown
     assert "carries no enrich" not in shown, shown
+
+
+def test_the_page_accounting_survives_an_absolute_output_path():
+    """`→ <out>` and `N of M pages written` went through the block-entry
+    rule, where the LEFT is the load-bearing half — so an absolute `-o`,
+    which the panel rightly calls the ordinary case, dropped the run's
+    page count off the summary at every width from fifty-six to
+    ninety-five, the default included. Every test used a short relative
+    path, so the suite could not see it."""
+    absolute = Path("/home/rayondemiel/univ_geneve/test_tei_ouput/tei_output")
+
+    for width in range(48, 121):
+        shown = render_summary(outcome(output_dir=absolute), width=width)
+        assert any("16 999 of 16 999 pages written" in line
+                   for line in shown), (width, shown[:8])
+
+
+def test_a_label_of_exactly_the_column_width_keeps_its_separator():
+    """`{label:<22}` pads to twenty-two and stops, so a label of exactly
+    that ran into its own number: `..._tome_II30.03%`. This corpus's
+    longest volume name is twenty-one characters."""
+    from teille_douce.report.summary import _entry
+
+    for length in range(18, 30):
+        line, = _entry("L" * length, "30.03%", "", 120)
+        assert "L30.03%" not in line, (length, line)
+        assert "  30.03%" in line, (length, line)
+
+
+def test_a_seven_figure_count_is_not_clipped_at_a_narrow_width():
+    """`max(1, room - cells(measured) - 6)` clamped, the composed line
+    then exceeded the room, and the clip below cut the count —
+    `3 of 1 402 volumes · 1 699 998 containers lo…` at every width under
+    fifty-five."""
+    record = RunRecord()
+    record.add(Loss(Code.CONTAINER_FAILED, "D1", "enrich",
+                    Locator.document("D1"), count=1699998, total=1699998,
+                    detail="the pipeline raised on these"))
+
+    for width in range(36, 101):
+        shown = render_summary(outcome(record=record), width=width)
+        assert any("1 699 998 of 1 699 998 containers" in line
+                   for line in shown), (width, [l for l in shown if "699" in l])
+
+
+def test_a_loss_measured_in_lines_is_not_relabelled_batches():
+    """The label table says `batch_failed` counts batches; a retry the
+    service never answered is counted in lines, and the loss's own unit
+    was honoured for `PHASE_LOST` alone — so the summary printed
+    `57 of 1 402 batches` over two numbers that are lines."""
+    record = RunRecord()
+    record.add(Loss(Code.RETRY_UNANSWERED, "D1", "modernize.retry",
+                    Locator.document("D1"), count=57, total=1402,
+                    detail="VieuxParler did not answer the retry"))
+
+    shown = rendered(outcome(record=record))
+
+    assert "57 of 1 402 lines" in shown
+    assert "batches" not in shown

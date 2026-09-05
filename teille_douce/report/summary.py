@@ -14,7 +14,7 @@ from pathlib import Path
 from .counts import _grouped, render_count
 from .gate import gate_verdict
 from .record import Block, Code, RunRecord
-from .text import cells, clip, pad
+from .text import cells, clip, pad, shorten_path
 
 MAX_WIDTH = 100
 
@@ -26,6 +26,7 @@ _LABELS = {
     Code.ALTO_IDS_REPAIRED: ("ALTO ids repaired", "ids"),
     Code.ARCHIVE_CORRUPT: ("archives corrupt", "archives"),
     Code.VOLUME_UNREADABLE: ("volumes unreadable", "volumes"),
+    Code.RETRY_UNANSWERED: ("retries unanswered", "lines"),
     Code.READING_REJECTED: ("readings rejected", "readings"),
     Code.ENTITY_FILTERED: ("entities filtered", "entities"),
     Code.CONTAINER_UNANCHORED: ("containers unanchored", "containers"),
@@ -124,7 +125,12 @@ def _entry(label, measured, right, width):
     impossible, reproduced inside its own remedy.
     """
     room = min(width, MAX_WIDTH) - _MARGIN
-    wide = f"    {label:<22}{measured}"
+    # Padded in cells and never below two spaces. `{label:<22}` counts
+    # characters, so a CJK name misaligned — and a name of exactly
+    # twenty-two ran straight into its own number: `..._tome_II30.03%`.
+    # This corpus's longest volume name is twenty-one characters.
+    gap = max(2, 23 - cells(label))
+    wide = f"    {label}{' ' * gap}{measured}"
     narrow = f"    {label}  {measured}"
     if cells(wide) <= room:
         left = wide
@@ -135,10 +141,24 @@ def _entry(label, measured, right, width):
         # `BDD_1685_Felibien_Entretiens_sur_les_vies_tome_II` is what
         # this corpus is full of, and clipping the composed line dropped
         # the share it was measured by.
-        left = f"    {clip(label, max(1, room - cells(measured) - 6))}  {measured}"
+        for_label = room - cells(measured) - 6
+        if for_label < 1:
+            # Not even the label's first character fits beside it. The
+            # count takes a line of its own rather than being clipped —
+            # `3 of 1 402 volumes · 1 699 998 containers lo…` is the
+            # sentence this module exists to make impossible, and the
+            # clamp below used to produce it at every width under
+            # fifty-five.
+            # The indent is the last thing spent before the number is.
+            pad_by = " " * max(0, min(6, room - cells(measured)))
+            below = [clip(f"    {label}", room), f"{pad_by}{measured}"]
+            if right:
+                below.append(clip(f"      {right}", room))
+            return below
+        left = f"    {clip(label, for_label)}  {measured}"
     if cells(left) + cells(right) + 2 <= room:
         return [pad(left, right, room, keep="left")]
-    return [clip(left, room), clip("      " + right, room)]
+    return [left, clip("      " + right, room)] if right else [left]
 
 
 def _block_lines(outcome, block, width):
@@ -185,8 +205,18 @@ def _block_lines(outcome, block, width):
             amount = sum(e.count for e in matching)
             counted = next((e.unit for e in matching if e.unit), "")
             if amount:
-                measured += f" · {_grouped(amount)} {counted} lost".replace(
+                joined = f" · {_grouped(amount)} {counted} lost".replace(
                     "  ", " ")
+                # Dropped whole rather than clipped when the width cannot
+                # hold it. It is the supplement that lets a reader join
+                # this line to the panel's incident counter; the count in
+                # front of it is the block's own measure, and cutting
+                # either into `1 699 998 container…` states a number that
+                # is not true. Below about fifty columns the supplement
+                # is a luxury and the measure is not.
+                if cells(measured) + cells(joined) + 8 <= min(width,
+                                                              MAX_WIDTH):
+                    measured += joined
         else:
             # Per (document, PHASE), not per step: giving each cause its
             # own step is what lets two diagnoses survive, and keying the
@@ -197,8 +227,14 @@ def _block_lines(outcome, block, width):
             for entry in matching:
                 per_phase[(entry.document, entry.step.split(".", 1)[0])] = \
                     entry.total
+            # The loss's own unit wins where it has one. The label table
+            # says `batch_failed` counts batches, and a retry the service
+            # never answered is counted in LINES — so the summary
+            # relabelled it, which is the "measured in one unit and
+            # labelled another" defect the panel had, moved here.
+            counted = next((e.unit for e in matching if e.unit), unit)
             measured = render_count(sum(e.count for e in matching),
-                                    sum(per_phase.values()), unit)
+                                    sum(per_phase.values()), counted)
         shown = detail
         if code.repaired:
             shown = (shown + " (repaired)").strip()
@@ -358,10 +394,18 @@ def render_summary(outcome, width=92):
     # accounting, and a cut number is a wrong number where a long line is
     # only long.
     lines.append(f"  {headline}")
-    lines.append(_columns(
-        f"      → {outcome.output_dir}",
-        f"{render_count(outcome.pages_written, outcome.pages_total, 'pages')} written",
-        room))
+    # `keep="right"`, and the path shortened rather than the count: this
+    # is the run's page accounting, and it went through the block-entry
+    # rule — where the left is the load-bearing half — so an absolute
+    # `-o`, which `panel.py` rightly calls the ordinary case, dropped
+    # `N of M pages written` off the summary entirely at every width from
+    # fifty-six to ninety-five, the default included. Every test used a
+    # short relative path, so the suite could not see it.
+    written = (f"{render_count(outcome.pages_written, outcome.pages_total, 'pages')}"
+               f" written")
+    lines.append(pad(
+        f"      → {shorten_path(outcome.output_dir, max(8, room - cells(written) - 9))}",
+        written, room, keep="right"))
     lines.append("")
 
     for block in Block:

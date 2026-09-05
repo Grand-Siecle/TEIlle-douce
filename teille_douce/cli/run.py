@@ -19,6 +19,7 @@ import re
 import warnings
 from fnmatch import fnmatch
 import shutil
+import signal
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -690,6 +691,60 @@ def _keep_the_record(store, settings, failed, exit_code):
     RunStore.prune(settings.output_dir, spare=store.path)
 
 
+# "no handler was installed", told apart from a handler that IS None.
+_UNSET_SIGNAL = object()
+
+
+class HeldInterrupts:
+    """SIGINT recorded instead of delivered, until `release`.
+
+    A second interrupt threw away the very thing the first one exists to
+    preserve: the run directory, the manifest and the report of what had
+    been written. Two of them a hundred and fifty milliseconds apart left
+    one TEI file on disk, no manifest, no summary and a `--retry-failed`
+    with nothing to read — over a message that had just promised to
+    finish the report.
+
+    Held from inside the interrupt handler and not merely around the
+    report, because the second one lands during the panel's teardown:
+    wrapping the writing alone still lost four sweeps in six. Held and
+    not ignored, over a teardown, a JSON write and some printing — and
+    honoured on the way out.
+    """
+
+    def __init__(self):
+        self._held = _UNSET_SIGNAL
+        self._arrived = []
+
+    def hold(self):
+        if self._held is not _UNSET_SIGNAL:
+            return
+        try:
+            self._held = signal.signal(
+                signal.SIGINT, lambda *_: self._arrived.append(True))
+        except ValueError:      # pragma: no cover - not the main thread
+            pass
+
+    def release(self):
+        if self._held is not _UNSET_SIGNAL:
+            signal.signal(signal.SIGINT, self._held)
+            self._held = _UNSET_SIGNAL
+        if self._arrived:
+            self._arrived.clear()
+            raise KeyboardInterrupt
+
+
+@contextmanager
+def finishing(interrupts=None):
+    """The stretch where the run must not be interrupted again."""
+    interrupts = interrupts if interrupts is not None else HeldInterrupts()
+    interrupts.hold()
+    try:
+        yield
+    finally:
+        interrupts.release()
+
+
 @contextmanager
 def panel_installed(reporter, active):
     """Put the live panel up, and take it down whatever happens.
@@ -1101,13 +1156,12 @@ def _process_document(doc_name, filepaths, doc_dir, df_meta, config,
                 # its job, and filing it in block 2 hid it from every
                 # `--fail-on` level there is.
                 reporter.lost(Loss(
-                    Code.BATCH_FAILED, doc_name, "modernize.retry",
+                    Code.RETRY_UNANSWERED, doc_name, "modernize.retry",
                     Locator.document(doc_name),
                     count=mod_stats["retries_unreachable"],
                     total=mod_stats.get("lines_offered",
                                         mod_stats["retries_unreachable"]),
-                    detail="VieuxParler did not answer the retry",
-                    unit="lines"))
+                    detail="VieuxParler did not answer the retry"))
             if mod_stats.get("readings_rejected"):
                 # Block 2. The service answered and the guard refused
                 # what it answered — a divergent reading kept as its
@@ -1906,6 +1960,9 @@ def execute(args):
         ok_docs = []
         stopped_early = False
         interrupted = False
+        # Shared with the finishing section below, so a second
+        # Ctrl-C cannot land between the two.
+        interrupts = HeldInterrupts()
         # Entity directories this run brought into existence. A failure
         # cleans up only these, never a directory that was already there.
         entity_dirs_created, entity_files_before = set(), {}
@@ -2036,6 +2093,10 @@ def execute(args):
                 # so the summary — which lives outside this block — never
                 # ran, and four hours of knowledge left with the signal.
                 interrupted = True
+                # Held from here, not from the report: the second one
+                # lands during the panel's teardown, which is above this
+                # line's own `finally`.
+                interrupts.hold()
                 console.print(
                     "\n[yellow]Interrupted — finishing the report for "
                     "what was already written.[/yellow]")
@@ -2100,45 +2161,51 @@ def execute(args):
     # One account of the run. The sentence above is the one every wrapper
     # greps and every accounting test balances, so the report takes it
     # rather than deriving a second fraction of its own.
-    if store is not None:
-        # Moved now rather than written there from the start: the run
-        # directory lives under the output directory, and creating it
-        # while the run might still refuse would break the promise that
-        # exit 3 leaves nothing behind. Only a log nobody named: a
-        # --log-file is an instruction.
-        if RUN_LOG_FILE and settings.origin("log_file") == "default":
-            RUN_LOG_FILE = store.adopt_log(RUN_LOG_FILE)
-        store.finish(argv=["teille-douce", *sys.argv[1:]],
-                     settings=settings.as_manifest(),
-                     # The stem, because every selector matches a stem:
-                     # writing `LIV9003_reconciled.zip` made the
-                     # --retry-failed the summary offers answer "No
-                     # volume matches" and exit 3.
-                     documents={**{Path(name).stem: "ok" for name in ok_docs},
-                                **{Path(name).stem: "failed"
-                                   for name, _ in failed_docs}},
-                     exit_code=exit_code)
-        RunStore.prune(settings.output_dir, spare=store.path)
-        if store.unwritable:
-            # Said once, and said: a report nobody can find later is a
-            # report that was not written, and silence about it is worse
-            # than the failure.
-            console.print(f"[yellow]No run record kept: "
-                          f"{escape(store.problems[0])}[/yellow]")
+    # Held against a second Ctrl-C from here to the end. The first
+    # one promised to finish the report for what was already
+    # written; a second, a hundred and fifty milliseconds later,
+    # threw away the run directory, the manifest and the summary,
+    # and left `--retry-failed` with nothing to read.
+    with finishing(interrupts):
+        if store is not None:
+            # Moved now rather than written there from the start: the run
+            # directory lives under the output directory, and creating it
+            # while the run might still refuse would break the promise that
+            # exit 3 leaves nothing behind. Only a log nobody named: a
+            # --log-file is an instruction.
+            if RUN_LOG_FILE and settings.origin("log_file") == "default":
+                RUN_LOG_FILE = store.adopt_log(RUN_LOG_FILE)
+            store.finish(argv=["teille-douce", *sys.argv[1:]],
+                         settings=settings.as_manifest(),
+                         # The stem, because every selector matches a stem:
+                         # writing `LIV9003_reconciled.zip` made the
+                         # --retry-failed the summary offers answer "No
+                         # volume matches" and exit 3.
+                         documents={**{Path(name).stem: "ok" for name in ok_docs},
+                                    **{Path(name).stem: "failed"
+                                       for name, _ in failed_docs}},
+                         exit_code=exit_code)
+            RunStore.prune(settings.output_dir, spare=store.path)
+            if store.unwritable:
+                # Said once, and said: a report nobody can find later is a
+                # report that was not written, and silence about it is worse
+                # than the failure.
+                console.print(f"[yellow]No run record kept: "
+                              f"{escape(store.problems[0])}[/yellow]")
 
-    outcome = reporter_run.finished(exit_code=exit_code, headline=headline,
-                                    elapsed=perf_counter() - run_started,
-                                    fail_on=settings.fail_on,
-                                    page_loss_failures=too_lossy,
-                                    max_page_loss=settings.max_page_loss,
-                                    report_path=(store.path if store is not None
-                                                 and not store.unwritable
-                                                 else None))
-    console.print("")
-    for line in render_summary(outcome, width=console.width):
-        console.print(escape(line), highlight=False)
-    if failed_docs and RUN_LOG_FILE:
-        console.print(f"[dim]Tracebacks in {escape(str(RUN_LOG_FILE))}[/dim]")
-    if exit_code:
-        sys.exit(exit_code)
+        outcome = reporter_run.finished(exit_code=exit_code, headline=headline,
+                                        elapsed=perf_counter() - run_started,
+                                        fail_on=settings.fail_on,
+                                        page_loss_failures=too_lossy,
+                                        max_page_loss=settings.max_page_loss,
+                                        report_path=(store.path if store is not None
+                                                     and not store.unwritable
+                                                     else None))
+        console.print("")
+        for line in render_summary(outcome, width=console.width):
+            console.print(escape(line), highlight=False)
+        if failed_docs and RUN_LOG_FILE:
+            console.print(f"[dim]Tracebacks in {escape(str(RUN_LOG_FILE))}[/dim]")
+        if exit_code:
+            sys.exit(exit_code)
 

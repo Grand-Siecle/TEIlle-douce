@@ -116,6 +116,9 @@ class Code(Enum):
     PAGE_UNUSABLE = ("page_unusable", Block.SOURCE)
     ARCHIVE_CORRUPT = ("archive_corrupt", Block.SOURCE)
     VOLUME_UNREADABLE = ("volume_unreadable", Block.INCIDENT)
+    # A per-line retry the service never answered. Not a failed batch:
+    # the batch went through, and what is counted here is lines.
+    RETRY_UNANSWERED = ("retry_unanswered", Block.INCIDENT)
     ALTO_IDS_REPAIRED = ("alto_ids_repaired", Block.SOURCE, True)
 
     # withheld on purpose

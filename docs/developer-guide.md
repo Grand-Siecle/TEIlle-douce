@@ -211,10 +211,13 @@ so `teille_douce/report/record.py` splits them:
 |---|---|---|
 | **the source was defective** | nothing the pipeline could do | an unreadable ALTO page, a corrupt archive, duplicate ALTO ids (repaired) |
 | **withheld on purpose** | the guards did their job | a modernized reading under the similarity floor, an entity under 0.6, a container more than 20 % of whose block could not be anchored |
-| **lost to an incident** | this needs a human | a service that died, a container that raised, a whole phase or a document lost |
+| **lost to an incident** | this needs a human | a service that died, a container that raised, a retry nobody answered, a whole phase or a document lost |
 
 What block 2 counts, precisely: a modernized reading the divergence guard
-refused (`readings_rejected`, from `modernize.py`), an entity that reached
+refused (`readings_rejected`, from `modernize.py` — and only that; a retry
+the service never ANSWERED is `Code.RETRY_UNANSWERED` in block 3, because
+a service dying is not a guard doing its job, and block 2 counts at no
+`--fail-on` level), an entity that reached
 resolution and was pruned below the confidence floor (`entities_filtered`,
 from `ner_filter.filter_resolved_entities`), and a container more than 20 % of
 whose block could not be anchored. The earlier span- and POS-level filters run

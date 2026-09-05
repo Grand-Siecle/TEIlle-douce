@@ -395,3 +395,46 @@ def test_an_interrupt_before_the_loop_is_not_a_traceback(monkeypatch,
 
     assert app.main(["run", "--no-config"]) == 130
     assert "Interrupted" in capsys.readouterr().err
+
+
+def test_a_second_interrupt_does_not_throw_away_the_first_ones_report():
+    """The first Ctrl-C prints "finishing the report for what was already
+    written". A second, a hundred and fifty milliseconds later, threw
+    that away: one TEI file on disk, no run directory, no manifest, no
+    summary, and a `--retry-failed` afterwards with nothing to read.
+
+    Held from inside the interrupt handler and not merely around the
+    writing, because the second one lands during the panel's teardown —
+    wrapping the report alone still lost four sweeps in six.
+    """
+    import signal
+
+    held = run_module.HeldInterrupts()
+    before = signal.getsignal(signal.SIGINT)
+
+    wrote = []
+    with pytest.raises(KeyboardInterrupt):
+        with run_module.finishing(held):
+            signal.raise_signal(signal.SIGINT)
+            wrote.append("the manifest")
+            signal.raise_signal(signal.SIGINT)
+            wrote.append("the summary")
+
+    assert wrote == ["the manifest", "the summary"]
+    assert signal.getsignal(signal.SIGINT) is before
+
+
+def test_holding_is_idempotent_so_the_two_call_sites_cannot_fight():
+    """`hold()` is called from the interrupt handler and again by
+    `finishing`; the second must not overwrite the saved handler with
+    the deferring one and restore that."""
+    import signal
+
+    held = run_module.HeldInterrupts()
+    before = signal.getsignal(signal.SIGINT)
+
+    held.hold()
+    held.hold()
+    held.release()
+
+    assert signal.getsignal(signal.SIGINT) is before

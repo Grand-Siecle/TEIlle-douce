@@ -169,20 +169,8 @@ class _Tree:
         pass
 
 
-def test_no_phase_is_left_turning_when_its_work_has_stopped(monkeypatch,
-                                                            tmp_path):
-    """`_phase_done` was called for sourceDoc, enrich and ner, and for
-    modernize nowhere at all — so its spinner turned beside a full bar
-    for the whole of NER, the header override and the write: minutes on a
-    real volume, claiming work that had finished. Verbatim what that
-    function's own docstring says it exists to prevent, on the one phase
-    that never called it.
-
-    Driven through the real `_process_document`, because the shape of the
-    bug is a BRANCH: the failure path ended the phase and the success
-    path did not, so reading the source for a call to `_phase_done`
-    finds one and proves nothing.
-    """
+def _stub_the_pipeline(monkeypatch, tmp_path):
+    """Everything `_process_document` calls that is not the reporter."""
     monkeypatch.setattr(run_module, "TEI", _Tree)
     monkeypatch.setattr(run_module, "find_metadata_row", lambda *a: {})
     monkeypatch.setattr(run_module, "build_metadata_dict",
@@ -202,6 +190,23 @@ def test_no_phase_is_left_turning_when_its_work_has_stopped(monkeypatch,
     import teille_douce.enrichment.ner_pipeline as ner
     monkeypatch.setattr(ner, "run_ner", lambda *a, **k: [])
     monkeypatch.setattr(ner, "summarize", lambda resolved: None)
+
+
+def test_no_phase_is_left_turning_when_its_work_has_stopped(monkeypatch,
+                                                            tmp_path):
+    """`_phase_done` was called for sourceDoc, enrich and ner, and for
+    modernize nowhere at all — so its spinner turned beside a full bar
+    for the whole of NER, the header override and the write: minutes on a
+    real volume, claiming work that had finished. Verbatim what that
+    function's own docstring says it exists to prevent, on the one phase
+    that never called it.
+
+    Driven through the real `_process_document`, because the shape of the
+    bug is a BRANCH: the failure path ended the phase and the success
+    path did not, so reading the source for a call to `_phase_done`
+    finds one and proves nothing.
+    """
+    _stub_the_pipeline(monkeypatch, tmp_path)
 
     run = a_run()
     run_module._process_document(
@@ -403,21 +408,36 @@ def test_a_real_run_shows_the_phase_it_is_in(tmp_path):
     assert "body+lang" in screen, screen[-4000:]
 
 
-def test_a_phase_measures_its_progress_in_the_unit_it_reports():
+def test_a_phase_measures_its_progress_in_the_unit_it_reports(monkeypatch,
+                                                              tmp_path):
     """The modernize callback fires once per HTTP batch and the phase was
     declared in containers, so the bar filled to "10 of 10 containers" on
     a document with twenty-three and then jumped to 23 of 23 — the
     denominator changing meaning mid-phase. Enrichment had the same
     shape: its callback counts requests, and a container can be several.
+
+    Observed on the reporter, not read out of the source. The version of
+    this test that grepped `_process_document` for the literal passed
+    unchanged with every phase forced back to "containers".
     """
-    import inspect
-    import re
+    _stub_the_pipeline(monkeypatch, tmp_path)
+    run = a_run()
+    seen = []
+    real = run.phase
+    monkeypatch.setattr(run, "phase", lambda doc, name, state, **fields: (
+        seen.append((name, state, fields.get("done"), fields.get("total"),
+                     fields.get("unit"))),
+        real(doc, name, state, **fields))[1], raising=False)
 
-    source = inspect.getsource(run_module._process_document)
-    running = dict(re.findall(
-        r'_phase_progress\([^)]*?"([^"]+)",\s*\n?\s*"([^"]+)"\)', source,
-        re.S))
+    run_module._process_document(
+        "D1", [object()], tmp_path, None, {}, None,
+        do_enrich=True, do_modernize=True, do_ner=True,
+        progress=FakeProgress(), reporter=run)
 
-    assert running.get("enrich") == "requests", running
-    assert running.get("modernize") == "batches", running
-    assert running.get("sourceDoc", "pages") == "pages", running
+    running = {name: unit for name, state, _, _, unit in seen
+               if state is PhaseState.RUNNING and unit}
+    # `_Tree.enrich_body` reports 11 of 14 requests and
+    # `modernize_body` 20 of 23 batches — the units their real callers
+    # count in.
+    assert running["enrich"] == "requests", running
+    assert running["modernize"] == "batches", running
