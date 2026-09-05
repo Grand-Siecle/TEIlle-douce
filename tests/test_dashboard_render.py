@@ -417,26 +417,15 @@ def test_a_service_that_was_asked_for_and_did_not_answer_is_down():
     assert "DOWN" in banner
 
 
-def test_the_folded_integers_are_shown_only_when_there_is_a_sum_to_show():
-    """One occurrence has nothing summed: the number is already in the
-    shape, and printing it again as a total invites reading an identifier
-    as a count."""
+def test_the_folded_integers_are_never_shown_as_a_total():
+    """Whether they were counts or identifiers is the one thing the fold
+    cannot know, so it says neither."""
     digest = WarningDigest()
     digest.add("D1", "No metadata row for 'LIV9002_reconciled'")
 
     line = next(l for l in text(state(digest=digest)) if "1×" in l)
 
     assert "9 002" not in line
-
-
-def test_a_folded_count_is_still_shown_when_it_is_really_a_sum():
-    digest = WarningDigest()
-    digest.add("D1", "page 1: 19 duplicate ALTO id(s) disambiguated")
-    digest.add("D2", "page 2: 23 duplicate ALTO id(s) disambiguated")
-
-    line = next(l for l in text(state(digest=digest)) if "2×" in l)
-
-    assert "42" in line
 
 
 # =============================================================================
@@ -580,3 +569,23 @@ def test_the_banner_keeps_the_dead_service_when_it_has_to_choose():
     banner = text(crowded, width=60)[1]
 
     assert "VieuxParler" in banner and "LOST" in banner
+
+
+def test_the_digest_line_prints_only_what_the_fold_actually_knows():
+    """It summed the integers of the folded messages and printed the
+    last one. For "No metadata row for 'LIV9002_reconciled'" across two
+    volumes that is 9002 + 9004 = 18 006 — two identifiers read as a
+    count, beside a volume count, with no unit to tell them apart.
+
+    The fold knows how many times a shape occurred and in how many
+    volumes. It cannot know what the numbers inside meant, and the one
+    case where they were worth printing — duplicate ALTO ids — is
+    already a line of the summary, measured against its own denominator."""
+    digest = WarningDigest()
+    digest.add("A", "No metadata row for 'LIV9002_reconciled'")
+    digest.add("B", "No metadata row for 'LIV9004_reconciled'")
+
+    line = next(l for l in text(state(digest=digest)) if "2×" in l)
+
+    assert "18 006" not in line
+    assert "2 volumes" in line

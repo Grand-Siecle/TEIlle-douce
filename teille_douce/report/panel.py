@@ -444,13 +444,15 @@ def render_panel(state, width=92, height=None, unicode=True, color=True,
             # No unit on the integers: the fold cannot know what they
             # counted, and "8 ids" over a warning about worker counts is
             # a confident wrong answer.
-            # Only when something was actually summed: on a single
-            # occurrence the number is already in the shape, and showing
-            # it again as a total invites reading an identifier as a
-            # count.
-            summed = entry.totals and entry.occurrences > 1
-            right = (_plural(entry.documents, "volume")
-                     + (f"  {_grouped(entry.totals[-1])}" if summed else ""))
+            # How many times, and in how many volumes. Not the sum of
+            # the integers inside: the fold cannot know whether they
+            # were counts or identifiers, and "No metadata row for
+            # 'LIV9002_reconciled'" across two volumes rendered 18 006 —
+            # two identifiers added together and printed beside a volume
+            # count with no unit to tell them apart. The one case where
+            # the sum was worth having, duplicate ALTO ids, is a line of
+            # the summary already, measured against its own denominator.
+            right = _plural(entry.documents, "volume")
             # The counts are why the line exists, so a shape too long to
             # fit gives up its own prose rather than its numbers. The
             # verbatim message is in the log either way.
