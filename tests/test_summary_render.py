@@ -309,3 +309,13 @@ def test_one_document_is_still_measured_against_its_own_total():
                     Locator.page("D1", "f1"), count=3, total=754))
 
     assert "3 of 754 pages" in rendered(outcome(record=record))
+
+
+def test_an_interruption_is_not_reported_as_a_failure():
+    """Nothing was judged: the run was stopped. Saying "2 of 5 volumes not
+    converted" would read as a verdict on a corpus nobody finished
+    looking at."""
+    text = rendered(outcome(volumes_written=2, exit_code=130))
+
+    assert text.rstrip().endswith(
+        "exit 130 — interrupted, 2 of 27 volumes written and kept")

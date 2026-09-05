@@ -1456,3 +1456,129 @@ def test_asking_for_both_reporters_is_a_usage_error(tmp_path):
                             **MODE_COURT)
 
     assert res.returncode == 2
+
+
+# =============================================================================
+# What a run leaves behind, and what the next one can do with it
+# =============================================================================
+
+def _runs_of(sortie):
+    root = sortie / ".teille-douce" / "runs"
+    return sorted(p for p in root.iterdir()) if root.is_dir() else []
+
+
+def test_a_run_writes_its_manifest_beside_its_output(tmp_path):
+    """A reader coming back on Thursday needs to know what was asked for
+    and what happened to each volume."""
+    import json
+
+    ocr = tmp_path / "ocr"
+    shutil.copytree(ALTO_MIN, ocr)
+
+    res, sortie = _executer_main(tmp_path, ocr, args=("--fast",),
+                                 **MODE_COURT)
+
+    run, = _runs_of(sortie)
+    manifest = json.loads((run / "run.json").read_text(encoding="utf-8"))
+    assert manifest["exit_code"] == 0
+    assert manifest["documents"][DOCUMENT] == "ok"
+    # What was typed, not what it resolved to: a bare invocation records
+    # a bare invocation, which is the thing a reader would re-run.
+    assert manifest["argv"][0] == "teille-douce"
+    assert "--fast" in manifest["argv"]
+    # And where every value came from, which is the part the value
+    # cannot tell you three days later.
+    assert manifest["settings"]["paths.input"]["origin"].startswith("env")
+
+
+def test_a_failed_volume_is_named_in_the_manifest(tmp_path):
+    import json
+
+    ocr = tmp_path / "ocr"
+    shutil.copytree(ALTO_MIN, ocr)
+    (ocr / "LIV9002_reconciled").mkdir()
+    (ocr / "LIV9002_reconciled" / "f1.xml").write_text("no", encoding="utf-8")
+
+    res, sortie = _executer_main(tmp_path, ocr, **MODE_COURT)
+
+    run, = _runs_of(sortie)
+    manifest = json.loads((run / "run.json").read_text(encoding="utf-8"))
+    assert manifest["documents"]["LIV9002_reconciled"] == "failed"
+
+
+def test_retry_failed_converts_exactly_what_the_last_run_could_not(tmp_path):
+    """The remedy the summary offers. Without it the operator reads three
+    names off the screen and retypes them."""
+    ocr = tmp_path / "ocr"
+    shutil.copytree(ALTO_MIN, ocr)
+    broken = ocr / "LIV9002_reconciled"
+    broken.mkdir()
+    (broken / "f1.xml").write_text("no", encoding="utf-8")
+
+    first, sortie = _executer_main(tmp_path, ocr, **MODE_COURT)
+    assert first.returncode == 1
+
+    # Repair it, then retry only what failed.
+    shutil.rmtree(broken)
+    shutil.copytree(ocr / DOCUMENT, broken)
+    again, _ = _executer_main(tmp_path, ocr, args=("--retry-failed",),
+                              COLUMNS="200", **MODE_COURT)
+
+    assert again.returncode == 0
+    assert "1/1 documents converted" in again.stdout
+    assert DOCUMENT not in again.stdout.split("Done.")[0].split("->")[-1]
+
+
+def test_retry_failed_with_nothing_to_retry_says_so(tmp_path):
+    """Not "a selector matched nothing": there is no selector, and the
+    previous run simply had no failures."""
+    ocr = tmp_path / "ocr"
+    shutil.copytree(ALTO_MIN, ocr)
+
+    res, _ = _executer_main(tmp_path, ocr, args=("--retry-failed",),
+                            COLUMNS="200", **MODE_COURT)
+
+    assert res.returncode == 3
+    assert "nothing failed" in res.stdout
+
+
+def test_only_the_last_ten_runs_are_kept(tmp_path):
+    ocr = tmp_path / "ocr"
+    shutil.copytree(ALTO_MIN, ocr)
+    sortie = tmp_path / "out"
+    runs = sortie / ".teille-douce" / "runs"
+    runs.mkdir(parents=True)
+    for day in range(1, 13):
+        (runs / f"202601{day:02d}-100000").mkdir()
+
+    _executer_main(tmp_path, ocr, **MODE_COURT)
+
+    assert len(_runs_of(sortie)) == 10
+
+
+def test_the_log_ends_up_beside_the_record_of_what_it_describes(tmp_path):
+    """Twenty-one orphan logs accumulated at the root because `log_file`
+    was the one setting with no home. The index and the transcript are
+    pruned together, so neither can outlive the other."""
+    ocr = tmp_path / "ocr"
+    shutil.copytree(ALTO_MIN, ocr)
+
+    res, sortie = _executer_main(tmp_path, ocr, **MODE_COURT)
+
+    run, = _runs_of(sortie)
+    assert (run / "pipeline.log").exists()
+    assert not list(tmp_path.glob("pipeline_*.log")), "an orphan was left"
+
+
+def test_a_run_that_refuses_to_start_still_leaves_nothing(tmp_path):
+    """Including the run directory: it lives under the output directory,
+    so creating it eagerly would have written where exit 3 promises
+    nothing is written."""
+    ocr = tmp_path / "ocr"
+    ocr.mkdir()
+    _archive_without_alto(ocr)
+
+    res, sortie = _executer_main(tmp_path, ocr, **MODE_COURT)
+
+    assert res.returncode == 3
+    assert not sortie.exists()

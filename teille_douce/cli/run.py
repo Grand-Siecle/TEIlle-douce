@@ -39,6 +39,7 @@ from teille_douce.report.panel import Service
 from teille_douce.report.gate import (EXIT_GATE_NOT_MET, gate_verdict,
                                       page_loss_failures)
 from teille_douce.report.select import UI, choose_ui
+from teille_douce.report.store import RunStore
 from teille_douce.report.record import Code, Locator, Loss
 from teille_douce.report.summary import render_summary
 from teille_douce.settings import get_settings, use_settings
@@ -105,8 +106,14 @@ class _LazyFileHandler(logging.FileHandler):
 
 
 def configure_logging(settings, now=None, quiet=False, write=True,
-                      level_asked=False):
-    """Install this run's handlers. Returns the run's log file, or None."""
+                      level_asked=False, log_path=None):
+    """Install this run's handlers. Returns the run's log file, or None.
+
+    `log_path` puts the log somewhere the settings do not know about —
+    the run's own directory, beside the index of what it lost. Passed in
+    rather than derived here, because only the caller knows whether the
+    operator named a file of their own.
+    """
     global RUN_LOG_FILE, _QUIET
 
     # -q asks for a quiet console; `debug` gates the diagnostics that also
@@ -116,10 +123,15 @@ def configure_logging(settings, now=None, quiet=False, write=True,
 
     handlers = []
     try:
-        RUN_LOG_FILE = (
-            _run_log_path(Path(settings.log_file), now or datetime.now())
-            if settings.log_file else None
-        )
+        if log_path is not None:
+            # Already a full name: it lives in a directory of its own, so
+            # nothing has to be appended to keep two runs apart.
+            RUN_LOG_FILE = Path(log_path)
+        else:
+            RUN_LOG_FILE = (
+                _run_log_path(Path(settings.log_file), now or datetime.now())
+                if settings.log_file else None
+            )
     except ValueError as reason:
         # `--log-file .` and `--log-file /` have no name to derive from.
         warnings.warn(
@@ -480,6 +492,9 @@ EXIT_MISCONFIGURED = 3
 # Everything that ran failed. Separated from 1 so a wrapper can tell
 # "retry these two" from "your input or your setup is wrong".
 EXIT_ALL_FAILED = 4
+# SIGINT. Distinct from every other code because it is not a verdict on
+# the corpus: the run was stopped, and what it had written is kept.
+EXIT_INTERRUPTED = 130
 
 
 def select_documents(docs, selectors, exclusions, limit, skip=None):
@@ -858,6 +873,8 @@ def execute(args):
        - Builds body from extracted text
        - Writes output TEI XML file
     """
+    # Reassigned when the store adopts the log at the end.
+    global RUN_LOG_FILE
     settings = get_settings()
     # -q silences chatter, never a warning: a mistyped --metadata is
     # reported by a logger, and hiding it converted a whole corpus with
@@ -908,6 +925,9 @@ def execute(args):
     # setup (a corrupt archive, a metadata CSV that is not there) reach the
     # log the summary points at, which they did not when this ran last.
     from teille_douce.cli import options as _options
+    # Created here but written to lazily, so a run that refuses to start
+    # still leaves nothing behind.
+    store = None if dry_run else RunStore(settings.output_dir)
     configure_logging(
         settings,
         quiet=bool(getattr(args, "quiet", 0)),
@@ -933,6 +953,19 @@ def execute(args):
     # know a selector matches something.
     selectors = getattr(args, "documents", []) or []
     exclusions_asked = getattr(args, "exclude", None) or []
+
+    if getattr(args, "retry_failed", False):
+        # The remedy the summary offers. Read from the last run's
+        # manifest rather than retyped off the screen.
+        selectors = list(RunStore.failed_last_time(settings.output_dir))
+        if not selectors:
+            # Not "a selector matched nothing": there is no selector, and
+            # the previous run simply had nothing to retry.
+            console.print("[green]--retry-failed: nothing failed last "
+                          "time.[/green]")
+            sys.exit(EXIT_MISCONFIGURED)
+        say(f"[dim]--retry-failed: {len(selectors)} volume(s) from the "
+            f"last run[/dim]")
 
     def _selected(name):
         return bool(select_documents([(name, [], None)],
@@ -1427,6 +1460,12 @@ def execute(args):
             on_change=lambda: (panel_holder["panel"].draw()
                                if panel_holder.get("panel") else None),
         )
+        if store is not None:
+            # Indexed as it happens. `execute` catches Exception, and a
+            # KeyboardInterrupt is a BaseException that goes straight
+            # through it — a Ctrl-C in the fourth hour used to take four
+            # hours of knowledge with it.
+            reporter_run.on_incident = store.incident
         for name, reason in failed_archives:
             reporter_run.archive_failed(name, reason)
 
@@ -1458,6 +1497,7 @@ def execute(args):
 
         ok_docs = []
         stopped_early = False
+        interrupted = False
         # Entity directories this run brought into existence. A failure
         # cleans up only these, never a directory that was already there.
         entity_dirs_created, entity_files_before = set(), {}
@@ -1495,6 +1535,17 @@ def execute(args):
                     person_db, do_enrich, do_modernize, do_ner, progress,
                     reporter=reporter_run,
                 )
+            except KeyboardInterrupt:
+                # The one exception that must not be swallowed and must
+                # not skip the report either. `except Exception` let it
+                # through to the interpreter, so the summary — which
+                # lives outside this block — never ran, and four hours of
+                # knowledge left with the signal.
+                interrupted = True
+                console.print(
+                    "\n[yellow]Interrupted — finishing the report for what "
+                    "was already written.[/yellow]")
+                break
             except Exception as e:
                 # Audit 2.1: one broken document must not kill the run.
                 # escape(): a doc name or error text containing [tag]-like
@@ -1624,7 +1675,11 @@ def execute(args):
     # after the first volume did not prove the corpus is unconvertible,
     # and reporting a total failure would send the operator to check a
     # configuration that is fine.
-    if failed_docs and not ok_docs and not never_tried:
+    if interrupted:
+        # 130 is what a shell reports for SIGINT, and it says something
+        # no other code says: this is not a verdict on the corpus.
+        exit_code = EXIT_INTERRUPTED
+    elif failed_docs and not ok_docs and not never_tried:
         exit_code = EXIT_ALL_FAILED
     elif failed_docs:
         exit_code = EXIT_SOME_FAILED
@@ -1635,18 +1690,43 @@ def execute(args):
     # fact and takes the code. The two are worth separating because the
     # remedy differs — 1 is rerun with --retry-failed, 5 is look at what
     # was lost and decide whether you accept it.
-    verdict = gate_verdict(settings.fail_on, reporter_run.record)
+    # An interrupted run is not a judgement on quality: it did not finish
+    # looking.
+    verdict = gate_verdict("never" if interrupted else settings.fail_on,
+                           reporter_run.record)
     too_lossy = page_loss_failures(pages_lost_per_document,
                                    settings.max_page_loss)
     if exit_code == EXIT_OK and (not verdict.met or too_lossy):
         exit_code = EXIT_GATE_NOT_MET
 
-    headline = (f"Completed with errors: {converted}" if failed_docs
+    headline = ("Interrupted: " + converted if interrupted
+                else f"Completed with errors: {converted}" if failed_docs
                 else f"Done. {converted}")
 
     # One account of the run. The sentence above is the one every wrapper
     # greps and every accounting test balances, so the report takes it
     # rather than deriving a second fraction of its own.
+    if store is not None:
+        # Moved now rather than written there from the start: the run
+        # directory lives under the output directory, and creating it
+        # while the run might still refuse would break the promise that
+        # exit 3 leaves nothing behind. Only a log nobody named: a
+        # --log-file is an instruction.
+        if RUN_LOG_FILE and settings.origin("log_file") == "default":
+            RUN_LOG_FILE = store.adopt_log(RUN_LOG_FILE)
+        store.finish(argv=["teille-douce", *sys.argv[1:]],
+                     settings=settings.as_manifest(),
+                     documents={**{name: "ok" for name in ok_docs},
+                                **{name: "failed" for name, _ in failed_docs}},
+                     exit_code=exit_code)
+        RunStore.prune(settings.output_dir)
+        if store.unwritable:
+            # Said once, and said: a report nobody can find later is a
+            # report that was not written, and silence about it is worse
+            # than the failure.
+            console.print(f"[yellow]No run record kept: "
+                          f"{escape(store.problems[0])}[/yellow]")
+
     outcome = reporter_run.finished(exit_code=exit_code, headline=headline,
                                     elapsed=perf_counter() - run_started,
                                     fail_on=settings.fail_on,

@@ -1,0 +1,170 @@
+"""What a run leaves behind for the reader who comes back on Thursday.
+
+    tei_output/.teille-douce/runs/20260903-180824/
+        run.json         settings, argv, status per document
+        incidents.jsonl  one incident per line, append-only, greppable
+        pipeline.log     this run's log, beside its own index
+
+The log is the transcript and the JSONL is its index. No fact is stored
+twice in two forms that could diverge: the record carries structured
+fields, the log carries the prose and the tracebacks.
+
+Written line by line, and from the parent only. `execute` catches
+`Exception`; a KeyboardInterrupt is a BaseException and passes straight
+through it, so a Ctrl-C in the fourth hour used to take four hours of
+knowledge with it. And a `logger` called in a forkserver worker never
+reaches the parent's file, while concurrent writes to one descriptor
+interleave — so nothing here is called from a child.
+"""
+
+import json
+import shutil
+from datetime import datetime
+from pathlib import Path
+
+from .record import Block
+
+RUNS = Path(".teille-douce") / "runs"
+KEEP = 10
+
+
+class RunStore:
+    """One run's directory, created the first time something is written."""
+
+    def __init__(self, output_dir, now=None):
+        self.output_dir = Path(output_dir)
+        stamp = (now or datetime.now()).strftime("%Y%m%d-%H%M%S")
+        self.path = self.output_dir / RUNS / stamp
+        # A reporter may not be the thing that ends a four-hour job. If
+        # the directory cannot be written — a mistyped `-o` pointing at a
+        # file, a read-only mount — the run says so once and carries on.
+        self.problems = []
+
+    @property
+    def unwritable(self):
+        return bool(self.problems)
+
+    def _ready(self):
+        # Not in __init__: a run that refuses to start leaves nothing
+        # behind, which is the rule the lazy log handler already follows.
+        if self.problems:
+            return None
+        try:
+            self.path.mkdir(parents=True, exist_ok=True)
+        except OSError as reason:
+            # Once, not once per incident of a four-hour run.
+            self.problems.append(str(reason))
+            return None
+        return self.path
+
+    def adopt_log(self, path):
+        """Move this run's log in beside its own index.
+
+        Moved at the end rather than written here from the start: the
+        directory sits under the output directory, and creating it while
+        the run may still refuse to start would break the promise that
+        exit 3 leaves nothing behind. Together afterwards, they are also
+        pruned together, so an index can never outlive its transcript.
+
+        `log_file` was the one setting with no home, which is how
+        twenty-one orphan logs came to sit at the root of the repository.
+        """
+        if path is None:
+            return None
+        where = self._ready()
+        if where is None:
+            return path
+        try:
+            destination = where / "pipeline.log"
+            Path(path).replace(destination)
+            return destination
+        except OSError as reason:
+            # A log left where it was is still a log. Losing the run over
+            # a rename would not be.
+            self.problems.append(str(reason))
+            return path
+
+    def incident(self, loss):
+        """Index one incident. Blocks 1 and 2 stay in the summary and the
+        log — an index of everything is an index of nothing."""
+        if loss.block is not Block.INCIDENT:
+            return
+        entry = {
+            "code": loss.code.value,
+            "document": loss.document,
+            "step": loss.step,
+            "locator": loss.locator.render(),
+            "kind": loss.locator.kind.value,
+            "count": loss.count,
+            "total": loss.total,
+            "detail": loss.detail,
+        }
+        where = self._ready()
+        if where is None:
+            return
+        try:
+            with open(where / "incidents.jsonl", "a",
+                      encoding="utf-8") as handle:
+                handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
+                # Flushed as it happens: the point of the format is that
+                # an interruption keeps everything written before it.
+                handle.flush()
+        except OSError as reason:
+            self.problems.append(str(reason))
+
+    def finish(self, argv, settings, documents, exit_code):
+        """The manifest. Written on every way out, 130 included."""
+        manifest = {
+            "argv": list(argv),
+            "settings": settings,
+            "documents": dict(documents),
+            "exit_code": exit_code,
+        }
+        where = self._ready()
+        if where is None:
+            return
+        try:
+            (where / "run.json").write_text(
+                json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8")
+        except OSError as reason:
+            self.problems.append(str(reason))
+
+    # -- coming back later -------------------------------------------------
+
+    @staticmethod
+    def _runs(output_dir):
+        root = Path(output_dir) / RUNS
+        try:
+            if not root.is_dir():
+                return []
+            return sorted((p for p in root.iterdir() if p.is_dir()),
+                          key=lambda p: p.name)
+        except OSError:
+            return []
+
+    @classmethod
+    def latest(cls, output_dir):
+        runs = cls._runs(output_dir)
+        return runs[-1] if runs else None
+
+    @classmethod
+    def failed_last_time(cls, output_dir):
+        """What `--retry-failed` converts."""
+        latest = cls.latest(output_dir)
+        if latest is None:
+            return ()
+        try:
+            manifest = json.loads(
+                (latest / "run.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return ()
+        return tuple(name for name, status in manifest.get("documents", {}).items()
+                     if status == "failed")
+
+    @classmethod
+    def prune(cls, output_dir, keep=KEEP):
+        """Whole directories, log included: an index and its transcript
+        must not be able to survive each other."""
+        for old in cls._runs(output_dir)[:-keep or None]:
+            shutil.rmtree(old, ignore_errors=True)

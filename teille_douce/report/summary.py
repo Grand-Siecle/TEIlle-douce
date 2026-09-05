@@ -201,6 +201,11 @@ def _gate_blocks(fail_on):
 def _verdict(outcome):
     """The last line: what happened, and why it is or is not enough."""
     not_converted = outcome.volumes_total - outcome.volumes_written
+    if outcome.exit_code == 130:
+        # Not a verdict on the corpus: the run was stopped, and what it
+        # had written is on disk.
+        return (f"exit 130 — interrupted, {outcome.volumes_written} of "
+                f"{outcome.volumes_total} volumes written and kept")
     if outcome.exit_code == 5:
         if outcome.page_loss_failures:
             return (f"exit 5 — everything converted, but "

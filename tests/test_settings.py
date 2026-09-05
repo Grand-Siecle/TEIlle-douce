@@ -440,3 +440,36 @@ def test_a_tilde_naming_nobody_in_the_environment_is_refused_too():
             env={"TDOUCE_OUTPUT_DIR": "~personnenexistepas4711/tei"}, flags={})
 
     assert settings.output_dir == Path(config.DEFAULT_OUTPUT_DIR)
+
+
+# =============================================================================
+# What the run manifest records
+# =============================================================================
+
+def test_the_manifest_records_each_value_with_where_it_came_from():
+    """Three days later, "why did it write there" is answered by the
+    origin, not by the value."""
+    settings = Settings.load(flags={"output_dir": "/tmp/out"}, env={})
+
+    manifest = settings.as_manifest()
+
+    assert manifest["paths.output"] == {"value": "/tmp/out", "origin": "flag"}
+    assert manifest["paths.input"]["origin"] == "default"
+
+
+def test_the_manifest_is_json_serialisable():
+    """It is written to run.json, so a Path or an Enum in it would only
+    be discovered at the end of a four-hour run."""
+    import json
+
+    json.dumps(Settings.load(flags={}, env={}).as_manifest())
+
+
+def test_the_manifest_covers_every_declared_setting():
+    """A setting missing from it is a setting nobody can account for
+    afterwards."""
+    from teille_douce.settings import Settings as S
+
+    manifest = S.load(flags={}, env={}).as_manifest()
+
+    assert set(manifest) >= S.config_keys()

@@ -318,6 +318,17 @@ def find_config_file(start=None):
     return None
 
 
+def _plain(value):
+    """A value json.dumps will accept, whatever the converter produced."""
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, dict):
+        return {str(k): _plain(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_plain(item) for item in value]
+    return value
+
+
 @dataclass(frozen=True, slots=True)
 class Rejection:
     """A value a layer offered and the converter refused."""
@@ -383,6 +394,33 @@ class Settings:
         names = {d.env for d in _SETTINGS if d.env}
         names.add(_MODERNIZE_URL_ENV)
         return frozenset(names)
+
+    def as_manifest(self):
+        """Every setting, its value, and where the value came from.
+
+        Written into run.json so that "why did it write there" is
+        answerable three days later — by the origin, which is the part
+        the value cannot tell you. Keyed on the config key rather than
+        the attribute name, because that is what a reader would type to
+        change it.
+
+        Everything is coerced to a JSON-safe form here: a Path or an Enum
+        surviving into the dump would only be discovered at the end of a
+        four-hour run.
+        """
+        manifest = {}
+        for declaration in _SETTINGS:
+            if not declaration.key:
+                continue
+            manifest[declaration.key] = {
+                "value": _plain(getattr(self, declaration.name)),
+                "origin": self.origin(declaration.name),
+            }
+        manifest[_MODERNIZE_URL.key] = {
+            "value": _plain(self.modernize_api),
+            "origin": self.origin("modernize_url"),
+        }
+        return manifest
 
     @staticmethod
     def config_keys():

@@ -62,6 +62,8 @@ class Run:
         # before: a frame drawn from half-updated state is worse than one
         # frame late.
         self._on_change = on_change or (lambda: None)
+        # Set by the run when it has somewhere to index incidents.
+        self.on_incident = None
 
     # -- what the pipeline tells it ---------------------------------------
 
@@ -134,6 +136,8 @@ class Run:
 
     def lost(self, loss):
         self.record.add(loss)
+        if self.on_incident is not None:
+            self.on_incident(loss)
 
     def archive_failed(self, name, reason):
         self._failed_archives.append((name, reason))

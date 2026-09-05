@@ -189,6 +189,11 @@ def add_run_arguments(parser):
         "--limit", type=_at_least_one, metavar="N", default=none,
         help="convert at most N of the selected volumes, in order",
     )
+    selection.add_argument(
+        "--retry-failed", dest="retry_failed", action="store_true",
+        default=False,
+        help="convert only the volumes the last run reported FAILED",
+    )
     resume = selection.add_mutually_exclusive_group()
     resume.add_argument(
         "--skip-existing", action="store_true",

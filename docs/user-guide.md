@@ -182,6 +182,7 @@ teille-douce run --fast --dry-run     # what would happen, writing nothing
 | `-x, --exclude PATTERN` | Drop volumes after selection. Repeatable. **A pattern matching nothing stops the run**, like a selector: an exclusion that silently misses converts at full cost the volume it was meant to hold back. A standing `-x` in a wrapper therefore has to be removed the day its volume leaves the corpus. |
 | `--limit N` | Convert at most N of those selected, in order. |
 | `--skip-existing` / `--force` | Skip volumes already converted / convert them anyway. |
+| `--retry-failed` | Convert only the volumes the last run reported `FAILED`, read from its `run.json`. Exits 3 when the last run had no failures — there is no selector, and nothing to retry is not a typo. |
 | `-i, --input` · `-o, --output` | Input and output directories. |
 | `--entities` · `--metadata` · `--persons` | Entity CSVs, and the two catalogues. |
 | `--fast` | No annotation phase at all: no service, no model. |
@@ -221,9 +222,32 @@ failed · `2` usage error · `3` misconfiguration and nothing ran · `4`
 everything that ran failed · `5` the quality gate was not met. The table
 under [Troubleshooting](#exit-codes) says what each one asks you to do.
 
-**Logs.** Each run writes its own file, `pipeline_YYYYmmdd_HHMMSS_PID.log`, at
-DEBUG level — the process id is there so that volumes launched in parallel,
-which start inside the same second, do not truncate each other's log. The console shows warnings and errors only, unless you set
+**What a run leaves behind.** Beside the TEI, each run keeps its own
+record:
+
+```
+tei_output/.teille-douce/runs/20260903-180824/
+    run.json         what was asked (argv, every setting and where it came
+                     from) and what happened to each volume
+    incidents.jsonl  one incident per line, appended as it happens
+    pipeline.log     this run's log, moved in at the end
+```
+
+The log is the transcript and `incidents.jsonl` is its index; no fact is
+stored twice in two forms that could diverge. The JSONL is written line by
+line so that a Ctrl-C in the fourth hour keeps everything before it. The
+last ten runs are kept, and a directory is pruned whole — an index must not
+outlive its transcript.
+
+`--retry-failed` reads the last `run.json` and converts only what that run
+reported `FAILED`.
+
+**Logs.** Each run writes its own file at DEBUG level, named
+`pipeline_YYYYmmdd_HHMMSS_PID.log` while it runs and moved into the run
+directory as `pipeline.log` at the end. The process id is in the working
+name so that volumes launched in parallel, which start inside the same
+second, do not truncate each other's log. A `--log-file` you name is an
+instruction: it stays where you put it. The console shows warnings and errors only, unless you set
 `-v` (`-vv` for debug). Move or disable the run log with `--log-file` / `--no-log-file`.
 
 **Cost.** With every annotation phase enabled, a full volume takes tens of
