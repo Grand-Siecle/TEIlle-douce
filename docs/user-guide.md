@@ -189,7 +189,7 @@ teille-douce run --fast --dry-run     # what would happen, writing nothing
 | `--enrich`/`--no-enrich`, and likewise for `modernize` and `ner` | Add or remove one phase from the current set. |
 | `--pyhellen URL` · `--vieuxparler URL` · `--health-timeout S` | The two services. |
 | `-j, --jobs N` · `--batch-size N` · `--concurrency N` | Workers, lines per request, in-flight requests. |
-| `--device DEV` | Where the NER models run: `auto` (the default: a GPU if there is one), `cpu`, `cuda`, `cuda:1`, `mps`. Naming one matters on a shared GPU somebody else has filled and on a machine with more than one — neither of which the pipeline can guess. The run says which device it chose before loading several gigabytes of model. |
+| `--device DEV` | Where the NER models run: `auto` (the default: a CUDA GPU if there is one, the CPU otherwise), `cpu`, `cuda`, `cuda:1`, `mps`. Naming one matters on a shared GPU somebody else has filled and on a machine with more than one — neither of which the pipeline can guess. Apple silicon is not chosen automatically: ask for `mps`. The run says which device it chose before loading several gigabytes of model. |
 | `--no-probe` | Do not probe the services; assume they answer. |
 | `--require-services` | A phase whose service is down is fatal (exit 3) **before anything is written**, instead of a warning and a run without that annotation. |
 | `-n, --dry-run` | Resolve everything, list the plan, write nothing. |
@@ -374,9 +374,12 @@ measured on real output for this corpus, where modernized similarity runs
 ### NER — named entities
 
 Runs locally, no service, but needs `pip install -e '.[ner]'`. Both models
-load on a GPU when there is one and on the CPU otherwise; `--device` (or
-`TDOUCE_NER_DEVICE`, or `models.device`) overrides that, and the run prints
-the device it chose before downloading several gigabytes of model.
+load on a CUDA GPU when there is one and on the CPU otherwise; `--device`
+(or `TDOUCE_NER_DEVICE`, or `models.device`) overrides that, and the run
+prints the device it chose before downloading several gigabytes of model.
+Apple silicon is not picked automatically — `--device mps` asks for it.
+Left on `auto`, the Flair model keeps whatever device Flair itself
+selected, so an existing `FLAIR_DEVICE` still applies.
 
 Two models:
 **CamemBERT** (`pjox/camembert-classical-fr-ner`) for persons, places and

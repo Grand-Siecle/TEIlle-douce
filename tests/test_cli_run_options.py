@@ -1119,10 +1119,11 @@ def test_auto_falls_back_to_the_cpu_when_torch_cannot_be_imported(monkeypatch):
     assert ner_models.resolve_device("auto") == "cpu"
 
 
-def test_auto_finds_apple_silicon_when_there_is_no_cuda(monkeypatch):
-    """A laptop with an M-series chip has no CUDA and is not a CPU-only
-    machine either; resolving it to "cpu" would leave the models an order
-    of magnitude slower for no reason."""
+def test_auto_does_not_move_a_mac_onto_metal_by_itself(monkeypatch):
+    """A Mac was getting the CPU before this option existed, and an
+    automatic move to Metal is a change of machine for every existing
+    user, decided by an upgrade rather than by them — MPS kernel gaps
+    included. `--device mps` is how you ask."""
     from teille_douce.enrichment import ner_models
 
     class _Torch:
@@ -1136,7 +1137,8 @@ def test_auto_finds_apple_silicon_when_there_is_no_cuda(monkeypatch):
 
     monkeypatch.setitem(__import__("sys").modules, "torch", _Torch)
 
-    assert ner_models.resolve_device("auto") == "mps"
+    assert ner_models.resolve_device("auto") == "cpu"
+    assert ner_models.resolve_device("mps") == "mps"
 
 
 def test_a_device_that_is_not_even_a_string_is_refused(tmp_path):
@@ -1263,3 +1265,35 @@ def test_a_model_id_carrying_a_filename_is_downloaded_explicitly(monkeypatch):
 
     assert models.camembert is not None
     assert seen["loaded"] == "/cache/pjox/camembert/final-model.pt"
+
+
+def test_auto_leaves_flair_the_device_flair_chose(monkeypatch):
+    """Flair's own default reads FLAIR_DEVICE. Overwriting it under "auto"
+    discarded the one setting a Flair user already had for this —
+    silently, and in exactly the situation --device exists for: keeping
+    the model off a GPU someone else is using."""
+    from teille_douce.enrichment.ner_models import NERModels
+
+    seen = {}
+    flair = _fake_ner_stack(monkeypatch, seen)
+    flair.device = "chosen by flair"
+
+    models = NERModels({"camembert": {"model_id": "someone/a-model"}},
+                       device="auto")
+
+    assert models.camembert is not None
+    assert flair.device == "chosen by flair"
+
+
+def test_a_named_device_still_overrides_what_flair_chose(monkeypatch):
+    from teille_douce.enrichment.ner_models import NERModels
+
+    seen = {}
+    flair = _fake_ner_stack(monkeypatch, seen)
+    flair.device = "chosen by flair"
+
+    models = NERModels({"camembert": {"model_id": "someone/a-model"}},
+                       device="cpu")
+
+    assert models.camembert is not None
+    assert flair.device == "device(cpu)"

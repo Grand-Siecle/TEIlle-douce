@@ -18,30 +18,34 @@ import logging
 NER_DEPENDENCIES = ("flair", "gliner", "huggingface_hub", "torch")
 
 
+def device_asked_for(override=None):
+    """What the operator asked for, "auto" included, unresolved."""
+    from teille_douce.settings import get_settings
+
+    return get_settings().ner_device if override is None else override
+
+
 def resolve_device(asked=None):
     """The device the models should load on, as torch spells it.
 
-    "auto" is what the pipeline did unconditionally: CUDA when there is
-    any, CPU otherwise. It stays the default, because it is right on a
-    machine with one GPU and nobody else on it. The two cases it cannot
-    guess are the ones the setting exists for — a shared GPU somebody else
-    has filled, and a machine with more than one.
-    """
-    from teille_douce.settings import get_settings
+    "auto" is what this pipeline did unconditionally, and nothing more:
+    CUDA when there is any, CPU otherwise. Not MPS — a Mac was getting the
+    CPU before and an automatic move to Metal is a change of machine for
+    every existing user, decided by an upgrade rather than by them. Ask for
+    it with `--device mps`.
 
-    if asked is None:
-        asked = get_settings().ner_device
+    The two cases automatic cannot guess are the ones the setting exists
+    for: a shared GPU somebody else has filled, and a machine with more
+    than one.
+    """
+    asked = device_asked_for(asked)
     if asked != "auto":
         return asked
     try:
         import torch
     except Exception:
         return "cpu"
-    if torch.cuda.is_available():
-        return "cuda"
-    if getattr(torch.backends, "mps", None) and torch.backends.mps.is_available():
-        return "mps"
-    return "cpu"
+    return "cuda" if torch.cuda.is_available() else "cpu"
 
 
 def missing_ner_dependencies():
@@ -132,10 +136,19 @@ class NERModels:
             import torch
             from flair.models import SequenceTagger
 
-            # Flair reads its global at load time and picks CUDA on its
-            # own, so a --device it never sees is a --device that does
-            # nothing for half the models.
-            flair.device = torch.device(resolve_device(self._device))
+            # Flair reads this global at load time and picks its own
+            # device, so a --device it never sees is a --device that does
+            # nothing for half the models — the French one, which is most
+            # of this corpus.
+            #
+            # Only when one was actually named. Flair's own default reads
+            # FLAIR_DEVICE, and overwriting it under "auto" would discard
+            # the one setting a Flair user already had for this — silently,
+            # and in exactly the situation --device is for: keeping the
+            # model off a GPU someone else is using.
+            asked = device_asked_for(self._device)
+            if asked != "auto":
+                flair.device = torch.device(resolve_device(asked))
             logger.info("CamemBERT NER model loading on %s", flair.device)
 
             # Flair expects pytorch_model.bin in the repo, but some repos
