@@ -184,8 +184,51 @@ Production code uses `utils.xml.local_tag()` for the same reason.
 Skipped pages, failed containers, rejected modernizations, filtered entities: all
 counted, all printed. A counter left at zero because the server died mid-run must
 not be indistinguishable from a document that had nothing to process. Several
-findings in the audit report are exactly this failure mode, and new phases are
-expected not to repeat it.
+findings in the audit report are exactly this failure mode.
+
+This is no longer a rule a new phase can forget. `teille_douce/report/counts.py`
+enforces it: `render_count(n, denominator, unit)` **raises** when the denominator
+is missing, because a bare integer is precisely what makes those two zeros one
+string. `render_phase_loss` chooses its wording from the phase's *state* and not
+from whether a number is zero — which is how "0" came to mean four different
+things in one column — and reserves the red `LOST` for a phase that lost the
+ground under it, with a cause and a scope or it raises.
+
+### A loss belongs to one of three blocks
+
+The word "lost" covered three unrelated causes with three different remedies,
+so `teille_douce/report/record.py` splits them:
+
+| | | |
+|---|---|---|
+| **the source was defective** | nothing the pipeline could do | an unreadable ALTO page, a corrupt archive, duplicate ALTO ids (repaired) |
+| **withheld on purpose** | the guards did their job | a modernized reading under the similarity floor, an entity under 0.6, a container more than 20 % of whose block could not be anchored |
+| **lost to an incident** | this needs a human | a service that died, a container that raised, a whole phase or a document lost |
+
+Block 3 is the definition of "important": it is what `--fail-on incident`
+counts. Block 2 never counts at any level — a guard that rejects a
+hallucination did its job, and failing the run for it would punish the chain
+for being honest. A defect that was *repaired* carries `Code.repaired` and stays
+out of loss arithmetic entirely; duplicate ALTO ids are the largest figure this
+corpus produces, and counting them as losses made a clean run report six
+thousand of them.
+
+Every loss carries a document, the step it happened in, and a typed locator.
+`Kind.DOC` is the floor and an admission the summary prints rather than hides.
+What is never recorded is an internal index: `container 12` and `batch_start
+640` are what the pipeline used to say, and neither is something a reader can
+open. A page id is worth four addresses at once, because `surface/@xml:id` **is**
+the ALTO file stem.
+
+### The panel is a pure function
+
+`teille_douce/report/panel.py` takes `(state, width, capabilities)` and returns
+lines of `(text, style)`. No console, no clock, no I/O — which is what makes six
+moments of a four-hour run testable in milliseconds, and what makes the
+no-colour parity structural: strip every style and the panel says the same
+thing. Rich does the live redraw, the colour degradation and the terminal
+detection, and none of the layout; composing the lines here is what makes the
+hundred-column cap an assertion rather than a hope.
 
 ### Adding an element to the output means adding it to the ODD
 
@@ -195,11 +238,21 @@ emitted element is declared there. See [schema.md](schema.md).
 
 ### Settings validate their input
 
-Anything read from the environment goes through the `_env*` helpers in
-`teille_douce/config.py`, which reject unusable values — empty, unreadable, non-finite, out of
-range — keep the default, and warn. A new setting that parses with a bare
-`float(os.environ[...])` will accept `nan`, and a NaN threshold turns every
-comparison against it into `False`, which silently disables the guard reading it.
+Every setting is one row of the declaration table in
+`teille_douce/settings.py` — attribute, `TDOUCE_*` name, TOML key, converter,
+default — and the converter gates all four layers, not just the environment. It
+rejects unusable values (empty, unreadable, non-finite, out of range), keeps the
+default, says what the run uses instead, and records the refusal. A value typed
+as a *flag* is a usage error rather than a fallback: keeping a default the
+operator explicitly overrode would answer a different question.
+
+A new setting that parsed with a bare `float(os.environ[...])` would accept
+`nan`, and a NaN threshold turns every comparison against it into `False`, which
+silently disables the guard reading it.
+
+One table, so the layers, the documentation and the CLI cannot drift apart:
+tests hold the user guide's variable and config-key columns to
+`Settings.environment_variables()` and `Settings.config_keys()`.
 
 ## Adding a feature end to end
 

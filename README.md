@@ -70,6 +70,15 @@ default and need two HTTP services ([PyHellen](https://github.com/Grand-Siecle/P
 NER models; without them the pipeline still produces a complete base TEI, and
 says which phases it skipped. See the [user guide](docs/user-guide.md).
 
+A run draws a live panel in a terminal and writes one line per event
+everywhere else, and ends on a report that separates what the source got
+wrong from what a guard withheld on purpose and from what needs a human —
+every figure against a denominator, and every loss with an address you can
+open. Beside the TEI it leaves `tei_output/.teille-douce/runs/<when>/`: the
+manifest of what was asked, an index of the incidents, and its own log.
+`--fail-on incident` turns "everything converted, three volumes carry no
+annotation" from an exit 0 into an exit 5.
+
 ## Documentation
 
 | | |
