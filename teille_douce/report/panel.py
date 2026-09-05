@@ -301,11 +301,23 @@ def _phase_bar(done, total, cells, unicode_):
     return done_glyph * filled + void_glyph * (cells - filled)
 
 
-def _phase_span(phase, room, unicode_, tick=0):
-    """One phase's line, and what it is allowed to claim."""
+def _phase_span(phase, room, unicode_, tick=0, reserved=0):
+    """One phase's line, and what it is allowed to claim.
+
+    `reserved` is what the caller will put after it — the phase clock —
+    so the line is composed against the room it will actually have.
+    Composed against the full width and clipped afterwards, the clock
+    itself was cut: `1:12:…` at eighty-three columns.
+    """
+    room -= reserved
     ok, bad, idle, warn = _MARK[unicode_]
+    # In cells, not characters, and computed once: `{phase.name:<12}`
+    # pads by `len`, which is the fault `_entry` was just fixed for one
+    # module away. No production phase name is wide today; the next one
+    # to be added must not have to know that.
+    named = phase.name + " " * max(1, 13 - cells(phase.name))
     if phase.state is PhaseState.PENDING:
-        return [Span(f"   {phase.name:<12}", ""),
+        return [Span(f"   {named}", ""),
                 Span(clip(f"{idle} pending", room - 15), "graphite")]
 
     if phase.state is PhaseState.LOST:
@@ -313,7 +325,7 @@ def _phase_span(phase, room, unicode_, tick=0):
                                  phase.unit, phase.reason or "service lost")
         # Clipped like everything else: this is the longest line the
         # panel composes, and it is the one whose cause must be loud.
-        return [Span(f"   {phase.name:<12}"),
+        return [Span(f"   {named}"),
                 Span(clip(f"{bad} {body}", room - 15), "vermilion")]
 
     if phase.state is PhaseState.RUNNING:
@@ -338,18 +350,28 @@ def _phase_span(phase, room, unicode_, tick=0):
             trailing = f"{phase.rate}/s"
         else:
             trailing = ""
-        left = f"   {phase.name:<12}{_pulse(tick, unicode_)} "
-        if trailing:
-            measured += f" · {trailing}"
-        # The bar only when there is room for the numbers first: at sixty
-        # columns "318/430 · waiting 47s/120s" is what the operator needs
-        # and the drawing is what goes.
-        spare = room - cells(left) - cells(measured) - 8
-        # No bar without a denominator either: it would draw a proportion
-        # of an unknown.
-        if spare >= 12 and phase.total:
-            left += _phase_bar(phase.done, phase.total, 20, unicode_) + " "
-        return [Span(clip(left + measured, room), "bitten")]
+        head = f"   {named}{_pulse(tick, unicode_)} "
+        # No bar without a denominator: it would draw a proportion of an
+        # unknown.
+        bar = (_phase_bar(phase.done, phase.total, 20, unicode_) + " "
+               if phase.total else "")
+        aside = f" · {trailing}" if trailing else ""
+
+        # A stated order of who gives way, tried longest first. The
+        # drawing goes before the figures — at sixty columns
+        # `318/430 · waiting 47s/120s` is what the operator needs and the
+        # bar is what goes — and the figures never give way at all.
+        # Composed and clipped instead, the bar pushed the line over and
+        # the clip took `waiting 47s/120s` down to `waiting 47s/12…`: a
+        # twelve-second timeout on a hundred-and-twenty-second one, on
+        # the line whose entire job is telling slow from hung.
+        for candidate in (head + bar + measured + aside,
+                          head + measured + aside,
+                          head + bar + measured,
+                          head + measured):
+            if cells(candidate) <= room:
+                return [Span(candidate, "bitten")]
+        return [Span(clip(head + measured, room), "bitten")]
 
     # The caller says whether a finished phase is worth a warning mark.
     # This used to test the note against a literal taken from one sample
@@ -357,15 +379,15 @@ def _phase_span(phase, room, unicode_, tick=0):
     # a warning for no reason.
     mark = warn if phase.reason else ok
     if phase.note:
-        left = f"   {phase.name:<12}{mark} {phase.note}"
+        left = f"   {named}{mark} {phase.note}"
     elif phase.total is not None:
         # The numbers, when the caller measured them. A bare "done" beside
         # a phase that read eight hundred and fifty pages throws away the
         # only thing the line had to say.
-        left = (f"   {phase.name:<12}{ok} "
+        left = (f"   {named}{ok} "
                 f"{render_count(min(phase.done, phase.total), phase.total, phase.unit)}")
     else:
-        left = f"   {phase.name:<12}{ok} done"
+        left = f"   {named}{ok} done"
     return [Span(clip(left, room))]
 
 
@@ -422,10 +444,12 @@ def render_panel(state, width=92, height=None, unicode=True, color=True,
         tail = f"{_grouped(state.current.pages)} pages   {_clock(state.current.elapsed)}"
         lines.append([Span(_pad(head, tail, room), "bold")])
         for phase in state.current.phases:
-            spans = _phase_span(phase, room, unicode, tick)
-            if phase.elapsed is not None:
+            clock = "" if phase.elapsed is None else _clock(phase.elapsed)
+            spans = _phase_span(phase, room, unicode, tick,
+                                reserved=cells(clock) + 1 if clock else 0)
+            if clock:
                 text_so_far = "".join(span.text for span in spans)
-                spans.append(Span(_pad("", _clock(phase.elapsed),
+                spans.append(Span(_pad("", clock,
                                        room - cells(text_so_far))))
             lines.append(spans)
             if phase.state is PhaseState.LOST and phase.note:
@@ -511,11 +535,10 @@ def render_panel(state, width=92, height=None, unicode=True, color=True,
     # What ctrl-c would actually do, which is not the same thing between
     # two volumes as it is inside one. "abandon this volume" over a
     # finished corpus offers to throw away something that is not there.
-    offer = (f" ctrl-c  abandon this volume, keep the "
-             f"{state.volumes_written} already written"
+    kept = _grouped(state.volumes_written)
+    offer = (f" ctrl-c  abandon this volume, keep the {kept} already written"
              if state.current is not None else
-             f" ctrl-c  stop the run, keep the "
-             f"{state.volumes_written} already written")
+             f" ctrl-c  stop the run, keep the {kept} already written")
     lines.append([Span(clip(offer, room), "graphite")])
 
     # A contract, not a courtesy: the panel never returns more lines than

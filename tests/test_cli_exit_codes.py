@@ -1785,3 +1785,53 @@ def test_an_unreadable_volume_reaches_the_counts_the_panel_shows(tmp_path):
     run, = _runs_of(sortie)
     indexed = (run / "incidents.jsonl").read_text(encoding="utf-8")
     assert json.loads(indexed.splitlines()[0])["code"] == "volume_unreadable"
+
+
+def test_a_single_interrupt_on_a_clean_run_still_leaves_the_record(tmp_path):
+    """The hold lived inside the loop's `except KeyboardInterrupt`, so it
+    was only ever reached when a FIRST interrupt had already arrived. A
+    run that finished its volumes and was then interrupted during the
+    panel's teardown, the accounting or the gate lost the run directory,
+    the manifest and the summary alike — and `--retry-failed` afterwards
+    had nothing to read."""
+    import json
+    import os
+    import signal
+    import subprocess
+    import sys
+
+    from test_e2e_pipeline import (ALTO_MIN, FIXTURES, RACINE,
+                                   _env_couverture_sous_processus)
+
+    for csv in ("metadata_livre.csv", "metadata_personne.csv"):
+        shutil.copy(FIXTURES / csv, tmp_path / csv)
+    sortie = tmp_path / "out"
+
+    # The signal is raised from inside `gate_verdict`, which runs after
+    # every volume is converted: timing it would be measuring the
+    # scheduler.
+    (tmp_path / "sitecustomize.py").write_text(
+        "import os, signal\n"
+        "if os.environ.get('TD_INTERRUPT_AT_GATE'):\n"
+        "    import teille_douce.report.gate as gate\n"
+        "    real = gate.gate_verdict\n"
+        "    def once(level, record):\n"
+        "        signal.raise_signal(signal.SIGINT)\n"
+        "        return real(level, record)\n"
+        "    gate.gate_verdict = once\n", encoding="utf-8")
+
+    finished = subprocess.run(
+        [sys.executable, str(RACINE / "main.py"), "run"],
+        cwd=tmp_path, capture_output=True,
+        env={**os.environ, "TDOUCE_OCR_DIR": str(ALTO_MIN),
+             "TDOUCE_OUTPUT_DIR": str(sortie), "TDOUCE_NER": "0",
+             "TDOUCE_ENRICHMENT": "0", "TDOUCE_MODERNIZE": "0",
+             "NO_COLOR": "1", "PYTHONPATH": str(tmp_path),
+             "TD_INTERRUPT_AT_GATE": "1",
+             **_env_couverture_sous_processus()})
+
+    out = finished.stdout.decode()
+    assert "documents converted" in out, out[-2000:]
+    run, = _runs_of(sortie)
+    manifest = json.loads((run / "run.json").read_text(encoding="utf-8"))
+    assert manifest["documents"] == {DOCUMENT: "ok"}

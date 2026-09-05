@@ -156,9 +156,14 @@ def _entry(label, measured, right, width):
                 below.append(clip(f"      {right}", room))
             return below
         left = f"    {clip(label, for_label)}  {measured}"
+    if not right:
+        # No aside, no padding: the same string goes into a log file, and
+        # forty-seven trailing spaces there are noise. `_MARGIN`'s own
+        # comment says as much.
+        return [left]
     if cells(left) + cells(right) + 2 <= room:
         return [pad(left, right, room, keep="left")]
-    return [left, clip("      " + right, room)] if right else [left]
+    return [left, clip("      " + right, room)]
 
 
 def _block_lines(outcome, block, width):
@@ -259,7 +264,14 @@ def _located_line(located, room):
     if cells(spelt) <= room:
         return spelt
     short = f"  located   {precise} precise · {vague} doc-only"
-    return short if cells(short) <= room else clip(short, room)
+    if cells(short) <= room:
+        return short
+    # Both figures print at zero because a blind spot has to be a visible
+    # line — and a figure cut in half is not one. `clip` took the second
+    # apart mid-number below forty-two columns, so they go on two lines
+    # rather than one and a bit.
+    return (f"  located   {precise} precise\n"
+            f"            {vague} doc-only")
 
 
 def _share(value, bar):
@@ -403,9 +415,25 @@ def render_summary(outcome, width=92):
     # short relative path, so the suite could not see it.
     written = (f"{render_count(outcome.pages_written, outcome.pages_total, 'pages')}"
                f" written")
-    lines.append(pad(
-        f"      → {shorten_path(outcome.output_dir, max(8, room - cells(written) - 9))}",
-        written, room, keep="right"))
+    for_path = room - cells(written) - 9
+    if for_path >= 8:
+        lines.append(pad(f"      → {shorten_path(outcome.output_dir, for_path)}",
+                         written, room, keep="right"))
+    else:
+        # Neither `pad` direction helps once the two together will not
+        # fit: `keep="right"` clips the COMPOSITE, so below thirty-eight
+        # columns it cut the count, and above that it left a path that
+        # was one ellipsis. Same remedy as a block entry — the count
+        # takes a line of its own.
+        lines.append(clip(f"      → {shorten_path(outcome.output_dir, room - 8)}",
+                          room))
+        # The count alone, and without the word: the arrow line above
+        # already says these are what was written, and at thirty columns
+        # `1 699 998 of 2 779 999 pages written` does not fit however it
+        # is indented — while the eight figures do.
+        bare = render_count(outcome.pages_written, outcome.pages_total,
+                            "pages")
+        lines.append(f"{' ' * max(0, min(8, room - cells(bare)))}{bare}")
     lines.append("")
 
     for block in Block:
@@ -423,10 +451,11 @@ def render_summary(outcome, width=92):
             # the second one loose in the middle of the report — one
             # record for a wrapper reading FAILED lines became two, the
             # second a bare fragment.
-            lines.append(clip(f"    FAILED {name}: {reason}", room))
+            lines.append(clip(f"    FAILED {name}: {reason}".rstrip(), room))
         lines.append("")
 
-    lines.append(_located_line(outcome.record.located(), room))
+    lines.extend(_located_line(outcome.record.located(),
+                               room).split("\n"))
     lines.append("")
 
     if outcome.exit_code == 5:

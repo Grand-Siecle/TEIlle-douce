@@ -189,7 +189,14 @@ async def _modernize_all(texts, base_url, progress_callback=None, losses=None):
         # carries them too, because a line whose retry never arrived is a
         # line that never reached VieuxParler.
         losses.setdefault("retries_unreachable", 0)
+        # What each count is measured against. `lines_offered` is every
+        # sendable line of the first pass, which is the denominator for a
+        # reading the guard refused — but not for a retry: a retry phase
+        # that lost every one of its six lines read `6 of 40`, fifteen
+        # per cent, when it had lost all of them.
         losses.setdefault("lines_offered", 0)
+        losses.setdefault("lines_retried", 0)
+        losses.setdefault("batches_total", 0)
         losses["lines_offered"] += len(texts)
     results = list(texts)  # pre-fill with originals as fallback
     batches = [
@@ -197,6 +204,8 @@ async def _modernize_all(texts, base_url, progress_callback=None, losses=None):
         for i in range(0, len(texts), get_settings().modernize_batch_size)
     ]
     total_batches = len(batches)
+    if losses is not None:
+        losses["batches_total"] += total_batches
     completed = 0
     sem = asyncio.Semaphore(get_settings().modernize_concurrency)
 
@@ -297,7 +306,12 @@ async def _modernize_all(texts, base_url, progress_callback=None, losses=None):
         if losses is not None:
             losses["readings_rejected"] += still_bad
             losses["retries_unreachable"] += unreachable
-            losses["lines_lost"] += unreachable
+            losses["lines_retried"] += len(divergent)
+            # NOT added to `lines_lost`: that counter is the failed
+            # BATCHES' own detail, and folding the retry lines into it
+            # made block 3's two lines claim twenty-two lines for sixteen
+            # distinct ones, six of them attributed to a batch that never
+            # contained them.
         if get_settings().debug:
             logger.debug(
                 "Retry results: %d fixed, %d still divergent (kept "

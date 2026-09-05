@@ -413,15 +413,45 @@ def test_a_second_interrupt_does_not_throw_away_the_first_ones_report():
     before = signal.getsignal(signal.SIGINT)
 
     wrote = []
-    with pytest.raises(KeyboardInterrupt):
-        with run_module.finishing(held):
-            signal.raise_signal(signal.SIGINT)
-            wrote.append("the manifest")
-            signal.raise_signal(signal.SIGINT)
-            wrote.append("the summary")
+    with run_module.finishing(held):
+        signal.raise_signal(signal.SIGINT)
+        wrote.append("the manifest")
+        signal.raise_signal(signal.SIGINT)
+        wrote.append("the summary")
 
     assert wrote == ["the manifest", "the summary"]
     assert signal.getsignal(signal.SIGINT) is before
+
+
+def test_an_interrupt_after_the_work_is_done_does_not_replace_the_verdict():
+    """`release` used to raise from the `finally`, which REPLACED
+    whatever was on its way out — including the `sys.exit(exit_code)`
+    that is the run's last statement. A run whose summary said `exit 5`
+    and whose manifest said 5 gave the shell 130, the one code
+    documented as "not a verdict on the corpus"; a wrapper reads that and
+    retries instead of looking at what was lost. It swallowed real
+    exceptions the same way."""
+    import signal
+
+    held = run_module.HeldInterrupts()
+
+    with pytest.raises(SystemExit) as verdict:
+        with run_module.finishing(held):
+            signal.raise_signal(signal.SIGINT)
+            raise SystemExit(5)
+
+    assert verdict.value.code == 5
+
+
+def test_a_failure_inside_the_held_stretch_is_not_masked_by_the_signal():
+    import signal
+
+    held = run_module.HeldInterrupts()
+
+    with pytest.raises(RuntimeError, match="the manifest could not"):
+        with run_module.finishing(held):
+            signal.raise_signal(signal.SIGINT)
+            raise RuntimeError("the manifest could not be written")
 
 
 def test_holding_is_idempotent_so_the_two_call_sites_cannot_fight():
@@ -438,3 +468,62 @@ def test_holding_is_idempotent_so_the_two_call_sites_cannot_fight():
     held.release()
 
     assert signal.getsignal(signal.SIGINT) is before
+
+
+def test_the_forkserver_warm_up_gives_the_handler_back_even_when_it_was_none(
+        monkeypatch):
+    """`warm_up` carried the very `previous is not None` bug the `_UNSET`
+    sentinel was introduced to fix one function below it — and it
+    installs SIG_IGN, so its leak is Ctrl-C dead for the WHOLE run rather
+    than for one document. A handler set outside Python reads back as
+    None, which is the premise the sentinel exists for."""
+    import signal
+
+    from teille_douce.sourcedoc import builder
+
+    installed = []
+
+    def remembers(number, handler):
+        installed.append(handler)
+        return None            # a handler set outside Python
+
+    monkeypatch.setattr(builder.signal, "signal", remembers)
+    builder.warm_up()
+
+    assert installed[0] is signal.SIG_IGN
+    assert installed[-1] is None, "the handler was never given back"
+
+
+def test_the_launcher_answers_a_ctrl_c_in_its_own_imports(tmp_path):
+    """`from teille_douce.cli import main` pulls in pandas and lxml — a
+    quarter of a second — and a Ctrl-C there came out as a traceback from
+    somewhere inside pandas, over a run that had not started.
+
+    The interrupt is raised from inside that import rather than timed at
+    it: a real signal sent early enough to land there is also early
+    enough to land before the interpreter has a Python handler at all,
+    and the test would be measuring the race instead of the guard.
+    """
+    import os
+    import subprocess
+    import sys
+
+    from test_e2e_pipeline import RACINE
+
+    (tmp_path / "sitecustomize.py").write_text(
+        "import importlib.abc, importlib.machinery, sys\n"
+        "class Interrupts(importlib.abc.MetaPathFinder):\n"
+        "    def find_spec(self, name, path=None, target=None):\n"
+        "        if name == 'teille_douce.cli':\n"
+        "            raise KeyboardInterrupt\n"
+        "        return None\n"
+        "sys.meta_path.insert(0, Interrupts())\n", encoding="utf-8")
+
+    finished = subprocess.run(
+        [sys.executable, str(RACINE / "main.py"), "run", "--help"],
+        capture_output=True,
+        env={**os.environ, "PYTHONPATH": str(tmp_path)})
+
+    assert finished.returncode == 130, finished.stderr.decode()[-2000:]
+    assert b"Traceback" not in finished.stderr, finished.stderr.decode()
+    assert b"Interrupted" in finished.stderr

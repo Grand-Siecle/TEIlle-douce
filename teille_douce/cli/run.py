@@ -726,12 +726,25 @@ class HeldInterrupts:
             pass
 
     def release(self):
+        """Give the signal back, and say whether one was held.
+
+        It does NOT raise. Raising from the `finally` that releases it
+        replaced whatever was already on its way out — including the
+        `sys.exit(exit_code)` that is the last statement of the run — so
+        a run whose summary said `exit 5` and whose manifest said 5 gave
+        the shell 130, the one code documented as "not a verdict on the
+        corpus". It swallowed real exceptions the same way, leaving the
+        failure in `__context__` under a bare "Interrupted".
+
+        And the verdict is right: by the time this releases, everything
+        is written and printed. An interrupt that arrives after the run
+        has finished its work has stopped nothing.
+        """
         if self._held is not _UNSET_SIGNAL:
             signal.signal(signal.SIGINT, self._held)
             self._held = _UNSET_SIGNAL
-        if self._arrived:
-            self._arrived.clear()
-            raise KeyboardInterrupt
+        held, self._arrived = bool(self._arrived), []
+        return held
 
 
 @contextmanager
@@ -742,7 +755,12 @@ def finishing(interrupts=None):
     try:
         yield
     finally:
-        interrupts.release()
+        if interrupts.release():
+            # Said, not silent, and not acted on: the report and the
+            # manifest are already on disk, so there is nothing left for
+            # the signal to stop.
+            console.print("[dim]  (a Ctrl-C arrived while the report was "
+                          "being written; it is complete)[/dim]")
 
 
 @contextmanager
@@ -1147,7 +1165,12 @@ def _process_document(doc_name, filepaths, doc_dir, df_meta, config,
                     Code.BATCH_FAILED, doc_name, "modernize",
                     Locator.document(doc_name),
                     count=mod_stats["batches_failed"],
-                    total=mod_stats["batches_failed"],
+                    # Against every batch, not against itself. `count ==
+                    # total` made this line say a hundred per cent for
+                    # one refused batch in four, which is the only thing
+                    # it could ever say.
+                    total=mod_stats.get("batches_total",
+                                        mod_stats["batches_failed"]),
                     detail=f"{mod_stats.get('lines_lost', 0)} lines never "
                            f"reached VieuxParler"))
             if mod_stats.get("retries_unreachable"):
@@ -1159,7 +1182,10 @@ def _process_document(doc_name, filepaths, doc_dir, df_meta, config,
                     Code.RETRY_UNANSWERED, doc_name, "modernize.retry",
                     Locator.document(doc_name),
                     count=mod_stats["retries_unreachable"],
-                    total=mod_stats.get("lines_offered",
+                    # Against the lines that were RETRIED. Measured
+                    # against every line of the first pass, a retry phase
+                    # that lost all six of its lines read `6 of 40`.
+                    total=mod_stats.get("lines_retried",
                                         mod_stats["retries_unreachable"]),
                     detail="VieuxParler did not answer the retry"))
             if mod_stats.get("readings_rejected"):
@@ -2092,81 +2118,90 @@ def execute(args):
                 # straight through `except Exception` to the interpreter,
                 # so the summary — which lives outside this block — never
                 # ran, and four hours of knowledge left with the signal.
-                interrupted = True
-                # Held from here, not from the report: the second one
-                # lands during the panel's teardown, which is above this
-                # line's own `finally`.
+                # First statement, before even the message: a second
+                # Ctrl-C arriving during that `console.print` propagated
+                # straight out of `execute`, past the `finally` below
+                # that would have held it. Idempotent, so the `finally`
+                # can hold again for the paths that never come here.
                 interrupts.hold()
+                interrupted = True
                 console.print(
                     "\n[yellow]Interrupted — finishing the report for "
                     "what was already written.[/yellow]")
             finally:
                 panel_holder["panel"] = None
-    # Audit 2.10: end-of-run summary + non-zero exit code on failures
-    failed_docs = failed_docs + broken
-    total = len(docs) + len(broken)
-    converted = f"{len(ok_docs)}/{total} documents converted"
-    if skipped_existing:
-        converted += f" ({skipped_existing} more skipped, already converted)"
-    if without_alto:
-        # In the summary and not only in the warning above it: the summary
-        # line is what a nightly wrapper reads, and a volume that yielded
-        # no ALTO was absent from both sides of the fraction.
-        converted += (f" ({len(without_alto)} more held no ALTO)")
-    # Against `broken` and not `failed_archives`: everything in it failed
-    # WITHOUT being one of `docs`, so counting only the archives left the
-    # unreadable volumes subtracted from a set they were never in, and the
-    # volumes a --fail-fast never reached went unreported.
-    never_tried = len(docs) - len(ok_docs) - (len(failed_docs) - len(broken))
-    if stopped_early and never_tried > 0:
-        # Every phase reports what it lost: a run stopped after one failure
-        # out of forty must not read as thirty-nine silent successes.
-        converted += f" ({never_tried} never attempted, the run stopped early)"
-    # 1 covered "one volume broke" and "all forty broke" alike. A wrapper
-    # can now tell a partial failure, worth retrying volume by volume,
-    # from a total one, which usually means the input or the setup is
-    # wrong.
-    # "Everything" has to mean everything: a --fail-fast that stopped
-    # after the first volume did not prove the corpus is unconvertible,
-    # and reporting a total failure would send the operator to check a
-    # configuration that is fine.
-    if interrupted:
-        # 130 is what a shell reports for SIGINT, and it says something
-        # no other code says: this is not a verdict on the corpus.
-        exit_code = EXIT_INTERRUPTED
-    elif failed_docs and not ok_docs and not never_tried:
-        exit_code = EXIT_ALL_FAILED
-    elif failed_docs:
-        exit_code = EXIT_SOME_FAILED
-    else:
-        exit_code = EXIT_OK
-
-    # Only when nothing else failed: a failed volume is the more concrete
-    # fact and takes the code. The two are worth separating because the
-    # remedy differs — 1 is rerun with --retry-failed, 5 is look at what
-    # was lost and decide whether you accept it.
-    # An interrupted run is not a judgement on quality: it did not finish
-    # looking.
-    verdict = gate_verdict("never" if interrupted else settings.fail_on,
-                           reporter_run.record)
-    too_lossy = page_loss_failures(pages_lost_per_document,
-                                   settings.max_page_loss)
-    if exit_code == EXIT_OK and (not verdict.met or too_lossy):
-        exit_code = EXIT_GATE_NOT_MET
-
-    headline = ("Interrupted: " + converted if interrupted
-                else f"Completed with errors: {converted}" if failed_docs
-                else f"Done. {converted}")
-
-    # One account of the run. The sentence above is the one every wrapper
-    # greps and every accounting test balances, so the report takes it
-    # rather than deriving a second fraction of its own.
-    # Held against a second Ctrl-C from here to the end. The first
-    # one promised to finish the report for what was already
-    # written; a second, a hundred and fifty milliseconds later,
-    # threw away the run directory, the manifest and the summary,
-    # and left `--retry-failed` with nothing to read.
+                # Held here and not in the handler above: the handler is
+                # only reached when a FIRST interrupt arrived, so a run
+                # that finished cleanly went through the panel's
+                # teardown, the accounting and the gate unprotected — and
+                # a single Ctrl-C in that stretch lost the run directory,
+                # the manifest and the summary alike. This `finally` runs
+                # on every way out of the loop, and it is above the
+                # teardown, which happens as the `with` below it exits.
+                interrupts.hold()
+    # Ctrl-C held from the loop's own `finally` above to the end of
+    # the run, and released here. Everything in between — the
+    # panel's teardown, the accounting, the gate, the manifest, the
+    # summary — is the stretch a second interrupt used to throw
+    # away, and the stretch a FIRST one threw away on a run that
+    # had finished cleanly.
     with finishing(interrupts):
+        # Audit 2.10: end-of-run summary + non-zero exit code on failures
+        failed_docs = failed_docs + broken
+        total = len(docs) + len(broken)
+        converted = f"{len(ok_docs)}/{total} documents converted"
+        if skipped_existing:
+            converted += f" ({skipped_existing} more skipped, already converted)"
+        if without_alto:
+            # In the summary and not only in the warning above it: the summary
+            # line is what a nightly wrapper reads, and a volume that yielded
+            # no ALTO was absent from both sides of the fraction.
+            converted += (f" ({len(without_alto)} more held no ALTO)")
+        # Against `broken` and not `failed_archives`: everything in it failed
+        # WITHOUT being one of `docs`, so counting only the archives left the
+        # unreadable volumes subtracted from a set they were never in, and the
+        # volumes a --fail-fast never reached went unreported.
+        never_tried = len(docs) - len(ok_docs) - (len(failed_docs) - len(broken))
+        if stopped_early and never_tried > 0:
+            # Every phase reports what it lost: a run stopped after one failure
+            # out of forty must not read as thirty-nine silent successes.
+            converted += f" ({never_tried} never attempted, the run stopped early)"
+        # 1 covered "one volume broke" and "all forty broke" alike. A wrapper
+        # can now tell a partial failure, worth retrying volume by volume,
+        # from a total one, which usually means the input or the setup is
+        # wrong.
+        # "Everything" has to mean everything: a --fail-fast that stopped
+        # after the first volume did not prove the corpus is unconvertible,
+        # and reporting a total failure would send the operator to check a
+        # configuration that is fine.
+        if interrupted:
+            # 130 is what a shell reports for SIGINT, and it says something
+            # no other code says: this is not a verdict on the corpus.
+            exit_code = EXIT_INTERRUPTED
+        elif failed_docs and not ok_docs and not never_tried:
+            exit_code = EXIT_ALL_FAILED
+        elif failed_docs:
+            exit_code = EXIT_SOME_FAILED
+        else:
+            exit_code = EXIT_OK
+
+        # Only when nothing else failed: a failed volume is the more concrete
+        # fact and takes the code. The two are worth separating because the
+        # remedy differs — 1 is rerun with --retry-failed, 5 is look at what
+        # was lost and decide whether you accept it.
+        # An interrupted run is not a judgement on quality: it did not finish
+        # looking.
+        verdict = gate_verdict("never" if interrupted else settings.fail_on,
+                               reporter_run.record)
+        too_lossy = page_loss_failures(pages_lost_per_document,
+                                       settings.max_page_loss)
+        if exit_code == EXIT_OK and (not verdict.met or too_lossy):
+            exit_code = EXIT_GATE_NOT_MET
+
+        headline = ("Interrupted: " + converted if interrupted
+                    else f"Completed with errors: {converted}" if failed_docs
+                    else f"Done. {converted}")
+
         if store is not None:
             # Moved now rather than written there from the start: the run
             # directory lives under the output directory, and creating it
