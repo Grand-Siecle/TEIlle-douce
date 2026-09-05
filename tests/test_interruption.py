@@ -122,3 +122,92 @@ def test_the_volume_that_was_open_is_not_reported_as_converted(tmp_path,
     runs = sorted((tmp_path / "out" / ".teille-douce" / "runs").iterdir())
     manifest = json.loads((runs[-1] / "run.json").read_text(encoding="utf-8"))
     assert "LIV9002_reconciled" not in manifest["documents"]
+
+
+# =============================================================================
+# The interrupt does not arrive where it is convenient
+# =============================================================================
+
+def with_the_panel(tmp_path, ocr, extra=()):
+    """Force the dashboard on: without a terminal the run picks the
+    journal, and the handler swap under test never happens at all."""
+    return execute(tmp_path, ocr, extra=("--dashboard", *extra))
+
+
+def test_an_interrupt_outside_the_guarded_call_still_reports(tmp_path,
+                                                             monkeypatch):
+    """The loop's `try` covers `_process_document` and nothing else. A
+    signal arrives at an arbitrary instruction, so it lands in the rest of
+    the body just as easily — and the panel's setup was straight-line
+    code, so the report, the manifest and the console handlers all went
+    with it."""
+    ocr = a_corpus(tmp_path)
+    real = run_module._pages_per_second
+    calls = []
+
+    def stop_on_the_second(*args, **kwargs):
+        calls.append(1)
+        if len(calls) >= 2:
+            raise KeyboardInterrupt
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(run_module, "_pages_per_second", stop_on_the_second)
+
+    assert with_the_panel(tmp_path, ocr) == 130
+    runs = sorted((tmp_path / "out" / ".teille-douce" / "runs").iterdir())
+    assert (runs[-1] / "run.json").exists(), "the manifest went with the signal"
+
+
+def test_the_console_handlers_come_back_however_the_run_ends(tmp_path,
+                                                             monkeypatch):
+    """The panel swaps them for the digest. Leaked, every later warning in
+    the process is swallowed and the console has no handler at all."""
+    import logging
+
+    ocr = a_corpus(tmp_path)
+
+    def explode(*args, **kwargs):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(run_module, "_pages_per_second", explode)
+    with_the_panel(tmp_path, ocr)
+
+    # Not a before/after count: `configure_logging` legitimately replaces
+    # the root handlers with `basicConfig(force=True)`. What must hold is
+    # that the swap the panel made is undone.
+    after = logging.getLogger().handlers
+    assert not any(type(h).__name__ == "DigestHandler" for h in after), \
+        "the digest handler leaked and swallows every later warning"
+    assert any(isinstance(h, logging.StreamHandler)
+               and not hasattr(h, "baseFilename") for h in after), \
+        "the console was left with no handler at all"
+
+
+def test_the_live_region_is_closed_however_the_run_ends(tmp_path, monkeypatch):
+    """A Live left open owns the cursor and the alternate screen for the
+    rest of the process."""
+    from teille_douce.cli.run import console
+
+    ocr = a_corpus(tmp_path)
+
+    def explode(*args, **kwargs):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(run_module, "_pages_per_second", explode)
+    with_the_panel(tmp_path, ocr)
+
+    assert getattr(console, "_live", None) is None
+
+
+def test_the_chatter_is_not_silenced_for_ever(tmp_path, monkeypatch):
+    """`_QUIET` is global. Left True, every later run in the process is
+    silent for a reason nobody can find."""
+    ocr = a_corpus(tmp_path)
+
+    def explode(*args, **kwargs):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(run_module, "_pages_per_second", explode)
+    with_the_panel(tmp_path, ocr)
+
+    assert run_module._QUIET is False

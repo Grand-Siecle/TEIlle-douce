@@ -185,8 +185,11 @@ def test_a_quality_gate_says_both_what_worked_and_why_it_is_not_enough():
 
     assert "quality gate --fail-on incident" in text
     assert "NOT MET" in text
+    # The phase is named rather than assumed: three volumes lost their
+    # enrichment here, and a run that lost modernization instead must not
+    # be told to restart PyHellen.
     assert text.rstrip().endswith(
-        "exit 5 — everything converted, but 3 volumes carry no enrichment at all")
+        "exit 5 — everything converted, but 3 volumes carry no enrich at all")
 
 
 def test_the_gate_names_the_lines_that_tripped_it():
@@ -319,3 +322,57 @@ def test_an_interruption_is_not_reported_as_a_failure():
 
     assert text.rstrip().endswith(
         "exit 130 — interrupted, 2 of 27 volumes written and kept")
+
+
+def test_one_document_losing_the_same_way_twice_keeps_both_denominators():
+    """Enrichment and modernization both record CONTAINER_FAILED for one
+    volume, against their own totals. Keeping only the last one summed 53
+    against a denominator of 4 — and `render_count` refuses that, which
+    would end a four-hour run at its very last step."""
+    record = RunRecord()
+    record.add(Loss(Code.CONTAINER_FAILED, "D1", "enrich.refused",
+                    Locator.document("D1"), count=50, total=1402))
+    record.add(Loss(Code.CONTAINER_FAILED, "D1", "modernize",
+                    Locator.document("D1"), count=3, total=4))
+
+    assert "53 of 1 406 containers" in rendered(outcome(record=record))
+
+
+def test_two_losses_of_one_step_still_share_one_denominator():
+    """Several pages of one volume are measured against that volume's
+    pages once, not once per page."""
+    record = RunRecord()
+    for page in ("f1", "f2"):
+        record.add(Loss(Code.PAGE_UNUSABLE, "D1", "sourcedoc",
+                        Locator.page("D1", page), count=1, total=754))
+
+    assert "2 of 754 pages" in rendered(outcome(record=record))
+
+
+def test_the_verdict_names_the_phase_that_was_actually_lost():
+    """With VieuxParler down and PyHellen up, "3 volumes carry no
+    enrichment at all" is false: enrichment is complete and it is
+    modernization that is missing."""
+    record = RunRecord()
+    for index in range(3):
+        record.add(Loss(Code.PHASE_LOST, f"D{index}", "modernize",
+                        Locator.document(f"D{index}"), count=0, total=900,
+                        detail="VieuxParler down"))
+
+    text = rendered(outcome(record=record, exit_code=5, fail_on="incident"))
+
+    assert "no modernize at all" in text
+    assert "enrichment" not in text
+
+
+def test_two_phases_lost_are_both_named():
+    record = RunRecord()
+    record.add(Loss(Code.PHASE_LOST, "D1", "enrich", Locator.document("D1"),
+                    count=0, total=900, detail="PyHellen down"))
+    record.add(Loss(Code.PHASE_LOST, "D2", "modernize",
+                    Locator.document("D2"), count=0, total=900,
+                    detail="VieuxParler down"))
+
+    text = rendered(outcome(record=record, exit_code=5, fail_on="incident"))
+
+    assert "enrich" in text and "modernize" in text

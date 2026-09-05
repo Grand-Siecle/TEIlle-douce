@@ -135,9 +135,15 @@ def _block_lines(outcome, block, width):
             # carry the same one. Using the largest instead made two
             # volumes losing 3 of 754 pages each read "6 of 754", which
             # `render_count` refuses outright.
+            # Keyed on (document, step) and not on the document alone:
+            # one volume can lose containers to enrichment and to
+            # modernization, each measured against its own total, and
+            # keeping only the last of them summed 53 against a
+            # denominator of 4. `render_count` refuses that — at the very
+            # last step of a four-hour run.
             per_document = {}
             for entry in matching:
-                per_document[entry.document] = entry.total
+                per_document[(entry.document, entry.step)] = entry.total
             measured = render_count(sum(e.count for e in matching),
                                     sum(per_document.values()), unit)
         detail = next((e.detail for e in matching if e.detail), "")
@@ -213,8 +219,13 @@ def _verdict(outcome):
                     f"lost too many pages to publish")
         phases = outcome.record.whole_phases_lost()
         if phases:
+            # Named, not assumed: with VieuxParler down and PyHellen up,
+            # "no enrichment at all" is false and sends the reader to
+            # restart the wrong service.
+            lost = sorted({entry.step for entry in outcome.record.losses()
+                           if entry.code is Code.PHASE_LOST})
             return (f"exit 5 — everything converted, but {phases} volumes "
-                    f"carry no enrichment at all")
+                    f"carry no {' and no '.join(lost)} at all")
         return ("exit 5 — everything converted, but the quality gate was "
                 "not met")
     if not_converted:

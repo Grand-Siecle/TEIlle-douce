@@ -22,6 +22,7 @@ import shutil
 import sys
 from datetime import datetime
 from pathlib import Path
+from contextlib import contextmanager
 from time import perf_counter
 from zipfile import BadZipFile, ZipFile
 
@@ -571,8 +572,12 @@ def _phase_lost(reporter, doc_name, phase, stats, unit, reason):
     """
     if reporter is None:
         return
+    # `containers_found`, which is the key the phases actually write.
+    # `containers_total` was read here and written nowhere, so every lost
+    # phase recorded "0 of 0 containers" — the exact sentence CLAUDE.md
+    # forbids, produced by the code that exists to forbid it.
     reporter.phase(doc_name, phase, PhaseState.LOST,
-                   done=0, total=stats.get("containers_total", 0) or 0,
+                   done=0, total=stats.get("containers_found", 0) or 0,
                    unit=unit, reason=reason)
 
 
@@ -580,6 +585,12 @@ def _phase_lost(reporter, doc_name, phase, stats, unit, reason):
 # report now, in two different blocks — a guard refusing to anchor
 # annotations to the wrong characters is not the same fact as a service
 # refusing to answer, and averaging them is the convenient lie.
+# One counter used to carry four causes. They are four lines of the
+# report now, in two different blocks — a guard refusing to anchor
+# annotations to the wrong characters is not the same fact as a service
+# refusing to answer, and averaging them is the convenient lie. Each
+# keeps its own step, so the summary never sums two counts against one
+# denominator.
 _CONTAINER_CAUSES = (
     ("containers_broken", Code.CONTAINER_FAILED,
      "the pipeline raised on these"),
@@ -597,15 +608,79 @@ def _containers_failed(reporter, doc_name, phase, stats, reason):
 
     Different from a dead service, and it stays a container count: the
     document has the phase, minus these.
+
+    Only enrichment splits its causes; modernization counts one total, so
+    the split keys are read when they are there and the total is used
+    when they are not — reading only the split keys recorded nothing at
+    all for modernization, while the console printed a warning about it.
     """
-    total = (stats.get("containers_found")
-             or stats.get("containers_failed", 0) or 1)
+    total = stats.get("containers_found") or stats.get("containers_failed", 0)
+    if not total:
+        return
+    split = sum(stats.get(key, 0) for key, _code, _why in _CONTAINER_CAUSES)
+    if not split:
+        failed = stats.get("containers_failed", 0)
+        if failed:
+            reporter.lost(Loss(Code.CONTAINER_FAILED, doc_name, phase,
+                               Locator.document(doc_name), count=failed,
+                               total=total, detail=reason))
+        return
     for key, code, why in _CONTAINER_CAUSES:
         count = stats.get(key, 0)
         if count:
-            reporter.lost(Loss(code, doc_name, phase,
+            # The cause is the step, so two causes sharing a code stay
+            # two lines with their own diagnosis rather than one line
+            # carrying the first one's.
+            reporter.lost(Loss(code, doc_name, f"{phase}.{key.split('_')[-1]}",
                                Locator.document(doc_name), count=count,
                                total=total, detail=why))
+
+
+@contextmanager
+def panel_installed(reporter, active):
+    """Put the live panel up, and take it down whatever happens.
+
+    Straight-line setup was not enough. A signal arrives at an arbitrary
+    instruction, not conveniently inside the one `try` the loop had, and
+    it took the whole teardown with it: the digest handler stayed on the
+    root logger swallowing every later warning, the console handler was
+    gone for good, `_QUIET` stayed true, and Rich's Live kept the cursor
+    — on top of losing the summary and the manifest.
+
+    Torn down before the summary prints, so the summary lands in the
+    scrollback rather than inside a frame about to be erased.
+    """
+    if not active:
+        yield None
+        return
+
+    root = logging.getLogger()
+    # Eighty WARNING lines a volume printed one at a time push the panel
+    # off the top of the terminal, which is how a run that is repairing a
+    # source defect comes to look like one that is failing. They are
+    # folded instead; the file handler still receives every record.
+    digest = DigestHandler(reporter)
+    replaced = [h for h in root.handlers
+                if isinstance(h, logging.StreamHandler)
+                and not hasattr(h, "baseFilename")]
+    was_quiet = _QUIET
+    panel = Dashboard(console, reporter)
+    try:
+        for handler in replaced:
+            root.removeHandler(handler)
+        root.addHandler(digest)
+        # Silences `say`: everything it would print is on the panel, and
+        # a print inside a Live region pushes a copy of the frame into
+        # the scrollback on every line.
+        _set_quiet(True)
+        panel.__enter__()
+        yield panel
+    finally:
+        panel.__exit__(None, None, None)
+        _set_quiet(was_quiet)
+        root.removeHandler(digest)
+        for handler in replaced:
+            root.addHandler(handler)
 
 
 def _pages_per_second(reporter, started):
@@ -1469,27 +1544,6 @@ def execute(args):
         for name, reason in failed_archives:
             reporter_run.archive_failed(name, reason)
 
-        panel = Dashboard(console, reporter_run) if ui is UI.DASHBOARD else None
-        panel_holder["panel"] = panel
-        if panel is not None:
-            # Silences `say`: everything it would print is on the panel,
-            # and a print inside a Live region pushes the frame down the
-            # scrollback one copy at a time.
-            was_quiet = _QUIET
-            _set_quiet(True)
-            # Eighty WARNING lines a volume printed one at a time push the
-            # panel off the top of the terminal, which is how a run that
-            # is repairing a source defect comes to look like one that is
-            # failing. They are folded instead; the file handler still
-            # receives every record untouched.
-            digest_handler = DigestHandler(reporter_run)
-            console_handlers = [h for h in logging.getLogger().handlers
-                                if isinstance(h, logging.StreamHandler)
-                                and not hasattr(h, "baseFilename")]
-            for handler in console_handlers:
-                logging.getLogger().removeHandler(handler)
-            logging.getLogger().addHandler(digest_handler)
-            panel.__enter__()
         # Per volume, because a share only means something against one
         # volume's own pages: 388 lost out of 400 is a file nobody wants
         # to publish, and out of 16 999 it is a normal Tuesday.
@@ -1506,130 +1560,136 @@ def execute(args):
         # not in the failure budget: seeding the list with them made
         # --fail-fast stop after the first SUCCESSFUL document.
         failed_docs = []
-        for doc_name, filepaths, doc_dir in docs:
-            # Under the same guard as the conversion: a permissions change
-            # on an entity directory must not end a multi-hour run. And
-            # only when NER can write there — a --fast run walked a
-            # pre-existing directory once per volume for nothing.
-            entity_dir = settings.entities_dir / doc_name
-            entity_files_before[doc_name] = set()
-            if do_ner:
-                existing, created, reason = entity_snapshot(entity_dir)
-                entity_files_before[doc_name] = existing
-                if created:
-                    entity_dirs_created.add(doc_name)
-                if reason is not None:
-                    entity_snapshot_failed.add(doc_name)
-                    logging.getLogger(__name__).warning(
-                        "%s: cannot inspect %s (%s); its entity files will "
-                        "be left alone if this document fails",
-                        doc_name, entity_dir, reason,
-                    )
+        # Under a context manager, so the teardown happens whatever ends
+        # the loop: a signal arrives at an arbitrary instruction, not
+        # conveniently inside the one `try` this loop used to have.
+        with panel_installed(reporter_run, ui is UI.DASHBOARD) as panel:
+            panel_holder["panel"] = panel
             try:
-                reporter_run.document_started(doc_name, len(filepaths))
-                if panel is not None:
-                    panel.draw(pages_per_second=_pages_per_second(
-                        reporter_run, run_started))
-                _process_document(
-                    doc_name, filepaths, doc_dir, df_meta, config,
-                    person_db, do_enrich, do_modernize, do_ner, progress,
-                    reporter=reporter_run,
-                )
+                for doc_name, filepaths, doc_dir in docs:
+                    # Under the same guard as the conversion: a permissions change
+                    # on an entity directory must not end a multi-hour run. And
+                    # only when NER can write there — a --fast run walked a
+                    # pre-existing directory once per volume for nothing.
+                    entity_dir = settings.entities_dir / doc_name
+                    entity_files_before[doc_name] = set()
+                    if do_ner:
+                        existing, created, reason = entity_snapshot(entity_dir)
+                        entity_files_before[doc_name] = existing
+                        if created:
+                            entity_dirs_created.add(doc_name)
+                        if reason is not None:
+                            entity_snapshot_failed.add(doc_name)
+                            logging.getLogger(__name__).warning(
+                                "%s: cannot inspect %s (%s); its entity files will "
+                                "be left alone if this document fails",
+                                doc_name, entity_dir, reason,
+                            )
+                    try:
+                        reporter_run.document_started(doc_name, len(filepaths))
+                        if panel is not None:
+                            panel.draw(pages_per_second=_pages_per_second(
+                                reporter_run, run_started))
+                        _process_document(
+                            doc_name, filepaths, doc_dir, df_meta, config,
+                            person_db, do_enrich, do_modernize, do_ner, progress,
+                            reporter=reporter_run,
+                        )
+                    except Exception as e:
+                        # Audit 2.1: one broken document must not kill the run.
+                        # escape(): a doc name or error text containing [tag]-like
+                        # substrings would corrupt or crash the Rich rendering.
+                        logging.getLogger(__name__).error(
+                            "Document %s failed: %s", doc_name, e, exc_info=True
+                        )
+                        console.print(f"[bold red]FAILED[/bold red] {escape(f'{doc_name}: {e}')}")
+                        failed_docs.append((doc_name, str(e)))
+                        reporter_run.document_finished(doc_name, ok=False,
+                                                       reason=str(e))
+                        # No orphan side effects: entity CSVs written before the
+                        # failure would reference a TEI that was never produced
+                        # Only what this run created. `entities_dir` is a setting
+                        # now, so an unbounded rmtree here destroyed whatever the
+                        # named directory happened to hold: `--entities OCR` plus
+                        # any per-document failure deleted the source volume.
+                        # Only when NER ran: with the phase off nothing was
+                        # written there, so there is nothing of this run's to
+                        # remove — and removing anything would be removing someone
+                        # else's files.
+                        stray = settings.entities_dir / doc_name
+                        if may_remove_entity_files(
+                                stray,
+                                wrote_entities=do_ner,
+                                snapshot_failed=doc_name in entity_snapshot_failed,
+                                tei_exists=_out_path(
+                                    doc_name, settings.output_dir).exists()):
+                            if doc_name in entity_dirs_created:
+                                shutil.rmtree(stray, ignore_errors=True)
+                            else:
+                                # A directory that was already there keeps what it
+                                # held; only the files this run wrote are removed,
+                                # or they would reference a TEI that does not
+                                # exist (audit 2.4).
+                                #
+                                # Guarded on its own: this runs inside the handler
+                                # that exists so one broken document cannot kill a
+                                # multi-hour run, and an OSError here — a
+                                # concurrent writer, a permission change, a
+                                # directory that gained a file between the walk
+                                # and the rmdir — would have escaped it.
+                                try:
+                                    for path in sorted(stray.rglob("*"), reverse=True):
+                                        if path in entity_files_before[doc_name]:
+                                            continue
+                                        if path.is_file():
+                                            path.unlink(missing_ok=True)
+                                        elif path.is_dir():
+                                            path.rmdir()
+                                except OSError as cleanup_error:
+                                    logging.getLogger(__name__).warning(
+                                        "%s: could not remove the entity files of "
+                                        "this failed document (%s)",
+                                        doc_name, cleanup_error,
+                                    )
+                        # And no zombie progress rows left spinning forever
+                        for tid in progress.task_ids:
+                            if tid != task_docs:
+                                progress.update(tid, visible=False)
+                    else:
+                        ok_docs.append(doc_name)
+                        reporter_run.document_finished(doc_name, ok=True)
+                        if panel is not None:
+                            panel.draw(pages_per_second=_pages_per_second(
+                                reporter_run, run_started))
+                        pages_lost_per_document[doc_name] = (
+                            reporter_run.pages_lost(doc_name), len(filepaths))
+                    progress.advance(task_docs)
+
+                    # Both asked for explicitly; the default is still to convert
+                    # every volume, because per-document isolation is the contract.
+                    if failed_docs and getattr(args, "fail_fast", False):
+                        console.print("[yellow]--fail-fast: stopping at the first failure.[/yellow]")
+                        stopped_early = True
+                        break
+                    max_failures = getattr(args, "max_failures", None)
+                    if max_failures is not None and len(failed_docs) >= max_failures:
+                        console.print(
+                            f"[yellow]--max-failures {max_failures}: reached, stopping.[/yellow]"
+                        )
+                        stopped_early = True
+                        break
+
             except KeyboardInterrupt:
-                # The one exception that must not be swallowed and must
-                # not skip the report either. `except Exception` let it
-                # through to the interpreter, so the summary — which
-                # lives outside this block — never ran, and four hours of
-                # knowledge left with the signal.
+                # Caught where the report can still be written. It went
+                # straight through `except Exception` to the interpreter,
+                # so the summary — which lives outside this block — never
+                # ran, and four hours of knowledge left with the signal.
                 interrupted = True
                 console.print(
-                    "\n[yellow]Interrupted — finishing the report for what "
-                    "was already written.[/yellow]")
-                break
-            except Exception as e:
-                # Audit 2.1: one broken document must not kill the run.
-                # escape(): a doc name or error text containing [tag]-like
-                # substrings would corrupt or crash the Rich rendering.
-                logging.getLogger(__name__).error(
-                    "Document %s failed: %s", doc_name, e, exc_info=True
-                )
-                console.print(f"[bold red]FAILED[/bold red] {escape(f'{doc_name}: {e}')}")
-                failed_docs.append((doc_name, str(e)))
-                reporter_run.document_finished(doc_name, ok=False,
-                                               reason=str(e))
-                # No orphan side effects: entity CSVs written before the
-                # failure would reference a TEI that was never produced
-                # Only what this run created. `entities_dir` is a setting
-                # now, so an unbounded rmtree here destroyed whatever the
-                # named directory happened to hold: `--entities OCR` plus
-                # any per-document failure deleted the source volume.
-                # Only when NER ran: with the phase off nothing was
-                # written there, so there is nothing of this run's to
-                # remove — and removing anything would be removing someone
-                # else's files.
-                stray = settings.entities_dir / doc_name
-                if may_remove_entity_files(
-                        stray,
-                        wrote_entities=do_ner,
-                        snapshot_failed=doc_name in entity_snapshot_failed,
-                        tei_exists=_out_path(
-                            doc_name, settings.output_dir).exists()):
-                    if doc_name in entity_dirs_created:
-                        shutil.rmtree(stray, ignore_errors=True)
-                    else:
-                        # A directory that was already there keeps what it
-                        # held; only the files this run wrote are removed,
-                        # or they would reference a TEI that does not
-                        # exist (audit 2.4).
-                        #
-                        # Guarded on its own: this runs inside the handler
-                        # that exists so one broken document cannot kill a
-                        # multi-hour run, and an OSError here — a
-                        # concurrent writer, a permission change, a
-                        # directory that gained a file between the walk
-                        # and the rmdir — would have escaped it.
-                        try:
-                            for path in sorted(stray.rglob("*"), reverse=True):
-                                if path in entity_files_before[doc_name]:
-                                    continue
-                                if path.is_file():
-                                    path.unlink(missing_ok=True)
-                                elif path.is_dir():
-                                    path.rmdir()
-                        except OSError as cleanup_error:
-                            logging.getLogger(__name__).warning(
-                                "%s: could not remove the entity files of "
-                                "this failed document (%s)",
-                                doc_name, cleanup_error,
-                            )
-                # And no zombie progress rows left spinning forever
-                for tid in progress.task_ids:
-                    if tid != task_docs:
-                        progress.update(tid, visible=False)
-            else:
-                ok_docs.append(doc_name)
-                reporter_run.document_finished(doc_name, ok=True)
-                if panel is not None:
-                    panel.draw(pages_per_second=_pages_per_second(
-                        reporter_run, run_started))
-                pages_lost_per_document[doc_name] = (
-                    reporter_run.pages_lost(doc_name), len(filepaths))
-            progress.advance(task_docs)
-
-            # Both asked for explicitly; the default is still to convert
-            # every volume, because per-document isolation is the contract.
-            if failed_docs and getattr(args, "fail_fast", False):
-                console.print("[yellow]--fail-fast: stopping at the first failure.[/yellow]")
-                stopped_early = True
-                break
-            max_failures = getattr(args, "max_failures", None)
-            if max_failures is not None and len(failed_docs) >= max_failures:
-                console.print(
-                    f"[yellow]--max-failures {max_failures}: reached, stopping.[/yellow]"
-                )
-                stopped_early = True
-                break
-
+                    "\\n[yellow]Interrupted — finishing the report for "
+                    "what was already written.[/yellow]")
+            finally:
+                panel_holder["panel"] = None
     # Audit 2.10: end-of-run summary + non-zero exit code on failures
     failed_docs = failed_docs + broken
     total = len(docs) + len(broken)
@@ -1650,16 +1710,6 @@ def execute(args):
         # Every phase reports what it lost: a run stopped after one failure
         # out of forty must not read as thirty-nine silent successes.
         converted += f" ({never_tried} never attempted, the run stopped early)"
-    if panel is not None:
-        # Torn down before the summary, so the summary lands in the
-        # scrollback rather than inside a frame about to be erased.
-        panel.__exit__(None, None, None)
-        panel_holder["panel"] = None
-        logging.getLogger().removeHandler(digest_handler)
-        for handler in console_handlers:
-            logging.getLogger().addHandler(handler)
-        _set_quiet(was_quiet)
-
     for name, reason in broken:
         if any(name == known for known, _ in reporter_run.failed_archives):
             continue

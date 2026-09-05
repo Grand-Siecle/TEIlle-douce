@@ -161,3 +161,25 @@ def test_the_digest_keeps_one_verbatim_example_per_shape():
 
     assert line.example == "page 41: 19 duplicate ALTO id(s) disambiguated"
     assert line.first_document == "LIV0038_reconciled"
+
+
+def test_the_summed_integers_ignore_the_ones_in_the_document_name():
+    """The shape is taken after the prefix is stripped and the numbers
+    before it, so volumes whose names carry a different count of digit
+    runs — `LIV0044_reconciled` and `LIV0043_t1_reconciled`, both in the
+    real corpus — shifted every position of the sum."""
+    digest = WarningDigest()
+    digest.add("A", "LIV0044_reconciled: page 1 (f1.xml) 7 duplicate ALTO id(s)")
+    digest.add("B", "LIV0043_t1_reconciled: page 1 (f1.xml) 8 duplicate ALTO id(s)")
+
+    line, = digest.lines()
+
+    assert line.totals[-1] == 15
+
+
+def test_a_message_with_no_prefix_still_sums_its_own_numbers():
+    digest = WarningDigest()
+    digest.add("A", "page 1: 7 duplicate")
+    digest.add("A", "page 2: 8 duplicate")
+
+    assert digest.lines()[0].totals[-1] == 15

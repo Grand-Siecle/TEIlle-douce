@@ -53,6 +53,11 @@ class WarningDigest:
 
     def add(self, document, message):
         shape = shape_of(message)
+        # The prefix is stripped before the numbers are read, or the
+        # digits of the document name join the sum: two volumes whose
+        # names carry a different count of digit runs fold to one shape
+        # and shift every position of the total.
+        body = _PREFIX.sub("", message)
         line = self._lines.get(shape)
         if line is None:
             line = DigestLine(shape=shape, example=_PREFIX.sub("", message),
@@ -64,7 +69,7 @@ class WarningDigest:
         # The integers the message carried, summed position by position:
         # "78× page N: N duplicate ALTO id(s)" is only usable next to
         # "4 129 ids", and the fold is where that number would be lost.
-        numbers = [int(found) for found in _DIGITS.findall(message)]
+        numbers = [int(found) for found in _DIGITS.findall(body)]
         while len(line.totals) < len(numbers):
             line.totals.append(0)
         for index, number in enumerate(numbers):
