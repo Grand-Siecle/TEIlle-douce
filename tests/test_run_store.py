@@ -49,7 +49,7 @@ def test_a_run_gets_its_own_directory_named_for_when_it_started(tmp_path):
     # The pid too: two runs started inside the same second would
     # otherwise share a directory and destroy each other's record.
     assert store.path == (tmp_path / "tei_output" / ".teille-douce" / "runs"
-                          / f"20260903-180824-{os.getpid()}")
+                          / f"20260903-180824-{os.getpid():07d}")
 
 
 def test_the_directory_is_not_created_until_something_is_written(tmp_path):
@@ -317,6 +317,17 @@ def test_the_directory_still_sorts_by_when_it_started(monkeypatch):
     late = RunStore(Path("out"), now=datetime(2026, 9, 3, 11, 0, 0)).path
 
     assert early.name < late.name
+
+    # And within one second the pid orders numerically: unpadded, "1234"
+    # sorts before "987", so the newer of two concurrent runs was missed
+    # by --retry-failed and deleted first by the retention.
+    instant = datetime(2026, 9, 3, 12, 0, 0)
+    monkeypatch.setattr(os, "getpid", lambda: 987)
+    first = RunStore(Path("out"), now=instant).path
+    monkeypatch.setattr(os, "getpid", lambda: 1234)
+    second = RunStore(Path("out"), now=instant).path
+
+    assert first.name < second.name
 
 
 # =============================================================================

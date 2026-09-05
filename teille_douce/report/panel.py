@@ -212,25 +212,25 @@ def _pad(left, right, room):
     return clip(left + " " + right, room)
 
 
-def _bar(state, cells, unicode_):
-    """Three measured zones, in proportion, filling exactly `cells`."""
+def _bar(state, width, unicode_):
+    """Three measured zones, in proportion, filling exactly `width`."""
     done_glyph, flight_glyph, void_glyph = TONES[unicode_]
     total = max(state.pages_total, 1)
     written = min(state.pages_written, total)
     in_flight = min(state.pages_in_flight, total - written)
 
-    done_cells = round(cells * written / total)
-    flight_cells = round(cells * in_flight / total)
-    if written and not done_cells:
-        done_cells = 1
-    if in_flight and not flight_cells:
-        flight_cells = 1
-    done_cells = min(done_cells, cells)
-    flight_cells = min(flight_cells, cells - done_cells)
-    void_cells = cells - done_cells - flight_cells
-    return [Span(done_glyph * done_cells, "plate"),
-            Span(flight_glyph * flight_cells, "bitten"),
-            Span(void_glyph * void_cells, "graphite")]
+    done_width = round(width * written / total)
+    flight_width = round(width * in_flight / total)
+    if written and not done_width:
+        done_width = 1
+    if in_flight and not flight_width:
+        flight_width = 1
+    done_width = min(done_width, width)
+    flight_width = min(flight_width, width - done_width)
+    void_width = width - done_width - flight_width
+    return [Span(done_glyph * done_width, "plate"),
+            Span(flight_glyph * flight_width, "bitten"),
+            Span(void_glyph * void_width, "graphite")]
 
 
 def _services(state, room, unicode_):
@@ -261,7 +261,11 @@ def _services(state, room, unicode_):
     def fill(reserve):
         budget = room - cells(right) - 2 - reserve
         kept, used, dropped = [], 0, 0
-        for text, style in labels:
+        # A dead service first: `✗ NAME LOST hh:mm` is the longest label
+        # by construction, so a first-fit pass dropped exactly the one
+        # the banner exists to show and kept a service nobody asked for.
+        ordered = sorted(labels, key=lambda pair: pair[1] != "vermilion")
+        for text, style in ordered:
             width = cells(text) + (3 if kept else 0)
             if used + width > budget:
                 dropped += 1
@@ -378,9 +382,12 @@ def render_panel(state, width=92, height=None, unicode=True, color=True,
     pages = (f"{_grouped(state.pages_written)}/{_grouped(state.pages_total)} "
              f"pages")
     percent = f"{round(100 * state.pages_written / max(state.pages_total, 1))}%"
-    cells = max(4, room - len(pages) - len(percent) - 6)
-    lines.append([Span(" "), *_bar(state, cells, unicode),
-                  Span("  " + _pad(pages, percent, room - cells - 3))])
+    # `bar_cells`, not `cells`: the module function of that name measures
+    # a string in columns, and shadowing it here made every line that
+    # clips raise TypeError.
+    bar_cells = max(4, room - len(pages) - len(percent) - 6)
+    lines.append([Span(" "), *_bar(state, bar_cells, unicode),
+                  Span("  " + _pad(pages, percent, room - bar_cells - 3))])
 
     # Three facts are three columns, not a string joined with middle
     # dots: a list pretending not to be a table is the commonest tell of
@@ -409,12 +416,19 @@ def render_panel(state, width=92, height=None, unicode=True, color=True,
                 lines.append([Span(clip(f"               {phase.note}", room),
                                    "vermilion")])
 
-    lines.append([
-        Span(f" source {_grouped(state.source_lost)}    "),
-        Span(f"withheld {_grouped(state.withheld)}    "),
-        Span(f"incident {_grouped(state.incidents)}",
-             "vermilion" if state.incidents else ""),
-    ])
+    # Composed span by span to keep the incident count its own colour,
+    # so clipped span by span too: six-digit totals ran past the edge.
+    totals, used = [], 0
+    for text_, style in ((f" source {_grouped(state.source_lost)}    ", ""),
+                         (f"withheld {_grouped(state.withheld)}    ", ""),
+                         (f"incident {_grouped(state.incidents)}",
+                          "vermilion" if state.incidents else "")):
+        piece = clip(text_, room - used)
+        if not piece:
+            break
+        totals.append(Span(piece, style))
+        used += cells(piece)
+    lines.append(totals)
 
     incidents_at = len(lines)
     for incident in state.incident_lines:
@@ -448,24 +462,32 @@ def render_panel(state, width=92, height=None, unicode=True, color=True,
             lines.append([Span(f"    +{hidden} more shapes", "graphite")])
 
     lines.append([Span("─" * room if unicode else "-" * room, "graphite")])
-    lines.append([Span(
+    lines.append([Span(clip(
         f" ctrl-c  abandon this volume, keep the "
-        f"{state.volumes_written} already written", "graphite")])
+        f"{state.volumes_written} already written", room), "graphite")])
 
     # Trimmed last, against the height the terminal actually has: thirty
     # volumes with both services dead is sixty incident lines, and Rich's
     # Live ellipsises from the BOTTOM — so the bar, the totals and the
     # ctrl-c foot would be what disappears. The incidents are the part
     # that can be cut, because the summary carries all of them.
-    if height and len(lines) > height:
-        shown = len(state.incident_lines) - (len(lines) - height) - 1
-        shown = max(0, shown)
+    over = len(lines) - height if height else 0
+    if over > 0 and state.incident_lines:
+        # Only the incidents can be cut, because the summary carries all
+        # of them — and only when there are some: the trim used to add a
+        # " +0 more" line to a clean panel, which made it one line TALLER
+        # than the height it was given, on every frame of every run at
+        # the documented minimum window.
+        #
+        # The note costs a line of its own, so it is paid for here.
+        shown = max(0, len(state.incident_lines) - over - 1)
         hidden = len(state.incident_lines) - shown
-        lines[incidents_at:incidents_end] = [
-            *lines[incidents_at:incidents_at + shown],
-            [Span(f" +{hidden} more incidents, all of them in the summary",
-                  "vermilion")],
-        ]
+        replacement = lines[incidents_at:incidents_at + shown]
+        if hidden:
+            replacement.append(
+                [Span(f" +{hidden} more incidents, all of them in the summary",
+                      "vermilion")])
+        lines[incidents_at:incidents_end] = replacement
 
     if not unicode:
         # One pass at the end rather than a glyph table threaded through

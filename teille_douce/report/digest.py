@@ -57,7 +57,10 @@ class WarningDigest:
         # digits of the document name join the sum: two volumes whose
         # names carry a different count of digit runs fold to one shape
         # and shift every position of the total.
-        body = _PREFIX.sub("", message)
+        # `.strip()` first, exactly as `shape_of` does: a message with
+        # leading whitespace kept its document prefix, and its digits
+        # rejoined the sum — the same bug one indentation away.
+        body = _PREFIX.sub("", message.strip())
         line = self._lines.get(shape)
         if line is None:
             line = DigestLine(shape=shape, example=_PREFIX.sub("", message),

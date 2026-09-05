@@ -211,3 +211,32 @@ def test_the_chatter_is_not_silenced_for_ever(tmp_path, monkeypatch):
     with_the_panel(tmp_path, ocr)
 
     assert run_module._QUIET is False
+
+
+def test_a_second_interrupt_during_the_teardown_still_restores_everything(
+        monkeypatch):
+    """A Ctrl-C arriving inside `Live.stop()` skipped the rest of the
+    `finally` — leaving the digest handler on the root logger, the
+    console with none, and `_QUIET` stuck true for the life of the
+    process. The state the context manager exists to prevent, moved one
+    frame inward."""
+    import logging
+
+    from teille_douce.report.collector import Run
+
+    run = Run(input_dir="OCR", output_dir="out", volumes=1, pages=1)
+
+    def explode(self, *exception):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(run_module.Dashboard, "__exit__", explode)
+    before = list(logging.getLogger().handlers)
+
+    try:
+        with run_module.panel_installed(run, active=True):
+            pass
+    except KeyboardInterrupt:
+        pass
+
+    assert logging.getLogger().handlers == before
+    assert run_module._QUIET is False

@@ -636,7 +636,7 @@ def _containers_failed(reporter, doc_name, phase, stats, reason):
                                total=total, detail=why))
 
 
-def _refuse(code=None):
+def _refuse(code=None, settings=None):
     """Leave, having written nothing — the log included.
 
     Exit 3 says the run did not run. A record emitted during setup opens
@@ -646,7 +646,11 @@ def _refuse(code=None):
     reproduces it.
     """
     global RUN_LOG_FILE
-    if RUN_LOG_FILE:
+    named = settings is not None and settings.origin("log_file") != "default"
+    if RUN_LOG_FILE and not named:
+        # A log the operator named is an instruction, and the summary
+        # path already treats it as one. Two contradicting judgments in
+        # one file is one too many.
         for handler in list(logging.getLogger().handlers):
             if getattr(handler, "baseFilename", None) == str(RUN_LOG_FILE):
                 handler.close()
@@ -662,13 +666,18 @@ def _refuse(code=None):
 
 
 def _keep_the_record(store, settings, failed, exit_code):
-    """The manifest, on a path that exits before the run loop.
+    """The manifest and the log, on a path that exits before the run loop.
 
     Without it a corpus where nothing could be opened leaves no record,
-    and the next `--retry-failed` is told nothing failed.
+    and the next `--retry-failed` is told nothing failed. The log comes
+    too: an index that outlives its transcript is exactly what pruning
+    them together exists to prevent.
     """
+    global RUN_LOG_FILE
     if store is None:
         return
+    if RUN_LOG_FILE and settings.origin("log_file") == "default":
+        RUN_LOG_FILE = store.adopt_log(RUN_LOG_FILE)
     store.finish(argv=["teille-douce", *sys.argv[1:]],
                  settings=settings.as_manifest(),
                  documents={Path(name).stem: "failed" for name, _ in failed},
@@ -716,7 +725,15 @@ def panel_installed(reporter, active):
         panel.__enter__()
         yield panel
     finally:
-        panel.__exit__(None, None, None)
+        # Each step in its own guard. A second Ctrl-C arriving inside
+        # `Live.stop()` skipped the rest of this block, and the process
+        # kept the digest handler, lost the console one and stayed quiet
+        # for good — the state this context manager exists to prevent,
+        # one frame inward.
+        try:
+            panel.__exit__(None, None, None)
+        except BaseException:
+            pass
         _set_quiet(was_quiet)
         root.removeHandler(digest)
         for handler in replaced:
@@ -1003,7 +1020,7 @@ def execute(args):
     # the exit 3 the contract promises.
     if not settings.ocr_dir.is_dir():
         console.print(f"[red]Directory not found: {escape(str(settings.ocr_dir))}[/red]")
-        _refuse()
+        _refuse(settings=settings)
 
     # Checked here rather than at mkdir time: -o naming an existing file
     # used to be discovered after expand_archives had unpacked the whole
@@ -1022,14 +1039,14 @@ def execute(args):
             f"({escape(settings.origin('entities_dir'))}) against "
             f"{escape(str(settings.ocr_dir))}"
         )
-        _refuse()
+        _refuse(settings=settings)
 
     if settings.output_dir.exists() and not settings.output_dir.is_dir():
         console.print(
             f"[red]Not a directory:[/red] "
             f"{escape(str(settings.output_dir))} (--output)"
         )
-        _refuse()
+        _refuse(settings=settings)
 
     # Create output directory
     dry_run = getattr(args, "dry_run", False)
@@ -1060,7 +1077,7 @@ def execute(args):
         console.print(
             "[red]--no-probe and --require-services contradict each other.[/red]"
         )
-        _refuse()
+        _refuse(settings=settings)
 
     # Cheap, and before the probes: a typo used to pay up to two health
     # timeouts of blocking HTTP before being told it was a typo. Names are
@@ -1078,13 +1095,13 @@ def execute(args):
             # Not "nothing failed": that would send the operator away
             # believing the last run was clean.
             console.print(f"[red]--retry-failed: {escape(str(reason))}[/red]")
-            _refuse()
+            _refuse(settings=settings)
         if not selectors:
             # Not "a selector matched nothing": there is no selector, and
             # the previous run simply had nothing to retry.
             console.print("[green]--retry-failed: nothing failed last "
                           "time.[/green]")
-            _refuse()
+            _refuse(settings=settings)
         say(f"[dim]--retry-failed: {len(selectors)} volume(s) from the "
             f"last run[/dim]")
 
@@ -1102,7 +1119,7 @@ def execute(args):
         ]
         if stray:
             console.print("[red]No volume matches:[/red] " + escape(", ".join(stray)))
-            _refuse()
+            _refuse(settings=settings)
 
     config_origin = settings.origin("__config__")
     if config_origin != "default":
@@ -1179,7 +1196,7 @@ def execute(args):
             + escape(", ".join(unavailable))
             + " unreachable; nothing written."
         )
-        _refuse()
+        _refuse(settings=settings)
 
     # Extract ZIP archives (corrupt ones are skipped and reported)
     # --limit deliberately does NOT bound extraction. Ordering it by name
@@ -1384,7 +1401,7 @@ def execute(args):
                 f"[red]No ALTO documents found in "
                 f"{escape(str(settings.ocr_dir))}.{found}[/red]"
             )
-        _refuse()
+        _refuse(settings=settings)
 
     # Only directories that actually hold ALTO: an extracted archive with
     # no *.xml is not a volume a selector can match, and treating it as one
@@ -1422,7 +1439,7 @@ def execute(args):
             )
             return
         console.print("[red]Every volume was excluded.[/red]")
-        _refuse()
+        _refuse(settings=settings)
 
     if not docs and pending_archives:
         pass
@@ -1439,6 +1456,10 @@ def execute(args):
         console.print(f"[bold yellow]Completed with errors:[/bold yellow] {early}")
         for name, reason in broken:
             console.print(f"  [red]FAILED[/red] {escape(f'{name}: {reason}')}")
+        # The second path that leaves before the run loop. The record was
+        # added to the first only, so this one still told the next
+        # --retry-failed that nothing had failed.
+        _keep_the_record(store, settings, broken, EXIT_SOME_FAILED)
         sys.exit(EXIT_SOME_FAILED)
 
     # Audit 2.5: minimal resume after a crash — skip already-converted docs
@@ -1513,7 +1534,7 @@ def execute(args):
             f"[red]Cannot use {escape(str(settings.output_dir))} as an "
             f"output directory:[/red] {escape(str(reason))}"
         )
-        _refuse()
+        _refuse(settings=settings)
 
     # Build pipeline configuration
     config = build_config()
@@ -1734,7 +1755,7 @@ def execute(args):
                 # ran, and four hours of knowledge left with the signal.
                 interrupted = True
                 console.print(
-                    "\\n[yellow]Interrupted — finishing the report for "
+                    "\n[yellow]Interrupted — finishing the report for "
                     "what was already written.[/yellow]")
             finally:
                 panel_holder["panel"] = None

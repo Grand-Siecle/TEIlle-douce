@@ -115,13 +115,22 @@ def _block_lines(outcome, block, width):
         lines.append("    nothing")
         return lines
 
-    # Grouped by code: one line per kind of loss, not one per event.
+    # Grouped by (code, cause): one line per kind of loss, not one per
+    # event — and not one per code either, because two causes sharing a
+    # code have two different diagnoses. `2 broken + 90 refused` printed
+    # "92 containers — the pipeline raised on these", which is the right
+    # count under the wrong cause.
+    seen = []
     for code in Code:
         if code.block is not block:
             continue
-        matching = [entry for entry in losses if entry.code is code]
-        if not matching:
-            continue
+        for entry in losses:
+            if entry.code is code and (code, entry.detail) not in seen:
+                seen.append((code, entry.detail))
+
+    for code, detail in seen:
+        matching = [entry for entry in losses
+                    if entry.code is code and entry.detail == detail]
         label, unit = _LABELS[code]
         if code is Code.PHASE_LOST:
             # Never folded into a container count: a document carrying
@@ -129,28 +138,21 @@ def _block_lines(outcome, block, width):
             measured = render_count(len({e.document for e in matching}),
                                     outcome.volumes_total, "")
         else:
-            # Each document measures its own losses against its own total,
-            # so the corpus denominator is the sum over documents — taken
-            # once per document, since several losses of one document all
-            # carry the same one. Using the largest instead made two
-            # volumes losing 3 of 754 pages each read "6 of 754", which
-            # `render_count` refuses outright.
-            # Keyed on (document, step) and not on the document alone:
-            # one volume can lose containers to enrichment and to
-            # modernization, each measured against its own total, and
-            # keeping only the last of them summed 53 against a
-            # denominator of 4. `render_count` refuses that — at the very
-            # last step of a four-hour run.
-            per_document = {}
+            # Per (document, PHASE), not per step: giving each cause its
+            # own step is what lets two diagnoses survive, and keying the
+            # denominator on it summed one volume's hundred containers
+            # once per cause — "92 of 200" for a volume that has a
+            # hundred.
+            per_phase = {}
             for entry in matching:
-                per_document[(entry.document, entry.step)] = entry.total
+                per_phase[(entry.document, entry.step.split(".", 1)[0])] = \
+                    entry.total
             measured = render_count(sum(e.count for e in matching),
-                                    sum(per_document.values()), unit)
-        detail = next((e.detail for e in matching if e.detail), "")
+                                    sum(per_phase.values()), unit)
+        shown = detail
         if code.repaired:
-            detail = (detail + " (repaired)").strip()
-        lines.append(_columns(f"    {label:<22}{measured}",
-                              detail, width))
+            shown = (shown + " (repaired)").strip()
+        lines.append(_columns(f"    {label:<22}{measured}", shown, width))
     return lines
 
 

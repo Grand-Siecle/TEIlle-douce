@@ -135,3 +135,33 @@ def test_nothing_is_recorded_when_nothing_failed():
                                   enrich_stats(containers_found=100), "x")
 
     assert run.record.losses() == ()
+
+
+def test_a_lost_modernization_also_says_how_much_it_refused():
+    """`containers_found` is written by the enrichment pipeline only, so
+    modernization kept rendering `0 of 0 containers` — the fix reached
+    one phase of the two."""
+    run = a_run()
+    run.document_started("D1", pages=10)
+
+    run_module._phase_lost(run, "D1", "modernize",
+                           {"containers_found": 900, "containers_failed": 0},
+                           "containers", "VieuxParler stopped answering")
+
+    loss, = run.record.losses(Block.INCIDENT)
+    assert loss.total == 900
+
+
+def test_the_body_walk_counts_the_containers_it_offers():
+    """The denominator has to come from the phase that had them."""
+    from lxml import etree
+
+    from teille_douce.body.builder import apply_modernization_enriched
+
+    body = etree.fromstring(
+        "<body><ab><lb corresp='#a'/>un</ab><ab><lb corresp='#b'/>deux</ab></body>")
+    stats = {"containers_found": 0}
+
+    apply_modernization_enriched(body, {}, stats=stats)
+
+    assert stats["containers_found"] == 2

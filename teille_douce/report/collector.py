@@ -64,6 +64,7 @@ class Run:
         # minutes against a dead service must not move the figure for the
         # other twenty-six.
         self._seconds_per_page = []
+        self._pages_lost = 0
         # The panel redraws on this. Called after a change and never
         # before: a frame drawn from half-updated state is worse than one
         # frame late.
@@ -171,6 +172,7 @@ class Run:
             # itself. `pages_read` is tracked for exactly this.
             self._pages_written += (self._open_read or self._open_pages)
         else:
+            self._pages_lost += self._open_pages
             self._failed.append((name, reason))
             # Nothing was written, so nothing may be claimed: the at-risk
             # pages go with it, or the bar keeps growing on work that was
@@ -196,7 +198,10 @@ class Run:
         """
         if not self._seconds_per_page:
             return ""
-        remaining = self.pages_total - self._pages_written
+        # Minus what will never be processed: a failed volume's pages
+        # stayed in the denominator for ever, so a run with failures
+        # over-stated to the end and never said "nothing left".
+        remaining = self.pages_total - self._pages_written - self._pages_lost
         if remaining <= 0:
             return ""
         ordered = sorted(self._seconds_per_page)

@@ -41,7 +41,11 @@ class RunStore:
         # both exit reporting a record that is not theirs. After the
         # timestamp, so `latest()` still sorts by when a run started.
         stamp = (now or datetime.now()).strftime("%Y%m%d-%H%M%S")
-        self.path = self.output_dir / RUNS / f"{stamp}-{os.getpid()}"
+        # Zero-padded, because `latest()` and `prune()` sort on the name:
+        # unpadded, "1234" sorts before "987" and the newer of two runs
+        # started in the same second was both missed by --retry-failed and
+        # deleted first by the retention.
+        self.path = self.output_dir / RUNS / f"{stamp}-{os.getpid():07d}"
         # A reporter may not be the thing that ends a four-hour job. If
         # the directory cannot be written — a mistyped `-o` pointing at a
         # file, a read-only mount — the run says so once and carries on.

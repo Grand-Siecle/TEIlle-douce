@@ -845,6 +845,11 @@ def apply_modernization_enriched(root, corresp_to_mod, stats=None):
     # for VieuxParler round-trips whose readings nothing consumed —
     # the title page came back modernized and was dropped on the floor.
     for container in body.iter(*TEXT_CONTAINERS):
+        # The denominator every loss of this phase is measured against.
+        # Without it a lost modernization rendered "0 of 0 containers" —
+        # the one sentence the report exists to make impossible.
+        if stats is not None:
+            stats["containers_found"] = stats.get("containers_found", 0) + 1
         has_sentences = any(local_tag(c.tag) == "s" for c in container)
 
         if has_sentences:

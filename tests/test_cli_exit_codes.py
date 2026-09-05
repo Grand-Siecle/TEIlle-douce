@@ -1658,3 +1658,54 @@ def test_a_refusal_leaves_no_log_behind_either(tmp_path):
     assert res.returncode == 3
     assert not sortie.exists()
     assert not list(tmp_path.glob("pipeline_*.log")), sorted(tmp_path.iterdir())
+
+
+def test_the_other_early_failure_path_keeps_a_record_too(tmp_path):
+    """The record was added to one of the two paths that exit before the
+    run loop. A corrupt archive beside an already-converted volume takes
+    the other one."""
+    import json
+
+    ocr = tmp_path / "ocr"
+    shutil.copytree(ALTO_MIN, ocr)
+    (ocr / "LIV9003_reconciled.zip").write_bytes(b"not a zip")
+    out = tmp_path / "out"
+    out.mkdir()
+    (out / f"{DOCUMENT}.tei.xml").write_text("<TEI/>", encoding="utf-8")
+
+    res, sortie = _executer_main(tmp_path, ocr, args=("--skip-existing",),
+                                 COLUMNS="200", **MODE_COURT)
+
+    assert res.returncode == 1
+    run, = _runs_of(sortie)
+    manifest = json.loads((run / "run.json").read_text(encoding="utf-8"))
+    assert manifest["documents"]["LIV9003_reconciled"] == "failed"
+
+
+def test_an_early_failure_keeps_its_log_beside_its_index(tmp_path):
+    """An index that outlives its transcript is what pruning them
+    together exists to prevent."""
+    ocr = tmp_path / "ocr"
+    ocr.mkdir()
+    (ocr / "LIV9101_reconciled.zip").write_bytes(b"not a zip")
+
+    res, sortie = _executer_main(tmp_path, ocr, **MODE_COURT)
+
+    run, = _runs_of(sortie)
+    assert (run / "pipeline.log").exists()
+    assert not list(tmp_path.glob("pipeline_*.log")), "an orphan was left"
+
+
+def test_a_refusal_keeps_the_log_the_operator_named(tmp_path):
+    """`--log-file` is an instruction, and the summary path already says
+    so. The refusal path was deleting it."""
+    ocr = tmp_path / "ocr"
+    ocr.mkdir()
+    (ocr / "LIV9001_reconciled").mkdir()
+    named = tmp_path / "mine.log"
+
+    res, _ = _executer_main(tmp_path, ocr, args=("--log-file", str(named)),
+                            **MODE_COURT)
+
+    assert res.returncode == 3
+    assert list(tmp_path.glob("mine_*.log")), sorted(tmp_path.iterdir())

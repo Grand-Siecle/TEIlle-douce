@@ -235,6 +235,10 @@ class TEI:
         stats = {
             "lines_found": 0,
             "lines_modernized": 0,
+            # Counted while walking the body: a phase that reports what
+            # it lost has to know what it was given, or its zero cannot
+            # be read.
+            "containers_found": 0,
             "containers_failed": 0,
             "server_unavailable": False,
         }

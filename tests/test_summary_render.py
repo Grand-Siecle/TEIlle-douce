@@ -376,3 +376,51 @@ def test_two_phases_lost_are_both_named():
     text = rendered(outcome(record=record, exit_code=5, fail_on="incident"))
 
     assert "enrich" in text and "modernize" in text
+
+
+def test_two_causes_of_one_phase_share_that_phase_s_denominator():
+    """Giving each cause its own step, so that two diagnoses survive, made
+    the (document, step) denominator sum the SAME hundred containers
+    twice: `92 of 200` for a volume that has a hundred."""
+    record = RunRecord()
+    record.add(Loss(Code.CONTAINER_FAILED, "D1", "enrich.broken",
+                    Locator.document("D1"), count=2, total=100,
+                    detail="the pipeline raised on these"))
+    record.add(Loss(Code.CONTAINER_FAILED, "D1", "enrich.refused",
+                    Locator.document("D1"), count=90, total=100,
+                    detail="the service refused these"))
+
+    text = rendered(outcome(record=record))
+
+    assert "of 200" not in text
+    assert "2 of 100 containers" in text
+    assert "90 of 100 containers" in text
+
+
+def test_each_cause_keeps_its_own_diagnosis():
+    """`2 broken + 90 refused` printed "92 containers — the pipeline
+    raised on these": the right count under the wrong cause."""
+    record = RunRecord()
+    record.add(Loss(Code.CONTAINER_FAILED, "D1", "enrich.broken",
+                    Locator.document("D1"), count=2, total=100,
+                    detail="the pipeline raised on these"))
+    record.add(Loss(Code.CONTAINER_FAILED, "D1", "enrich.refused",
+                    Locator.document("D1"), count=90, total=100,
+                    detail="the service refused these"))
+
+    text = rendered(outcome(record=record))
+
+    assert "raised on these" in text and "refused these" in text
+
+
+def test_two_phases_of_one_volume_still_add_their_own_totals():
+    record = RunRecord()
+    record.add(Loss(Code.CONTAINER_FAILED, "D1", "enrich.refused",
+                    Locator.document("D1"), count=50, total=1402,
+                    detail="the service refused these"))
+    record.add(Loss(Code.CONTAINER_FAILED, "D1", "modernize",
+                    Locator.document("D1"), count=3, total=4,
+                    detail="the service refused these"))
+
+    # One diagnosis, two phases: 53 of 1 406.
+    assert "53 of 1 406 containers" in rendered(outcome(record=record))

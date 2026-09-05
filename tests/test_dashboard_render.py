@@ -524,3 +524,59 @@ def test_the_incident_lines_are_capped_like_the_warnings_are():
     assert len(lines) <= 24
     assert any("ctrl-c" in line for line in lines), "the foot was cut"
     assert any("more" in line for line in lines), "the elision was silent"
+
+
+def test_a_panel_with_no_incidents_invents_no_line_about_them():
+    """The trim fired on every frame of every clean run at the documented
+    minimum window, adding " +0 more incidents" and making the panel one
+    line TALLER than the height it was given."""
+    lines = text(state(), height=12)
+
+    assert not any("more incidents" in line for line in lines)
+
+
+def test_the_trim_never_makes_the_panel_taller():
+    for height in (5, 8, 12, 16, 24):
+        for count in (0, 1, 5, 60):
+            crowded = state(incidents=count, incident_lines=tuple(
+                f"I{n} D{n}  enrich.phase_lost  down" for n in range(count)))
+            without = len(text(crowded))
+            with_height = len(text(crowded, height=height))
+            assert with_height <= max(without, height), (height, count)
+
+
+def test_the_foot_survives_a_crowded_panel():
+    """Rich ellipsises from the bottom, so the ctrl-c line is what goes —
+    and it is the line that tells the operator the decision is theirs."""
+    crowded = state(incidents=60, incident_lines=tuple(
+        f"I{n} D{n}  enrich.phase_lost  PyHellen down" for n in range(60)))
+
+    lines = text(crowded, height=24)
+
+    assert len(lines) <= 24
+    assert "ctrl-c" in lines[-1]
+
+
+def test_the_foot_and_the_totals_are_clipped_like_everything_else():
+    """"Everything composed goes through clip" was not true of the two
+    lines composed without `_pad`: a six-digit total or a three-digit
+    volume count ran past the edge and Rich cropped the foot."""
+    huge = state(volumes_written=1234, source_lost=1234567,
+                 withheld=987654, incidents=456789)
+
+    for line in text(huge, width=56):
+        assert len(line) <= 56, repr(line)
+
+
+def test_the_banner_keeps_the_dead_service_when_it_has_to_choose():
+    """`✗ NAME LOST hh:mm` is the longest label by construction, so a
+    first-fit loop dropped it and kept the one nobody asked for — from
+    the banner that exists to show one dying."""
+    crowded = state(services=(
+        Service("PyHellen", up=True),
+        Service("VieuxParler", up=False, lost_at="12:04"),
+        Service("NER local", up=None)))
+
+    banner = text(crowded, width=60)[1]
+
+    assert "VieuxParler" in banner and "LOST" in banner
