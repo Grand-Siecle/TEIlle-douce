@@ -8,12 +8,13 @@ one to believe.
 No markup, no colour: this same string goes to a terminal and to a log.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from .counts import _grouped, render_count
+from .gate import gate_verdict
 from .record import Block, Code, RunRecord
-from .text import clip, pad
+from .text import cells, clip, pad
 
 MAX_WIDTH = 100
 
@@ -99,14 +100,30 @@ _MARGIN = 2
 def _columns(left, right, width):
     """A label on the left, an aside on the right, in one line.
 
-    The aside survives; the label is shortened to make room for it. It
-    used to be the other way about — the right half was dropped with no
-    marker at all — and the right half is the only thing that tells two
-    losses sharing a code apart, which is the entire reason the grouping
-    key is `(code, detail)`. At eighty columns, the default when stdout
-    is not a terminal, two different causes rendered as the same line.
+    The label survives; the aside is shortened. Never dropped, which is
+    what it used to be — silently, and the aside is the only thing that
+    tells two losses sharing a code apart, so at eighty columns two
+    different causes rendered as the same line.
+
+    And never at the label's expense either: the left half of a block
+    entry carries the COUNT, and clipping it turned `11 of 16 pages` into
+    `11 of 1…` at sixty-four columns — a wrong number, not a short one.
     """
-    return pad(left, right, min(width, MAX_WIDTH) - _MARGIN)
+    return pad(left, right, min(width, MAX_WIDTH) - _MARGIN, keep="left")
+
+
+def _entry(left, right, width):
+    """A block entry, on one line or on two.
+
+    Both halves are load-bearing here and neither may be cut: the count
+    on the left, the cause on the right. Where the width cannot hold
+    both, the cause moves under its own entry rather than either being
+    shortened into a lie.
+    """
+    room = min(width, MAX_WIDTH) - _MARGIN
+    if cells(left) + cells(right) + 2 <= room:
+        return [pad(left, right, room, keep="left")]
+    return [clip(left, room), clip("      " + right, room)]
 
 
 def _block_lines(outcome, block, width):
@@ -142,8 +159,19 @@ def _block_lines(outcome, block, width):
         if code is Code.PHASE_LOST:
             # Never folded into a container count: a document carrying
             # none of a phase is damage of another kind.
+            #
+            # Both figures, because both are printed elsewhere and a
+            # reader has to be able to join them: the panel's incident
+            # counter sums what was LOST — containers — and this line
+            # counted documents, so one screen said 69 and the other 3
+            # with nothing to connect them.
             measured = render_count(len({e.document for e in matching}),
-                                    outcome.volumes_total, "")
+                                    outcome.volumes_total, "volumes")
+            amount = sum(e.count for e in matching)
+            counted = next((e.unit for e in matching if e.unit), "")
+            if amount:
+                measured += f" · {_grouped(amount)} {counted} lost".replace(
+                    "  ", " ")
         else:
             # Per (document, PHASE), not per step: giving each cause its
             # own step is what lets two diagnoses survive, and keying the
@@ -159,7 +187,7 @@ def _block_lines(outcome, block, width):
         shown = detail
         if code.repaired:
             shown = (shown + " (repaired)").strip()
-        lines.append(_columns(f"    {label:<22}{measured}", shown, width))
+        lines.extend(_entry(f"    {label:<22}{measured}", shown, width))
     return lines
 
 
@@ -173,8 +201,45 @@ def _located_line(located, room):
     precise, vague = _grouped(located["precise"]), _grouped(located["document_only"])
     spelt = (f"  located   {precise} to a file or an xml:id · "
              f"{vague} to a document only")
-    return spelt if len(spelt) <= room else \
-        f"  located   {precise} precise · {vague} doc-only"
+    # Cells, not characters: a six-figure count is wider than `len` says
+    # only in the CJK case, but this is the one line that CHOOSES its
+    # wording by width, and choosing on the wrong measure is how it came
+    # to overflow the very contract it was written to respect.
+    if cells(spelt) <= room:
+        return spelt
+    short = f"  located   {precise} precise · {vague} doc-only"
+    return short if cells(short) <= room else clip(short, room)
+
+
+def _share(value, bar):
+    """A percentage written with enough places to show it cleared the bar.
+
+    One decimal turned 30.03 into "30" beside a `--max-page-loss 30` the
+    rule says means "more than 30" — the run contradicting its own
+    threshold on the line that names it.
+    """
+    for places in (1, 2, 3, 4):
+        shown = round(value, places)
+        if shown > bar:
+            return f"{shown:g}"
+    return f"{value:g}"
+
+
+def _tripping_lines(outcome, width):
+    """The entries the quality gate actually failed on."""
+    tripped = set(gate_verdict(outcome.fail_on, outcome.record).tripped_by)
+    if not tripped:
+        return []
+    shown = RunRecord()
+    for entry in outcome.record.losses():
+        if entry.code in tripped:
+            shown.add(entry)
+    only_these = replace(outcome, record=shown)
+    lines = []
+    for block in _gate_blocks(outcome.fail_on):
+        if shown.losses(block):
+            lines.extend(_block_lines(only_these, block, width)[1:])
+    return lines
 
 
 def _next_steps(outcome):
@@ -226,10 +291,14 @@ def _verdict(outcome):
         return (f"exit 130 — interrupted, {outcome.volumes_written} of "
                 f"{outcome.volumes_total} volumes written and kept")
     if outcome.exit_code == 5:
+        # Every cause, not the first one found. Both bars can be crossed
+        # by the same run, and naming one of them left the other
+        # invisible under a block that was printing its lines.
+        causes = []
         if outcome.page_loss_failures:
-            return (f"exit 5 — everything converted, but "
-                    f"{_plural(len(outcome.page_loss_failures), 'volume')} "
-                    f"lost too many pages to publish")
+            causes.append(
+                f"{_plural(len(outcome.page_loss_failures), 'volume')} "
+                f"lost too many pages to publish")
         phases = outcome.record.whole_phases_lost()
         if phases:
             # Named, not assumed: with VieuxParler down and PyHellen up,
@@ -237,11 +306,13 @@ def _verdict(outcome):
             # restart the wrong service.
             lost = sorted({entry.step for entry in outcome.record.losses()
                            if entry.code is Code.PHASE_LOST})
-            return (f"exit 5 — everything converted, but "
-                    f"{_plural(phases, 'volume')} "
-                    f"carry no {' and no '.join(lost)} at all")
-        return ("exit 5 — everything converted, but the quality gate was "
-                "not met")
+            causes.append(f"{_plural(phases, 'volume')} "
+                          f"{'carries' if phases == 1 else 'carry'} no "
+                          f"{', '.join(lost[:-1]) + ' or ' if len(lost) > 1 else ''}"
+                          f"{lost[-1]} at all")
+        if not causes:
+            causes.append("the quality gate was not met")
+        return "exit 5 — everything converted, but " + ", and ".join(causes)
     if not_converted:
         return (f"exit {outcome.exit_code} — {not_converted} of "
                 f"{outcome.volumes_total} volumes not converted")
@@ -293,28 +364,50 @@ def render_summary(outcome, width=92):
     lines.append("")
 
     if outcome.exit_code == 5:
-        asked = (f"--max-page-loss {outcome.max_page_loss:g}"
-                 if outcome.page_loss_failures
-                 else f"--fail-on {outcome.fail_on}")
+        # Both, when both were crossed: naming one made the other
+        # invisible while its own lines printed underneath.
+        bars = []
+        if outcome.page_loss_failures:
+            bars.append(f"--max-page-loss {outcome.max_page_loss:g}")
+        if gate_verdict(outcome.fail_on, outcome.record).tripped_by:
+            bars.append(f"--fail-on {outcome.fail_on}")
+        asked = " ".join(bars) or f"--fail-on {outcome.fail_on}"
         lines.append(_columns(f"  quality gate {asked}", "NOT MET", room))
         for document, share in outcome.page_loss_failures:
-            lines.append(_columns(f"    {document}",
-                                  f"{share:g}% of its pages unusable", room))
-        # The block's own lines, not one per record: three volumes losing
-        # the same phase for the same reason is one line saying "3 of 27",
-        # and repeating the sentence three times turns a diagnosis into
-        # noise. Without naming WHICH line tripped, the gate would turn a
-        # diagnosis into a guessing game.
-        for block in _gate_blocks(outcome.fail_on):
-            lines.extend(_block_lines(outcome, block, room)[1:])
+            lines.append(_columns(
+                f"    {document}",
+                f"{_share(share, outcome.max_page_loss)}% of its pages "
+                f"unusable", room))
+        # The lines that actually tripped it, taken from the gate's own
+        # verdict. Re-deriving them from the blocks the level names
+        # printed every line of those blocks — including the repaired
+        # defects the gate deliberately skips, and a literal "nothing"
+        # under NOT MET. A gate that names a repair as its cause is worse
+        # than one that names nothing.
+        for line in _tripping_lines(outcome, room):
+            lines.append(line)
         lines.append("")
 
     steps = _next_steps(outcome)
     if steps:
         lines.append("  next")
         for command, why in steps:
-            lines.append(_columns(f"    {command}", why, room))
+            # The command is never clipped, on the same reasoning as the
+            # headline and the verdict: `cat …/incidents.jsonl…` is not a
+            # shorter command, it is one that does not run. A terminal
+            # wraps it and it is still copy-pasteable. The reason beside
+            # it may be shortened, or move under it.
+            if cells(f"    {command}") + cells(why) + 2 <= room:
+                lines.append(_columns(f"    {command}", why, room))
+            else:
+                lines.append(f"    {command}")
+                lines.append(clip(f"      {why}", room))
         lines.append("")
 
+    # Exempt from the width cap for the same reason as the headline
+    # above, and stated here because a reader of the cap will look for
+    # the exception: this line is the run's verdict and its accounting,
+    # and a cut verdict is a wrong one. A terminal wraps it; nothing is
+    # lost. Everything between them is clipped.
     lines.append(f"  {_verdict(outcome)}")
     return lines

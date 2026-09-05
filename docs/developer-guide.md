@@ -186,6 +186,14 @@ counted, all printed. A counter left at zero because the server died mid-run mus
 not be indistinguishable from a document that had nothing to process. Several
 findings in the audit report are exactly this failure mode.
 
+A phase also has to say when it is WORKING and when it has stopped, or the
+live panel draws nothing for the part of the run it exists to narrate. Every
+phase in `_process_document` calls `_phase_progress` while it runs and one of
+`_phase_done` / `_phase_lost` when it ends — a phase left RUNNING keeps a
+spinner turning beside a count that will never change again, and one that never
+starts leaves a blank where its line belongs.
+`tests/test_panel_is_alive.py` drives the real function and fails on either.
+
 This is no longer a rule a new phase can forget. `teille_douce/report/counts.py`
 enforces it: `render_count(n, denominator, unit)` **raises** when the denominator
 is missing, because a bare integer is precisely what makes those two zeros one
@@ -204,6 +212,14 @@ so `teille_douce/report/record.py` splits them:
 | **the source was defective** | nothing the pipeline could do | an unreadable ALTO page, a corrupt archive, duplicate ALTO ids (repaired) |
 | **withheld on purpose** | the guards did their job | a modernized reading under the similarity floor, an entity under 0.6, a container more than 20 % of whose block could not be anchored |
 | **lost to an incident** | this needs a human | a service that died, a container that raised, a whole phase or a document lost |
+
+What block 2 counts, precisely: a modernized reading the divergence guard
+refused (`readings_rejected`, from `modernize.py`), an entity that reached
+resolution and was pruned below the confidence floor (`entities_filtered`,
+from `ner_filter.filter_resolved_entities`), and a container more than 20 % of
+whose block could not be anchored. The earlier span- and POS-level filters run
+before anything is an entity; their counts stay in the log, because a candidate
+that never became an entity was not withheld from the output.
 
 Block 3 is the definition of "important": it is what `--fail-on incident`
 counts. Block 2 never counts at any level — a guard that rejects a

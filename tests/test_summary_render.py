@@ -33,6 +33,19 @@ def rendered(outcome_):
     return "\n".join(render_summary(outcome_, width=92))
 
 
+def _exempt(line):
+    """The three kinds of line the module says it will not cut, and why.
+
+    The headline and the verdict are the run's accounting — a cut number
+    is a wrong number. A `next` command is meant to be copy-pasted, and
+    `cat …/incidents.jsonl…` is not a shorter command but one that does
+    not run. All three wrap in a terminal and lose nothing.
+    """
+    bare = line.lstrip()
+    return (bare.startswith(("exit ", "Done.", "Completed"))
+            or bare.startswith(("cat ", "teille-douce ")))
+
+
 # =============================================================================
 # The three blocks always have their lines
 # =============================================================================
@@ -462,11 +475,13 @@ def test_two_losses_that_differ_only_in_their_cause_do_not_render_alike():
                         Locator.document("LIV0038_reconciled"), count=1402,
                         total=4000, detail=detail))
 
-    shown = [line for line in render_summary(outcome(record=record), width=80)
-             if "containers" in line]
+    shown = render_summary(outcome(record=record), width=80)
 
-    assert len(shown) == 2
-    assert len(set(shown)) == 2, shown
+    assert sum("containers failed" in line for line in shown) == 2
+    # Both causes are readable, whether they share their entry's line or
+    # sit under it: dropping one was what made the two entries identical.
+    assert any("PyHellen refused" in line for line in shown), shown
+    assert any("VieuxParler refused" in line for line in shown), shown
 
 
 def test_a_two_line_failure_reason_stays_one_line():
@@ -497,6 +512,41 @@ def test_a_wide_glyph_is_measured_in_columns_and_not_in_characters():
 
     for width in (56, 72, 80, 92, 100, 140):
         for line in render_summary(outcome(record=record), width=width):
+            if _exempt(line):
+                continue
+            assert cells(line) <= min(width, 100), (width, cells(line), line)
+
+
+def test_the_widest_summary_this_pipeline_can_produce_still_fits():
+    """The fixture of the test above never reaches a phase loss, a failed
+    volume, a quality gate or a next step — which is most of the lines
+    the module can compose, and where the two that escaped the cap
+    were."""
+    from teille_douce.report.text import cells
+
+    record = RunRecord()
+    for index in range(3):
+        document = f"LIV{index:04d}_reconciled"
+        for phase in ("enrich", "modernize", "ner"):
+            record.add(Loss(Code.PHASE_LOST, document, phase,
+                            Locator.document(document), count=1402,
+                            total=1402,
+                            detail="the service stopped answering at 19:41"))
+    record.add(Loss(Code.PAGE_UNUSABLE, "LIV0044_reconciled", "sourcedoc",
+                    Locator.page("LIV0044_reconciled", "f388"), count=388,
+                    total=400, detail="no <surface> could be built"))
+
+    full = outcome(
+        record=record, exit_code=5, fail_on="loss", volumes_written=3,
+        page_loss_failures=(("LIV0044_reconciled", 97.0),),
+        max_page_loss=30.0,
+        failed_documents=(("LIV0051_reconciled", "KeyError 'Date_edition'"),),
+        report_path=Path("tei_output/.teille-douce/runs/20260903-180824-0031415"))
+
+    for width in (40, 56, 72, 80, 92, 100, 140):
+        for line in render_summary(full, width=width):
+            if _exempt(line):
+                continue
             assert cells(line) <= min(width, 100), (width, cells(line), line)
 
 

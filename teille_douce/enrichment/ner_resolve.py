@@ -683,6 +683,7 @@ def resolve_entities(
     output_dir,
     document_name,
     cert_thresholds=None,
+    losses=None,
 ):
     """
     Phase 9 orchestrator: group, link, CSV, header, @ref.
@@ -712,7 +713,7 @@ def resolve_entities(
     entities = fuzzy_merge_entities(entities)
 
     # Step 1d: Prune single-mention low-confidence entities
-    entities = filter_resolved_entities(entities)
+    entities = filter_resolved_entities(entities, losses=losses)
 
     # Step 2: Link to local person database
     link_local(entities, person_db)

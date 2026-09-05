@@ -464,3 +464,22 @@ def test_the_running_run_is_never_pruned_from_under_itself(tmp_path):
 
     assert live.path.is_dir()
     assert (live.path / "incidents.jsonl").exists()
+
+
+def test_a_run_directory_that_is_not_a_directory_is_not_a_clean_run(tmp_path):
+    """`_runs` swallows the OSError and answers "no runs", which the
+    caller reads as "the last run had no failures" — so a `.teille-douce`
+    that is a file, or one this process may not read, sent the operator
+    away believing nothing had failed, having converted nothing."""
+    output = tmp_path / "tei_output"
+    (output / ".teille-douce").parent.mkdir(parents=True)
+    (output / ".teille-douce").write_text("not a directory", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="readable run directory|could not be read"):
+        RunStore.failed_last_time(output)
+
+
+def test_an_output_directory_with_no_record_yet_has_nothing_to_retry(tmp_path):
+    """The other half: a first run leaves no record to read, and that is
+    not an error."""
+    assert RunStore.failed_last_time(tmp_path / "tei_output") == ()

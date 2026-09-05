@@ -606,14 +606,13 @@ def test_a_dead_service_appears_even_when_its_label_does_not_fit():
         assert "VieuxParler" in banner, (width, banner)
 
 
-def test_a_dead_service_that_does_not_fit_is_shortened_rather_than_dropped():
-    """The assertion that replaced a hollow one: `count("✗") >= 1 or "+2"
-    in banner` was satisfied by the pre-fix first-fit behaviour too, so it
-    passed before the change as well as after and guarded nothing.
+def test_every_dead_service_is_on_the_banner_or_in_its_count():
+    """What the banner actually promises, and all it promises: the FIRST
+    dead service is there at every width, whole or clipped, and the ones
+    that did not fit are counted rather than silently gone.
 
-    What the fix actually promises is narrower and testable: the FIRST
-    dead service is on the banner at every width, whole or clipped, and
-    the ones that did not fit are counted rather than silently gone."""
+    An earlier attempt asserted `count("✗") >= 1 or "+2" in banner`,
+    which the pre-fix first-fit behaviour also satisfied."""
     crowded = state(services=tuple(
         Service(name, up=False, lost_at="17:04")
         for name in ("PyHellen", "VieuxParler", "NER local")))
@@ -657,13 +656,47 @@ def test_the_top_line_keeps_the_elapsed_and_the_estimate():
 
 
 def test_a_shortened_path_keeps_the_directory_it_names():
-    """Cut from the right, `/data/grand-siecle/tei_output` becomes
-    `/data/grand-sie…` — which has lost the only part that says which
-    corpus this is."""
-    header = text(state(output_dir="/data/grand-siecle/tei_output"),
-                  width=92)[0]
+    """Cut from the right, a path loses the only part that says which
+    corpus this is.
 
-    assert "tei_output" in header
+    Long enough that it MUST be shortened at every width tested — an
+    earlier version of this test used a path that still fitted at
+    ninety-two columns, so it passed on the unfixed panel too, for the
+    opposite reason: that one clipped the composed line, dropped the
+    right column, and left the path whole."""
+    long = ("/home/rayondemiel/univ_geneve/corpus/grand-siecle/"
+            "reconciled/2026/tei_output_final")
+
+    for width in (72, 92, 100):
+        header = text(state(output_dir=long), width=width)[0]
+        shown = header.split("→ ", 1)[1].split("/ ")[0] + "/"
+        assert "…" in shown, (width, header)
+        # Whatever it kept, it kept the END. Clipped from the right this
+        # read `/home/rayondemiel/univ…`, which names the operator rather
+        # than the corpus and is the same for every run they ever make.
+        kept = shown.rstrip("/").rsplit("…", 1)[-1]
+        assert long.endswith(kept), (width, header)
+
+    # And wherever there is room for it, the leaf whole.
+    for width in (92, 100):
+        assert "tei_output_final" in text(state(output_dir=long),
+                                          width=width)[0], width
+
+
+def test_a_dead_service_survives_at_every_width_it_can_be_read_at():
+    """Guards the clipping the round before last introduced: a dead
+    service whose `✗ NAME LOST hh:mm` will not fit is shortened, not
+    skipped. Stated as a sweep because the failure was width-dependent —
+    it showed only at the module's own floor."""
+    crowded = state(
+        log_path="tei_output/.teille-douce/runs/20260903-180824-0282822/pipeline.log",
+        services=(Service("PyHellen", up=True),
+                  Service("VieuxParler", up=False, lost_at="17:04"),
+                  Service("NER local", up=None)))
+
+    for width in range(56, 121):
+        banner = text(crowded, width=width)[1]
+        assert "VieuxParler" in banner, (width, banner)
 
 
 def test_the_panel_is_never_taller_than_the_height_it_was_given():

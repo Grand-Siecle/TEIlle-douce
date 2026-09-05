@@ -143,6 +143,11 @@ class Loss:
     count: int
     total: int
     detail: str = ""
+    # What the count counts. Empty where the label already says it; set
+    # where two accounts of the same loss are measured differently and a
+    # reader has to join them — a whole phase lost is `3 of 27 volumes`
+    # in the summary and 69 containers on the panel's incident counter.
+    unit: str = ""
 
     def __post_init__(self):
         if self.locator is None:

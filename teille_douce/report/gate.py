@@ -69,5 +69,9 @@ def page_loss_failures(pages_per_document, max_page_loss):
             continue
         share = 100.0 * lost / total
         if share > max_page_loss:
-            failures.append((document, round(share, 1)))
+            # The exact share, not a rounded one. The comparison is
+            # strict and the display rounded, so 300 of 999 pages —
+            # 30.03 % — was printed as "30% of its pages unusable"
+            # against a rule documented as "more than 30".
+            failures.append((document, share))
     return tuple(failures)

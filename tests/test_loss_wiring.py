@@ -250,3 +250,60 @@ def test_a_lost_ner_phase_is_an_incident_like_the_other_two():
     assert loss.code is Code.PHASE_LOST
     assert (loss.step, loss.count, loss.total) == ("ner", 1, 1)
     assert "CUDA out of memory" in loss.detail
+
+
+# =============================================================================
+# The banner shows the service that died
+# =============================================================================
+
+def test_a_service_that_stops_answering_turns_red_on_the_banner():
+    """`Service.lost_at` was built nowhere but in the render tests, so
+    `✗ NAME LOST hh:mm` — the state the whole banner exists to show — was
+    unreachable from production: a run whose VieuxParler died after the
+    probe drew a green tick beside three incident lines naming it as
+    dead, in the same frame."""
+    from teille_douce.report.panel import Service, as_text, render_panel
+
+    run = Run(input_dir="OCR", output_dir="out", volumes=1, pages=10,
+              services=(Service("PyHellen", up=True),
+                        Service("VieuxParler", up=True)))
+    run.document_started("D1", pages=10)
+
+    run_module._phase_lost(run, "D1", "modernize",
+                           {"containers_found": 23}, "containers",
+                           "VieuxParler stopped answering")
+
+    banner = as_text(render_panel(run.panel(), width=92))[1]
+    assert "✗ VieuxParler LOST" in banner, banner
+    assert "✓ PyHellen" in banner, banner
+
+
+def test_a_service_nobody_asked_for_is_not_reported_as_lost():
+    """`up=None` means the phase was never wanted. Painting it red says
+    the machine is broken."""
+    from teille_douce.report.panel import Service
+
+    run = Run(input_dir="OCR", output_dir="out", volumes=1, pages=10,
+              services=(Service("NER local", up=None),))
+    run.service_lost("NER local")
+
+    assert run.services[0].up is None
+
+
+# =============================================================================
+# Which step a document raised in
+# =============================================================================
+
+def test_a_document_that_fails_says_which_phase_it_was_in():
+    """`Run.step()` had no caller at all, so `_steps` was always empty
+    and every failed volume was filed under `"step": "run"` — the field
+    exists to name the phase the document raised in."""
+    run = a_run()
+    run.document_started("D1", pages=10)
+    run.phase("D1", "enrich", PhaseState.RUNNING, done=3, total=14,
+              unit="containers")
+    run.document_finished("D1", ok=False, reason="ConnectionError")
+
+    loss, = [entry for entry in run.record.losses()
+             if entry.code is Code.DOCUMENT_FAILED]
+    assert loss.step == "enrich"

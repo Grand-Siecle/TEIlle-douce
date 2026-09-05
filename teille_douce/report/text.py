@@ -101,23 +101,28 @@ def shorten_path(path, room):
 def pad(left, right, room, keep="right"):
     """`left` flush left, `right` flush right, one line, never wider.
 
-    On overflow the RIGHT half is kept by default and the left is
-    shortened to make room for it. That is the way round the callers
-    need: in every one of them the right column is a short fixed field
-    that carries the news — `elapsed 1:12:40`, `47%`, `9.1 pages/s`,
-    `1 402 of 4 000 containers` — and the left is the elastic one, a
-    document name or a path or a warning shape.
+    `keep` names the half that survives whole; the other is CLIPPED, and
+    never dropped. Both halves are load-bearing everywhere this is used,
+    and which one is more so depends on the caller — which is why it is
+    an argument and not a rule.
 
-    Clipping the whole composed line instead, which is what this used to
-    do, dropped the right column first: an absolute `-o` path — the
-    normal case, not the edge — took the elapsed time and the estimate
-    off the panel entirely, and made two different losses render as the
-    same line in the summary.
+    On the panel the right column wins: it holds `elapsed 1:12:40`, `47%`,
+    `9.1 pages/s` — short fixed fields carrying the news, against an
+    elastic document name or path. Clipping the composed line, which is
+    what this used to do, dropped that column entirely as soon as the
+    left grew, and an absolute `-o` path took the elapsed time and the
+    estimate off the panel on every frame.
+
+    In the summary the left wins: it holds a label and a COUNT, and
+    `11 of 1…` is not a short number, it is a wrong one.
     """
     left, right = _CONTROL.sub(" ", left), _CONTROL.sub(" ", right)
     gap = room - cells(left) - cells(right)
     if gap >= 1:
         return left + " " * gap + right
-    if keep == "left" or cells(right) + 2 > room:
+    if keep == "left":
+        return clip(left + " " + right, room) if cells(left) + 2 > room else \
+            left + " " + clip(right, room - cells(left) - 1)
+    if cells(right) + 2 > room:
         return clip(left + " " + right, room)
     return clip(left, room - cells(right) - 1) + " " + right

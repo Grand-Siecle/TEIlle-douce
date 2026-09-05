@@ -27,6 +27,21 @@ from teille_douce.report.collector import Run
 from teille_douce.report.counts import PhaseState
 
 
+class FakeProgress:
+    """A Rich `Progress` that records instead of drawing."""
+
+    def __init__(self):
+        self.updates = []
+        self._next = 0
+
+    def add_task(self, *args, **kwargs):
+        self._next += 1
+        return self._next
+
+    def update(self, task, **fields):
+        self.updates.append((task, fields))
+
+
 class FakeTask:
     """Enough of a Rich `Progress` to see what the old bar was told."""
 
@@ -106,6 +121,97 @@ def test_a_total_the_phase_does_not_know_yet_is_not_rendered_as_zero():
                                                                           None)
 
     assert phase_of(run, "ner").total is None
+
+
+class _Tree:
+    """Just enough TEI for `_process_document` to walk through."""
+
+    def __init__(self, *args, **kwargs):
+        self.root = object()
+        self.d = None
+        self.fp = []
+        self.metadata = {"iiif": {}}
+        self.segmonto_zones = self.segmonto_lines = ()
+        self.skipped_pages = []
+        self.repaired_ids = self.minted_ids = 0
+        self.lang_stats = {"fra": 7}
+        self.iiif_mapping = {}
+
+    def build_tree(self):
+        pass
+
+    def build_sourcedoc(self, config, progress=None, parent_task_pages=None):
+        if progress is not None and parent_task_pages is not None:
+            progress.update(parent_task_pages, advance=1)
+
+    def build_body(self, detect_lang=False):
+        pass
+
+    def extract_line_data(self):
+        return []
+
+    def enrich_body(self, progress_callback=None):
+        if progress_callback:
+            progress_callback(11, 14)
+        return {"containers_found": 14, "containers_enriched": 11,
+                "tokens_total": 900, "sentences_total": 60}
+
+    def modernize_body(self, line_data=None, enriched=False,
+                       progress_callback=None):
+        if progress_callback:
+            progress_callback(20, 23)
+        return {"containers_found": 23, "lines_modernized": 40}
+
+    def finalize_langusage(self):
+        pass
+
+    def finalize_extent(self):
+        pass
+
+
+def test_no_phase_is_left_turning_when_its_work_has_stopped(monkeypatch,
+                                                            tmp_path):
+    """`_phase_done` was called for sourceDoc, enrich and ner, and for
+    modernize nowhere at all — so its spinner turned beside a full bar
+    for the whole of NER, the header override and the write: minutes on a
+    real volume, claiming work that had finished. Verbatim what that
+    function's own docstring says it exists to prevent, on the one phase
+    that never called it.
+
+    Driven through the real `_process_document`, because the shape of the
+    bug is a BRANCH: the failure path ended the phase and the success
+    path did not, so reading the source for a call to `_phase_done`
+    finds one and proves nothing.
+    """
+    monkeypatch.setattr(run_module, "TEI", _Tree)
+    monkeypatch.setattr(run_module, "find_metadata_row", lambda *a: {})
+    monkeypatch.setattr(run_module, "build_metadata_dict",
+                        lambda row: {"iiif": {}})
+    monkeypatch.setattr(run_module, "parse_document_id", lambda name: (0, "1"))
+    monkeypatch.setattr(run_module, "select_manifest", lambda *a: None)
+    monkeypatch.setattr(run_module, "_document_iiif_config", lambda m: {})
+    monkeypatch.setattr(run_module, "build_header",
+                        lambda *a, **k: (object(), (), ()))
+    monkeypatch.setattr(run_module, "link_notes_to_lines", lambda root: None)
+    monkeypatch.setattr(run_module, "override_teiheader_from_csv",
+                        lambda *a: None)
+    monkeypatch.setattr(run_module, "write_xml", lambda root, path: None)
+    monkeypatch.setattr(run_module, "_out_path",
+                        lambda name, out: tmp_path / f"{name}.xml")
+
+    import teille_douce.enrichment.ner_pipeline as ner
+    monkeypatch.setattr(ner, "run_ner", lambda *a, **k: [])
+    monkeypatch.setattr(ner, "summarize", lambda resolved: None)
+
+    run = a_run()
+    run_module._process_document(
+        "D1", [object()], tmp_path, None, {}, None,
+        do_enrich=True, do_modernize=True, do_ner=True,
+        progress=FakeProgress(), reporter=run)
+
+    still_running = {line.name for line in run.panel().current.phases
+                     if line.state is PhaseState.RUNNING}
+    assert not still_running, still_running
 
 
 # =============================================================================
@@ -253,6 +359,12 @@ def test_a_real_run_shows_the_phase_it_is_in(tmp_path):
            # draws once at teardown however alive it is. Which is why no
            # existing test could have seen a frozen panel.
            "NO_COLOR": "1",
+           # One worker. Eight parallel ones convert a hundred and sixty
+           # tiny fixture pages faster than the panel redraws, so which
+           # frames land inside sourceDoc is a coin toss; with one, the
+           # phase is the bulk of its volume and the assertion below is
+           # about the wiring rather than about the scheduler.
+           "TDOUCE_JOBS": "1",
            "COLUMNS": "100", "LINES": "40", "TERM": "xterm",
            **MODE_COURT, **_env_couverture_sous_processus()}
 
@@ -285,3 +397,7 @@ def test_a_real_run_shows_the_phase_it_is_in(tmp_path):
     # And the phase block, on a run where nothing went wrong. It is the
     # whole of what `Run.phase` was written for and it had no caller.
     assert "sourceDoc" in screen, screen[-4000:]
+    # `body+lang` is the one the sixth round still left silent: it had a
+    # Rich task and no reporter call at all, so the panel drew a finished
+    # sourceDoc over an empty gap while the zones were read.
+    assert "body+lang" in screen, screen[-4000:]

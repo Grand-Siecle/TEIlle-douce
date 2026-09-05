@@ -16,7 +16,7 @@ from pathlib import Path
 
 from .counts import PhaseState, render_phase_loss
 from .digest import WarningDigest
-from .panel import DocumentLine, PanelState, PhaseLine
+from .panel import DocumentLine, PanelState, PhaseLine, Service
 from .record import Block, Code, Locator, Loss, RunRecord
 from .summary import RunOutcome
 
@@ -134,7 +134,16 @@ class Run:
             # inside the one component that must never end the run.
             reason = reason or "cause unknown"
             total = 0 if total is None else total
+        indexing = None
         with self.lock:
+            if state is PhaseState.RUNNING:
+                # Where this document is, recorded here rather than by a
+                # second call every phase would have to remember. `step()`
+                # had no caller at all, so `_steps` was always empty and
+                # every `document_failed` row in the index carried
+                # `"step": "run"` — the field exists to say which phase
+                # the document raised in.
+                self._steps[document] = name
             self._phases[name] = PhaseLine(
                 name=name, state=state, done=done, total=total, unit=unit,
                 rate=rate, waiting=waiting, timeout=timeout, note=note,
@@ -146,14 +155,41 @@ class Run:
                 # sums it on that reading. Storing `done` here made three
                 # documents whose enrichment died print `incident 0` on
                 # the row directly above their own three incident lines.
-                self.lost(Loss(Code.PHASE_LOST, document, name,
-                               Locator.document(document),
-                               count=max(0, total - done),
-                               total=total, detail=reason))
+                #
                 # Through `render_phase_loss` and not a sentence of its
                 # own: the denominator is what makes the zero readable,
                 # and a second way of writing a loss is a second way of
                 # writing it wrongly.
+                indexing = Loss(Code.PHASE_LOST, document, name,
+                                Locator.document(document),
+                                count=max(0, total - done),
+                                total=total, detail=reason, unit=unit)
+                self.record.add(indexing)
+        # Outside the lock. `on_incident` opens a file, writes a line and
+        # flushes it, and the drawing thread renders under this same
+        # lock: calling it inside stalls the panel for the length of a
+        # filesystem write. `lost()` puts it outside for exactly that
+        # reason, and going through `lost()` from in here quietly undid
+        # it.
+        if indexing is not None and self.on_incident is not None:
+            self.on_incident(indexing)
+        self._on_change()
+
+    def service_lost(self, name, at=None):
+        """A service that answered the probe and has stopped answering.
+
+        `Service.lost_at` was built nowhere but in the render tests, so
+        `✗ NAME LOST hh:mm` — the state the whole banner exists to show —
+        was unreachable from production: a run whose VieuxParler died
+        after the probe drew a green tick beside three incident lines
+        naming it as dead, in the same frame.
+        """
+        when = at if at is not None else time.strftime("%H:%M")
+        with self.lock:
+            self.services = tuple(
+                Service(service.name, up=False, lost_at=when)
+                if service.name == name and service.up else service
+                for service in self.services)
         self._on_change()
 
     def warning(self, document, message):

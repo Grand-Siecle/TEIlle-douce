@@ -178,6 +178,15 @@ async def _modernize_all(texts, base_url, progress_callback=None, losses=None):
     if losses is not None:
         losses.setdefault("batches_failed", 0)
         losses.setdefault("lines_lost", 0)
+        # A reading the guard refused: the service answered, and what it
+        # answered was rejected for diverging from the original. Block 2,
+        # not block 3 — the guard did its job — and it was counted into a
+        # local, written to a DEBUG line and dropped, so the summary said
+        # "withheld on purpose … nothing" over a run that had withheld
+        # hundreds.
+        losses.setdefault("readings_rejected", 0)
+        losses.setdefault("lines_offered", 0)
+        losses["lines_offered"] += len(texts)
     results = list(texts)  # pre-fill with originals as fallback
     batches = [
         (i, texts[i : i + get_settings().modernize_batch_size])
@@ -274,6 +283,8 @@ async def _modernize_all(texts, base_url, progress_callback=None, losses=None):
                 results[idx] = mod
                 retried += 1
 
+        if losses is not None:
+            losses["readings_rejected"] += still_bad
         if get_settings().debug:
             logger.debug(
                 "Retry results: %d fixed, %d still divergent (kept original)",

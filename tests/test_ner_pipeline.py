@@ -77,7 +77,7 @@ def test_run_ner_chains_the_three_phases(monkeypatch):
         return ALIGNED
 
     def faux_resolve(root, aligned, entity_types, db, out_dir, document_name,
-                     cert_thresholds=None):
+                     cert_thresholds=None, losses=None):
         vus["resolve"] = (root, aligned, out_dir, document_name)
         vus["resolve_cert"] = cert_thresholds
         return [_ent("person", "Poussin")]

@@ -434,10 +434,29 @@ class Settings:
         for declaration in _SETTINGS:
             if not declaration.key:
                 continue
-            manifest[declaration.key] = {
+            entry = {
                 "value": _plain(getattr(self, declaration.name)),
                 "origin": self.origin(declaration.name),
             }
+            standing = manifest.get(declaration.key)
+            if standing is None:
+                manifest[declaration.key] = entry
+            elif standing != entry:
+                # Two settings may share a config key on purpose, and one
+                # `TDOUCE_*` variable can then move only one of them. The
+                # loop simply overwrote, so `run.json` asserted a value
+                # and an origin the other path never used, and the value
+                # that WAS used went unrecorded. When they diverge each
+                # gets its own line; when they agree the shared key
+                # stands, which is the ordinary case and the one a reader
+                # would type.
+                manifest.pop(declaration.key, None)
+                for other in _SETTINGS:
+                    if other.key == declaration.key:
+                        manifest[f"{other.key} ({other.name})"] = {
+                            "value": _plain(getattr(self, other.name)),
+                            "origin": self.origin(other.name),
+                        }
         manifest[_MODERNIZE_URL.key] = {
             "value": _plain(self.modernize_api),
             "origin": self.origin("modernize_url"),

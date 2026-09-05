@@ -273,3 +273,41 @@ def test_a_panel_that_would_not_shut_down_says_so_where_it_can_be_read(
 
     assert "did not shut down cleanly" in seen.getvalue()
     assert "Live.stop blew up" in seen.getvalue()
+
+
+def test_an_interrupt_during_the_pools_birth_is_held_and_not_lost():
+    """A Ctrl-C arriving while the worker pool is being born catches a
+    worker half-unpickled and prints its traceback across the report —
+    half of all interrupt timings did, once straight through the final
+    verdict line. Ignoring the signal for that window fixed the
+    tracebacks and swallowed three interrupts in fourteen, which is
+    worse: a Ctrl-C that does nothing.
+
+    So it is DEFERRED, and raised again as soon as there is a pool to
+    shut down.
+    """
+    import inspect
+    import signal
+
+    from teille_douce.sourcedoc import builder
+
+    source = inspect.getsource(builder.build_sourcedoc)
+    # The disposition installed across `Pool(...)` records the signal
+    # instead of dropping it, and the handler is put back immediately.
+    assert "signal.SIG_IGN" not in source, (
+        "an ignored SIGINT is a lost Ctrl-C")
+    assert "raise KeyboardInterrupt" in source
+    assert signal.getsignal(signal.SIGINT) is not signal.SIG_IGN
+
+
+def test_the_forkserver_is_started_before_there_is_anything_to_interrupt():
+    """It is started lazily by the first pool otherwise, inheriting a
+    live SIGINT handler, and a Ctrl-C landing while it preloads the
+    builder killed it mid-import — printing a
+    `multiprocessing/forkserver.py` traceback over the report."""
+    import inspect
+
+    from teille_douce.sourcedoc import builder
+
+    assert "warm_up" in inspect.getsource(run_module.execute)
+    assert "SIG_IGN" in inspect.getsource(builder.warm_up)

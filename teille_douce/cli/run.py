@@ -33,6 +33,7 @@ from rich.markup import escape
 # Import configuration
 from teille_douce.config import APP_VERSIONS, IIIF_URI, RESPONSIBILITY
 from teille_douce.report.collector import Run as ReportRun
+from teille_douce.sourcedoc.builder import warm_up
 from teille_douce.report.counts import PhaseState
 from teille_douce.report.dashboard import Dashboard
 from teille_douce.report.logging_bridge import DigestHandler
@@ -579,6 +580,10 @@ def _phase_lost(reporter, doc_name, phase, stats, unit, reason):
     reporter.phase(doc_name, phase, PhaseState.LOST,
                    done=0, total=stats.get("containers_found", 0) or 0,
                    unit=unit, reason=reason)
+    # And on the banner. It answered the probe and has stopped answering,
+    # which is the one state the service line was drawn for.
+    if phase in _SERVICE_OF:
+        reporter.service_lost(_SERVICE_OF[phase])
 
 
 # One counter used to carry four causes. They are four lines of the
@@ -764,6 +769,13 @@ def _pages_per_second(reporter, started):
     return reporter.pages_written / elapsed if elapsed > 0 else 0.0
 
 
+# Which service answers for which phase. The banner shows one dying, so
+# something has to tell it which one died — the phase knows, and parsing
+# the reason string for a name would be a second place to get it wrong.
+_SERVICE_OF = {"enrich": "PyHellen", "modernize": "VieuxParler",
+               "ner": "NER local"}
+
+
 def _phase_progress(reporter, progress, task, doc_name, phase, unit):
     """A progress callback that tells the panel, not only the old bar.
 
@@ -855,6 +867,12 @@ def _process_document(doc_name, filepaths, doc_dir, df_meta, config,
         f"{escape(doc_name)}: pages", total=len(filepaths), visible=True
     )
 
+    if reporter is not None:
+        # The stretches between the phases raise too — a missing CSV
+        # column, an unwritable output path — and the index has a field
+        # for which one.
+        reporter.step(doc_name, "metadata")
+
     # Load metadata for this document
     # find_metadata_row extracts the BDD prefix itself (audit 4.11:
     # main.py used to keep a copy and apply it a second time).
@@ -945,9 +963,22 @@ def _process_document(doc_name, filepaths, doc_dir, df_meta, config,
     task_lang = progress.add_task(
         f"[cyan]{escape(doc_name)}: Detection des langues[/cyan]", total=None, visible=True
     )
+    if reporter is not None:
+        reporter.phase(doc_name, "body+lang", PhaseState.RUNNING,
+                       note="reading the zones")
     tree.build_body(detect_lang=True)
     link_notes_to_lines(tree.root)
     progress.update(task_lang, visible=False)
+    # The step between sourceDoc and enrichment showed nothing at all:
+    # the panel drew a finished sourceDoc over an empty gap while the
+    # zones were being read, and its own design — down to the fixture the
+    # render tests use — carries a `body+lang` line.
+    if reporter is not None:
+        spoken = " · ".join(
+            f"{code} {count}" for code, count
+            in sorted(tree.lang_stats.items(), key=lambda pair: -pair[1])[:4])
+        _phase_done(reporter, doc_name, "body+lang", 1, 1, "documents",
+                    note=spoken or "no language detected")
 
     if tree.lang_stats:
         langs = [f"{k}:{v}" for k, v in sorted(tree.lang_stats.items(), key=lambda x: -x[1])[:4]]
@@ -993,7 +1024,12 @@ def _process_document(doc_name, filepaths, doc_dir, df_meta, config,
             )
             _phase_lost(reporter, doc_name, "enrich", enrich_stats,
                         "containers", "PyHellen stopped answering")
-        elif reporter is not None and enrich_stats:
+        elif reporter is not None:
+            # Not `and enrich_stats`: an empty dict left the phase
+            # RUNNING for the rest of the volume, spinning beside a count
+            # that would never change again. The same shape as the
+            # modernize branch below, one guard away.
+            enrich_stats = enrich_stats or {}
             _containers_failed(reporter, doc_name, "enrich", enrich_stats,
                                "PyHellen refused these containers")
             _phase_done(reporter, doc_name, "enrich",
@@ -1048,6 +1084,32 @@ def _process_document(doc_name, filepaths, doc_dir, df_meta, config,
                     total=mod_stats["batches_failed"],
                     detail=f"{mod_stats.get('lines_lost', 0)} lines never "
                            f"reached VieuxParler"))
+            if mod_stats.get("readings_rejected"):
+                # Block 2. The service answered and the guard refused
+                # what it answered — a divergent reading kept as its
+                # original is the pipeline working, not failing, and it
+                # was counted into a local and dropped. CLAUDE.md names
+                # this one by name: "rejected modernizations … counted
+                # and printed".
+                reporter.lost(Loss(
+                    Code.READING_REJECTED, doc_name, "modernize",
+                    Locator.document(doc_name),
+                    count=mod_stats["readings_rejected"],
+                    total=mod_stats.get("lines_offered",
+                                        mod_stats["readings_rejected"]),
+                    detail="the reading diverged from the original and was "
+                           "not used",
+                    unit="readings"))
+            # Marked done, which it never was: the spinner turned beside
+            # a full bar for the whole of NER, the header override and
+            # the write — minutes, on a volume with entity recognition —
+            # claiming work that had finished. Verbatim what
+            # `_phase_done` exists to prevent, on the one phase that
+            # never called it.
+            found = mod_stats.get("containers_found", 0)
+            _phase_done(reporter, doc_name, "modernize",
+                        max(0, found - mod_stats.get("containers_failed", 0)),
+                        found, "containers")
 
     # Step 5: Named Entity Recognition (after enrichment + modernization)
     if do_ner:
@@ -1063,10 +1125,26 @@ def _process_document(doc_name, filepaths, doc_dir, df_meta, config,
         try:
             from teille_douce.enrichment.ner_pipeline import run_ner, summarize
 
-            resolved = run_ner(tree.root, person_db, doc_name)
+            ner_losses = {}
+            resolved = run_ner(tree.root, person_db, doc_name,
+                               losses=ner_losses)
             summary = summarize(resolved)
             if summary:
                 say(f"  [dim]NER: {summary}[/dim]")
+            if reporter is not None and ner_losses.get("entities_filtered"):
+                # Block 2: an entity that reached resolution and was then
+                # pruned is something the pipeline could have emitted and
+                # chose not to. It went to a `logger.info` alone, so the
+                # block printed "nothing" over runs that had withheld
+                # hundreds — the second of the two cases CLAUDE.md names.
+                reporter.lost(Loss(
+                    Code.ENTITY_FILTERED, doc_name, "ner",
+                    Locator.document(doc_name),
+                    count=ner_losses["entities_filtered"],
+                    total=ner_losses.get("entities_offered",
+                                         ner_losses["entities_filtered"]),
+                    detail="one mention, below the confidence floor",
+                    unit="entities"))
             _phase_done(reporter, doc_name, "ner", 1, 1, "documents",
                         note=summary or "no entity found")
 
@@ -1089,6 +1167,7 @@ def _process_document(doc_name, filepaths, doc_dir, df_meta, config,
                 reporter.phase(doc_name, "ner", PhaseState.LOST, done=0,
                                total=1, unit="documents",
                                reason=f"NER dependencies not installed ({e})")
+                reporter.service_lost(_SERVICE_OF["ner"])
         except Exception as e:
             logging.getLogger(__name__).error("NER pipeline failed: %s", e, exc_info=True)
             console.print(f"[yellow]Warning: NER failed ({escape(str(e))}) — continuing.[/yellow]")
@@ -1096,6 +1175,7 @@ def _process_document(doc_name, filepaths, doc_dir, df_meta, config,
                 reporter.phase(doc_name, "ner", PhaseState.LOST, done=0,
                                total=1, unit="documents",
                                reason=f"NER failed ({e})")
+                reporter.service_lost(_SERVICE_OF["ner"])
 
         progress.update(task_ner, visible=False)
 
@@ -1109,6 +1189,8 @@ def _process_document(doc_name, filepaths, doc_dir, df_meta, config,
     tree.finalize_extent()
 
     # Write output file
+    if reporter is not None:
+        reporter.step(doc_name, "write")
     out_path = _out_path(doc_name, settings.output_dir)
     write_xml(tree.root, out_path)
 
@@ -1204,7 +1286,11 @@ def execute(args):
         console.print(
             "[red]--no-probe and --require-services contradict each other.[/red]"
         )
-        _refuse(settings=settings)
+        # 2, like every other pair of contradictory flags. `--force
+        # --skip-existing` and `--plain --dashboard` both exit 2, and
+        # this one exited 3 — so a wrapper keying on 2 for "the command
+        # line is wrong" got both answers for the same kind of mistake.
+        _refuse(code=EXIT_USAGE, settings=settings)
 
     # Cheap, and before the probes: a typo used to pay up to two health
     # timeouts of blocking HTTP before being told it was a typo. Names are
@@ -1508,19 +1594,20 @@ def execute(args):
             # least behind, and `--retry-failed` afterwards had a
             # manifest but no account of why.
             if store is not None:
-                # The same two diagnoses the document loop draws, in the
-                # same order: a corrupt archive is a file to repack, a
-                # directory this process may not open is a mode to
-                # change, and filing one as the other sends the operator
-                # to the wrong remedy with the wrong address.
-                for name, reason in failed_archives:
-                    store.incident(Loss(
-                        Code.ARCHIVE_CORRUPT, name, "expand",
-                        Locator.file(settings.ocr_dir / name),
-                        count=1, total=1, detail=reason))
-                seen = {name for name, _ in failed_archives}
+                # Only the unreadable directories. A corrupt archive is
+                # `Code.ARCHIVE_CORRUPT`, which is block 1 — the source
+                # being defective — and `RunStore.incident` indexes block
+                # 3 alone, by design: an index of everything is an index
+                # of nothing. Calling it for an archive looked like
+                # thoroughness and wrote nothing at all.
+                #
+                # The two diagnoses stay distinct for the same reason the
+                # document loop keeps them apart: a corrupt archive is a
+                # file to repack, a directory this process may not open
+                # is a mode to change.
+                packed = {name for name, _ in failed_archives}
                 for name, reason in broken:
-                    if name in seen:
+                    if name in packed:
                         continue
                     store.incident(Loss(
                         Code.VOLUME_UNREADABLE, name, "expand",
@@ -1708,6 +1795,12 @@ def execute(args):
     except ValueError as reason:
         console.print(f"[red]{escape(str(reason))}[/red]")
         sys.exit(EXIT_USAGE)
+
+    # Before the loop, so the forkserver is born at an instant when a
+    # Ctrl-C has nothing to interrupt. Started lazily inside the loop it
+    # inherited a live SIGINT handler and died mid-preload, printing a
+    # multiprocessing traceback across the report.
+    warm_up()
 
     # Process documents with progress bar
     with Progress(

@@ -205,3 +205,59 @@ def test_a_service_dying_is_what_the_incident_level_is_for():
     assert gate_verdict("incident", record_with(C.PHASE_LOST)).met is False
     assert gate_verdict("incident", record_with(C.CONTAINER_FAILED)).met is False
     assert gate_verdict("incident", record_with(C.VOLUME_UNREADABLE)).met is False
+
+
+# =============================================================================
+# The block under NOT MET says what tripped the gate, and only that
+# =============================================================================
+
+def test_the_gate_block_does_not_blame_a_repair():
+    """It re-derived its lines from the blocks the LEVEL names and
+    printed every one of them — including the repaired defects
+    `gate_verdict` deliberately skips, and a literal "nothing" under NOT
+    MET. A gate that names a repair as its cause is worse than one that
+    names nothing."""
+    from pathlib import Path
+
+    from teille_douce.report.record import Locator, Loss, RunRecord
+    from teille_douce.report.summary import RunOutcome, render_summary
+
+    record = RunRecord()
+    record.add(Loss(Code.PAGE_UNUSABLE, "D1", "sourcedoc",
+                    Locator.page("D1", "f4"), count=3, total=8,
+                    detail="no <surface> could be built"))
+    record.add(Loss(Code.ALTO_IDS_REPAIRED, "D1", "sourcedoc",
+                    Locator.page("D1", "f2"), count=14, total=128,
+                    detail="duplicates disambiguated"))
+
+    shown = render_summary(RunOutcome(
+        input_dir=Path("OCR"), output_dir=Path("out"), volumes_total=1,
+        volumes_written=1, pages_total=8, pages_written=5, record=record,
+        elapsed=3.0, exit_code=5, fail_on="loss"), width=92)
+    after = shown[shown.index(next(l for l in shown if "quality gate" in l)):]
+
+    assert any("pages unusable" in line for line in after), after
+    assert not any("repaired" in line for line in after), after
+    assert not any(line.strip() == "nothing" for line in after), after
+
+
+def test_a_share_is_never_printed_as_equal_to_the_bar_it_cleared():
+    """The comparison is strict and the display was rounded to one place,
+    so 300 of 999 pages — 30.03 % — printed as "30% of its pages
+    unusable" against a rule documented as "more than 30": the run
+    contradicting its own threshold on the line that names it."""
+    from pathlib import Path
+
+    from teille_douce.report.gate import page_loss_failures
+    from teille_douce.report.record import RunRecord
+    from teille_douce.report.summary import RunOutcome, render_summary
+
+    failures = page_loss_failures({"LIV0044": (300, 999)}, 30.0)
+
+    shown = render_summary(RunOutcome(
+        input_dir=Path("OCR"), output_dir=Path("out"), volumes_total=1,
+        volumes_written=1, pages_total=999, pages_written=699,
+        record=RunRecord(), elapsed=3.0, exit_code=5, fail_on="never",
+        page_loss_failures=failures, max_page_loss=30.0), width=92)
+
+    assert any("30.03% of its pages unusable" in line for line in shown), shown

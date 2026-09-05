@@ -662,14 +662,18 @@ def test_an_empty_selected_volume_names_itself(tmp_path):
 def test_no_probe_and_require_services_contradict_each_other(tmp_path):
     """One says "assume the services answer", the other "prove they do".
     Refused before expand_archives unpacks anything, because
-    --require-services promises to fail before a single write."""
+    --require-services promises to fail before a single write.
+
+    2, like every other contradictory pair. It exited 3, so a wrapper
+    keying on 2 for "the command line is wrong" got one answer for
+    `--force --skip-existing` and another for this."""
     ocr = tmp_path / "ocr"
     shutil.copytree(ALTO_MIN, ocr)
 
     res, sortie = _executer_main(
         tmp_path, ocr, args=("--no-probe", "--require-services"), **MODE_COURT)
 
-    assert res.returncode == 3
+    assert res.returncode == 2
     assert "--no-probe" in res.stdout and "--require-services" in res.stdout
     assert not sortie.exists()
 

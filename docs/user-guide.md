@@ -646,8 +646,8 @@ breakdown and for what the eleven rules check.
 |---|---|
 | **0** | everything asked for succeeded — losses do not change this, unless `--fail-on` says otherwise |
 | **1** | partial failure: some volumes failed, others did not |
-| **2** | usage error: unknown flag, contradictory flags, unknown config key |
-| **3** | misconfiguration, nothing ran: input missing, empty corpus, a selector matching nothing, `--require-services` with a service down |
+| **2** | usage error, on the command line: unknown flag, a value a flag will not take, two flags that contradict each other (`--force --skip-existing`, `--plain --dashboard`, `--no-probe --require-services`) |
+| **3** | misconfiguration, nothing ran: input missing, empty corpus, a selector matching nothing, `--require-services` with a service down, a config file that is unreadable or names a key this pipeline does not have |
 | **4** | total failure: everything that ran failed, including the case where nothing could even be opened. Distinct from 1 because the remedy differs — 1 is worth retrying volume by volume, 4 usually means the input or the setup is wrong. A run stopped early by `--fail-fast` is never 4: it did not prove the corpus unconvertible |
 | **5** | the quality gate was not met: everything converted, and `--fail-on` or `--max-page-loss` is still not satisfied. Only when nothing else failed — a failed volume is the more concrete fact and takes the code |
 

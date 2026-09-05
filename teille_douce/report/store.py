@@ -178,6 +178,28 @@ class RunStore:
         that cannot be read is a different thing and raises: reporting it
         as "nothing failed" is a lie, and the caller can say so.
         """
+        # `_runs` swallows OSError and answers "no runs", which the
+        # caller then reads as "the last run was clean" — so an output
+        # directory whose `.teille-douce` is a file, or a permission this
+        # process does not have, sent the operator away believing
+        # nothing had failed. Asked here, where the answer can be told
+        # apart from an empty one.
+        root = Path(output_dir) / RUNS
+        try:
+            # The holder as well as the runs directory: with
+            # `.teille-douce` a file, nothing UNDER it reports existing,
+            # so asking only about `runs` answered "no record" for a path
+            # that cannot hold one.
+            unusable = next(
+                (str(step) for step in (root.parent, root)
+                 if step.exists() and not (step.is_dir()
+                                           and os.access(step, os.R_OK))),
+                None)
+        except OSError as reason:
+            raise ValueError(f"{root} could not be read: {reason}")
+        if unusable:
+            raise ValueError(f"{unusable} is not a readable directory, so "
+                             f"the last run's failures could not be read")
         latest = cls.latest(output_dir)
         if latest is None:
             return ()

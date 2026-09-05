@@ -11,6 +11,7 @@ ALTO XML files. Uses multiprocessing for parallel page processing.
 
 import logging
 import multiprocessing
+import signal
 from pathlib import Path
 from multiprocessing import cpu_count
 
@@ -98,6 +99,39 @@ def extract_labels(source):
 _JOB_CONTEXT = {}
 
 
+def warm_up():
+    """Start the forkserver now, with SIGINT ignored across its birth.
+
+    It is started lazily by the first `Pool()` otherwise, and it inherits
+    the parent's signal dispositions for good — so a Ctrl-C arriving
+    while it preloads this module killed it mid-import and printed a
+    `multiprocessing/forkserver.py` traceback across the report, once
+    straight through the final verdict line. The worker initializer
+    cannot help: it has not run yet.
+
+    Done ONCE, here, rather than around every `Pool()`. Wrapping each
+    pool meant a window per volume, and three interrupts in fourteen
+    landed in one and were swallowed — a Ctrl-C that does nothing is
+    worse than an ugly traceback. This window is a single instant at
+    startup, before there is anything to interrupt.
+    """
+    if _MP_CONTEXT.get_start_method() != "forkserver":
+        return
+    from multiprocessing import forkserver
+
+    try:
+        previous = signal.signal(signal.SIGINT, signal.SIG_IGN)
+    except ValueError:      # pragma: no cover - not the main thread
+        previous = None
+    try:
+        forkserver.ensure_running()
+    except Exception as reason:     # pragma: no cover - defensive
+        logger.debug("could not start the forkserver early (%s)", reason)
+    finally:
+        if previous is not None:
+            signal.signal(signal.SIGINT, previous)
+
+
 def _init_worker(document_name, segmonto_zones, segmonto_lines, config,
                  iiif_mapping_dict, settings=None):
     """Store one document's invariants in the worker process.
@@ -109,6 +143,13 @@ def _init_worker(document_name, segmonto_zones, segmonto_lines, config,
     plumbing is here so that the first one to do so is correct rather than
     silently reading the environment behind the CLI's back.
     """
+    # A Ctrl-C reaches the whole process group, so every worker took it
+    # too and died where it stood — half of all interrupt timings printed
+    # a `multiprocessing/forkserver.py` traceback across the report, once
+    # straight through the final verdict line. The parent owns the
+    # signal: it stops the loop, terminates the pool and prints a
+    # coherent report, and a worker that ignores SIGINT lets it.
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
     if settings is not None:
         set_settings(settings)
     _JOB_CONTEXT.update(
@@ -436,6 +477,21 @@ def build_sourcedoc(
     # forever (observed as intermittent 15-minute CI timeouts). Results
     # are fully consumed first, then close()+join() lets workers exit
     # cleanly; terminate() only on an actual error.
+    # A Ctrl-C arriving while the pool is being born catches a worker
+    # half-unpickled and prints its traceback across the report — the
+    # parent has gone and the pipe with it. So the signal is DEFERRED
+    # here, not ignored: ignoring it lost three interrupts in fourteen,
+    # and a Ctrl-C that does nothing is worse than an ugly traceback.
+    # It is raised again below, once there is a pool to shut down.
+    deferred = []
+
+    def _hold(signum, frame):
+        deferred.append(signum)
+
+    try:
+        previous = signal.signal(signal.SIGINT, _hold)
+    except ValueError:      # pragma: no cover - not the main thread
+        previous = None
     pool = _MP_CONTEXT.Pool(
         workers,
         initializer=_init_worker,
@@ -444,7 +500,11 @@ def build_sourcedoc(
             iiif_mapping_dict, settings,
         ),
     )
+    if previous is not None:
+        signal.signal(signal.SIGINT, previous)
     try:
+        if deferred:
+            raise KeyboardInterrupt
         for done, (job_index, xml_bytes, error, warning, duplicated,
                    minted) in enumerate(
             pool.imap_unordered(_build_surface_fragment, jobs), start=1
