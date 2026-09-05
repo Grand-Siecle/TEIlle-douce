@@ -374,3 +374,35 @@ def test_a_corrupt_manifest_is_not_reported_as_nothing_to_retry(tmp_path):
 
 def test_no_previous_run_is_still_simply_nothing_to_retry(tmp_path):
     assert RunStore.failed_last_time(tmp_path / "tei_output") == ()
+
+
+# =============================================================================
+# The panel's three counts have to add up to the corpus
+# =============================================================================
+
+def test_a_volume_that_could_not_be_opened_is_failed_and_not_still_to_come():
+    """A corrupt archive counted in the denominator but not among the
+    failures, so a finished run ended on "3 written · 0 failed · 1 to
+    go" — with nothing left to do."""
+    from teille_douce.report.collector import Run
+
+    run = Run(input_dir="OCR", output_dir="out", volumes=2, pages=10)
+    run.archive_failed("LIV9005_reconciled.zip", "File is not a zip file")
+    run.document_started("D1", pages=10)
+    run.pages_read("D1", 10)
+    run.document_finished("D1", ok=True)
+
+    panel = run.panel()
+
+    assert (panel.volumes_written, panel.volumes_failed,
+            panel.volumes_to_go) == (1, 1, 0)
+
+
+def test_an_unreadable_volume_counts_the_same_way():
+    from teille_douce.report.collector import Run
+
+    run = Run(input_dir="OCR", output_dir="out", volumes=1, pages=0)
+    run.volume_unreadable("LIV9002_reconciled", "Permission denied")
+
+    assert run.panel().volumes_failed == 1
+    assert run.panel().volumes_to_go == 0

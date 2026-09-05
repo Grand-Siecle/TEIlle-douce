@@ -223,9 +223,14 @@ class Run:
             pages_in_flight=self._open_read,
             pages_total=self.pages_total,
             volumes_written=self._written,
-            volumes_failed=len(self._failed),
+            # Archives and unreadable directories are failures too: they
+            # are in the denominator, so leaving them out of the failed
+            # count made a finished run end on "3 written · 0 failed · 1
+            # to go" with nothing left to do.
+            volumes_failed=len(self._failed) + len(self._failed_archives),
             volumes_to_go=max(0, self.volumes_total - self._written
-                              - len(self._failed)),
+                              - len(self._failed)
+                              - len(self._failed_archives)),
             pages_per_second=round(pages_per_second, 1),
             current=current,
             source_lost=self.record.total(Block.SOURCE),
