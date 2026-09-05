@@ -191,13 +191,34 @@ class RunStore:
         except (OSError, ValueError) as reason:
             raise ValueError(
                 f"the record of {latest.name} could not be read: {reason}")
-        return tuple(name for name, status
-                     in manifest.get("documents", {}).items()
+        # Shape-checked, not assumed. `json.loads` is happy with `null`,
+        # `[]` or a bare string — a truncated write flushed mid-object is
+        # all three at different moments — and `.get` on any of them
+        # raised AttributeError, which is not a ValueError, so it went
+        # straight past the caller's guard and out of the CLI as a
+        # traceback with exit 1: a wrapper read "some volumes failed".
+        documents = manifest.get("documents") if isinstance(manifest, dict) else None
+        if not isinstance(documents, dict):
+            raise ValueError(
+                f"the record of {latest.name} is not a run manifest")
+        return tuple(name for name, status in documents.items()
                      if status == "failed")
 
     @classmethod
-    def prune(cls, output_dir, keep=KEEP):
+    def prune(cls, output_dir, keep=KEEP, spare=None):
         """Whole directories, log included: an index and its transcript
-        must not be able to survive each other."""
+        must not be able to survive each other.
+
+        `spare` is the run doing the pruning. Every run prunes, so a long
+        one outranked by ten later short ones was rmtree'd from under
+        itself: `_ready` then quietly recreated the directory, the
+        manifest was rewritten into it and the incident index was not —
+        an index outlived by its transcript, which is the one thing this
+        class says cannot happen — and `--retry-failed` afterwards
+        reported nothing to retry.
+        """
+        spare = Path(spare).resolve() if spare is not None else None
         for old in cls._runs(output_dir)[:-keep or None]:
+            if spare is not None and old.resolve() == spare:
+                continue
             shutil.rmtree(old, ignore_errors=True)

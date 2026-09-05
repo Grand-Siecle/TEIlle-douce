@@ -22,7 +22,8 @@ from .utils.xml import content_root, declare_responsibility
 logger = logging.getLogger(__name__)
 from .teiheader import build_header, update_extent
 from .sourcedoc import build_sourcedoc
-from .body import build_body, apply_modernization, apply_modernization_enriched, Text
+from .body import (build_body, apply_modernization,
+                   apply_modernization_enriched, count_containers, Text)
 from .metadata import IIIFMapping
 from .lang import build_langusage
 from .enrichment import enrich_body as _enrich_body
@@ -245,8 +246,14 @@ class TEI:
 
         # Before anything can fail: the denominator of this phase's
         # losses must not depend on the phase succeeding.
-        from .body.builder import count_containers
-        stats["containers_found"] = count_containers(self.root)
+        #
+        # `content_root`, not the whole tree. Scanning teiHeader and
+        # sourceDoc as well counted containers the phase will never
+        # touch — right today only because the header's <note>s are
+        # written after modernization runs — and put back the full-tree
+        # Python walk `utils.xml` exists to avoid: 473 elements against
+        # 90 on the eight-page fixture.
+        stats["containers_found"] = count_containers(content_root(self.root))
 
         # Get line texts
         if line_data is None:

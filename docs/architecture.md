@@ -97,6 +97,10 @@ teille_douce/
   report/                    What a run did, and what it lost
     counts.py                A loss is never a bare integer: a count carries
                              its denominator or it raises
+    text.py                  Cells, clipping, two columns on one line. Shared
+                             by the panel and the summary, which had two
+                             implementations of the same contract and broke
+                             it in two different ways
     record.py                The three blocks and typed locators. A page id
                              IS the ALTO file stem, so it resolves to a file,
                              an XPath and a IIIF region
@@ -107,9 +111,11 @@ teille_douce/
                              testable without a terminal
     collector.py             What the run talks to. Both reporters read it,
                              which is why they cannot disagree
-    dashboard.py             The live view on a real screen — the only
-    select.py                file here that touches Rich, and which
-                             reporter a run gets
+    dashboard.py             The live view on a real screen — the only file
+                             here that touches Rich. Draws on a clock, not
+                             only on a change: minutes pass between two
+                             events, and a frozen panel reads as a hung run
+    select.py                Which reporter a run gets
     store.py                 What a run leaves on disk: the manifest, the
                              index of its incidents, and its log
     logging_bridge.py        WARNING+ records to the digest, never to the

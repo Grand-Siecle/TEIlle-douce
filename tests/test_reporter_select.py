@@ -52,8 +52,16 @@ def test_a_terminal_too_small_for_the_panel_gets_the_journal():
     assert choose(height=8) is UI.PLAIN
 
 
-def test_the_floor_is_low_enough_for_a_normal_split_pane():
-    assert choose(width=60, height=14) is UI.DASHBOARD
+def test_the_floor_is_the_height_the_panel_actually_needs():
+    """It was 12, and the panel is 15 rows before a single incident or
+    folded warning — six of header, the document line, five phases, the
+    totals, the rule and the ctrl-c foot. So the view that was chosen
+    because it shows more arrived already cutting."""
+    from teille_douce.report.select import MIN_HEIGHT
+
+    assert choose(width=60, height=MIN_HEIGHT) is UI.DASHBOARD
+    assert choose(width=60, height=MIN_HEIGHT - 1) is UI.PLAIN
+    assert MIN_HEIGHT >= 16
 
 
 # =============================================================================

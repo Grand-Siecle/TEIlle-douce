@@ -13,6 +13,7 @@ from pathlib import Path
 
 from .counts import _grouped, render_count
 from .record import Block, Code, RunRecord
+from .text import clip, pad
 
 MAX_WIDTH = 100
 
@@ -96,10 +97,16 @@ _MARGIN = 2
 
 
 def _columns(left, right, width):
-    """A label on the left, an aside on the right, in one line."""
-    room = min(width, MAX_WIDTH) - _MARGIN
-    gap = room - len(left) - len(right)
-    return left + " " * gap + right if gap >= 1 else left
+    """A label on the left, an aside on the right, in one line.
+
+    The aside survives; the label is shortened to make room for it. It
+    used to be the other way about — the right half was dropped with no
+    marker at all — and the right half is the only thing that tells two
+    losses sharing a code apart, which is the entire reason the grouping
+    key is `(code, detail)`. At eighty columns, the default when stdout
+    is not a terminal, two different causes rendered as the same line.
+    """
+    return pad(left, right, min(width, MAX_WIDTH) - _MARGIN)
 
 
 def _block_lines(outcome, block, width):
@@ -186,9 +193,13 @@ def _next_steps(outcome):
             first = outcome.failed_documents[0][0]
             steps.append((f"teille-douce run {first} -vv",
                           "reproduce with full logging"))
-    if outcome.record.losses(Block.INCIDENT):
-        steps.append(("teille-douce report --block incident",
-                      "the incidents above, in full"))
+    if outcome.record.losses(Block.INCIDENT) and outcome.report_path:
+        # The file, not a subcommand. `teille-douce report` does not
+        # exist yet, and a run that ends by telling the reader to type
+        # something that exits 2 with "unrecognized arguments" has spent
+        # its last line making itself less trustworthy.
+        steps.append((f"cat {outcome.report_path / 'incidents.jsonl'}",
+                      "every incident above, one JSON line each"))
     return steps
 
 
@@ -226,7 +237,8 @@ def _verdict(outcome):
             # restart the wrong service.
             lost = sorted({entry.step for entry in outcome.record.losses()
                            if entry.code is Code.PHASE_LOST})
-            return (f"exit 5 — everything converted, but {phases} volumes "
+            return (f"exit 5 — everything converted, but "
+                    f"{_plural(phases, 'volume')} "
                     f"carry no {' and no '.join(lost)} at all")
         return ("exit 5 — everything converted, but the quality gate was "
                 "not met")
@@ -269,7 +281,12 @@ def render_summary(outcome, width=92):
             # The FAILED token stays: it is what every wrapper this
             # project has greps for, and aligning the name into a column
             # instead would break on the first long one anyway.
-            lines.append(f"    FAILED {name}: {reason}"[:room])
+            # Clipped in cells and with the control characters out: an
+            # httpx reason is two lines, and slicing by characters left
+            # the second one loose in the middle of the report — one
+            # record for a wrapper reading FAILED lines became two, the
+            # second a bare fragment.
+            lines.append(clip(f"    FAILED {name}: {reason}", room))
         lines.append("")
 
     lines.append(_located_line(outcome.record.located(), room))

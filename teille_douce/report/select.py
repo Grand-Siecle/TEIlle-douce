@@ -15,7 +15,12 @@ from enum import Enum
 # Below these the panel stops being scannable and starts hiding the lines
 # it exists to show. Low enough for a split pane.
 MIN_WIDTH = 56
-MIN_HEIGHT = 12
+# Measured, not chosen. A volume open with its five phases is already
+# fifteen rows before a single incident or folded warning: six of header,
+# the document line, five phases, the totals row, the closing rule and
+# the ctrl-c foot. Twelve was a guess, and under it the panel cut away
+# the part it exists for while still calling itself the better view.
+MIN_HEIGHT = 16
 
 # Set by every CI system worth naming. A CI runner is a tty often enough
 # to fool the check, and its log is read long after the run.

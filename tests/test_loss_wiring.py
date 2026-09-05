@@ -12,6 +12,7 @@
 from teille_douce.cli import run as run_module
 from teille_douce.enrichment.pipeline import new_stats
 from teille_douce.report.collector import Run
+from teille_douce.report.counts import PhaseState
 from teille_douce.report.record import Block, Code
 
 
@@ -163,3 +164,89 @@ def test_the_containers_a_document_offers_are_counted_before_anything_runs():
         "<body><ab><lb corresp='#a'/>un</ab><ab><lb corresp='#b'/>deux</ab></body>")
 
     assert count_containers(body) == 2
+
+
+# =============================================================================
+# What the totals row counts
+# =============================================================================
+
+def test_a_lost_phase_is_not_written_as_zero_things_lost():
+    """`incident 0` printed directly above three incident lines, over a
+    summary reporting three. `Loss.count` is the amount GONE everywhere
+    else — pages unusable, ids repaired, one failed volume — and
+    `RunRecord.total` sums it on that reading; a lost phase stored what
+    it had MANAGED, which for a dead service is always nought."""
+    run = a_run()
+    run.document_started("D1", pages=10)
+
+    run_module._phase_lost(run, "D1", "enrich",
+                           enrich_stats(containers_found=1402),
+                           "containers", "PyHellen stopped answering")
+
+    assert run.record.total(Block.INCIDENT) == 1402
+    assert run.panel().incidents == 1402
+    assert len(run.panel().incident_lines) == 1
+
+
+def test_a_phase_that_lost_only_part_of_what_it_had_says_so():
+    run = a_run()
+    run.document_started("D1", pages=10)
+
+    run.phase("D1", "enrich", PhaseState.LOST, done=1200, total=1402,
+              unit="containers", reason="PyHellen stopped answering")
+
+    loss, = run.record.losses(Block.INCIDENT)
+    assert (loss.count, loss.total) == (202, 1402)
+
+
+# =============================================================================
+# A volume that read nothing is not a volume that wrote everything
+# =============================================================================
+
+def test_a_volume_whose_every_page_was_unusable_claims_none_of_them():
+    """`_open_read or _open_pages` cannot tell "not measured" from
+    "measured, and it was nought". A volume whose every ALTO is unusable
+    does not raise, so it reported reading zero pages, fell through to
+    the page count it was OFFERED, and the headline read "754 of 754
+    pages written" one line above "pages unusable 754 of 754"."""
+    run = Run(input_dir="OCR", output_dir="out", volumes=1, pages=754)
+    run.document_started("D1", pages=754)
+    run.pages_read("D1", 0)
+    run.document_finished("D1", ok=True)
+
+    assert run.panel().pages_written == 0
+
+
+def test_a_volume_nobody_measured_still_counts_the_pages_it_was_given():
+    """The other half: `pages_read` is not called on every path, and a
+    volume that converted normally must not report nought."""
+    run = Run(input_dir="OCR", output_dir="out", volumes=1, pages=754)
+    run.document_started("D1", pages=754)
+    run.document_finished("D1", ok=True)
+
+    assert run.panel().pages_written == 754
+
+
+# =============================================================================
+# The third phase
+# =============================================================================
+
+def test_a_lost_ner_phase_is_an_incident_like_the_other_two():
+    """NER touched the reporter nowhere at all: a run whose entity
+    recognition died on every volume exited 0 under `--fail-on incident`,
+    drew a green tick on the banner and printed "lost to an incident …
+    nothing" over a corpus with no <standOff> in it.
+
+    Against a denominator of one document, because that is the unit it
+    works in — it runs over the whole tree in one step, so the honest
+    measure of what a failure lost is the document."""
+    run = a_run()
+    run.document_started("D1", pages=10)
+
+    run.phase("D1", "ner", PhaseState.LOST, done=0, total=1,
+              unit="documents", reason="NER failed (CUDA out of memory)")
+
+    loss, = run.record.losses(Block.INCIDENT)
+    assert loss.code is Code.PHASE_LOST
+    assert (loss.step, loss.count, loss.total) == ("ner", 1, 1)
+    assert "CUDA out of memory" in loss.detail

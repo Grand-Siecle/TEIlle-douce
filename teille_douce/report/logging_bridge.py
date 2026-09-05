@@ -25,7 +25,20 @@ class DigestHandler(logging.Handler):
             message = record.getMessage()
         except Exception:
             message = str(record.msg)
-        self._run.warning(self._run.open_document or "", message)
+        try:
+            self._run.warning(self._run.open_document or "", message)
+        except Exception:
+            # The guard covered formatting and stopped one line short of
+            # the fold, which is where the work is: the digest sums the
+            # integers a message carries, and `int()` refuses a digit run
+            # past 4 300 characters. Raising here would come out of
+            # `logger.warning(...)` in the middle of the pipeline, and the
+            # document loop would book the volume as failed — a reporter
+            # failing the run it reports on.
+            #
+            # `handleError` does not help: logging only calls it for what
+            # `emit` lets through.
+            pass
 
     def handleError(self, record):
         # logging's default prints a traceback to stderr, straight through

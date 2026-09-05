@@ -195,7 +195,7 @@ teille-douce run --fast --dry-run     # what would happen, writing nothing
 | `--require-services` | A phase whose service is down is fatal (exit 3) **before anything is written**, instead of a warning and a run without that annotation. |
 | `--fail-on never\|incident\|loss` · `--strict` | What counts as a failure at the end of a run. `never` (the default) means losses do not change the exit status. `incident` fails on the third block — a service died, a container raised, a whole phase or a document was lost — which is the block titled *this needs a human*. `loss` adds the defects of the source, which on seventeenth-century OCR is never empty: that level is for a CI freezing an already-clean corpus, not for a daily run. The second block never counts at any level — a guard that rejects a hallucination did its job. `--strict` is `--fail-on incident`. |
 | `--max-page-loss PCT` | A volume losing more than PCT % of its pages is a failure rather than a degraded success. The chain already fails a document whose pages are *all* unusable; this lowers that implicit 100. |
-| `--dashboard` · `--plain` | Draw the live panel, or print the per-document lines without one. Chosen automatically: a panel in a terminal, plain output in a pipe, a CI log (`CI`, `GITHUB_ACTIONS`, …), a `TERM=dumb`, a window under 56×12, or under `-q`. `TDOUCE_UI=auto\|plain\|dashboard` sits between the automatic rules and these flags. The end-of-run report is rendered from the same record either way, so it is identical to the byte. |
+| `--dashboard` · `--plain` | Draw the live panel, or print the per-document lines without one. Chosen automatically: a panel in a terminal, plain output in a pipe, a CI log (`CI`, `GITHUB_ACTIONS`, …), a `TERM=dumb`, a window under 56×16 (the panel is fifteen rows before a single incident), or under `-q`. `TDOUCE_UI=auto\|plain\|dashboard` sits between the automatic rules and these flags. The end-of-run report is rendered from the same record either way, so it is identical to the byte. |
 | `-n, --dry-run` | Resolve everything, list the plan, write nothing. |
 | `--fail-fast` | Stop at the first volume that fails. |
 | `--max-failures N` | Stop after N failed volumes. |
@@ -648,7 +648,7 @@ breakdown and for what the eleven rules check.
 | **1** | partial failure: some volumes failed, others did not |
 | **2** | usage error: unknown flag, contradictory flags, unknown config key |
 | **3** | misconfiguration, nothing ran: input missing, empty corpus, a selector matching nothing, `--require-services` with a service down |
-| **4** | total failure: everything that ran failed. Distinct from 1 because the remedy differs — 1 is worth retrying volume by volume, 4 usually means the input or the setup is wrong. A run stopped early by `--fail-fast` is never 4: it did not prove the corpus unconvertible |
+| **4** | total failure: everything that ran failed, including the case where nothing could even be opened. Distinct from 1 because the remedy differs — 1 is worth retrying volume by volume, 4 usually means the input or the setup is wrong. A run stopped early by `--fail-fast` is never 4: it did not prove the corpus unconvertible |
 | **5** | the quality gate was not met: everything converted, and `--fail-on` or `--max-page-loss` is still not satisfied. Only when nothing else failed — a failed volume is the more concrete fact and takes the code |
 
 "Everything converted" and "exit 5" only contradict each other if a written

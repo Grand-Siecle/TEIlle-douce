@@ -72,7 +72,13 @@ class WarningDigest:
         # The integers the message carried, summed position by position:
         # "78× page N: N duplicate ALTO id(s)" is only usable next to
         # "4 129 ids", and the fold is where that number would be lost.
-        numbers = [int(found) for found in _DIGITS.findall(body)]
+        # Capped before `int()`: Python refuses to convert a digit run
+        # past 4 300 characters, and that ValueError would come out of
+        # `logger.warning(...)` in the middle of the pipeline and be
+        # booked as a failed volume. A number that long is not a count
+        # anyway.
+        numbers = [int(found) for found in _DIGITS.findall(body)
+                   if len(found) <= 18]
         while len(line.totals) < len(numbers):
             line.totals.append(0)
         for index, number in enumerate(numbers):

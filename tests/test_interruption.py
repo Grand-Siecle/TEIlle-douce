@@ -240,3 +240,36 @@ def test_a_second_interrupt_during_the_teardown_still_restores_everything(
 
     assert logging.getLogger().handlers == before
     assert run_module._QUIET is False
+
+
+def test_a_panel_that_would_not_shut_down_says_so_where_it_can_be_read(
+        monkeypatch):
+    """The message went out while the digest handler was the only
+    non-file handler on the root logger — a handler that prints nothing
+    by design, read through a panel that had just come down. So the one
+    explanation for a terminal left with no cursor was written to a
+    screen nobody would ever draw again."""
+    import io
+    import logging
+
+    from teille_douce.report.collector import Run
+
+    run = Run(input_dir="OCR", output_dir="out", volumes=1, pages=1)
+
+    def explode(self, *exception):
+        raise RuntimeError("Live.stop blew up")
+
+    monkeypatch.setattr(run_module.Dashboard, "__exit__", explode)
+
+    seen = io.StringIO()
+    watcher = logging.StreamHandler(seen)
+    root = logging.getLogger()
+    root.addHandler(watcher)
+    try:
+        with run_module.panel_installed(run, active=True):
+            pass
+    finally:
+        root.removeHandler(watcher)
+
+    assert "did not shut down cleanly" in seen.getvalue()
+    assert "Live.stop blew up" in seen.getvalue()

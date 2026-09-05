@@ -1,7 +1,7 @@
 # -----------------------------------------------------------
 # What a run leaves behind for the reader who comes back on Thursday.
 #
-#   tei_output/.teille-douce/runs/20260903-180824/
+#   tei_output/.teille-douce/runs/20260903-180824-0031415/
 #       run.json         settings, argv, status per document
 #       incidents.jsonl  one incident per line, append-only, greppable
 #       pipeline.log     this run's log, kept beside its own index
@@ -417,3 +417,50 @@ def test_an_unreadable_volume_counts_the_same_way():
 
     assert run.panel().volumes_failed == 1
     assert run.panel().volumes_to_go == 0
+
+
+# =============================================================================
+# A record that is not a record
+# =============================================================================
+
+@pytest.mark.parametrize("written", ["null", "[]", '"a string"',
+                                     '{"documents": ["a"]}'])
+def test_a_manifest_of_the_wrong_shape_is_refused_the_documented_way(
+        tmp_path, written):
+    """`manifest.get(...)` assumed the JSON decoded to an object. A
+    truncated write flushed as `null` is valid JSON and not a dict, so it
+    raised AttributeError — which is not the ValueError the caller
+    catches, so it left the CLI as a raw traceback with exit 1, and a
+    wrapper read "some volumes failed"."""
+    store = a_store(tmp_path)
+    store.finish(argv=["teille-douce"], settings={}, documents={},
+                 exit_code=0)
+    (store.path / "run.json").write_text(written, encoding="utf-8")
+
+    with pytest.raises(ValueError):
+        RunStore.failed_last_time(tmp_path / "tei_output")
+
+
+# =============================================================================
+# Pruning does not eat the run that is doing it
+# =============================================================================
+
+def test_the_running_run_is_never_pruned_from_under_itself(tmp_path):
+    """Every run prunes, so a long one outranked by ten later short ones
+    was rmtree'd while it was still writing: `_ready` quietly recreated
+    the directory, the manifest went back into it and the incident index
+    did not — an index outlived by its transcript — and the next
+    --retry-failed reported nothing to retry."""
+    live = a_store(tmp_path, when=datetime(2026, 1, 1, 0, 0, 0))
+    live.incident(Loss(Code.VOLUME_UNREADABLE, "LIV0001", "expand",
+                       Locator.document("LIV0001"), count=1, total=1,
+                       detail="permission denied"))
+
+    for later in range(12):
+        newer = a_store(tmp_path, when=datetime(2026, 1, 2, 0, 0, later))
+        newer.finish(argv=["teille-douce"], settings={}, documents={},
+                     exit_code=0)
+        RunStore.prune(tmp_path / "tei_output", spare=live.path)
+
+    assert live.path.is_dir()
+    assert (live.path / "incidents.jsonl").exists()

@@ -64,14 +64,19 @@ def test_excluding_every_volume_stops_the_run(tmp_path):
 
 def test_a_corpus_of_only_broken_archives_is_a_failure_not_a_misconfiguration(tmp_path):
     """The input was there and unreadable, which is a different diagnosis —
-    and the failures have to be named, not swallowed."""
+    and the failures have to be named, not swallowed.
+
+    4 and not 1: nothing was converted and everything that could fail
+    did, which is the whole distinction 4 draws. 1 tells a wrapper to
+    retry volume by volume, and there is no volume here worth retrying.
+    """
     ocr = tmp_path / "ocr"
     ocr.mkdir()
     (ocr / "broken.zip").write_bytes(b"not a zip at all")
 
     res, _ = _executer_main(tmp_path, ocr, **MODE_COURT)
 
-    assert res.returncode == 1
+    assert res.returncode == 4
     assert "broken.zip" in res.stdout
 
 
@@ -1109,7 +1114,7 @@ def test_the_refusal_to_read_anything_still_names_what_held_no_alto(tmp_path):
 
     res, _ = _executer_main(tmp_path, ocr, COLUMNS="200", **MODE_COURT)
 
-    assert res.returncode == 1
+    assert res.returncode == 4
     assert "1 volume(s) could not be opened. (1 more held no ALTO)" \
         in res.stdout
 
@@ -1186,7 +1191,7 @@ def _corpus_nothing_readable(ocr, out):
     (ocr / "LIV9005_reconciled.zip").write_bytes(b"not a zip")
     (ocr / "LIV9003_reconciled").mkdir()
     (ocr / "LIV9003_reconciled" / "n.txt").write_text("x", encoding="utf-8")
-    return (), 1
+    return (), 4
 
 
 @pytest.mark.parametrize("build", [
@@ -1621,11 +1626,48 @@ def test_a_corpus_nothing_could_be_opened_from_still_leaves_a_record(tmp_path):
 
     res, sortie = _executer_main(tmp_path, ocr, COLUMNS="200", **MODE_COURT)
 
-    assert res.returncode == 1
+    assert res.returncode == 4
     run, = _runs_of(sortie)
     manifest = json.loads((run / "run.json").read_text(encoding="utf-8"))
     assert manifest["documents"] == {"LIV9101_reconciled": "failed",
                                      "LIV9102_reconciled": "failed"}
+    # And the index, not only the manifest. The document loop never
+    # starts on this path, so no reporter was ever built: the run that
+    # failed hardest was the one that left no account of why.
+    # No incident index, and rightly: a corrupt archive is block 1, the
+    # source being defective, and an index of everything is an index of
+    # nothing. The manifest above is what a --retry-failed reads.
+    assert not (run / "incidents.jsonl").exists()
+
+
+def test_a_corpus_nothing_could_be_opened_from_indexes_its_incidents(tmp_path):
+    """The other half of the same door. An unreadable DIRECTORY is block
+    3 — a mode to change, not a file to repack — and the document loop
+    never starts on this path, so no reporter was ever built and the run
+    that failed hardest left no account of why."""
+    import json
+    import stat
+
+    ocr = tmp_path / "ocr"
+    ocr.mkdir()
+    shut = ocr / "LIV9201_reconciled"
+    shutil.copytree(ALTO_MIN / DOCUMENT, shut)
+
+    if not _unreadable(shut):
+        __import__("os").chmod(shut, stat.S_IRWXU)
+        pytest.skip("running as a user that ignores file permissions")
+    try:
+        res, sortie = _executer_main(tmp_path, ocr, COLUMNS="200",
+                                     **MODE_COURT)
+    finally:
+        __import__("os").chmod(shut, stat.S_IRWXU)
+
+    assert res.returncode == 4, res.stdout[-2000:]
+    run, = _runs_of(sortie)
+    indexed = [json.loads(line) for line
+               in (run / "incidents.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert [(entry["code"], entry["document"]) for entry in indexed] \
+        == [("volume_unreadable", "LIV9201_reconciled")]
 
 
 def test_a_manifest_that_cannot_be_read_is_not_silence(tmp_path):

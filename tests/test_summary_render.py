@@ -147,12 +147,31 @@ def test_a_clean_run_is_not_told_to_retry_anything():
     assert "--retry-failed" not in rendered(outcome())
 
 
-def test_an_incident_offers_the_report_that_shows_it_in_full():
+def test_an_incident_points_at_the_index_that_holds_it():
+    """At the file, not at `teille-douce report --block incident`: that
+    subcommand does not exist, and the run spent its last line telling
+    the reader to type something that exits 2 with "unrecognized
+    arguments"."""
     record = RunRecord()
     record.add(Loss(Code.PHASE_LOST, "D1", "enrich", Locator.document("D1"),
                     count=0, total=1402, detail="PyHellen down"))
 
-    assert "report --block incident" in rendered(outcome(record=record))
+    shown = rendered(outcome(record=record,
+                             report_path=Path("out/.teille-douce/runs/r1")))
+
+    assert "report --block" not in shown
+    assert "out/.teille-douce/runs/r1/incidents.jsonl" in shown
+
+
+def test_no_index_is_offered_when_no_record_was_kept():
+    """A read-only output directory keeps none, and pointing at a file
+    that is not there is worse than saying nothing."""
+    record = RunRecord()
+    record.add(Loss(Code.PHASE_LOST, "D1", "enrich", Locator.document("D1"),
+                    count=0, total=1402, detail="PyHellen down"))
+
+    assert "incidents.jsonl" not in rendered(
+        outcome(record=record, report_path=None))
 
 
 # =============================================================================
@@ -424,3 +443,68 @@ def test_two_phases_of_one_volume_still_add_their_own_totals():
 
     # One diagnosis, two phases: 53 of 1 406.
     assert "53 of 1 406 containers" in rendered(outcome(record=record))
+
+
+# =============================================================================
+# The right column of a summary line is the half that carries the news
+# =============================================================================
+
+def test_two_losses_that_differ_only_in_their_cause_do_not_render_alike():
+    """`_columns` dropped the right half with no marker when the line did
+    not fit, and the right half is the only thing that tells two losses
+    sharing a code apart — which is the entire reason the grouping key is
+    (code, detail). At eighty columns, the width a piped run gets, two
+    different causes rendered as the same line."""
+    record = RunRecord()
+    for detail in ("PyHellen refused these containers",
+                   "VieuxParler refused these containers"):
+        record.add(Loss(Code.CONTAINER_FAILED, "LIV0038_reconciled", "enrich",
+                        Locator.document("LIV0038_reconciled"), count=1402,
+                        total=4000, detail=detail))
+
+    shown = [line for line in render_summary(outcome(record=record), width=80)
+             if "containers" in line]
+
+    assert len(shown) == 2
+    assert len(set(shown)) == 2, shown
+
+
+def test_a_two_line_failure_reason_stays_one_line():
+    """An httpx reason is two lines. Sliced by characters with the
+    control characters left in, one FAILED record became two screen
+    lines, the second a bare fragment — and FAILED is the token every
+    wrapper this project has greps for."""
+    shown = render_summary(outcome(
+        volumes_written=26, exit_code=1,
+        failed_documents=(("LIV0038_reconciled",
+                           "Server disconnected\nwithout a response"),)),
+        width=92)
+
+    assert not any("\n" in line for line in shown)
+    failed, = [line for line in shown if "FAILED" in line]
+    assert "without a response" not in failed or " " in failed
+
+
+def test_a_wide_glyph_is_measured_in_columns_and_not_in_characters():
+    """`len()` over CJK let the line run off the edge of the very
+    terminals the width contract was written for."""
+    from teille_douce.report.text import cells
+
+    record = RunRecord()
+    record.add(Loss(Code.PAGE_UNUSABLE, "漢字巻" * 12, "sourcedoc",
+                    Locator.document("漢字巻" * 12), count=1, total=2,
+                    detail="出力ディレクトリが読めない"))
+
+    for width in (56, 72, 80, 92, 100, 140):
+        for line in render_summary(outcome(record=record), width=width):
+            assert cells(line) <= min(width, 100), (width, cells(line), line)
+
+
+def test_one_volume_is_not_written_as_one_volumes():
+    record = RunRecord()
+    record.add(Loss(Code.PHASE_LOST, "D1", "enrich", Locator.document("D1"),
+                    count=1402, total=1402, detail="PyHellen down"))
+
+    shown = render_summary(outcome(record=record, exit_code=5), width=92)
+
+    assert not any("1 volumes" in line for line in shown), shown

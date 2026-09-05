@@ -682,7 +682,7 @@ def _keep_the_record(store, settings, failed, exit_code):
                  settings=settings.as_manifest(),
                  documents={Path(name).stem: "failed" for name, _ in failed},
                  exit_code=exit_code)
-    RunStore.prune(settings.output_dir)
+    RunStore.prune(settings.output_dir, spare=store.path)
 
 
 @contextmanager
@@ -730,24 +730,107 @@ def panel_installed(reporter, active):
         # kept the digest handler, lost the console one and stayed quiet
         # for good — the state this context manager exists to prevent,
         # one frame inward.
+        teardown = None
         try:
             panel.__exit__(None, None, None)
         except BaseException as reason:
             # Swallowed so the rest of the teardown still happens, but
             # not silently: a Live that failed to stop leaves the cursor
             # somewhere, and the operator is owed the reason.
-            logging.getLogger(__name__).warning(
-                "the live panel did not shut down cleanly (%s)", reason)
+            teardown = reason
         _set_quiet(was_quiet)
         root.removeHandler(digest)
         for handler in replaced:
             root.addHandler(handler)
+        if teardown is not None:
+            # AFTER the console handler is back. Logged where it was
+            # raised, the only non-file handler on root was the digest —
+            # which prints nothing by design and is read through a panel
+            # that had just come down — so the one message explaining a
+            # terminal left with no cursor went to a screen nobody would
+            # ever draw again.
+            logging.getLogger(__name__).warning(
+                "the live panel did not shut down cleanly (%s)", teardown)
 
 
 def _pages_per_second(reporter, started):
-    """Measured, like everything else on the panel."""
+    """Measured, like everything else on the panel.
+
+    Off the collector's own counter and not off a whole `PanelState`:
+    this is recomputed on every state change, and a volume's worth of
+    per-container progress is fourteen hundred of them.
+    """
     elapsed = perf_counter() - started
-    return reporter.panel().pages_written / elapsed if elapsed > 0 else 0.0
+    return reporter.pages_written / elapsed if elapsed > 0 else 0.0
+
+
+def _phase_progress(reporter, progress, task, doc_name, phase, unit):
+    """A progress callback that tells the panel, not only the old bar.
+
+    Rich's `Progress` was the only thing these callbacks fed, so
+    `Run.phase()` had exactly one caller in the whole codebase —
+    `_phase_lost` — and only ever for a phase that DIED. Every line the
+    panel draws for a phase that is going well, its bar and its rate, was
+    unreachable code: a real run showed three zeroed loss counters, a
+    blank phase block and a clock that did not move.
+    """
+    def report(current, total):
+        progress.update(task, completed=current, total=total)
+        if reporter is not None:
+            # `total` stays None when the phase does not know it yet —
+            # Rich's own indeterminate. The panel renders a count with no
+            # denominator rather than inventing a zero.
+            reporter.phase(doc_name, phase, PhaseState.RUNNING,
+                           done=current, total=total, unit=unit)
+    return report
+
+
+class _ProgressToPanel:
+    """A Rich `Progress` that also tells the panel.
+
+    `build_sourcedoc` speaks to a `Progress` and to nothing else, and it
+    runs the multiprocessing pool — threading a second callback down
+    through the worker fan-out for the reporter's sole benefit would put
+    a picklability constraint on the panel. Intercepting the one call it
+    makes costs nothing and keeps the builder unaware there is a panel.
+    """
+
+    def __init__(self, progress, task, reporter, doc_name, phase, unit,
+                 total):
+        self._progress = progress
+        self._task = task
+        self._reporter = reporter
+        self._doc = doc_name
+        self._phase = phase
+        self._unit = unit
+        self._total = total
+        self._done = 0
+
+    def __getattr__(self, name):
+        return getattr(self._progress, name)
+
+    def update(self, task, **fields):
+        self._progress.update(task, **fields)
+        if task != self._task or self._reporter is None:
+            return
+        self._done += fields.get("advance", 0)
+        if "completed" in fields:
+            self._done = fields["completed"]
+        self._reporter.phase(self._doc, self._phase, PhaseState.RUNNING,
+                             done=self._done, total=self._total,
+                             unit=self._unit)
+
+
+def _phase_done(reporter, doc_name, phase, done, total, unit, note=""):
+    """The phase stopped, and stopped well.
+
+    Left RUNNING it keeps a spinner turning beside a count that will
+    never change again — the panel claiming work that has finished.
+    """
+    if reporter is None:
+        return
+    reporter.phase(doc_name, phase, PhaseState.DONE, done=done, total=total,
+                   unit=unit, note=note)
 
 
 def _process_document(doc_name, filepaths, doc_dir, df_meta, config,
@@ -805,12 +888,26 @@ def _process_document(doc_name, filepaths, doc_dir, df_meta, config,
     # Build sourceDoc (parallel processing)
     tree.build_sourcedoc(
         config,
-        progress=progress,
+        progress=_ProgressToPanel(progress, task_pages, reporter, doc_name,
+                                  "sourceDoc", "pages", len(filepaths)),
         parent_task_pages=task_pages,
     )
 
     if reporter is not None:
-        reporter.pages_read(doc_name, len(filepaths) - len(tree.skipped_pages))
+        read = len(filepaths) - len(tree.skipped_pages)
+        reporter.pages_read(doc_name, read)
+        # The pages it could not use, named. They are the reason this
+        # phase has a line of its own, and three page numbers are what
+        # sends the operator to the right files.
+        lost = sorted(tree.skipped_pages)[:3]
+        note = ""
+        if tree.skipped_pages:
+            more = "" if len(tree.skipped_pages) <= 3 else ", …"
+            note = (f"{read} of {len(filepaths)} pages read · "
+                    f"{len(tree.skipped_pages)} unusable "
+                    f"({', '.join(str(page) for page in lost)}{more})")
+        _phase_done(reporter, doc_name, "sourceDoc", read, len(filepaths),
+                    "pages", note=note)
         if tree.repaired_ids:
             # A defect of the source that was REPAIRED: nothing is
             # missing from the output because of it, and filing it
@@ -867,8 +964,8 @@ def _process_document(doc_name, filepaths, doc_dir, df_meta, config,
             f"[cyan]{escape(doc_name)}: Annotation linguistique[/cyan]", total=None, visible=True
         )
 
-        def _enrich_progress(current, total):
-            progress.update(task_enrich, completed=current, total=total)
+        _enrich_progress = _phase_progress(reporter, progress, task_enrich,
+                                           doc_name, "enrich", "containers")
 
         enrich_stats = tree.enrich_body(progress_callback=_enrich_progress)
         progress.update(task_enrich, visible=False)
@@ -899,6 +996,9 @@ def _process_document(doc_name, filepaths, doc_dir, df_meta, config,
         elif reporter is not None and enrich_stats:
             _containers_failed(reporter, doc_name, "enrich", enrich_stats,
                                "PyHellen refused these containers")
+            _phase_done(reporter, doc_name, "enrich",
+                        enrich_stats.get("containers_enriched", 0),
+                        enrich_stats.get("containers_found", 0), "containers")
 
     # Step 4: Text modernization (applied after enrichment)
     if do_modernize:
@@ -906,8 +1006,8 @@ def _process_document(doc_name, filepaths, doc_dir, df_meta, config,
             f"[cyan]{escape(doc_name)}: Modernisation du texte[/cyan]", total=None, visible=True
         )
 
-        def _mod_progress(current, total):
-            progress.update(task_mod, completed=current, total=total)
+        _mod_progress = _phase_progress(reporter, progress, task_mod,
+                                        doc_name, "modernize", "containers")
 
         mod_stats = tree.modernize_body(
             line_data=line_data,
@@ -957,6 +1057,9 @@ def _process_document(doc_name, filepaths, doc_dir, df_meta, config,
             visible=True,
         )
 
+        if reporter is not None:
+            reporter.phase(doc_name, "ner", PhaseState.RUNNING,
+                           note="reading the document")
         try:
             from teille_douce.enrichment.ner_pipeline import run_ner, summarize
 
@@ -964,15 +1067,35 @@ def _process_document(doc_name, filepaths, doc_dir, df_meta, config,
             summary = summarize(resolved)
             if summary:
                 say(f"  [dim]NER: {summary}[/dim]")
+            _phase_done(reporter, doc_name, "ner", 1, 1, "documents",
+                        note=summary or "no entity found")
 
+        # The third phase reported nothing at all: a run whose NER died on
+        # every volume exited 0 under `--fail-on incident`, drew a green
+        # tick on the banner and printed "lost to an incident … nothing"
+        # over a corpus with no <standOff> in it. Every phase reports what
+        # it lost — this one was the exception that proved nobody had
+        # tried it.
+        #
+        # Per document and against a denominator of one: NER runs over the
+        # whole tree in one step, so the honest measure of what was lost
+        # is the document itself.
         except ImportError as e:
             console.print(
                 f"[yellow]Warning: NER dependencies not installed "
                 f"({escape(str(e))}) — skipping NER.[/yellow]"
             )
+            if reporter is not None:
+                reporter.phase(doc_name, "ner", PhaseState.LOST, done=0,
+                               total=1, unit="documents",
+                               reason=f"NER dependencies not installed ({e})")
         except Exception as e:
             logging.getLogger(__name__).error("NER pipeline failed: %s", e, exc_info=True)
             console.print(f"[yellow]Warning: NER failed ({escape(str(e))}) — continuing.[/yellow]")
+            if reporter is not None:
+                reporter.phase(doc_name, "ner", PhaseState.LOST, done=0,
+                               total=1, unit="documents",
+                               reason=f"NER failed ({e})")
 
         progress.update(task_ner, visible=False)
 
@@ -1379,10 +1502,36 @@ def execute(args):
             )
             for name, reason in broken:
                 console.print(f"  [red]FAILED[/red] {escape(f'{name}: {reason}')}")
-            # A record even here: two volumes failed, and without it the
-            # next --retry-failed is told nothing did.
-            _keep_the_record(store, settings, broken, EXIT_SOME_FAILED)
-            sys.exit(EXIT_SOME_FAILED)
+            # Indexed even here. The document loop never starts on this
+            # path, so no reporter was ever built and `incidents.jsonl`
+            # was simply absent: the run that failed hardest left the
+            # least behind, and `--retry-failed` afterwards had a
+            # manifest but no account of why.
+            if store is not None:
+                # The same two diagnoses the document loop draws, in the
+                # same order: a corrupt archive is a file to repack, a
+                # directory this process may not open is a mode to
+                # change, and filing one as the other sends the operator
+                # to the wrong remedy with the wrong address.
+                for name, reason in failed_archives:
+                    store.incident(Loss(
+                        Code.ARCHIVE_CORRUPT, name, "expand",
+                        Locator.file(settings.ocr_dir / name),
+                        count=1, total=1, detail=reason))
+                seen = {name for name, _ in failed_archives}
+                for name, reason in broken:
+                    if name in seen:
+                        continue
+                    store.incident(Loss(
+                        Code.VOLUME_UNREADABLE, name, "expand",
+                        Locator.document(name), count=1, total=1,
+                        detail=reason))
+            # 4, not 1. Nothing was converted and everything that could
+            # fail did — which is the distinction 4 exists to draw, and
+            # the reason it exists: 1 tells a wrapper to retry volume by
+            # volume, and there is no volume here worth retrying.
+            _keep_the_record(store, settings, broken, EXIT_ALL_FAILED)
+            sys.exit(EXIT_ALL_FAILED)
         # Whichever wording follows, say how many volumes were there and
         # empty. Exit 3 reads as "your input directory is wrong", which is
         # usually right — but not when the directory is the right one and
@@ -1852,7 +2001,7 @@ def execute(args):
                                 **{Path(name).stem: "failed"
                                    for name, _ in failed_docs}},
                      exit_code=exit_code)
-        RunStore.prune(settings.output_dir)
+        RunStore.prune(settings.output_dir, spare=store.path)
         if store.unwritable:
             # Said once, and said: a report nobody can find later is a
             # report that was not written, and silence about it is worse
@@ -1864,7 +2013,10 @@ def execute(args):
                                     elapsed=perf_counter() - run_started,
                                     fail_on=settings.fail_on,
                                     page_loss_failures=too_lossy,
-                                    max_page_loss=settings.max_page_loss)
+                                    max_page_loss=settings.max_page_loss,
+                                    report_path=(store.path if store is not None
+                                                 and not store.unwritable
+                                                 else None))
     console.print("")
     for line in render_summary(outcome, width=console.width):
         console.print(escape(line), highlight=False)

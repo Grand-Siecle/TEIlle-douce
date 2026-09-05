@@ -9,6 +9,7 @@ the live panel, a list of events for the journal, or a `RunOutcome` for
 the summary.
 """
 
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -71,13 +72,27 @@ class Run:
         self._on_change = on_change or (lambda: None)
         # Set by the run when it has somewhere to index incidents.
         self.on_incident = None
+        # The panel is drawn from another thread — it has to be, or the
+        # clock stops whenever the pipeline is busy, which is the whole
+        # of a four-hour run. So every read of the mutable state and
+        # every write to it takes this. Reentrant, because a mutator
+        # calls `_on_change` while holding it and the draw that follows
+        # reads what it just wrote.
+        #
+        # ONE lock, held by the drawing side across the whole render
+        # rather than a second lock of its own: the reader also walks
+        # `digest` and `record`, and two locks taken in two orders is a
+        # four-hour run hanging with a half-drawn frame on the screen.
+        self.lock = threading.RLock()
 
     # -- what the pipeline tells it ---------------------------------------
 
     def document_started(self, name, pages, at=None):
         self._open = name
         self._open_pages = pages
-        self._open_read = 0
+        # None, not 0: `or` cannot tell "not measured yet" from
+        # "measured, and every page was unusable".
+        self._open_read = None
         self._open_started = at if at is not None else time.monotonic()
         self._phases = {}
         self._on_change()
@@ -105,26 +120,40 @@ class Run:
     def phase(self, document, name, state, done=0, total=None, unit="",
               rate=None, waiting=None, timeout=None, note="", reason="",
               elapsed=None):
-        self._phases[name] = PhaseLine(
-            name=name, state=state, done=done, total=total, unit=unit,
-            rate=rate, waiting=waiting, timeout=timeout, note=note,
-            reason=reason, elapsed=elapsed)
-        self._on_change()
         if state is PhaseState.LOST:
             # A reporter must not be able to kill the run it reports on.
             # `render_phase_loss` refuses a lost phase with no cause and
             # no denominator — rightly, when a call site is writing one —
             # but here the caller is already in trouble, and raising would
             # also leave the record holding a loss the journal never got.
+            #
+            # Normalised BEFORE the line is stored, and the redraw moved
+            # after: the line was published with `total=None` and the
+            # draw that followed rendered it, so the coercion two lines
+            # down arrived after `render_count` had already raised —
+            # inside the one component that must never end the run.
             reason = reason or "cause unknown"
             total = 0 if total is None else total
-            self.lost(Loss(Code.PHASE_LOST, document, name,
-                           Locator.document(document), count=done,
-                           total=total, detail=reason))
-            # Through `render_phase_loss` and not a sentence of its own:
-            # the denominator is what makes the zero readable, and a
-            # second way of writing a loss is a second way of writing it
-            # wrongly.)
+        with self.lock:
+            self._phases[name] = PhaseLine(
+                name=name, state=state, done=done, total=total, unit=unit,
+                rate=rate, waiting=waiting, timeout=timeout, note=note,
+                reason=reason, elapsed=elapsed)
+            if state is PhaseState.LOST:
+                # What the phase LOST, not what it managed: everywhere
+                # else `Loss.count` is the amount gone — pages unusable,
+                # ids repaired, one failed volume — and `RunRecord.total`
+                # sums it on that reading. Storing `done` here made three
+                # documents whose enrichment died print `incident 0` on
+                # the row directly above their own three incident lines.
+                self.lost(Loss(Code.PHASE_LOST, document, name,
+                               Locator.document(document),
+                               count=max(0, total - done),
+                               total=total, detail=reason))
+                # Through `render_phase_loss` and not a sentence of its
+                # own: the denominator is what makes the zero readable,
+                # and a second way of writing a loss is a second way of
+                # writing it wrongly.
         self._on_change()
 
     def warning(self, document, message):
@@ -134,10 +163,12 @@ class Run:
         else off the screen — and that is how a run that is repairing a
         source defect comes to look like a run that is failing.
         """
-        self.digest.add(document, message)
+        with self.lock:
+            self.digest.add(document, message)
 
     def lost(self, loss):
-        self.record.add(loss)
+        with self.lock:
+            self.record.add(loss)
         if self.on_incident is not None:
             self.on_incident(loss)
 
@@ -170,7 +201,14 @@ class Run:
             # losing 3 wrote 751 surfaces, and claiming 754 one line above
             # "pages unusable 3 of 754" is the summary contradicting
             # itself. `pages_read` is tracked for exactly this.
-            self._pages_written += (self._open_read or self._open_pages)
+            #
+            # `or` undid it at the one extreme it mattered most: a volume
+            # whose every ALTO is unusable does not raise, so it reported
+            # `pages_read(doc, 0)`, fell through to `_open_pages`, and the
+            # headline read "754 of 754 pages written" directly above
+            # "pages unusable 754 of 754".
+            self._pages_written += (self._open_pages if self._open_read is None
+                                    else self._open_read)
         else:
             self._pages_lost += self._open_pages
             self._failed.append((name, reason))
@@ -182,7 +220,7 @@ class Run:
                            Locator.document(name), count=1, total=1,
                            detail=reason))
         self._open = None
-        self._open_read = 0
+        self._open_read = None
         self._open_pages = 0
         self._on_change()
 
@@ -212,6 +250,13 @@ class Run:
         return f"~{_spoken(seconds)} (median of {len(ordered)})"
 
     def panel(self, now=None, eta="", pages_per_second=0.0):
+        """A snapshot for the panel.
+
+        `digest` and `record` go in by reference and are walked by the
+        renderer afterwards, so a caller drawing from another thread
+        holds `self.lock` across the render and not merely across this
+        call. `Dashboard` does.
+        """
         now = now if now is not None else time.monotonic()
         current = None
         if self._open is not None:
@@ -225,7 +270,7 @@ class Run:
             services=self.services,
             log_path=str(self.log_path) if self.log_path else "(none)",
             pages_written=self._pages_written,
-            pages_in_flight=self._open_read,
+            pages_in_flight=self._open_read or 0,
             pages_total=self.pages_total,
             volumes_written=self._written,
             # Archives and unreadable directories are failures too: they
@@ -252,6 +297,14 @@ class Run:
         return tuple(lines)
 
     @property
+    def pages_written(self):
+        """What is on disk. Cheap on purpose: the rate is recomputed on
+        every state change, and a volume's worth of per-container
+        callbacks is fourteen hundred of them — each one used to build a
+        whole `PanelState` to read this one integer."""
+        return self._pages_written
+
+    @property
     def open_document(self):
         """The volume being converted, or None between two of them.
 
@@ -271,7 +324,8 @@ class Run:
         return tuple(self._failed_archives)
 
     def finished(self, exit_code, elapsed=None, fail_on="never", headline="",
-                 page_loss_failures=(), max_page_loss=100.0):
+                 page_loss_failures=(), max_page_loss=100.0,
+                 report_path=None):
         return RunOutcome(
             input_dir=self.input_dir, output_dir=self.output_dir,
             volumes_total=self.volumes_total,
@@ -286,4 +340,5 @@ class Run:
             failed_archives=tuple(self._failed_archives),
             headline=headline,
             page_loss_failures=tuple(page_loss_failures),
-            max_page_loss=max_page_loss)
+            max_page_loss=max_page_loss,
+            report_path=report_path)

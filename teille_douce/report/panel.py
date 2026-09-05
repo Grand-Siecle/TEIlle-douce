@@ -13,17 +13,20 @@ structural, not a convention someone has to remember.
 from dataclasses import dataclass, field
 from typing import Optional
 
-import re
-import unicodedata
-
-from .counts import PhaseState, _grouped, render_phase_loss
-
-# Newlines, tabs, carriage returns and the rest: a clip by length keeps
-# them, and one of them turns one rendered line into two on screen.
-_CONTROL = re.compile(r"[\x00-\x1f\x7f]")
+from .counts import (PhaseState, _grouped, render_count,
+                     render_phase_loss)
+# The text arithmetic — cells, clipping, two-column padding — is shared
+# with the summary, which measured in `len()` and kept no control
+# characters out. Two implementations of the same contract is two ways of
+# breaking it.
+from .text import cells, clip, pad, shorten_path
 
 MAX_WIDTH = 100
 _MARGIN = 1
+
+# Header, services, rule, bar, counts, blank. The rows that say what run
+# this is; the last-resort trim keeps them and cuts inward from there.
+_HEAD_ROWS = 6
 
 # This pipeline is named after taille-douce, copperplate engraving, and an
 # engraver renders a value by the density of the hatching. So the bar is a
@@ -160,40 +163,6 @@ def _clock(seconds):
     return f"{minutes}:{seconds:02d}"
 
 
-def cells(text):
-    """Terminal columns, not characters.
-
-    A CJK glyph occupies two columns for one `len()`, so a width contract
-    measured in characters lets the line run off the edge of the very
-    terminals it was written for.
-    """
-    return sum(2 if unicodedata.east_asian_width(c) in "WF" else 1
-               for c in text)
-
-
-def clip(text, room):
-    """`text`, safe to put on one line of `room` columns.
-
-    Control characters go first: clipping by length keeps a newline, so
-    the panel renders one line and the terminal shows two — the second
-    unindented and unclipped. httpx error messages are two lines, so this
-    is not hypothetical.
-    """
-    text = _CONTROL.sub(" ", text)
-    if room <= 0:
-        return ""
-    if cells(text) <= room:
-        return text
-    kept, used = [], 0
-    for char in text:
-        width = cells(char)
-        if used + width > room - 1:
-            break
-        kept.append(char)
-        used += width
-    return "".join(kept) + "…"
-
-
 def _plural(count, noun):
     return f"{count} {noun}" if count == 1 else f"{count} {noun}s"
 
@@ -201,15 +170,16 @@ def _plural(count, noun):
 def _pad(left, right, room):
     """Left flush, right flush, one line, never wider than the room.
 
-    Measured in cells throughout, and clipped rather than sliced: a
-    negative room used to make `[:room]` count from the END, so the
-    function returned three characters for a budget of minus two.
+    `text.pad`, which keeps the RIGHT column and shortens the left. Every
+    caller here wants it that way round: on the right sit `elapsed
+    1:12:40`, `47%`, `9.1 pages/s`, `754 pages   3:21`, `2 volumes` —
+    short, fixed, and the news. On the left sit the elastic things.
+    Clipping the composed line, which is what this did, took the right
+    column off the panel entirely as soon as the left grew: an absolute
+    `-o` path — the ordinary case — cost the top line its elapsed time
+    and its estimate, on every frame.
     """
-    left, right = _CONTROL.sub(" ", left), _CONTROL.sub(" ", right)
-    gap = room - cells(left) - cells(right)
-    if gap >= 1:
-        return left + " " * gap + right
-    return clip(left + " " + right, room)
+    return pad(left, right, room)
 
 
 def _bar(state, width, unicode_):
@@ -285,19 +255,25 @@ def _services(state, room, unicode_):
             used += cells(text)
         return kept, used, dropped
 
-    # Two passes: the note has to be paid for before the services are
-    # chosen, or appending it afterwards pushes the line past the edge.
+    # The note has to be paid for before the services are chosen, or
+    # appending it afterwards pushes the line past the edge. Its width
+    # depends on how many were dropped, and the reserve is what changes
+    # that — so the two go round until the reserve covers the note it
+    # produces. Two fixed passes reserved " +9 more" and then wrote
+    # " +10 more", one cell over the edge. Each turn strictly widens the
+    # reserve, so it settles.
     kept, used, dropped = fill(0)
+    reserve = 0
+    while dropped and cells(f" +{dropped} more") != reserve:
+        reserve = cells(f" +{dropped} more")
+        kept, used, dropped = fill(reserve)
     if dropped:
+        # Said, not silent. Truncating mid-name produced "NER localog",
+        # and dropping a service outright removed it from the banner that
+        # exists to show one dying.
         note = f" +{dropped} more"
-        kept, used, dropped = fill(cells(note))
-        if dropped:
-            # Said, not silent. Truncating mid-name produced "NER
-            # localog", and dropping a service outright removed it from
-            # the banner that exists to show one dying.
-            note = f" +{dropped} more"
-            kept.append(Span(note, "graphite"))
-            used += cells(note)
+        kept.append(Span(note, "graphite"))
+        used += cells(note)
 
     gap = max(1, room - 1 - used - cells(right))
     return [Span(" "), *kept, Span(" " * gap), Span(right, "graphite")]
@@ -341,7 +317,19 @@ def _phase_span(phase, room, unicode_, tick=0):
                 Span(clip(f"{bad} {body}", room - 15), "vermilion")]
 
     if phase.state is PhaseState.RUNNING:
-        measured = f"{_grouped(phase.done)}/{_grouped(phase.total or 0)} {phase.unit}"
+        # A phase that does not know its denominator yet says so by
+        # leaving it out. `total or 0` wrote `318/0 containers`, which is
+        # the one sentence this whole package exists to make impossible —
+        # and Rich's own indeterminate total is exactly `None`, so the
+        # case arrives from a perfectly ordinary progress callback.
+        if phase.total is None:
+            # A phase with nothing to count yet says what it is doing.
+            # "0 " is not a measurement, and a bare spinner beside a name
+            # is the panel admitting it has nothing to report.
+            measured = (f"{_grouped(phase.done)} {phase.unit}" if phase.done
+                        else (phase.note or "working"))
+        else:
+            measured = f"{_grouped(phase.done)}/{_grouped(phase.total)} {phase.unit}"
         if phase.waiting is not None:
             # Slow and hung look identical without this: the wait of the
             # request in flight, against the timeout it will give up at.
@@ -356,9 +344,11 @@ def _phase_span(phase, room, unicode_, tick=0):
         # The bar only when there is room for the numbers first: at sixty
         # columns "318/430 · waiting 47s/120s" is what the operator needs
         # and the drawing is what goes.
-        spare = room - len(left) - len(measured) - 8
-        if spare >= 12:
-            left += _phase_bar(phase.done, phase.total or 0, 20, unicode_) + " "
+        spare = room - cells(left) - cells(measured) - 8
+        # No bar without a denominator either: it would draw a proportion
+        # of an unknown.
+        if spare >= 12 and phase.total:
+            left += _phase_bar(phase.done, phase.total, 20, unicode_) + " "
         return [Span(clip(left + measured, room), "bitten")]
 
     # The caller says whether a finished phase is worth a warning mark.
@@ -366,8 +356,16 @@ def _phase_span(phase, room, unicode_, tick=0):
     # document, so every other volume got the wrong mark and that one got
     # a warning for no reason.
     mark = warn if phase.reason else ok
-    left = f"   {phase.name:<12}{mark} {phase.note}" if phase.note else \
-        f"   {phase.name:<12}{ok} done"
+    if phase.note:
+        left = f"   {phase.name:<12}{mark} {phase.note}"
+    elif phase.total is not None:
+        # The numbers, when the caller measured them. A bare "done" beside
+        # a phase that read eight hundred and fifty pages throws away the
+        # only thing the line had to say.
+        left = (f"   {phase.name:<12}{ok} "
+                f"{render_count(min(phase.done, phase.total), phase.total, phase.unit)}")
+    else:
+        left = f"   {phase.name:<12}{ok} done"
     return [Span(clip(left, room))]
 
 
@@ -377,12 +375,25 @@ def render_panel(state, width=92, height=None, unicode=True, color=True,
     room = min(width, MAX_WIDTH) - _MARGIN
     lines = []
 
-    header_left = f" TEIlle-douce   {state.input_dir}/ → {state.output_dir}/"
-    # No estimate until a volume has finished: "eta " with nothing after
-    # it reads as a broken template, and a made-up figure would be worse.
+    # Shortened keeping the leaf: a path clipped from the right loses the
+    # only part that says which corpus this is, and `-o` is absolute far
+    # more often than not. Half the elastic room each, so one very long
+    # path cannot squeeze the other out.
     header_right = f"elapsed {_clock(state.elapsed)}"
     if state.eta:
         header_right += f"   eta {state.eta}"
+    prefix = " TEIlle-douce   "
+    for_paths = max(8, room - cells(prefix) - len("/ → /") - cells(header_right)
+                    - 1)
+    # The input is what the operator typed and is nearly always short;
+    # the output is the one that runs long. So the input gets a floor and
+    # the output gets everything it leaves.
+    shown_in = shorten_path(state.input_dir, max(6, for_paths // 3))
+    shown_out = shorten_path(state.output_dir,
+                             max(6, for_paths - cells(shown_in)))
+    header_left = f"{prefix}{shown_in}/ → {shown_out}/"
+    # No estimate until a volume has finished: "eta " with nothing after
+    # it reads as a broken template, and a made-up figure would be worse.
     lines.append([Span(_pad(header_left, header_right, room))])
     lines.append(_services(state, room, unicode))
     lines.append([Span("─" * room if unicode else "-" * room, "graphite")])
@@ -393,7 +404,7 @@ def render_panel(state, width=92, height=None, unicode=True, color=True,
     # `bar_cells`, not `cells`: the module function of that name measures
     # a string in columns, and shadowing it here made every line that
     # clips raise TypeError.
-    bar_cells = max(4, room - len(pages) - len(percent) - 6)
+    bar_cells = max(4, room - cells(pages) - cells(percent) - 6)
     lines.append([Span(" "), *_bar(state, bar_cells, unicode),
                   Span("  " + _pad(pages, percent, room - bar_cells - 3))])
 
@@ -415,7 +426,7 @@ def render_panel(state, width=92, height=None, unicode=True, color=True,
             if phase.elapsed is not None:
                 text_so_far = "".join(span.text for span in spans)
                 spans.append(Span(_pad("", _clock(phase.elapsed),
-                                       room - len(text_so_far))))
+                                       room - cells(text_so_far))))
             lines.append(spans)
             if phase.state is PhaseState.LOST and phase.note:
                 # The cause on its own line, under the phase it belongs
@@ -438,20 +449,44 @@ def render_panel(state, width=92, height=None, unicode=True, color=True,
         used += cells(piece)
     lines.append(totals)
 
-    incidents_at = len(lines)
-    for incident in state.incident_lines:
-        lines.append([Span(clip(" " + incident, room), "vermilion")])
-    incidents_end = len(lines)
+    # What is left for the two elastic blocks, once the closing rule and
+    # the ctrl-c foot are paid for.
+    #
+    # Budgeted BEFORE they are composed, not trimmed after. The trim was
+    # only ever willing to cut incident lines, so a run with no incidents
+    # and the corpus' ordinary warning flood — eighty a volume in five
+    # shapes, per CLAUDE.md — returned fifteen lines for a height of
+    # twelve, and Rich's Live crops from the BOTTOM: the `+2 more
+    # shapes`, the closing rule and the ctrl-c foot were what vanished.
+    # Which is the outcome the trim exists to prevent, in the case it
+    # never fired for.
+    spare = (height - len(lines) - 2) if height else None
 
-    digest_lines = state.digest.lines(limit=3) if state.digest else ()
+    # Incidents first: they are the block that needs a human. The note
+    # costs a line of its own, so it is paid for out of the same budget.
+    shown = state.incident_lines
+    hidden = 0
+    if spare is not None and len(shown) > max(0, spare):
+        keep = max(0, spare - 1)
+        shown, hidden = shown[:keep], len(shown) - keep
+    for incident in shown:
+        lines.append([Span(clip(" " + incident, room), "vermilion")])
+    if hidden:
+        lines.append(
+            [Span(clip(f" +{hidden} more incidents, all of them in the summary",
+                       room), "vermilion")])
+
+    # Whatever the incidents left. A digest block is a label plus its
+    # lines plus, when the fold hid shapes, a note — so it needs two
+    # rows before it is worth starting at all.
+    left = None if spare is None else spare - len(shown) - (1 if hidden else 0)
+    limit = 3 if left is None else max(0, min(3, left - 2))
+    digest_lines = state.digest.lines(limit=limit) if state.digest and limit else ()
     if digest_lines:
         label = " repeated warnings "
         rule = ("─" if unicode else "-") * max(0, room - len(label))
         lines.append([Span(label), Span(rule, "dim")])
         for entry in digest_lines:
-            # No unit on the integers: the fold cannot know what they
-            # counted, and "8 ids" over a warning about worker counts is
-            # a confident wrong answer.
             # How many times, and in how many volumes. Not the sum of
             # the integers inside: the fold cannot know whether they
             # were counts or identifiers, and "No metadata row for
@@ -465,39 +500,34 @@ def render_panel(state, width=92, height=None, unicode=True, color=True,
             # fit gives up its own prose rather than its numbers. The
             # verbatim message is in the log either way.
             head = f"    {entry.occurrences}×  "
-            shape = entry.shape[:max(0, room - len(head) - len(right) - 2)]
+            shape = clip(entry.shape,
+                         max(0, room - cells(head) - cells(right) - 2))
             lines.append([Span(_pad(head + shape, right, room), "graphite")])
-        hidden = state.digest.elided(limit=3)
-        if hidden:
-            lines.append([Span(f"    +{hidden} more shapes", "graphite")])
+        elided = state.digest.elided(limit=limit)
+        if elided:
+            lines.append([Span(f"    +{elided} more shapes", "graphite")])
 
     lines.append([Span("─" * room if unicode else "-" * room, "graphite")])
-    lines.append([Span(clip(
-        f" ctrl-c  abandon this volume, keep the "
-        f"{state.volumes_written} already written", room), "graphite")])
+    # What ctrl-c would actually do, which is not the same thing between
+    # two volumes as it is inside one. "abandon this volume" over a
+    # finished corpus offers to throw away something that is not there.
+    offer = (f" ctrl-c  abandon this volume, keep the "
+             f"{state.volumes_written} already written"
+             if state.current is not None else
+             f" ctrl-c  stop the run, keep the "
+             f"{state.volumes_written} already written")
+    lines.append([Span(clip(offer, room), "graphite")])
 
-    # Trimmed last, against the height the terminal actually has: thirty
-    # volumes with both services dead is sixty incident lines, and Rich's
-    # Live ellipsises from the BOTTOM — so the bar, the totals and the
-    # ctrl-c foot would be what disappears. The incidents are the part
-    # that can be cut, because the summary carries all of them.
-    over = len(lines) - height if height else 0
-    if over > 0 and state.incident_lines:
-        # Only the incidents can be cut, because the summary carries all
-        # of them — and only when there are some: the trim used to add a
-        # " +0 more" line to a clean panel, which made it one line TALLER
-        # than the height it was given, on every frame of every run at
-        # the documented minimum window.
-        #
-        # The note costs a line of its own, so it is paid for here.
-        shown = max(0, len(state.incident_lines) - over - 1)
-        hidden = len(state.incident_lines) - shown
-        replacement = lines[incidents_at:incidents_at + shown]
-        if hidden:
-            replacement.append(
-                [Span(f" +{hidden} more incidents, all of them in the summary",
-                      "vermilion")])
-        lines[incidents_at:incidents_end] = replacement
+    # A contract, not a courtesy: the panel never returns more lines than
+    # the height it was given. `select.py`'s floor makes this unreachable
+    # on its own, but `--dashboard` in a ten-row window is a supported
+    # way to be wrong, and Rich's Live crops from the BOTTOM — so without
+    # this the closing rule and the ctrl-c foot are what disappears.
+    if height and len(lines) > height:
+        foot = min(2, height)
+        head = min(_HEAD_ROWS, max(0, height - foot))
+        middle = lines[head:len(lines) - foot][:max(0, height - head - foot)]
+        lines = lines[:head] + middle + lines[len(lines) - foot:]
 
     if not unicode:
         # One pass at the end rather than a glyph table threaded through

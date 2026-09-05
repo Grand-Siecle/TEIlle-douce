@@ -606,12 +606,87 @@ def test_a_dead_service_appears_even_when_its_label_does_not_fit():
         assert "VieuxParler" in banner, (width, banner)
 
 
-def test_three_dead_services_all_reach_the_banner_somehow():
+def test_a_dead_service_that_does_not_fit_is_shortened_rather_than_dropped():
+    """The assertion that replaced a hollow one: `count("✗") >= 1 or "+2"
+    in banner` was satisfied by the pre-fix first-fit behaviour too, so it
+    passed before the change as well as after and guarded nothing.
+
+    What the fix actually promises is narrower and testable: the FIRST
+    dead service is on the banner at every width, whole or clipped, and
+    the ones that did not fit are counted rather than silently gone."""
     crowded = state(services=tuple(
         Service(name, up=False, lost_at="17:04")
         for name in ("PyHellen", "VieuxParler", "NER local")))
 
-    banner = text(crowded, width=56)[1]
+    for width in range(56, 121):
+        banner = text(crowded, width=width)[1]
+        shown = banner.count("✗")
+        assert shown >= 1, (width, banner)
+        missing = 3 - shown
+        assert missing == 0 or f"+{missing} more" in banner, (width, banner)
 
-    assert banner.count("✗") >= 1
-    assert "+2" in banner or banner.count("✗") == 3
+
+def test_the_banner_never_runs_past_the_edge_however_many_services_die():
+    """Two fixed passes reserved " +9 more" and then wrote " +10 more",
+    one cell over."""
+    from teille_douce.report.text import cells
+
+    for count in range(1, 20):
+        crowded = state(services=tuple(
+            Service(f"service-{i:02d}", up=False, lost_at="17:04")
+            for i in range(count)))
+        for width in range(56, 121):
+            banner = text(crowded, width=width)[1]
+            assert cells(banner) <= min(width, 100), (count, width, banner)
+
+
+# =============================================================================
+# The two columns of a line, and which one survives
+# =============================================================================
+
+def test_the_top_line_keeps_the_elapsed_and_the_estimate():
+    """It clipped the composed line, so the right column went first: an
+    absolute `-o` path — the ordinary case, not the edge — took the
+    elapsed time and the eta off the panel on every single frame."""
+    absolute = state(
+        output_dir="/home/rayondemiel/univ_geneve/tei_output_grand_siecle")
+
+    for width in (56, 72, 92, 100):
+        header = text(absolute, width=width)[0]
+        assert "elapsed 47:12" in header, (width, header)
+
+
+def test_a_shortened_path_keeps_the_directory_it_names():
+    """Cut from the right, `/data/grand-siecle/tei_output` becomes
+    `/data/grand-sie…` — which has lost the only part that says which
+    corpus this is."""
+    header = text(state(output_dir="/data/grand-siecle/tei_output"),
+                  width=92)[0]
+
+    assert "tei_output" in header
+
+
+def test_the_panel_is_never_taller_than_the_height_it_was_given():
+    """The trim only ever cut incident lines, so a run with none and the
+    corpus' ordinary warning flood returned fifteen lines for twelve —
+    and Rich's Live crops from the BOTTOM, taking the closing rule and
+    the ctrl-c foot, which is what the trim exists to prevent."""
+    from teille_douce.report.digest import WarningDigest
+
+    flood = WarningDigest()
+    for volume in ("LIV0038", "LIV0039"):
+        for page in range(16):
+            for shape in ("no metadata row for '%s'", "page %s: unknown zone",
+                          "line %s rejected", "hyphen %s unresolved",
+                          "id %s duplicated"):
+                flood.add(volume, f"{volume}: " + shape % page)
+
+    for height in range(8, 32):
+        lines = text(state(digest=flood, incident_lines=()), width=92,
+                     height=height)
+        assert len(lines) <= height, (height, len(lines))
+        assert "ctrl-c" in lines[-1], (height, lines[-1])
+
+
+def test_a_finished_run_is_not_offered_a_volume_to_abandon():
+    assert "stop the run" in text(state(current=None))[-1]

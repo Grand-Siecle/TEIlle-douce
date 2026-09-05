@@ -75,3 +75,25 @@ def test_a_record_that_cannot_be_formatted_does_not_kill_the_run():
     wired(run, "test.bad").warning("%d wrong args", "not a number")
 
     assert run.digest.lines(), "the record was dropped instead of folded"
+
+
+def test_a_number_too_long_to_be_a_number_does_not_end_the_run():
+    """The guard in `emit` covered formatting and stopped one line short
+    of the fold, which is where the work is: the digest sums the integers
+    a message carries, and `int()` refuses a digit run past 4 300
+    characters. Raising there came out of `logger.warning(...)` in the
+    middle of the pipeline, and the document loop booked the volume as
+    failed — a reporter failing the run it reports on."""
+    import logging
+
+    from teille_douce.report.collector import Run
+    from teille_douce.report.logging_bridge import DigestHandler
+
+    run = Run(input_dir="OCR", output_dir="out", volumes=1, pages=1)
+    handler = DigestHandler(run)
+    record = logging.LogRecord("t", logging.WARNING, __file__, 1,
+                               "offset %s in the stream", ("9" * 5000,), None)
+
+    handler.emit(record)
+
+    assert run.digest.lines()
