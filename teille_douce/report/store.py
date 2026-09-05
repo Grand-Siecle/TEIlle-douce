@@ -18,6 +18,7 @@ interleave — so nothing here is called from a child.
 """
 
 import json
+import os
 import shutil
 from datetime import datetime
 from pathlib import Path
@@ -33,8 +34,14 @@ class RunStore:
 
     def __init__(self, output_dir, now=None):
         self.output_dir = Path(output_dir)
+        # The pid, for the reason `_run_log_path` already carries one: a
+        # launcher firing several volumes at once starts them inside the
+        # same second, and two runs sharing this directory means one
+        # replaces the other's log and overwrites its manifest — while
+        # both exit reporting a record that is not theirs. After the
+        # timestamp, so `latest()` still sorts by when a run started.
         stamp = (now or datetime.now()).strftime("%Y%m%d-%H%M%S")
-        self.path = self.output_dir / RUNS / stamp
+        self.path = self.output_dir / RUNS / f"{stamp}-{os.getpid()}"
         # A reporter may not be the thing that ends a four-hour job. If
         # the directory cannot be written — a mistyped `-o` pointing at a
         # file, a read-only mount — the run says so once and carries on.
@@ -47,15 +54,24 @@ class RunStore:
     def _ready(self):
         # Not in __init__: a run that refuses to start leaves nothing
         # behind, which is the rule the lazy log handler already follows.
-        if self.problems:
-            return None
+        #
+        # A previous failure is recorded but does not latch: one blip on
+        # an incident append at minute three used to cost the manifest,
+        # and with it the next `--retry-failed`.
         try:
             self.path.mkdir(parents=True, exist_ok=True)
         except OSError as reason:
-            # Once, not once per incident of a four-hour run.
-            self.problems.append(str(reason))
+            self._note(reason)
             return None
         return self.path
+
+    def _note(self, reason):
+        """Record a failure once. Recorded, not latched: the run keeps
+        trying the other artefacts, because one blip on an incident append
+        used to cost the manifest and with it the next --retry-failed."""
+        message = str(reason)
+        if message not in self.problems:
+            self.problems.append(message)
 
     def adopt_log(self, path):
         """Move this run's log in beside its own index.
@@ -80,8 +96,10 @@ class RunStore:
             return destination
         except OSError as reason:
             # A log left where it was is still a log. Losing the run over
-            # a rename would not be.
-            self.problems.append(str(reason))
+            # a rename would not be — and cross-device is an ordinary
+            # layout, not a corruption: cwd on one filesystem, `-o` on
+            # another.
+            self._note(reason)
             return path
 
     def incident(self, loss):
@@ -110,7 +128,7 @@ class RunStore:
                 # an interruption keeps everything written before it.
                 handle.flush()
         except OSError as reason:
-            self.problems.append(str(reason))
+            self._note(reason)
 
     def finish(self, argv, settings, documents, exit_code):
         """The manifest. Written on every way out, 130 included."""
@@ -128,7 +146,7 @@ class RunStore:
                 json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
                 encoding="utf-8")
         except OSError as reason:
-            self.problems.append(str(reason))
+            self._note(reason)
 
     # -- coming back later -------------------------------------------------
 
@@ -150,16 +168,27 @@ class RunStore:
 
     @classmethod
     def failed_last_time(cls, output_dir):
-        """What `--retry-failed` converts."""
+        """What `--retry-failed` converts.
+
+        An empty tuple means the last run had no failures. A manifest
+        that cannot be read is a different thing and raises: reporting it
+        as "nothing failed" is a lie, and the caller can say so.
+        """
         latest = cls.latest(output_dir)
         if latest is None:
             return ()
         try:
             manifest = json.loads(
                 (latest / "run.json").read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            return ()
-        return tuple(name for name, status in manifest.get("documents", {}).items()
+        except FileNotFoundError:
+            raise ValueError(
+                f"{latest.name} kept no manifest, so its failures could not "
+                f"be read")
+        except (OSError, ValueError) as reason:
+            raise ValueError(
+                f"the record of {latest.name} could not be read: {reason}")
+        return tuple(name for name, status
+                     in manifest.get("documents", {}).items()
                      if status == "failed")
 
     @classmethod

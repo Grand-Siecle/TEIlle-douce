@@ -74,6 +74,26 @@ def _as_device(raw):
     return value
 
 
+_UI = ("auto", "plain", "dashboard")
+
+
+def _as_ui(raw):
+    """Which reporter to use, as a value the layers can refuse.
+
+    It used to be read straight out of `os.environ`, so it was the one
+    TDOUCE_* variable with no flag layer, no config layer, no origin, and
+    no place in the manifest — and an empty one, which is a normal CI
+    idiom, aborted the run with a usage error after the metadata had
+    loaded.
+    """
+    if not isinstance(raw, str):
+        raise ValueError("is not a reporter name")
+    value = raw.strip().lower()
+    if value not in _UI:
+        raise ValueError(f"is not one of {', '.join(_UI)}")
+    return value
+
+
 _FAIL_ON = ("never", "incident", "loss")
 
 
@@ -228,6 +248,7 @@ _SETTINGS = (
     # with more than one, neither of which the pipeline can guess.
     # The quality gate. Default "never": a degraded conversion is still a
     # conversion, and on seventeenth-century OCR block 1 is never empty.
+    _Declaration("ui", "TDOUCE_UI", "output.ui", _as_ui, "auto"),
     _Declaration("fail_on", "TDOUCE_FAIL_ON",
                  "quality.fail_on", _as_fail_on, "never"),
     _Declaration("max_page_loss", "TDOUCE_MAX_PAGE_LOSS",
@@ -360,6 +381,7 @@ class Settings:
     modernize_concurrency: int
     modernize_similarity_min: float
     health_timeout: float
+    ui: str
     fail_on: str
     max_page_loss: float
     ner_device: str

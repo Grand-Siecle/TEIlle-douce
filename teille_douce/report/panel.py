@@ -13,7 +13,14 @@ structural, not a convention someone has to remember.
 from dataclasses import dataclass, field
 from typing import Optional
 
+import re
+import unicodedata
+
 from .counts import PhaseState, _grouped, render_phase_loss
+
+# Newlines, tabs, carriage returns and the rest: a clip by length keeps
+# them, and one of them turns one rendered line into two on screen.
+_CONTROL = re.compile(r"[\x00-\x1f\x7f]")
 
 MAX_WIDTH = 100
 _MARGIN = 1
@@ -153,14 +160,56 @@ def _clock(seconds):
     return f"{minutes}:{seconds:02d}"
 
 
+def cells(text):
+    """Terminal columns, not characters.
+
+    A CJK glyph occupies two columns for one `len()`, so a width contract
+    measured in characters lets the line run off the edge of the very
+    terminals it was written for.
+    """
+    return sum(2 if unicodedata.east_asian_width(c) in "WF" else 1
+               for c in text)
+
+
+def clip(text, room):
+    """`text`, safe to put on one line of `room` columns.
+
+    Control characters go first: clipping by length keeps a newline, so
+    the panel renders one line and the terminal shows two — the second
+    unindented and unclipped. httpx error messages are two lines, so this
+    is not hypothetical.
+    """
+    text = _CONTROL.sub(" ", text)
+    if room <= 0:
+        return ""
+    if cells(text) <= room:
+        return text
+    kept, used = [], 0
+    for char in text:
+        width = cells(char)
+        if used + width > room - 1:
+            break
+        kept.append(char)
+        used += width
+    return "".join(kept) + "…"
+
+
 def _plural(count, noun):
     return f"{count} {noun}" if count == 1 else f"{count} {noun}s"
 
 
 def _pad(left, right, room):
-    """Left flush, right flush, one line, never wider than the room."""
-    gap = room - len(left) - len(right)
-    return left + " " * gap + right if gap >= 1 else (left + " " + right)[:room]
+    """Left flush, right flush, one line, never wider than the room.
+
+    Measured in cells throughout, and clipped rather than sliced: a
+    negative room used to make `[:room]` count from the END, so the
+    function returned three characters for a budget of minus two.
+    """
+    left, right = _CONTROL.sub(" ", left), _CONTROL.sub(" ", right)
+    gap = room - cells(left) - cells(right)
+    if gap >= 1:
+        return left + " " * gap + right
+    return clip(left + " " + right, room)
 
 
 def _bar(state, cells, unicode_):
@@ -185,23 +234,61 @@ def _bar(state, cells, unicode_):
 
 
 def _services(state, room, unicode_):
+    """The service banner, and the log it points at.
+
+    Each service keeps its own style, so they are separate spans; the
+    separator is a span of its own rather than trailing spaces, or the
+    padding is computed on a string shorter than the one emitted.
+    """
     ok, bad, idle, _ = _MARK[unicode_]
-    spans = [Span(" ")]
+    labels = []
     for service in state.services:
         if service.up:
-            spans.append(Span(f"{ok} {service.name}   ", "verdigris"))
+            labels.append((f"{ok} {service.name}", "verdigris"))
         elif service.up is None:
             # Nobody asked for it. Painting it red says the machine is
             # broken when the operator simply did not want the phase —
             # the same four meanings of a zero, on the banner.
-            spans.append(Span(f"{idle} {service.name} off   ", "graphite"))
+            labels.append((f"{idle} {service.name} off", "graphite"))
         else:
             lost = f" LOST {service.lost_at}" if service.lost_at else " DOWN"
-            spans.append(Span(f"{bad} {service.name}{lost}   ", "vermilion"))
-    left = "".join(span.text for span in spans).rstrip()
-    right = f"log {_short_log(state.log_path)}"
-    spans = [Span(_pad(left, "", room - len(right))), Span(right, "graphite")]
-    return spans
+            labels.append((f"{bad} {service.name}{lost}", "vermilion"))
+
+    # The log name shrinks with the panel: at fifty-six columns a
+    # twenty-two-character tail is a third of the line.
+    right = f"log {_short_log(state.log_path, room=max(8, room // 3))}"
+
+    def fill(reserve):
+        budget = room - cells(right) - 2 - reserve
+        kept, used, dropped = [], 0, 0
+        for text, style in labels:
+            width = cells(text) + (3 if kept else 0)
+            if used + width > budget:
+                dropped += 1
+                continue
+            if kept:
+                kept.append(Span("   "))
+                used += 3
+            kept.append(Span(text, style))
+            used += cells(text)
+        return kept, used, dropped
+
+    # Two passes: the note has to be paid for before the services are
+    # chosen, or appending it afterwards pushes the line past the edge.
+    kept, used, dropped = fill(0)
+    if dropped:
+        note = f" +{dropped} more"
+        kept, used, dropped = fill(cells(note))
+        if dropped:
+            # Said, not silent. Truncating mid-name produced "NER
+            # localog", and dropping a service outright removed it from
+            # the banner that exists to show one dying.
+            note = f" +{dropped} more"
+            kept.append(Span(note, "graphite"))
+            used += cells(note)
+
+    gap = max(1, room - 1 - used - cells(right))
+    return [Span(" "), *kept, Span(" " * gap), Span(right, "graphite")]
 
 
 def _short_log(name, room=22):
@@ -230,12 +317,16 @@ def _phase_span(phase, room, unicode_, tick=0):
     """One phase's line, and what it is allowed to claim."""
     ok, bad, idle, warn = _MARK[unicode_]
     if phase.state is PhaseState.PENDING:
-        return [Span(f"   {phase.name:<12}", ""), Span(f"{idle} pending", "graphite")]
+        return [Span(f"   {phase.name:<12}", ""),
+                Span(clip(f"{idle} pending", room - 15), "graphite")]
 
     if phase.state is PhaseState.LOST:
         body = render_phase_loss(PhaseState.LOST, phase.done, phase.total,
                                  phase.unit, phase.reason or "service lost")
-        return [Span(f"   {phase.name:<12}"), Span(f"{bad} {body}", "vermilion")]
+        # Clipped like everything else: this is the longest line the
+        # panel composes, and it is the one whose cause must be loud.
+        return [Span(f"   {phase.name:<12}"),
+                Span(clip(f"{bad} {body}", room - 15), "vermilion")]
 
     if phase.state is PhaseState.RUNNING:
         measured = f"{_grouped(phase.done)}/{_grouped(phase.total or 0)} {phase.unit}"
@@ -256,7 +347,7 @@ def _phase_span(phase, room, unicode_, tick=0):
         spare = room - len(left) - len(measured) - 8
         if spare >= 12:
             left += _phase_bar(phase.done, phase.total or 0, 20, unicode_) + " "
-        return [Span(left + measured, "bitten")]
+        return [Span(clip(left + measured, room), "bitten")]
 
     # The caller says whether a finished phase is worth a warning mark.
     # This used to test the note against a literal taken from one sample
@@ -265,7 +356,7 @@ def _phase_span(phase, room, unicode_, tick=0):
     mark = warn if phase.reason else ok
     left = f"   {phase.name:<12}{mark} {phase.note}" if phase.note else \
         f"   {phase.name:<12}{ok} done"
-    return [Span(left)]
+    return [Span(clip(left, room))]
 
 
 def render_panel(state, width=92, height=None, unicode=True, color=True,
@@ -315,7 +406,7 @@ def render_panel(state, width=92, height=None, unicode=True, color=True,
                 # The cause on its own line, under the phase it belongs
                 # to. "(was up at start)" is the difference between a
                 # misconfiguration and a service that died mid-run.
-                lines.append([Span(f"               {phase.note}"[:room],
+                lines.append([Span(clip(f"               {phase.note}", room),
                                    "vermilion")])
 
     lines.append([
@@ -325,8 +416,10 @@ def render_panel(state, width=92, height=None, unicode=True, color=True,
              "vermilion" if state.incidents else ""),
     ])
 
+    incidents_at = len(lines)
     for incident in state.incident_lines:
-        lines.append([Span(" " + incident[:room - 1], "vermilion")])
+        lines.append([Span(clip(" " + incident, room), "vermilion")])
+    incidents_end = len(lines)
 
     digest_lines = state.digest.lines(limit=3) if state.digest else ()
     if digest_lines:
@@ -358,6 +451,21 @@ def render_panel(state, width=92, height=None, unicode=True, color=True,
     lines.append([Span(
         f" ctrl-c  abandon this volume, keep the "
         f"{state.volumes_written} already written", "graphite")])
+
+    # Trimmed last, against the height the terminal actually has: thirty
+    # volumes with both services dead is sixty incident lines, and Rich's
+    # Live ellipsises from the BOTTOM — so the bar, the totals and the
+    # ctrl-c foot would be what disappears. The incidents are the part
+    # that can be cut, because the summary carries all of them.
+    if height and len(lines) > height:
+        shown = len(state.incident_lines) - (len(lines) - height) - 1
+        shown = max(0, shown)
+        hidden = len(state.incident_lines) - shown
+        lines[incidents_at:incidents_end] = [
+            *lines[incidents_at:incidents_at + shown],
+            [Span(f" +{hidden} more incidents, all of them in the summary",
+                  "vermilion")],
+        ]
 
     if not unicode:
         # One pass at the end rather than a glyph table threaded through

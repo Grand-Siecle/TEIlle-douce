@@ -29,7 +29,7 @@ class UI(Enum):
 
 
 def choose_ui(env, is_tty, size, plain=False, dashboard=False, quiet=0,
-              dry_run=False):
+              dry_run=False, asked=None):
     """The reporter this run should use.
 
     `dry_run` is accepted and deliberately changes nothing: it resolves
@@ -47,16 +47,20 @@ def choose_ui(env, is_tty, size, plain=False, dashboard=False, quiet=0,
         # piping into `less -R` on purpose knows what they are doing.
         return UI.DASHBOARD
 
-    asked = env.get("TDOUCE_UI")
-    if asked is not None:
-        asked = asked.strip().lower()
-        if asked not in ("auto", "plain", "dashboard"):
-            raise ValueError(
-                f"TDOUCE_UI={asked!r} is not one of auto, plain, dashboard")
-        if asked == "plain":
-            return UI.PLAIN
-        if asked == "dashboard":
-            return UI.DASHBOARD
+    # Already validated by the settings layer when the caller passes it;
+    # `env` remains for callers that have no Settings, which is only the
+    # tests of this matrix.
+    if asked is None:
+        asked = env.get("TDOUCE_UI")
+        if asked is not None:
+            asked = asked.strip().lower()
+            if asked not in ("auto", "plain", "dashboard"):
+                raise ValueError(
+                    f"TDOUCE_UI={asked!r} is not one of auto, plain, dashboard")
+    if asked == "plain":
+        return UI.PLAIN
+    if asked == "dashboard":
+        return UI.DASHBOARD
 
     if quiet:
         # -q asks for less; a panel redrawing four times a second is more.

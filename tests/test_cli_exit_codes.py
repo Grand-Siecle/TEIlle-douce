@@ -1582,3 +1582,79 @@ def test_a_run_that_refuses_to_start_still_leaves_nothing(tmp_path):
 
     assert res.returncode == 3
     assert not sortie.exists()
+
+
+def test_the_remedy_the_summary_prints_actually_works_for_an_archive(tmp_path):
+    """The manifest wrote `LIV9003_reconciled.zip` while every selector
+    matches a stem, so the `--retry-failed` the summary offers answered
+    "No volume matches" and exited 3."""
+    ocr = tmp_path / "ocr"
+    shutil.copytree(ALTO_MIN, ocr)
+    (ocr / "LIV9003_reconciled.zip").write_bytes(b"not a zip")
+
+    first, sortie = _executer_main(tmp_path, ocr, COLUMNS="200", **MODE_COURT)
+    assert first.returncode == 1
+    assert "--retry-failed" in first.stdout
+
+    # Repair the archive, then take the summary at its word.
+    (ocr / "LIV9003_reconciled.zip").unlink()
+    source = ALTO_MIN / DOCUMENT
+    with zipfile.ZipFile(ocr / "LIV9003_reconciled.zip", "w") as zf:
+        for page in source.rglob("*.xml"):
+            zf.write(page, f"LIV9003_reconciled/{page.relative_to(source)}")
+
+    again, _ = _executer_main(tmp_path, ocr, args=("--retry-failed",),
+                              COLUMNS="200", **MODE_COURT)
+
+    assert again.returncode == 0, again.stdout
+
+
+def test_a_corpus_nothing_could_be_opened_from_still_leaves_a_record(tmp_path):
+    """Two volumes failed and the next run was told nothing did: the
+    refusal exits before the store exists."""
+    import json
+
+    ocr = tmp_path / "ocr"
+    ocr.mkdir()
+    for name in ("LIV9101_reconciled", "LIV9102_reconciled"):
+        (ocr / f"{name}.zip").write_bytes(b"not a zip")
+
+    res, sortie = _executer_main(tmp_path, ocr, COLUMNS="200", **MODE_COURT)
+
+    assert res.returncode == 1
+    run, = _runs_of(sortie)
+    manifest = json.loads((run / "run.json").read_text(encoding="utf-8"))
+    assert manifest["documents"] == {"LIV9101_reconciled": "failed",
+                                     "LIV9102_reconciled": "failed"}
+
+
+def test_a_manifest_that_cannot_be_read_is_not_silence(tmp_path):
+    """"nothing failed last time" over an unreadable record sends the
+    operator away believing the last run was clean."""
+    ocr = tmp_path / "ocr"
+    shutil.copytree(ALTO_MIN, ocr)
+    first, sortie = _executer_main(tmp_path, ocr, **MODE_COURT)
+    run, = _runs_of(sortie)
+    (run / "run.json").write_text('{"documents": {"D1"', encoding="utf-8")
+
+    res, _ = _executer_main(tmp_path, ocr, args=("--retry-failed",),
+                            COLUMNS="200", **MODE_COURT)
+
+    assert res.returncode == 3
+    assert "could not be read" in res.stdout
+    assert "nothing failed" not in res.stdout
+
+
+def test_a_refusal_leaves_no_log_behind_either(tmp_path):
+    """Exit 3 promises nothing was written, and a warning emitted before
+    the refusal opened the lazy handler. This is how twenty-five orphan
+    logs came to sit at the repository root."""
+    ocr = tmp_path / "ocr"
+    ocr.mkdir()
+    (ocr / "LIV9001_reconciled").mkdir()
+
+    res, sortie = _executer_main(tmp_path, ocr, **MODE_COURT)
+
+    assert res.returncode == 3
+    assert not sortie.exists()
+    assert not list(tmp_path.glob("pipeline_*.log")), sorted(tmp_path.iterdir())

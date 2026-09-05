@@ -44,8 +44,12 @@ def a_loss(document="LIV0038", code=Code.PHASE_LOST):
 def test_a_run_gets_its_own_directory_named_for_when_it_started(tmp_path):
     store = a_store(tmp_path)
 
+    import os
+
+    # The pid too: two runs started inside the same second would
+    # otherwise share a directory and destroy each other's record.
     assert store.path == (tmp_path / "tei_output" / ".teille-douce" / "runs"
-                          / "20260903-180824")
+                          / f"20260903-180824-{os.getpid()}")
 
 
 def test_the_directory_is_not_created_until_something_is_written(tmp_path):
@@ -225,7 +229,8 @@ def test_a_directory_it_cannot_write_to_does_not_kill_the_run(tmp_path):
 
 def test_it_says_so_only_once(tmp_path):
     """One warning about the store, not one per incident of a four-hour
-    run."""
+    run — deduplicated rather than latched, so the other artefacts are
+    still attempted."""
     (tmp_path / "tei_output").write_text("not a directory", encoding="utf-8")
     store = a_store(tmp_path)
 
@@ -276,3 +281,96 @@ def test_a_log_that_cannot_be_moved_is_left_where_it_is(tmp_path):
 
     assert store.adopt_log(log) == log
     assert log.exists()
+
+
+# =============================================================================
+# Two runs at once
+# =============================================================================
+
+def test_two_runs_in_the_same_second_do_not_share_a_directory(monkeypatch):
+    """`_run_log_path` puts a pid in the log name for exactly this
+    reason. Without one here, the second run's `Path.replace` destroys
+    the first's log and its `run.json` overwrites the first's manifest —
+    and the first exits 0 having printed a path to a record that is not
+    its own."""
+    import os
+    from datetime import datetime
+
+    instant = datetime(2026, 9, 3, 18, 8, 24)
+    monkeypatch.setattr(os, "getpid", lambda: 4711)
+    one = RunStore(Path("out"), now=instant).path
+    monkeypatch.setattr(os, "getpid", lambda: 4712)
+    other = RunStore(Path("out"), now=instant).path
+
+    assert one != other
+
+
+def test_the_directory_still_sorts_by_when_it_started(monkeypatch):
+    """`latest()` sorts on the name, so the pid must come after the
+    timestamp or the newest run stops being the last."""
+    import os
+    from datetime import datetime
+
+    monkeypatch.setattr(os, "getpid", lambda: 999999)
+    early = RunStore(Path("out"), now=datetime(2026, 9, 3, 10, 0, 0)).path
+    monkeypatch.setattr(os, "getpid", lambda: 1)
+    late = RunStore(Path("out"), now=datetime(2026, 9, 3, 11, 0, 0)).path
+
+    assert early.name < late.name
+
+
+# =============================================================================
+# One failure must not cost the whole record
+# =============================================================================
+
+def test_a_failed_incident_write_does_not_abandon_the_manifest(tmp_path):
+    """A single blip at minute three of a four-hour run took the manifest
+    with it — and with the manifest, `--retry-failed`."""
+    store = a_store(tmp_path)
+    store._ready()
+    (store.path / "incidents.jsonl").mkdir()
+
+    store.incident(a_loss())
+    store.finish(argv=[], settings={}, documents={"D1": "ok"}, exit_code=0)
+
+    assert (store.path / "run.json").exists()
+    assert store.problems, "the failure was swallowed"
+
+
+def test_a_log_that_cannot_be_moved_does_not_abandon_the_manifest(tmp_path):
+    """cwd and `-o` on different filesystems is an ordinary layout, and
+    `Path.replace` across them raises EXDEV."""
+    store = a_store(tmp_path)
+    log = tmp_path / "pipeline.log"
+    log.write_text("x", encoding="utf-8")
+
+    def refuse(self, target):
+        raise OSError(18, "Invalid cross-device link")
+
+    import pathlib as _pathlib
+    original = _pathlib.Path.replace
+    _pathlib.Path.replace = refuse
+    try:
+        store.adopt_log(log)
+        store.finish(argv=[], settings={}, documents={}, exit_code=0)
+    finally:
+        _pathlib.Path.replace = original
+
+    assert (store.path / "run.json").exists()
+
+
+# =============================================================================
+# A manifest that cannot be read is not a run with no failures
+# =============================================================================
+
+def test_a_corrupt_manifest_is_not_reported_as_nothing_to_retry(tmp_path):
+    store = a_store(tmp_path)
+    store.finish(argv=[], settings={}, documents={"D1": "failed"}, exit_code=1)
+    (store.path / "run.json").write_text('{"documents": {"D1"', encoding="utf-8")
+
+    with pytest.raises(ValueError, match="could not be read"):
+        RunStore.failed_last_time(tmp_path / "tei_output")
+
+
+def test_no_previous_run_is_still_simply_nothing_to_retry(tmp_path):
+    assert RunStore.failed_last_time(tmp_path / "tei_output") == ()

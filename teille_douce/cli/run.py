@@ -636,6 +636,46 @@ def _containers_failed(reporter, doc_name, phase, stats, reason):
                                total=total, detail=why))
 
 
+def _refuse(code=None):
+    """Leave, having written nothing — the log included.
+
+    Exit 3 says the run did not run. A record emitted during setup opens
+    the lazy handler, so the refusal used to leave a `pipeline_*.log`
+    behind: that is how twenty-five orphans came to sit at the root of
+    the repository. The reason is already on the console, and `-v`
+    reproduces it.
+    """
+    global RUN_LOG_FILE
+    if RUN_LOG_FILE:
+        for handler in list(logging.getLogger().handlers):
+            if getattr(handler, "baseFilename", None) == str(RUN_LOG_FILE):
+                handler.close()
+                logging.getLogger().removeHandler(handler)
+        try:
+            Path(RUN_LOG_FILE).unlink(missing_ok=True)
+        except OSError:
+            # A log we cannot remove is a smaller problem than a run that
+            # ends on it.
+            pass
+        RUN_LOG_FILE = None
+    sys.exit(EXIT_MISCONFIGURED if code is None else code)
+
+
+def _keep_the_record(store, settings, failed, exit_code):
+    """The manifest, on a path that exits before the run loop.
+
+    Without it a corpus where nothing could be opened leaves no record,
+    and the next `--retry-failed` is told nothing failed.
+    """
+    if store is None:
+        return
+    store.finish(argv=["teille-douce", *sys.argv[1:]],
+                 settings=settings.as_manifest(),
+                 documents={Path(name).stem: "failed" for name, _ in failed},
+                 exit_code=exit_code)
+    RunStore.prune(settings.output_dir)
+
+
 @contextmanager
 def panel_installed(reporter, active):
     """Put the live panel up, and take it down whatever happens.
@@ -963,7 +1003,7 @@ def execute(args):
     # the exit 3 the contract promises.
     if not settings.ocr_dir.is_dir():
         console.print(f"[red]Directory not found: {escape(str(settings.ocr_dir))}[/red]")
-        sys.exit(EXIT_MISCONFIGURED)
+        _refuse()
 
     # Checked here rather than at mkdir time: -o naming an existing file
     # used to be discovered after expand_archives had unpacked the whole
@@ -982,14 +1022,14 @@ def execute(args):
             f"({escape(settings.origin('entities_dir'))}) against "
             f"{escape(str(settings.ocr_dir))}"
         )
-        sys.exit(EXIT_MISCONFIGURED)
+        _refuse()
 
     if settings.output_dir.exists() and not settings.output_dir.is_dir():
         console.print(
             f"[red]Not a directory:[/red] "
             f"{escape(str(settings.output_dir))} (--output)"
         )
-        sys.exit(EXIT_MISCONFIGURED)
+        _refuse()
 
     # Create output directory
     dry_run = getattr(args, "dry_run", False)
@@ -1020,7 +1060,7 @@ def execute(args):
         console.print(
             "[red]--no-probe and --require-services contradict each other.[/red]"
         )
-        sys.exit(EXIT_MISCONFIGURED)
+        _refuse()
 
     # Cheap, and before the probes: a typo used to pay up to two health
     # timeouts of blocking HTTP before being told it was a typo. Names are
@@ -1032,13 +1072,19 @@ def execute(args):
     if getattr(args, "retry_failed", False):
         # The remedy the summary offers. Read from the last run's
         # manifest rather than retyped off the screen.
-        selectors = list(RunStore.failed_last_time(settings.output_dir))
+        try:
+            selectors = list(RunStore.failed_last_time(settings.output_dir))
+        except ValueError as reason:
+            # Not "nothing failed": that would send the operator away
+            # believing the last run was clean.
+            console.print(f"[red]--retry-failed: {escape(str(reason))}[/red]")
+            _refuse()
         if not selectors:
             # Not "a selector matched nothing": there is no selector, and
             # the previous run simply had nothing to retry.
             console.print("[green]--retry-failed: nothing failed last "
                           "time.[/green]")
-            sys.exit(EXIT_MISCONFIGURED)
+            _refuse()
         say(f"[dim]--retry-failed: {len(selectors)} volume(s) from the "
             f"last run[/dim]")
 
@@ -1056,7 +1102,7 @@ def execute(args):
         ]
         if stray:
             console.print("[red]No volume matches:[/red] " + escape(", ".join(stray)))
-            sys.exit(EXIT_MISCONFIGURED)
+            _refuse()
 
     config_origin = settings.origin("__config__")
     if config_origin != "default":
@@ -1133,7 +1179,7 @@ def execute(args):
             + escape(", ".join(unavailable))
             + " unreachable; nothing written."
         )
-        sys.exit(EXIT_MISCONFIGURED)
+        _refuse()
 
     # Extract ZIP archives (corrupt ones are skipped and reported)
     # --limit deliberately does NOT bound extraction. Ordering it by name
@@ -1312,6 +1358,9 @@ def execute(args):
             )
             for name, reason in broken:
                 console.print(f"  [red]FAILED[/red] {escape(f'{name}: {reason}')}")
+            # A record even here: two volumes failed, and without it the
+            # next --retry-failed is told nothing did.
+            _keep_the_record(store, settings, broken, EXIT_SOME_FAILED)
             sys.exit(EXIT_SOME_FAILED)
         # Whichever wording follows, say how many volumes were there and
         # empty. Exit 3 reads as "your input directory is wrong", which is
@@ -1335,7 +1384,7 @@ def execute(args):
                 f"[red]No ALTO documents found in "
                 f"{escape(str(settings.ocr_dir))}.{found}[/red]"
             )
-        sys.exit(EXIT_MISCONFIGURED)
+        _refuse()
 
     # Only directories that actually hold ALTO: an extracted archive with
     # no *.xml is not a volume a selector can match, and treating it as one
@@ -1373,7 +1422,7 @@ def execute(args):
             )
             return
         console.print("[red]Every volume was excluded.[/red]")
-        sys.exit(EXIT_MISCONFIGURED)
+        _refuse()
 
     if not docs and pending_archives:
         pass
@@ -1464,7 +1513,7 @@ def execute(args):
             f"[red]Cannot use {escape(str(settings.output_dir))} as an "
             f"output directory:[/red] {escape(str(reason))}"
         )
-        sys.exit(EXIT_MISCONFIGURED)
+        _refuse()
 
     # Build pipeline configuration
     config = build_config()
@@ -1475,6 +1524,7 @@ def execute(args):
     # was wanted.
     try:
         ui = choose_ui(
+            asked=settings.ui,
             env=os.environ, is_tty=console.is_terminal,
             size=(console.width, console.height),
             plain=getattr(args, "plain", False),
@@ -1532,8 +1582,9 @@ def execute(args):
             # service for forty seconds looks different from one that has
             # stopped — which is the state a four-hour run spends most of
             # its time in.
-            on_change=lambda: (panel_holder["panel"].draw()
-                               if panel_holder.get("panel") else None),
+            on_change=lambda: (panel_holder["panel"].draw(
+                pages_per_second=_pages_per_second(reporter_run, run_started))
+                if panel_holder.get("panel") else None),
         )
         if store is not None:
             # Indexed as it happens. `execute` catches Exception, and a
@@ -1587,9 +1638,6 @@ def execute(args):
                             )
                     try:
                         reporter_run.document_started(doc_name, len(filepaths))
-                        if panel is not None:
-                            panel.draw(pages_per_second=_pages_per_second(
-                                reporter_run, run_started))
                         _process_document(
                             doc_name, filepaths, doc_dir, df_meta, config,
                             person_db, do_enrich, do_modernize, do_ner, progress,
@@ -1766,8 +1814,13 @@ def execute(args):
             RUN_LOG_FILE = store.adopt_log(RUN_LOG_FILE)
         store.finish(argv=["teille-douce", *sys.argv[1:]],
                      settings=settings.as_manifest(),
-                     documents={**{name: "ok" for name in ok_docs},
-                                **{name: "failed" for name, _ in failed_docs}},
+                     # The stem, because every selector matches a stem:
+                     # writing `LIV9003_reconciled.zip` made the
+                     # --retry-failed the summary offers answer "No
+                     # volume matches" and exit 3.
+                     documents={**{Path(name).stem: "ok" for name in ok_docs},
+                                **{Path(name).stem: "failed"
+                                   for name, _ in failed_docs}},
                      exit_code=exit_code)
         RunStore.prune(settings.output_dir)
         if store.unwritable:

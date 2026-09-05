@@ -20,13 +20,15 @@ from .record import Block, Code, Locator, Loss, RunRecord
 from .summary import RunOutcome
 
 
-@dataclass(frozen=True, slots=True)
-class Event:
-    """Something worth a line in the journal, as it happened."""
-
-    kind: str
-    document: str = ""
-    text: str = ""
+def _spoken(seconds):
+    """`3h04`, `12m`, `10s` — a duration, not a number to divide."""
+    hours, rest = divmod(int(seconds), 3600)
+    minutes, seconds = divmod(rest, 60)
+    if hours:
+        return f"{hours}h{minutes:02d}"
+    if minutes:
+        return f"{minutes}m{seconds:02d}"
+    return f"{seconds}s"
 
 
 class Run:
@@ -47,7 +49,6 @@ class Run:
         self.record = RunRecord()
         self.digest = WarningDigest()
 
-        self._events = []
         self._written = 0
         self._pages_written = 0
         self._failed = []
@@ -58,6 +59,11 @@ class Run:
         self._open_started = None
         self._phases = {}
         self._steps = {}
+        # Seconds per page, one entry per volume that finished. The
+        # estimate is a median of these: one volume that took twenty
+        # minutes against a dead service must not move the figure for the
+        # other twenty-six.
+        self._seconds_per_page = []
         # The panel redraws on this. Called after a change and never
         # before: a frame drawn from half-updated state is worse than one
         # frame late.
@@ -73,7 +79,6 @@ class Run:
         self._open_read = 0
         self._open_started = at if at is not None else time.monotonic()
         self._phases = {}
-        self._events.append(Event("document", name, f"{pages} pages"))
         self._on_change()
 
     def pages_read(self, document, count):
@@ -118,11 +123,7 @@ class Run:
             # Through `render_phase_loss` and not a sentence of its own:
             # the denominator is what makes the zero readable, and a
             # second way of writing a loss is a second way of writing it
-            # wrongly.
-            self._events.append(Event(
-                "phase-lost", document,
-                render_phase_loss(PhaseState.LOST, count=done, total=total,
-                                  unit=unit, reason=reason)))
+            # wrongly.)
         self._on_change()
 
     def warning(self, document, message):
@@ -144,7 +145,6 @@ class Run:
         self.lost(Loss(Code.ARCHIVE_CORRUPT, name, "expand",
                        Locator.file(self.input_dir / name), count=1, total=1,
                        detail=reason))
-        self._events.append(Event("archive-failed", name, reason))
 
     def volume_unreadable(self, name, reason):
         """A volume this process may not open.
@@ -156,17 +156,20 @@ class Run:
         self.lost(Loss(Code.VOLUME_UNREADABLE, name, "expand",
                        Locator.document(name), count=1, total=1,
                        detail=reason))
-        self._events.append(Event("unreadable", name, reason))
 
     def document_finished(self, name, ok, reason="", at=None):
         if ok:
+            if self._open_started is not None and self._open_pages:
+                took = (at if at is not None else time.monotonic()) \
+                    - self._open_started
+                if took > 0:
+                    self._seconds_per_page.append(took / self._open_pages)
             self._written += 1
             # What was read, not what was offered: a volume of 754 pages
             # losing 3 wrote 751 surfaces, and claiming 754 one line above
             # "pages unusable 3 of 754" is the summary contradicting
             # itself. `pages_read` is tracked for exactly this.
             self._pages_written += (self._open_read or self._open_pages)
-            self._events.append(Event("done", name, ""))
         else:
             self._failed.append((name, reason))
             # Nothing was written, so nothing may be claimed: the at-risk
@@ -176,7 +179,6 @@ class Run:
                            self._steps.get(name, "run"),
                            Locator.document(name), count=1, total=1,
                            detail=reason))
-            self._events.append(Event("failed", name, reason))
         self._open = None
         self._open_read = 0
         self._open_pages = 0
@@ -184,10 +186,25 @@ class Run:
 
     # -- what the reporters read ------------------------------------------
 
-    def drain(self):
-        """The events not yet said out loud. Said once, never twice."""
-        events, self._events = self._events, []
-        return tuple(events)
+    def eta(self, now=None):
+        """How long is left, or nothing.
+
+        Nothing until a volume has finished: there is nothing to
+        extrapolate from, and a made-up figure on a four-hour run is
+        worse than none. The count of samples is part of the answer, so
+        the reader can judge how much to trust it.
+        """
+        if not self._seconds_per_page:
+            return ""
+        remaining = self.pages_total - self._pages_written
+        if remaining <= 0:
+            return ""
+        ordered = sorted(self._seconds_per_page)
+        middle = len(ordered) // 2
+        median = (ordered[middle] if len(ordered) % 2
+                  else (ordered[middle - 1] + ordered[middle]) / 2)
+        seconds = int(median * remaining)
+        return f"~{_spoken(seconds)} (median of {len(ordered)})"
 
     def panel(self, now=None, eta="", pages_per_second=0.0):
         now = now if now is not None else time.monotonic()

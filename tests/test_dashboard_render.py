@@ -437,3 +437,90 @@ def test_a_folded_count_is_still_shown_when_it_is_really_a_sum():
     line = next(l for l in text(state(digest=digest)) if "2×" in l)
 
     assert "42" in line
+
+
+# =============================================================================
+# What the panel does with text it did not write
+# =============================================================================
+
+def _cells(text):
+    """Terminal columns, not characters: a wide glyph costs two."""
+    import unicodedata
+
+    return sum(2 if unicodedata.east_asian_width(c) in "WF" else 1
+               for c in text)
+
+
+@pytest.mark.parametrize("width", [56, 60, 72, 80, 92, 100])
+def test_a_lost_phase_line_fits_at_every_width_the_panel_is_offered(width):
+    """`choose_ui` hands out the dashboard from 56 columns, and the LOST
+    line is the longest one the panel composes — with the reason the run
+    actually passes, it overflowed from 56 to 79 and Rich cropped the
+    cause, which is the one thing the design says must be loud."""
+    dead = state(current=DocumentLine(
+        name="LIV0038_t2_reconciled", pages=754, elapsed=22,
+        phases=(PhaseLine("modernize", PhaseState.LOST, done=0, total=1402,
+                          unit="containers",
+                          reason="VieuxParler stopped answering"),)))
+
+    for line in text(dead, width=width):
+        assert _cells(line) <= min(width, 100), repr(line)
+
+
+def test_a_newline_in_a_detail_does_not_add_a_line_the_panel_did_not_draw():
+    """`httpx` error messages are two lines. Clipping by length keeps the
+    control character, so the panel renders one line and the terminal
+    shows two — the second unindented and unclipped."""
+    two_lines = ("Client error '404 Not Found' for url 'http://x/a'\n"
+                 "For more information check: https://developer.mozilla.org/")
+    rendered = text(state(incidents=1, incident_lines=(f"I1 D1  {two_lines}",)))
+
+    assert all("\n" not in line for line in rendered)
+    assert not any("\r" in line or "\t" in line for line in rendered)
+
+
+def test_a_tab_costs_what_it_looks_like_and_not_one_character():
+    rendered = text(state(incidents=1, incident_lines=("I1 D1  a\tb",)))
+
+    assert all("\t" not in line for line in rendered)
+
+
+@pytest.mark.parametrize("width", [56, 80, 100])
+def test_a_wide_glyph_is_measured_in_cells(width):
+    """A CJK name is one `len()` per two columns, so a character count
+    lets the line run off the edge."""
+    wide = state(current=DocumentLine(name="漢字" * 40, pages=1, elapsed=1))
+
+    for line in text(wide, width=width):
+        assert _cells(line) <= min(width, 100), repr(line)
+
+
+def test_the_banner_does_not_fuse_a_service_into_the_log_name():
+    """"NER localog" is a word that does not exist, and at 56 columns the
+    third service vanished — from the banner that exists to show one
+    dying."""
+    banner = text(state(), width=66)[1]
+
+    assert "localog" not in banner
+    assert "log " in banner
+
+
+def test_a_service_dropped_for_want_of_room_is_not_dropped_silently():
+    banner = text(state(), width=56)[1]
+
+    assert "+1" in banner or "NER local" in banner
+
+
+def test_the_incident_lines_are_capped_like_the_warnings_are():
+    """Thirty volumes with both services dead is sixty incident lines and
+    a sixty-nine-line panel, against a floor of twelve. Rich's Live
+    ellipsises from the bottom, so the bar, the totals and the ctrl-c
+    foot are what disappears."""
+    many = state(incidents=60, incident_lines=tuple(
+        f"I{n} LIV{n:04d}  enrich.phase_lost  PyHellen down" for n in range(60)))
+
+    lines = text(many, height=24)
+
+    assert len(lines) <= 24
+    assert any("ctrl-c" in line for line in lines), "the foot was cut"
+    assert any("more" in line for line in lines), "the elision was silent"

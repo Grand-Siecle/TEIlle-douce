@@ -63,8 +63,17 @@ class Dashboard:
         if self._live is None:
             return
         self._tick += 1
-        state = self._run.panel(eta=eta, pages_per_second=pages_per_second)
+        # The run computes it from what actually happened; the caller
+        # only overrides it in tests.
+        state = self._run.panel(eta=eta or self._run.eta(),
+                                pages_per_second=pages_per_second)
         width = min(self._console.width, 100)
         self._live.update(
-            to_renderable(render_panel(state, width=width, tick=self._tick)),
+            to_renderable(render_panel(state, width=width,
+                                       # The terminal's real height: the
+                                       # panel trims its incident list to
+                                       # fit rather than letting Rich
+                                       # ellipsise the foot away.
+                                       height=self._console.height,
+                                       tick=self._tick)),
             refresh=True)

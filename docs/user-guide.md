@@ -195,7 +195,7 @@ teille-douce run --fast --dry-run     # what would happen, writing nothing
 | `--require-services` | A phase whose service is down is fatal (exit 3) **before anything is written**, instead of a warning and a run without that annotation. |
 | `--fail-on never\|incident\|loss` · `--strict` | What counts as a failure at the end of a run. `never` (the default) means losses do not change the exit status. `incident` fails on the third block — a service died, a container raised, a whole phase or a document was lost — which is the block titled *this needs a human*. `loss` adds the defects of the source, which on seventeenth-century OCR is never empty: that level is for a CI freezing an already-clean corpus, not for a daily run. The second block never counts at any level — a guard that rejects a hallucination did its job. `--strict` is `--fail-on incident`. |
 | `--max-page-loss PCT` | A volume losing more than PCT % of its pages is a failure rather than a degraded success. The chain already fails a document whose pages are *all* unusable; this lowers that implicit 100. |
-| `--dashboard` · `--plain` | Draw the live panel, or one line per event. Chosen automatically: a panel in a terminal, a journal in a pipe, a CI log (`CI`, `GITHUB_ACTIONS`, …), a `TERM=dumb`, a window under 56×12, or under `-q`. `TDOUCE_UI=auto\|plain\|dashboard` sits between the automatic rules and these flags. Both reporters read the same record, so the end-of-run summary is identical either way. |
+| `--dashboard` · `--plain` | Draw the live panel, or print the per-document lines without one. Chosen automatically: a panel in a terminal, plain output in a pipe, a CI log (`CI`, `GITHUB_ACTIONS`, …), a `TERM=dumb`, a window under 56×12, or under `-q`. `TDOUCE_UI=auto\|plain\|dashboard` sits between the automatic rules and these flags. The end-of-run report is rendered from the same record either way, so it is identical to the byte. |
 | `-n, --dry-run` | Resolve everything, list the plan, write nothing. |
 | `--fail-fast` | Stop at the first volume that fails. |
 | `--max-failures N` | Stop after N failed volumes. |
@@ -348,6 +348,7 @@ wrapper scripts and CI configurations keep working:
 | `TDOUCE_NER_CONFIDENCE` | `limits.ner_confidence` | `0.6` | Below this, an entity prediction is dropped |
 | `TDOUCE_NER_DEVICE` | `models.device` | `auto` | Where the NER models run: `auto`, `cpu`, `cuda`, `cuda:1`, `mps` |
 | `TDOUCE_FAIL_ON` | `quality.fail_on` | `never` | What counts as a failure: `never`, `incident`, `loss` |
+| `TDOUCE_UI` | `output.ui` | `auto` | Which reporter to use: `auto`, `plain`, `dashboard` |
 | `TDOUCE_MAX_PAGE_LOSS` | `quality.max_page_loss` | `100` | A volume losing more than this share of its pages is a failure |
 | `TDOUCE_DEBUG` | `output.debug` | `0` | Verbose diagnostics, in the console and in the run log |
 | `TDOUCE_LOG_LEVEL` | `output.log_level` | `WARNING` | Console level |

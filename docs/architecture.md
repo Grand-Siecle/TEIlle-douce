@@ -107,8 +107,13 @@ teille_douce/
                              testable without a terminal
     collector.py             What the run talks to. Both reporters read it,
                              which is why they cannot disagree
-    plain.py  dashboard.py   The two reporters; dashboard.py is the only
-    select.py                file here that touches Rich or a screen
+    dashboard.py             The live view on a real screen — the only
+    select.py                file here that touches Rich, and which
+                             reporter a run gets
+    store.py                 What a run leaves on disk: the manifest, the
+                             index of its incidents, and its log
+    logging_bridge.py        WARNING+ records to the digest, never to the
+                             screen
     gate.py                  --fail-on: the third block is the definition of
                              "important", and the second never counts
   tei.py                     The TEI class — facade carrying document state

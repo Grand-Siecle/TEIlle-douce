@@ -115,3 +115,94 @@ def test_a_dry_run_still_gets_a_panel():
     """It resolves everything and prints a plan; there is nothing about
     it that needs the panel suppressed."""
     assert choose(dry_run=True) is UI.DASHBOARD
+
+
+# =============================================================================
+# TDOUCE_UI is a setting like every other
+# =============================================================================
+
+def test_an_empty_value_keeps_the_default_like_every_other_setting():
+    """It was the one TDOUCE_* variable that bypassed the settings layer,
+    so `TDOUCE_UI=` — a normal CI idiom — aborted the run with exit 2
+    after the metadata had loaded. CLAUDE.md: reject the value, say what
+    is used instead, keep going."""
+    import warnings
+
+    from teille_douce.settings import Settings
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        settings = Settings.load(env={"TDOUCE_UI": ""}, flags={})
+
+    assert settings.ui == "auto"
+    assert any("is empty" in str(w.message) for w in caught)
+
+
+def test_an_unknown_value_is_refused_and_the_run_goes_on():
+    import warnings
+
+    from teille_douce.settings import Settings
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        settings = Settings.load(env={"TDOUCE_UI": "fancy"}, flags={})
+
+    assert settings.ui == "auto"
+    assert any("auto, plain, dashboard" in str(w.message) for w in caught)
+
+
+def test_the_choice_is_recorded_in_the_manifest_like_every_other_setting():
+    from teille_douce.settings import Settings
+
+    manifest = Settings.load(env={"TDOUCE_UI": "plain"}, flags={}).as_manifest()
+
+    assert manifest["output.ui"]["value"] == "plain"
+    assert manifest["output.ui"]["origin"].startswith("env")
+
+
+# =============================================================================
+# How long is left
+# =============================================================================
+
+def test_no_estimate_before_a_volume_has_finished():
+    """Nothing to extrapolate from, and a made-up figure on a four-hour
+    run is worse than none."""
+    from teille_douce.report.collector import Run
+
+    run = Run(input_dir="OCR", output_dir="out", volumes=3, pages=30)
+    run.document_started("D1", pages=10)
+
+    assert run.eta(now=10.0) == ""
+
+
+def test_the_estimate_is_the_median_of_what_actually_happened():
+    """A median, not a mean: one volume that took twenty minutes on a
+    dead service must not move the estimate for the other twenty-six."""
+    from teille_douce.report.collector import Run
+
+    run = Run(input_dir="OCR", output_dir="out", volumes=4, pages=40,
+              started_at=0.0)
+    clock = 0.0
+    for index, took in enumerate((10.0, 10.0, 100.0)):
+        run.document_started(f"D{index}", pages=10, at=clock)
+        run.pages_read(f"D{index}", 10)
+        clock += took
+        run.document_finished(f"D{index}", ok=True, at=clock)
+
+    # 30 of 40 pages written, a median of 1 s/page over three volumes:
+    # ten pages left is about ten seconds, and the outlier does not move
+    # it.
+    assert "10s" in run.eta(now=clock)
+    assert "median of 3" in run.eta(now=clock)
+
+
+def test_the_estimate_says_nothing_once_everything_is_written():
+    from teille_douce.report.collector import Run
+
+    run = Run(input_dir="OCR", output_dir="out", volumes=1, pages=10,
+              started_at=0.0)
+    run.document_started("D1", pages=10)
+    run.pages_read("D1", 10)
+    run.document_finished("D1", ok=True)
+
+    assert run.eta(now=10.0) == ""
