@@ -286,7 +286,7 @@ def _short_log(name, room=22):
     costs the reader more than it saves — so the tail starts at the
     nearest separator.
     """
-    if len(name) <= room:
+    if cells(name) <= room:
         return name
     tail = name[-room:]
     boundary = tail.find("_")
@@ -323,9 +323,16 @@ def _phase_span(phase, room, unicode_, tick=0, reserved=0):
     # `1:12:40` into `1:12:…` at every width. A budget written as a
     # literal is a budget that goes wrong the first time the thing it
     # counts changes size.
-    body_room = room - 3 - cells(named)
+    # The head is clipped too. It was the one span on the panel that was
+    # not, so a phase name wider than the terminal ran straight past the
+    # edge, trailed its own column pad, and ate the room the clock had
+    # just been promised — `1:12:…` again, moved from the narrow case to
+    # the long-name one. `panel.py` says a name that wide must not have
+    # to know it is unusual; this is what that costs.
+    head = clip(f"   {named}", max(4, room - 4))
+    body_room = room - cells(head)
     if phase.state is PhaseState.PENDING:
-        return [Span(f"   {named}", ""),
+        return [Span(head, ""),
                 Span(clip(f"{idle} pending", body_room), "graphite")]
 
     if phase.state is PhaseState.LOST:
@@ -333,7 +340,7 @@ def _phase_span(phase, room, unicode_, tick=0, reserved=0):
                                  phase.unit, phase.reason or "service lost")
         # Clipped like everything else: this is the longest line the
         # panel composes, and it is the one whose cause must be loud.
-        return [Span(f"   {named}"),
+        return [Span(head),
                 Span(clip(f"{bad} {body}", body_room), "vermilion")]
 
     if phase.state is PhaseState.RUNNING:
@@ -464,21 +471,44 @@ def render_panel(state, width=92, height=None, unicode=True, color=True,
                 # The cause on its own line, under the phase it belongs
                 # to. "(was up at start)" is the difference between a
                 # misconfiguration and a service that died mid-run.
-                lines.append([Span(clip(f"               {phase.note}", room),
+                # Indented to the column the mark above it starts at,
+                # measured. Fifteen literal spaces was right when the
+                # name column was twelve cells; it has been thirteen
+                # since the round that widened it, and the cause sat one
+                # short of the thing it explains. The third literal that
+                # change invalidated, in the caller of the two that were
+                # fixed.
+                under = 3 + cells(phase.name + " " * max(1, 13 - cells(phase.name)))
+                lines.append([Span(clip(f"{' ' * under}{phase.note}", room),
                                    "vermilion")])
 
-    # Composed span by span to keep the incident count its own colour,
-    # so clipped span by span too: six-digit totals ran past the edge.
-    totals, used = [], 0
-    for text_, style in ((f" source {_grouped(state.source_lost)}    ", ""),
-                         (f"withheld {_grouped(state.withheld)}    ", ""),
-                         (f"incident {_grouped(state.incidents)}",
-                          "vermilion" if state.incidents else "")):
-        piece = clip(text_, room - used)
-        if not piece:
+    # Composed span by span to keep the incident count its own colour.
+    # Clipped span by span, the row lost `incident` entirely below fifty
+    # columns and cut it mid-number up to sixty-two: `incident 9 99…`,
+    # on the row whose whole purpose is that a counter is not mistaken
+    # for a document that had nothing to process. The separators give
+    # way instead, and then the words — the numbers never.
+    counts = ((f"source {_grouped(state.source_lost)}", ""),
+              (f"withheld {_grouped(state.withheld)}", ""),
+              (f"incident {_grouped(state.incidents)}",
+               "vermilion" if state.incidents else ""))
+    bare = ((f"src {_grouped(state.source_lost)}", ""),
+            (f"wth {_grouped(state.withheld)}", ""),
+            (f"inc {_grouped(state.incidents)}",
+             "vermilion" if state.incidents else ""))
+    for shown, gap in ((counts, "    "), (counts, " "), (bare, " ")):
+        width_needed = sum(cells(t) for t, _ in shown) + len(gap) * 2 + 1
+        if width_needed <= room:
+            totals = [Span(" ")]
+            for index, (text_, style) in enumerate(shown):
+                if index:
+                    totals.append(Span(gap))
+                totals.append(Span(text_, style))
             break
-        totals.append(Span(piece, style))
-        used += cells(piece)
+    else:
+        # Nothing fits whole. The incident count is the one that must
+        # survive, so it is the one kept.
+        totals = [Span(" "), Span(clip(bare[2][0], room - 1), bare[2][1])]
     lines.append(totals)
 
     # What is left for the two elastic blocks, once the closing rule and

@@ -18,6 +18,13 @@ from .text import cells, clip, pad, shorten_path
 
 MAX_WIDTH = 100
 
+# Every line fits the width, with three exceptions, all of them the same
+# exception: a NUMBER is printed whole or not at all. The headline and
+# the verdict are the run's accounting; a bare count on its own line is
+# what is left when a terminal is narrower than the figure it is being
+# told. A terminal wraps them and nothing is lost; clipped, they would
+# state a number that is not true.
+
 # What each line of the three blocks is called, and what it is measured
 # against. Written out rather than derived from the code name so the
 # summary reads as English and the codes stay short.
@@ -270,8 +277,12 @@ def _located_line(located, room):
     # line — and a figure cut in half is not one. `clip` took the second
     # apart mid-number below forty-two columns, so they go on two lines
     # rather than one and a bit.
+    # The indent is spent before the figure is: twelve spaces in front of
+    # a seven-figure count runs off a thirty-column terminal, and the
+    # count is the only part of the line that cannot be shortened.
+    second = f"{vague} doc-only"
     return (f"  located   {precise} precise\n"
-            f"            {vague} doc-only")
+            f"{' ' * max(0, min(12, room - cells(second)))}{second}")
 
 
 def _share(value, bar):

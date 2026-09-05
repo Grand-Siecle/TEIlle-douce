@@ -14,6 +14,7 @@
 # -----------------------------------------------------------
 import json
 import shutil
+import sys
 from pathlib import Path
 
 import pytest
@@ -576,5 +577,79 @@ def test_a_teardown_that_raises_gives_the_signal_back(monkeypatch, tmp_path):
     assert signal.getsignal(signal.SIGINT) is before, (
         "the process is left deaf to Ctrl-C")
     # And it really is deaf otherwise: the default handler raises.
+    with pytest.raises(KeyboardInterrupt):
+        os.kill(os.getpid(), signal.SIGINT)
+
+
+def test_the_note_never_lands_in_the_report_or_replaces_its_verdict(
+        monkeypatch, capsys):
+    """It went through `console.print`, so it printed AFTER the verdict —
+    the summary's last line and the one wrappers grep. Moved to stderr,
+    its guard caught `OSError` alone: under `2>&-` `sys.stderr` is None
+    and `print(file=None)` falls back to stdout, putting it back in the
+    report; a CLOSED stderr raises `ValueError`, which escaped the
+    `finally` and replaced the run's own `SystemExit`."""
+    import io
+    import signal
+
+    # A closed stderr: the case that used to escape.
+    closed = io.StringIO()
+    closed.close()
+    monkeypatch.setattr(sys, "stderr", closed)
+
+    with pytest.raises(SystemExit) as verdict:
+        with run_module.finishing(run_module.HeldInterrupts()):
+            signal.raise_signal(signal.SIGINT)
+            raise SystemExit(5)
+
+    assert verdict.value.code == 5
+
+    # And `2>&-`, where `print(file=None)` would fall back to stdout.
+    monkeypatch.setattr(sys, "stderr", None)
+    capsys.readouterr()
+    with run_module.finishing(run_module.HeldInterrupts()):
+        signal.raise_signal(signal.SIGINT)
+
+    assert capsys.readouterr().out == ""
+
+
+def test_the_progress_bars_own_teardown_cannot_leave_ctrl_c_held(
+        monkeypatch, tmp_path):
+    """The guard was one frame too far in: `Progress.__exit__` is Rich
+    stopping a Live and writing to the console — the `BrokenPipeError`
+    risk under `| head` — and it ran between the hold and any release."""
+    import os
+    import signal
+
+    from teille_douce.cli import app
+    from teille_douce.cli.app import settings_from
+    from teille_douce.settings import set_settings
+
+    from test_e2e_pipeline import ALTO_MIN, FIXTURES
+
+    for csv in ("metadata_livre.csv", "metadata_personne.csv"):
+        shutil.copy(FIXTURES / csv, tmp_path / csv)
+    monkeypatch.chdir(tmp_path)
+
+    real = run_module.Progress
+
+    class BreaksOnTheWayOut(real):
+        def __exit__(self, *exception):
+            super().__exit__(*exception)
+            raise BrokenPipeError(32, "Broken pipe")
+
+    monkeypatch.setattr(run_module, "Progress", BreaksOnTheWayOut)
+    for name in ("TDOUCE_NER", "TDOUCE_ENRICHMENT", "TDOUCE_MODERNIZE"):
+        monkeypatch.setenv(name, "0")
+    parser = app.build_parser()
+    args = parser.parse_args(["run", "--no-config", "-i", str(ALTO_MIN),
+                              "-o", str(tmp_path / "out")])
+    set_settings(settings_from(args, parser=parser))
+
+    before = signal.getsignal(signal.SIGINT)
+    with pytest.raises(BrokenPipeError):
+        run_module.execute(args)
+
+    assert signal.getsignal(signal.SIGINT) is before
     with pytest.raises(KeyboardInterrupt):
         os.kill(os.getpid(), signal.SIGINT)

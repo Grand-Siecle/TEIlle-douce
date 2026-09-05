@@ -766,16 +766,27 @@ def finishing(interrupts=None):
             # this note printed after it. And to the log because stdout
             # is transient — an interrupt in this stretch left no trace
             # a reader coming back on Thursday could find.
-            logging.getLogger(__name__).warning(
+            # To the log FILE only. The same message through the console
+            # handler and again through the print below said it twice on
+            # stderr, and under `-qq` — the level whose help says the
+            # reader accepts losing warnings — only the unsuppressable
+            # copy survived, which is the wrong way round.
+            logging.getLogger(__name__).info(
                 "a Ctrl-C arrived while the report was being written; the "
                 "report and the manifest are complete")
             try:
-                print("  (a Ctrl-C arrived while the report was being "
-                      "written; it is complete)", file=sys.stderr)
-            except OSError:
-                # A closed stderr must not become the thing that escapes
-                # from a `finally` — that is how the round before last
-                # replaced a run's own exit code.
+                # `sys.stderr` is None under `2>&-`, and `print(file=None)`
+                # falls back to STDOUT — which puts the note back into
+                # the report, after the verdict, which is the placement
+                # it was moved away from. And a CLOSED stderr raises
+                # ValueError, not OSError, so the guard let it escape
+                # this `finally` and replace the run's own exit code:
+                # the failure mode of two rounds ago, inside the guard
+                # written to prevent it.
+                if sys.stderr is not None:
+                    print("  (a Ctrl-C arrived while the report was being "
+                          "written; it is complete)", file=sys.stderr)
+            except Exception:
                 pass
 
 
@@ -1923,100 +1934,107 @@ def execute(args):
     warm_up()
 
     # Process documents with progress bar
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[bold blue]{task.description}"),
-        BarColumn(),
-        TextColumn("[green]{task.percentage:>3.0f}%"),
-        TimeElapsedColumn(),
-        console=console,
-        # A progress bar is chatter, and -q asks for none. The panel is
-        # the same information, drawn better: two of them at once would
-        # fight over the same lines.
-        disable=_QUIET or ui is UI.DASHBOARD,
-    ) as progress:
+    # The release has to sit OUTSIDE the progress bar, not inside it.
+    # `Progress.__exit__` is Rich stopping a Live and writing to the
+    # console — the very thing that raises `BrokenPipeError` under
+    # `| head` — and it runs between the hold taken in the loop's
+    # `finally` and any release. Guarded one frame too far in, it
+    # left the process deaf to Ctrl-C with no report written, which
+    # is the state the guard was added to make unreachable.
+    try:
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[bold blue]{task.description}"),
+            BarColumn(),
+            TextColumn("[green]{task.percentage:>3.0f}%"),
+            TimeElapsedColumn(),
+            console=console,
+            # A progress bar is chatter, and -q asks for none. The panel is
+            # the same information, drawn better: two of them at once would
+            # fight over the same lines.
+            disable=_QUIET or ui is UI.DASHBOARD,
+        ) as progress:
 
-        task_docs = progress.add_task("Processing documents", total=len(docs))
+            task_docs = progress.add_task("Processing documents", total=len(docs))
 
-        # One object both the panel and the journal read. Created here
-        # because this is the first point at which the run knows what it
-        # is about to attempt, which is what every denominator on the
-        # summary is measured against.
-        panel_holder = {}
-        reporter_run = ReportRun(
-            input_dir=settings.ocr_dir, output_dir=settings.output_dir,
-            # `broken` and not `failed_archives`: an unreadable directory
-            # is counted in the denominator everywhere else, and freezing
-            # a different total here let the headline say "1/2 converted"
-            # over a verdict saying "1 of 1" — the one disagreement the
-            # shared record exists to prevent.
-            volumes=len(docs) + len(broken),
-            pages=sum(len(paths) for _, paths, _ in docs),
-            log_path=RUN_LOG_FILE or settings.log_file,
-            # The probe already answered for each of them. A panel that
-            # does not say which services are up cannot show one dying,
-            # and that is the case the whole design is built around.
-            # None where the phase was never asked for, False where it
-            # was and the probe said no: red for a service nobody wanted
-            # would say the machine is broken.
-            services=tuple(
-                Service(name, up=(up if asked else None))
-                for name, up, asked in (
-                    ("PyHellen", do_enrich, settings.enrich),
-                    ("VieuxParler", do_modernize, settings.modernize),
-                    ("NER local", do_ner, settings.ner))),
-            # Every change redraws, so a phase that has been waiting on a
-            # service for forty seconds looks different from one that has
-            # stopped — which is the state a four-hour run spends most of
-            # its time in.
-            on_change=lambda: (panel_holder["panel"].draw(
-                pages_per_second=_pages_per_second(reporter_run, run_started))
-                if panel_holder.get("panel") else None),
-        )
-        if store is not None:
-            # Indexed as it happens. `execute` catches Exception, and a
-            # KeyboardInterrupt is a BaseException that goes straight
-            # through it — a Ctrl-C in the fourth hour used to take four
-            # hours of knowledge with it.
-            reporter_run.on_incident = store.incident
-        for name, reason in failed_archives:
-            reporter_run.archive_failed(name, reason)
-        for name, reason in broken:
-            if any(name == known for known, _ in reporter_run.failed_archives):
-                continue
-            # Before the loop, like the archives: recorded after the panel
-            # came down, an unreadable volume never reached the counts the
-            # panel shows, so a finished run still read "1 to go" beside
-            # "incident 0" over a summary reporting one.
-            #
-            # And filing it as a corrupt archive gave the wrong diagnosis
-            # and an address that is a directory: the problem is
-            # permissions, and repacking would not fix it.
-            reporter_run.volume_unreadable(name, reason)
+            # One object both the panel and the journal read. Created here
+            # because this is the first point at which the run knows what it
+            # is about to attempt, which is what every denominator on the
+            # summary is measured against.
+            panel_holder = {}
+            reporter_run = ReportRun(
+                input_dir=settings.ocr_dir, output_dir=settings.output_dir,
+                # `broken` and not `failed_archives`: an unreadable directory
+                # is counted in the denominator everywhere else, and freezing
+                # a different total here let the headline say "1/2 converted"
+                # over a verdict saying "1 of 1" — the one disagreement the
+                # shared record exists to prevent.
+                volumes=len(docs) + len(broken),
+                pages=sum(len(paths) for _, paths, _ in docs),
+                log_path=RUN_LOG_FILE or settings.log_file,
+                # The probe already answered for each of them. A panel that
+                # does not say which services are up cannot show one dying,
+                # and that is the case the whole design is built around.
+                # None where the phase was never asked for, False where it
+                # was and the probe said no: red for a service nobody wanted
+                # would say the machine is broken.
+                services=tuple(
+                    Service(name, up=(up if asked else None))
+                    for name, up, asked in (
+                        ("PyHellen", do_enrich, settings.enrich),
+                        ("VieuxParler", do_modernize, settings.modernize),
+                        ("NER local", do_ner, settings.ner))),
+                # Every change redraws, so a phase that has been waiting on a
+                # service for forty seconds looks different from one that has
+                # stopped — which is the state a four-hour run spends most of
+                # its time in.
+                on_change=lambda: (panel_holder["panel"].draw(
+                    pages_per_second=_pages_per_second(reporter_run, run_started))
+                    if panel_holder.get("panel") else None),
+            )
+            if store is not None:
+                # Indexed as it happens. `execute` catches Exception, and a
+                # KeyboardInterrupt is a BaseException that goes straight
+                # through it — a Ctrl-C in the fourth hour used to take four
+                # hours of knowledge with it.
+                reporter_run.on_incident = store.incident
+            for name, reason in failed_archives:
+                reporter_run.archive_failed(name, reason)
+            for name, reason in broken:
+                if any(name == known for known, _ in reporter_run.failed_archives):
+                    continue
+                # Before the loop, like the archives: recorded after the panel
+                # came down, an unreadable volume never reached the counts the
+                # panel shows, so a finished run still read "1 to go" beside
+                # "incident 0" over a summary reporting one.
+                #
+                # And filing it as a corrupt archive gave the wrong diagnosis
+                # and an address that is a directory: the problem is
+                # permissions, and repacking would not fix it.
+                reporter_run.volume_unreadable(name, reason)
 
-        # Per volume, because a share only means something against one
-        # volume's own pages: 388 lost out of 400 is a file nobody wants
-        # to publish, and out of 16 999 it is a normal Tuesday.
-        pages_lost_per_document = {}
+            # Per volume, because a share only means something against one
+            # volume's own pages: 388 lost out of 400 is a file nobody wants
+            # to publish, and out of 16 999 it is a normal Tuesday.
+            pages_lost_per_document = {}
 
-        ok_docs = []
-        stopped_early = False
-        interrupted = False
-        # Shared with the finishing section below, so a second
-        # Ctrl-C cannot land between the two.
-        interrupts = HeldInterrupts()
-        # Entity directories this run brought into existence. A failure
-        # cleans up only these, never a directory that was already there.
-        entity_dirs_created, entity_files_before = set(), {}
-        entity_snapshot_failed = set()
-        # Corrupt archives belong in the summary and in the exit code, but
-        # not in the failure budget: seeding the list with them made
-        # --fail-fast stop after the first SUCCESSFUL document.
-        failed_docs = []
-        # Under a context manager, so the teardown happens whatever ends
-        # the loop: a signal arrives at an arbitrary instruction, not
-        # conveniently inside the one `try` this loop used to have.
-        try:
+            ok_docs = []
+            stopped_early = False
+            interrupted = False
+            # Shared with the finishing section below, so a second
+            # Ctrl-C cannot land between the two.
+            interrupts = HeldInterrupts()
+            # Entity directories this run brought into existence. A failure
+            # cleans up only these, never a directory that was already there.
+            entity_dirs_created, entity_files_before = set(), {}
+            entity_snapshot_failed = set()
+            # Corrupt archives belong in the summary and in the exit code, but
+            # not in the failure budget: seeding the list with them made
+            # --fail-fast stop after the first SUCCESSFUL document.
+            failed_docs = []
+            # Under a context manager, so the teardown happens whatever ends
+            # the loop: a signal arrives at an arbitrary instruction, not
+            # conveniently inside the one `try` this loop used to have.
             with panel_installed(reporter_run, ui is UI.DASHBOARD) as panel:
                 panel_holder["panel"] = panel
                 try:
@@ -2156,14 +2174,9 @@ def execute(args):
                     # on every way out of the loop, and it is above the
                     # teardown, which happens as the `with` below it exits.
                     interrupts.hold()
-        except BaseException:
-            # The panel's teardown can raise, and the hold taken in
-            # the loop's `finally` above would then never be given
-            # back: the process would carry on deaf to Ctrl-C with
-            # no report written. Released here so the only way past
-            # this point is with the signal restored.
-            interrupts.release()
-            raise
+    except BaseException:
+        interrupts.release()
+        raise
     # Ctrl-C held from the loop's own `finally` above to the end of
     # the run, and released here. Everything in between — the
     # panel's teardown, the accounting, the gate, the manifest, the

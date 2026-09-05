@@ -41,9 +41,16 @@ def _exempt(line):
     `cat …/incidents.jsonl…` is not a shorter command but one that does
     not run. All three wrap in a terminal and lose nothing.
     """
+    import re
+
     bare = line.lstrip()
     return (bare.startswith(("exit ", "Done.", "Completed"))
-            or bare.startswith(("cat ", "teille-douce ")))
+            or bare.startswith(("cat ", "teille-douce "))
+            # A bare count on a line of its own: what is left when the
+            # terminal is narrower than the figure it is being told. The
+            # same rule as the two above — a number is printed whole or
+            # not at all.
+            or bool(re.fullmatch(r"[\d\u202f ]+ of [\d\u202f ]+ \w+", bare)))
 
 
 # =============================================================================
@@ -615,8 +622,14 @@ def test_the_page_accounting_survives_an_absolute_output_path():
         # Below about fifty columns the count takes a line of its own,
         # and drops the word: the arrow line above already says these
         # are what was written, and the eight figures are what matter.
-        assert any("16 999 of 16 999 pages" in line
-                   for line in shown), (width, shown[:8])
+        # Asserted as a pair rather than as the weaker substring the
+        # rewrite left behind — `pages` alone also matches `0/16 999
+        # pages` in the bar.
+        assert any("16 999 of 16 999 pages" in line for line in shown), (
+            width, shown[:8])
+        assert any(line.rstrip().endswith("written") or
+                   line.rstrip().endswith("16 999 pages") for line in shown), (
+            width, shown[:8])
 
 
 def test_a_label_of_exactly_the_column_width_keeps_its_separator():
@@ -697,6 +710,26 @@ def test_the_located_line_prints_both_figures_whole():
         assert "2 779 000" in shown, (width, shown)
 
 
+def test_every_line_of_a_summary_fits_its_terminal():
+    """The three exemptions are the module's own, and they are one rule:
+    a number is printed whole or not at all."""
+    from teille_douce.report.text import cells
+
+    record = RunRecord()
+    record.add(Loss(Code.CONTAINER_FAILED, "D1", "enrich",
+                    Locator.document("D1"), count=1699998, total=1699998,
+                    detail="the pipeline raised on these"))
+
+    for width in range(28, 141):
+        for line in render_summary(
+                outcome(record=record,
+                        output_dir=Path("/home/rayondemiel/tei_output")),
+                width=width):
+            if _exempt(line):
+                continue
+            assert cells(line) <= min(width, 100), (width, cells(line), line)
+
+
 def test_no_line_of_a_summary_ends_in_whitespace():
     """The same strings go into a log file, where trailing runs of spaces
     are noise — which is what `_MARGIN`'s own comment says."""
@@ -709,3 +742,30 @@ def test_no_line_of_a_summary_ends_in_whitespace():
                 outcome(record=record, exit_code=4, volumes_written=0,
                         failed_documents=(("D1", ""),)), width=width):
             assert line == line.rstrip(), (width, repr(line))
+
+
+def test_every_composed_line_leaves_the_margin_the_module_reserves():
+    """Two columns of blank at the right edge, so the eye can find the
+    end of a line. The page-accounting line alone passed the bare room,
+    and ran to a hundred cells where its neighbours stop at ninety-eight
+    — invisible to every width assertion, which all compare against the
+    terminal rather than against the margin."""
+    from teille_douce.report.summary import MAX_WIDTH, _MARGIN
+    from teille_douce.report.text import cells
+
+    record = RunRecord()
+    record.add(Loss(Code.PAGE_UNUSABLE, "D1", "sourcedoc",
+                    Locator.page("D1", "f1"), count=388, total=400,
+                    detail="no <surface> could be built"))
+
+    for width in (72, 92, 100, 140):
+        room = min(width, MAX_WIDTH) - _MARGIN
+        for line in render_summary(
+                outcome(record=record,
+                        output_dir=Path("/home/rayondemiel/univ/tei_output")),
+                width=width):
+            # A rule spans the width on purpose; the margin is for the
+            # lines that carry words.
+            if _exempt(line) or not line.strip() or set(line) <= {"═", "─"}:
+                continue
+            assert cells(line) <= room, (width, cells(line), room, line)
