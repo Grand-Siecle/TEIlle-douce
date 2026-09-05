@@ -28,6 +28,8 @@ _OPTION_FOR_SETTING = {
     "modernize_batch_size": "--batch-size",
     "modernize_concurrency": "--concurrency",
     "pyhellen_concurrency": "--concurrency",
+    "fail_on": "--fail-on",
+    "max_page_loss": "--max-page-loss",
     "ner_device": "--device",
     "log_file": "--log-file",
     "log_level": "--log-level",
@@ -277,6 +279,21 @@ def add_run_arguments(parser):
                         default=none,
                         help="where the NER models run: auto, cpu, cuda, "
                              "cuda:1, mps  [auto]")
+
+    quality = parser.add_argument_group("quality gate")
+    quality.add_argument("--fail-on", dest="fail_on",
+                         choices=("never", "incident", "loss"), default=none,
+                         help="what counts as a failure: never, incident "
+                              "(a service died, a container raised, a whole "
+                              "phase or a document was lost), or loss "
+                              "(also the defects of the source)  [never]")
+    quality.add_argument("--strict", dest="strict", action="store_true",
+                         default=False,
+                         help="alias of --fail-on incident")
+    quality.add_argument("--max-page-loss", dest="max_page_loss", metavar="PCT",
+                         default=none,
+                         help="a volume losing more than PCT%% of its pages "
+                              "is a failure, not a degraded success  [100]")
 
     failure = parser.add_argument_group("failure handling")
     failure.add_argument("-n", "--dry-run", action="store_true",

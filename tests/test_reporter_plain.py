@@ -225,3 +225,69 @@ def test_a_run_without_a_log_file_still_has_a_panel():
               pages=1, log_path=None)
 
     assert run.panel().log_path == "(none)"
+
+
+# =============================================================================
+# The two accounts may never disagree
+# =============================================================================
+
+def test_pages_written_counts_the_pages_that_were_written():
+    """A volume of ten pages losing three writes seven surfaces. Adding
+    the volume's total instead printed "10 of 10 pages written" one line
+    above "pages unusable 3 of 10"."""
+    run = a_run()
+    run.document_started("D1", pages=10)
+    run.pages_read("D1", 7)
+    run.document_finished("D1", ok=True)
+
+    assert run.panel().pages_written == 7
+    assert run.finished(exit_code=0, elapsed=1.0).pages_written == 7
+
+
+def test_a_volume_that_read_every_page_writes_every_page():
+    run = a_run()
+    run.document_started("D1", pages=10)
+    run.pages_read("D1", 10)
+    run.document_finished("D1", ok=True)
+
+    assert run.panel().pages_written == 10
+
+
+def test_a_reporter_cannot_kill_the_run_it_is_reporting_on():
+    """`phase(..., LOST)` with the method's own defaults raised out of the
+    collector — and raised AFTER recording the loss, leaving the record
+    holding an entry the journal never got."""
+    run = a_run()
+    run.document_started("D1", pages=10)
+
+    run.phase("D1", "enrich", PhaseState.LOST)          # no reason, no total
+
+    loss, = run.record.losses(Block.INCIDENT)
+    assert loss.code is Code.PHASE_LOST
+    assert "unknown" in " ".join(e.text for e in run.drain()).lower()
+
+
+def test_a_repair_is_not_counted_among_the_things_that_can_be_looked_at():
+    """`located` answers "how much of what was lost can you open". A
+    repaired defect lost nothing, and it is the largest figure this corpus
+    produces — counting it made a clean run report six thousand
+    unlocatable losses."""
+    from teille_douce.report.record import RunRecord
+
+    record = RunRecord()
+    record.add(Loss(Code.ALTO_IDS_REPAIRED, "D1", "sourcedoc",
+                    Locator.document("D1"), count=6174, total=41908))
+
+    assert record.located() == {"precise": 0, "document_only": 0}
+
+
+def test_a_repair_is_not_counted_in_the_panel_total_either():
+    from teille_douce.report.record import Block as B, RunRecord
+
+    record = RunRecord()
+    record.add(Loss(Code.ALTO_IDS_REPAIRED, "D1", "sourcedoc",
+                    Locator.document("D1"), count=6174, total=41908))
+    record.add(Loss(Code.PAGE_UNUSABLE, "D1", "sourcedoc",
+                    Locator.page("D1", "f1"), count=3, total=754))
+
+    assert record.total(B.SOURCE) == 3

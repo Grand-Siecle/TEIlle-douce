@@ -99,6 +99,7 @@ class Code(Enum):
     # the source was defective
     PAGE_UNUSABLE = ("page_unusable", Block.SOURCE)
     ARCHIVE_CORRUPT = ("archive_corrupt", Block.SOURCE)
+    VOLUME_UNREADABLE = ("volume_unreadable", Block.INCIDENT)
     ALTO_IDS_REPAIRED = ("alto_ids_repaired", Block.SOURCE, True)
 
     # withheld on purpose
@@ -174,9 +175,16 @@ class RunRecord:
                      if block is None or entry.block is block)
 
     def total(self, block):
-        """How much that block lost. Answers 0 rather than nothing: a line
-        that disappears cannot be told from a phase never checked."""
-        return sum(entry.count for entry in self.losses(block))
+        """How much that block LOST. Answers 0 rather than nothing: a line
+        that disappears cannot be told from a phase never checked.
+
+        Repairs are not in it. `Code.repaired` exists to keep a defect
+        that cost nothing out of loss arithmetic, and this is the largest
+        such figure the corpus produces — counted, a clean run would
+        report six thousand losses.
+        """
+        return sum(entry.count for entry in self.losses(block)
+                   if not entry.code.repaired)
 
     def whole_phases_lost(self):
         """Documents written with no annotation at all.
@@ -195,8 +203,9 @@ class RunRecord:
         many of the 31 667 things this run dropped they can open, not how
         many lines the collector happened to write.
         """
-        precise = sum(entry.count for entry in self._losses
+        lost = [entry for entry in self._losses if not entry.code.repaired]
+        precise = sum(entry.count for entry in lost
                       if entry.locator.kind is not Kind.DOC)
-        vague = sum(entry.count for entry in self._losses
+        vague = sum(entry.count for entry in lost
                     if entry.locator.kind is Kind.DOC)
         return {"precise": precise, "document_only": vague}

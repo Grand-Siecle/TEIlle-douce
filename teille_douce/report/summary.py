@@ -23,6 +23,7 @@ _LABELS = {
     Code.PAGE_UNUSABLE: ("pages unusable", "pages"),
     Code.ALTO_IDS_REPAIRED: ("ALTO ids repaired", "ids"),
     Code.ARCHIVE_CORRUPT: ("archives corrupt", "archives"),
+    Code.VOLUME_UNREADABLE: ("volumes unreadable", "volumes"),
     Code.READING_REJECTED: ("readings rejected", "readings"),
     Code.ENTITY_FILTERED: ("entities filtered", "entities"),
     Code.CONTAINER_UNANCHORED: ("containers unanchored", "containers"),
@@ -62,6 +63,8 @@ class RunOutcome:
     # accounts of one run, and the reader has no way to tell which to
     # believe. It is also what a nightly wrapper greps.
     headline: str = ""
+    page_loss_failures: tuple = ()
+    max_page_loss: float = 100.0
 
 
 def _duration(seconds):
@@ -199,9 +202,16 @@ def _verdict(outcome):
     """The last line: what happened, and why it is or is not enough."""
     not_converted = outcome.volumes_total - outcome.volumes_written
     if outcome.exit_code == 5:
+        if outcome.page_loss_failures:
+            return (f"exit 5 — everything converted, but "
+                    f"{_plural(len(outcome.page_loss_failures), 'volume')} "
+                    f"lost too many pages to publish")
         phases = outcome.record.whole_phases_lost()
-        return (f"exit 5 — everything converted, but {phases} volumes carry "
-                f"no enrichment at all")
+        if phases:
+            return (f"exit 5 — everything converted, but {phases} volumes "
+                    f"carry no enrichment at all")
+        return ("exit 5 — everything converted, but the quality gate was "
+                "not met")
     if not_converted:
         return (f"exit {outcome.exit_code} — {not_converted} of "
                 f"{outcome.volumes_total} volumes not converted")
@@ -248,8 +258,13 @@ def render_summary(outcome, width=92):
     lines.append("")
 
     if outcome.exit_code == 5:
-        lines.append(_columns(f"  quality gate --fail-on {outcome.fail_on}",
-                              "NOT MET", room))
+        asked = (f"--max-page-loss {outcome.max_page_loss:g}"
+                 if outcome.page_loss_failures
+                 else f"--fail-on {outcome.fail_on}")
+        lines.append(_columns(f"  quality gate {asked}", "NOT MET", room))
+        for document, share in outcome.page_loss_failures:
+            lines.append(_columns(f"    {document}",
+                                  f"{share:g}% of its pages unusable", room))
         # The block's own lines, not one per record: three volumes losing
         # the same phase for the same reason is one line saying "3 of 27",
         # and repeating the sentence three times turns a diagnosis into

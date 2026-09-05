@@ -618,7 +618,10 @@ def test_a_failure_touches_no_entity_file_when_ner_did_not_run(tmp_path):
     finally:
         sortie.chmod(0o700)
 
-    assert res.returncode == 1
+    # 4 and not 1: this corpus holds one volume and it failed, so
+    # everything that ran failed — which is a different diagnosis from
+    # "two of forty broke" and now has its own code.
+    assert res.returncode == 4
     assert (entities / "from-a-previous-run.csv").exists(), (
         "a failure with NER off removed files it never wrote"
     )
@@ -1261,3 +1264,144 @@ def test_a_repaired_source_defect_reaches_the_summary(tmp_path):
                             **MODE_COURT)
 
     assert "ALTO ids repaired" in res.stdout
+
+
+# =============================================================================
+# 4: everything that ran failed.  5: nothing failed, and it is still not enough
+# =============================================================================
+
+def _volume_of_unusable_alto(ocr, name):
+    (ocr / name).mkdir(parents=True)
+    (ocr / name / "f1.xml").write_text("not ALTO at all", encoding="utf-8")
+
+
+def test_a_corpus_where_everything_failed_says_so_with_its_own_code(tmp_path):
+    """1 covered "one volume broke" and "all forty broke" alike. A wrapper
+    can now tell a partial failure, which is worth retrying volume by
+    volume, from a total one, which usually means the input or the
+    configuration is wrong."""
+    ocr = tmp_path / "ocr"
+    ocr.mkdir()
+    _volume_of_unusable_alto(ocr, "LIV9001_reconciled")
+    _volume_of_unusable_alto(ocr, "LIV9002_reconciled")
+
+    res, _ = _executer_main(tmp_path, ocr, COLUMNS="200", **MODE_COURT)
+
+    assert res.returncode == 4
+    assert "0/2 documents converted" in res.stdout
+
+
+def test_one_failure_among_several_is_still_a_partial_failure(tmp_path):
+    ocr = tmp_path / "ocr"
+    shutil.copytree(ALTO_MIN, ocr)
+    _volume_of_unusable_alto(ocr, "LIV9002_reconciled")
+
+    res, _ = _executer_main(tmp_path, ocr, COLUMNS="200", **MODE_COURT)
+
+    assert res.returncode == 1
+
+
+def test_a_run_that_lost_pages_still_succeeds_unless_asked_otherwise(tmp_path):
+    """The default. A degraded conversion is still a conversion."""
+    ocr = tmp_path / "ocr"
+    shutil.copytree(ALTO_MIN, ocr)
+    (ocr / DOCUMENT / "zzz_broken.xml").write_text("not ALTO", encoding="utf-8")
+
+    res, _ = _executer_main(tmp_path, ocr, COLUMNS="200", **MODE_COURT)
+
+    assert res.returncode == 0
+    assert "pages unusable" in res.stdout
+
+
+def test_the_quality_gate_turns_that_same_run_into_a_failure(tmp_path):
+    """Everything converted, and it is still not acceptable — which only
+    reads as a contradiction if a written file and a publishable file are
+    the same thing."""
+    ocr = tmp_path / "ocr"
+    shutil.copytree(ALTO_MIN, ocr)
+    (ocr / DOCUMENT / "zzz_broken.xml").write_text("not ALTO", encoding="utf-8")
+
+    res, _ = _executer_main(tmp_path, ocr, args=("--fail-on", "loss"),
+                            COLUMNS="200", **MODE_COURT)
+
+    assert res.returncode == 5
+    assert "quality gate --fail-on loss" in res.stdout
+    assert "NOT MET" in res.stdout
+
+
+def test_the_gate_never_overrides_a_real_failure(tmp_path):
+    """A failed volume is the more concrete fact and takes the code: 1 is
+    rerun with --retry-failed, 5 is decide whether you accept what was
+    lost."""
+    ocr = tmp_path / "ocr"
+    shutil.copytree(ALTO_MIN, ocr)
+    _volume_of_unusable_alto(ocr, "LIV9002_reconciled")
+
+    res, _ = _executer_main(tmp_path, ocr, args=("--fail-on", "loss"),
+                            COLUMNS="200", **MODE_COURT)
+
+    assert res.returncode == 1
+
+
+def test_a_volume_losing_most_of_its_pages_is_not_a_degraded_success(tmp_path):
+    ocr = tmp_path / "ocr"
+    shutil.copytree(ALTO_MIN, ocr)
+    for index in range(30):
+        (ocr / DOCUMENT / f"zzz_{index}.xml").write_text("no", encoding="utf-8")
+
+    res, _ = _executer_main(tmp_path, ocr, args=("--max-page-loss", "50"),
+                            COLUMNS="200", **MODE_COURT)
+
+    assert res.returncode == 5
+    assert "max-page-loss" in res.stdout
+
+
+def test_the_headline_and_the_verdict_count_the_same_volumes(tmp_path):
+    """The whole reason the report takes the accounting sentence instead
+    of deriving one: an unreadable directory was in the headline's
+    denominator and not in the verdict's, so the two lines of one summary
+    disagreed about how big the corpus was."""
+    import re
+    import stat
+
+    ocr = tmp_path / "ocr"
+    shutil.copytree(ALTO_MIN, ocr)
+    shut = ocr / "LIV9002_reconciled"
+    shutil.copytree(ocr / DOCUMENT, shut)
+
+    if not _unreadable(shut):
+        __import__("os").chmod(shut, stat.S_IRWXU)
+        pytest.skip("running as a user that ignores file permissions")
+    try:
+        res, _ = _executer_main(tmp_path, ocr, COLUMNS="200", **MODE_COURT)
+    finally:
+        __import__("os").chmod(shut, stat.S_IRWXU)
+
+    headline = re.search(r"(\d+)/(\d+) documents converted", res.stdout)
+    verdict = re.search(r"exit \d+ — \d+ of (\d+) volumes", res.stdout)
+
+    assert headline and verdict
+    assert headline.group(2) == verdict.group(1), res.stdout
+
+
+def test_an_unreadable_volume_is_an_incident_and_not_a_corrupt_archive(tmp_path):
+    """The ALTO may be perfectly good; the remedy is a mode change, not a
+    repack. Filing it under corrupt archives gave the wrong diagnosis and
+    an address that is a directory."""
+    import stat
+
+    ocr = tmp_path / "ocr"
+    shutil.copytree(ALTO_MIN, ocr)
+    shut = ocr / "LIV9002_reconciled"
+    shutil.copytree(ocr / DOCUMENT, shut)
+
+    if not _unreadable(shut):
+        __import__("os").chmod(shut, stat.S_IRWXU)
+        pytest.skip("running as a user that ignores file permissions")
+    try:
+        res, _ = _executer_main(tmp_path, ocr, COLUMNS="200", **MODE_COURT)
+    finally:
+        __import__("os").chmod(shut, stat.S_IRWXU)
+
+    assert "volumes unreadable" in res.stdout
+    assert "archives corrupt" not in res.stdout

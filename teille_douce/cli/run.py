@@ -32,6 +32,9 @@ from rich.markup import escape
 # Import configuration
 from teille_douce.config import APP_VERSIONS, IIIF_URI, RESPONSIBILITY
 from teille_douce.report.collector import Run as ReportRun
+from teille_douce.report.counts import PhaseState
+from teille_douce.report.gate import (EXIT_GATE_NOT_MET, gate_verdict,
+                                      page_loss_failures)
 from teille_douce.report.record import Code, Locator, Loss
 from teille_douce.report.summary import render_summary
 from teille_douce.settings import get_settings, use_settings
@@ -456,6 +459,9 @@ def _out_path(doc_name, output_dir):
 EXIT_OK = 0
 EXIT_SOME_FAILED = 1
 EXIT_MISCONFIGURED = 3
+# Everything that ran failed. Separated from 1 so a wrapper can tell
+# "retry these two" from "your input or your setup is wrong".
+EXIT_ALL_FAILED = 4
 
 
 def select_documents(docs, selectors, exclusions, limit, skip=None):
@@ -519,6 +525,54 @@ def select_documents(docs, selectors, exclusions, limit, skip=None):
     if limit is not None:
         kept = kept[:limit]
     return kept, skipped
+
+
+def _phase_lost(reporter, doc_name, phase, stats, unit, reason):
+    """A whole phase that produced nothing because its service died.
+
+    Never folded into a container count: a document written with none of
+    a phase is damage of a different kind, and averaging the two is the
+    convenient lie. This is also the only producer of a block-3 loss on a
+    run where every volume converted — which is what `--fail-on incident`
+    exists to catch.
+    """
+    if reporter is None:
+        return
+    reporter.phase(doc_name, phase, PhaseState.LOST,
+                   done=0, total=stats.get("containers_total", 0) or 0,
+                   unit=unit, reason=reason)
+
+
+# One counter used to carry four causes. They are four lines of the
+# report now, in two different blocks — a guard refusing to anchor
+# annotations to the wrong characters is not the same fact as a service
+# refusing to answer, and averaging them is the convenient lie.
+_CONTAINER_CAUSES = (
+    ("containers_broken", Code.CONTAINER_FAILED,
+     "the pipeline raised on these"),
+    ("containers_refused", Code.CONTAINER_FAILED,
+     "the service refused these"),
+    ("containers_unsent", Code.BREAKER_SKIPPED,
+     "the circuit breaker stopped sending"),
+    ("containers_unanchored", Code.CONTAINER_UNANCHORED,
+     ">20% of a block could not be anchored"),
+)
+
+
+def _containers_failed(reporter, doc_name, phase, stats, reason):
+    """Containers a live service did not annotate, by cause.
+
+    Different from a dead service, and it stays a container count: the
+    document has the phase, minus these.
+    """
+    total = (stats.get("containers_found")
+             or stats.get("containers_failed", 0) or 1)
+    for key, code, why in _CONTAINER_CAUSES:
+        count = stats.get(key, 0)
+        if count:
+            reporter.lost(Loss(code, doc_name, phase,
+                               Locator.document(doc_name), count=count,
+                               total=total, detail=why))
 
 
 def _process_document(doc_name, filepaths, doc_dir, df_meta, config,
@@ -595,7 +649,7 @@ def _process_document(doc_name, filepaths, doc_dir, df_meta, config,
         for page in tree.skipped_pages:
             reporter.lost(Loss(
                 Code.PAGE_UNUSABLE, doc_name, "sourcedoc",
-                Locator.page(doc_name, str(page)), count=1,
+                Locator.page(doc_name, page), count=1,
                 total=len(filepaths),
                 detail="no <surface> could be built"))
 
@@ -665,6 +719,11 @@ def _process_document(doc_name, filepaths, doc_dir, df_meta, config,
                 "  [yellow]Warning: PyHellen unreachable for this document "
                 "— no linguistic annotation[/yellow]"
             )
+            _phase_lost(reporter, doc_name, "enrich", enrich_stats,
+                        "containers", "PyHellen stopped answering")
+        elif reporter is not None and enrich_stats:
+            _containers_failed(reporter, doc_name, "enrich", enrich_stats,
+                               "PyHellen refused these containers")
 
     # Step 4: Text modernization (applied after enrichment)
     if do_modernize:
@@ -701,6 +760,19 @@ def _process_document(doc_name, filepaths, doc_dir, df_meta, config,
                 "  [yellow]Warning: VieuxParler returned nothing for this "
                 "document — no modernization[/yellow]"
             )
+            _phase_lost(reporter, doc_name, "modernize", mod_stats,
+                        "containers", "VieuxParler stopped answering")
+        elif reporter is not None:
+            _containers_failed(reporter, doc_name, "modernize", mod_stats,
+                               "VieuxParler refused these containers")
+            if mod_stats.get("batches_failed"):
+                reporter.lost(Loss(
+                    Code.BATCH_FAILED, doc_name, "modernize",
+                    Locator.document(doc_name),
+                    count=mod_stats["batches_failed"],
+                    total=mod_stats["batches_failed"],
+                    detail=f"{mod_stats.get('lines_lost', 0)} lines never "
+                           f"reached VieuxParler"))
 
     # Step 5: Named Entity Recognition (after enrichment + modernization)
     if do_ner:
@@ -1286,12 +1358,21 @@ def execute(args):
         # summary is measured against.
         reporter_run = ReportRun(
             input_dir=settings.ocr_dir, output_dir=settings.output_dir,
-            volumes=len(docs) + len(failed_archives),
+            # `broken` and not `failed_archives`: an unreadable directory
+            # is counted in the denominator everywhere else, and freezing
+            # a different total here let the headline say "1/2 converted"
+            # over a verdict saying "1 of 1" — the one disagreement the
+            # shared record exists to prevent.
+            volumes=len(docs) + len(broken),
             pages=sum(len(paths) for _, paths, _ in docs),
             log_path=RUN_LOG_FILE or settings.log_file,
         )
         for name, reason in failed_archives:
             reporter_run.archive_failed(name, reason)
+        # Per volume, because a share only means something against one
+        # volume's own pages: 388 lost out of 400 is a file nobody wants
+        # to publish, and out of 16 999 it is a normal Tuesday.
+        pages_lost_per_document = {}
 
         ok_docs = []
         stopped_early = False
@@ -1392,6 +1473,8 @@ def execute(args):
             else:
                 ok_docs.append(doc_name)
                 reporter_run.document_finished(doc_name, ok=True)
+                pages_lost_per_document[doc_name] = (
+                    reporter_run.pages_lost(doc_name), len(filepaths))
             progress.advance(task_docs)
 
             # Both asked for explicitly; the default is still to convert
@@ -1429,9 +1512,37 @@ def execute(args):
         # out of forty must not read as thirty-nine silent successes.
         converted += f" ({never_tried} never attempted, the run stopped early)"
     for name, reason in broken:
-        if not any(name == known for known, _ in reporter_run.failed_archives):
-            reporter_run.archive_failed(name, reason)
-    exit_code = EXIT_SOME_FAILED if failed_docs else EXIT_OK
+        if any(name == known for known, _ in reporter_run.failed_archives):
+            continue
+        # Filing it as a corrupt archive gave the reader the wrong
+        # diagnosis and an address that is a directory: the problem is
+        # permissions, and repacking the volume would not fix it.
+        reporter_run.volume_unreadable(name, reason)
+    # 1 covered "one volume broke" and "all forty broke" alike. A wrapper
+    # can now tell a partial failure, worth retrying volume by volume,
+    # from a total one, which usually means the input or the setup is
+    # wrong.
+    # "Everything" has to mean everything: a --fail-fast that stopped
+    # after the first volume did not prove the corpus is unconvertible,
+    # and reporting a total failure would send the operator to check a
+    # configuration that is fine.
+    if failed_docs and not ok_docs and not never_tried:
+        exit_code = EXIT_ALL_FAILED
+    elif failed_docs:
+        exit_code = EXIT_SOME_FAILED
+    else:
+        exit_code = EXIT_OK
+
+    # Only when nothing else failed: a failed volume is the more concrete
+    # fact and takes the code. The two are worth separating because the
+    # remedy differs — 1 is rerun with --retry-failed, 5 is look at what
+    # was lost and decide whether you accept it.
+    verdict = gate_verdict(settings.fail_on, reporter_run.record)
+    too_lossy = page_loss_failures(pages_lost_per_document,
+                                   settings.max_page_loss)
+    if exit_code == EXIT_OK and (not verdict.met or too_lossy):
+        exit_code = EXIT_GATE_NOT_MET
+
     headline = (f"Completed with errors: {converted}" if failed_docs
                 else f"Done. {converted}")
 
@@ -1439,7 +1550,10 @@ def execute(args):
     # greps and every accounting test balances, so the report takes it
     # rather than deriving a second fraction of its own.
     outcome = reporter_run.finished(exit_code=exit_code, headline=headline,
-                                    elapsed=perf_counter() - run_started)
+                                    elapsed=perf_counter() - run_started,
+                                    fail_on=settings.fail_on,
+                                    page_loss_failures=too_lossy,
+                                    max_page_loss=settings.max_page_loss)
     console.print("")
     for line in render_summary(outcome, width=console.width):
         console.print(escape(line), highlight=False)

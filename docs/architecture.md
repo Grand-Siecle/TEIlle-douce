@@ -94,6 +94,23 @@ teille_douce/
     app.py                   Argument parser, subcommand dispatch, flags → Settings
     options.py               Every option of `run`, and the phase fold
     run.py                   Run orchestration, per-document isolation
+  report/                    What a run did, and what it lost
+    counts.py                A loss is never a bare integer: a count carries
+                             its denominator or it raises
+    record.py                The three blocks and typed locators. A page id
+                             IS the ALTO file stem, so it resolves to a file,
+                             an XPath and a IIIF region
+    digest.py                Repeated warnings, folded by shape
+    summary.py               The end-of-run report, as plain text
+    panel.py                 The live view — a pure function of state and
+                             width, so six moments of a four-hour run are
+                             testable without a terminal
+    collector.py             What the run talks to. Both reporters read it,
+                             which is why they cannot disagree
+    plain.py  dashboard.py   The two reporters; dashboard.py is the only
+    select.py                file here that touches Rich or a screen
+    gate.py                  --fail-on: the third block is the definition of
+                             "important", and the second never counts
   tei.py                     The TEI class — facade carrying document state
   constants.py               Namespaces, SegmOnto taxonomies, POS tagsets
   dates.py                   Reading the dates the corpus writes (CSV cells, text)

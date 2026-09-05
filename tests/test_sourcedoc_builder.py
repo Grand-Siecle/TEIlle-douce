@@ -364,7 +364,9 @@ def test_malformed_alto_page_does_not_crash_the_run(tmp_path, monkeypatch, caplo
     # only the unrecoverable one is skipped -- and both anomalies are
     # reported (warning for the recovery, error for the skip).
     assert [s.get(XML_ID) for s in surfaces] == ["f1", "f2"]
-    assert skipped == [3]
+    # The stem and not the number: it is the surface xml:id, so it is an
+    # address the reader can follow.
+    assert skipped == ["f3"]
     messages = [r.message for r in caplog.records]
     assert any("recovered" in m for m in messages), messages
     assert any("page 3 skipped" in m for m in messages), messages

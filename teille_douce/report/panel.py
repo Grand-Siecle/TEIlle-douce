@@ -249,7 +249,11 @@ def _phase_span(phase, room, unicode_, tick=0):
             left += _phase_bar(phase.done, phase.total or 0, 20, unicode_) + " "
         return [Span(left + measured, "bitten")]
 
-    mark = warn if phase.note.startswith(("!", "754 pages read")) else ok
+    # The caller says whether a finished phase is worth a warning mark.
+    # This used to test the note against a literal taken from one sample
+    # document, so every other volume got the wrong mark and that one got
+    # a warning for no reason.
+    mark = warn if phase.reason else ok
     left = f"   {phase.name:<12}{mark} {phase.note}" if phase.note else \
         f"   {phase.name:<12}{ok} done"
     return [Span(left)]
@@ -318,8 +322,11 @@ def render_panel(state, width=92, height=None, unicode=True, color=True,
         lines.append([Span(label), Span(rule, "dim")])
         for entry in digest_lines:
             left = f"    {entry.occurrences}×  {entry.shape}"
+            # No unit: the fold cannot know what the integers counted,
+            # and "8 ids" over a warning about worker counts is a
+            # confident wrong answer.
             right = (f"{entry.documents} volumes"
-                     + (f" · {_grouped(entry.totals[-1])} ids"
+                     + (f"  {_grouped(entry.totals[-1])}"
                         if entry.totals else ""))
             lines.append([Span(_pad(left, right, room), "graphite")])
         hidden = state.digest.elided(limit=3)

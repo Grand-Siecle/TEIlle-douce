@@ -74,6 +74,24 @@ def _as_device(raw):
     return value
 
 
+_FAIL_ON = ("never", "incident", "loss")
+
+
+def _as_fail_on(raw):
+    """What counts as a failure at the end of a run.
+
+    A closed set, and validated here rather than left to a comparison
+    somewhere downstream: `--fail-on incidents` silently meaning "never"
+    is how a CI gate stops guarding without anyone noticing.
+    """
+    if not isinstance(raw, str):
+        raise ValueError("is not a level name")
+    value = raw.strip().lower()
+    if value not in _FAIL_ON:
+        raise ValueError(f"is not one of {', '.join(_FAIL_ON)}")
+    return value
+
+
 def _as_str(raw):
     if not isinstance(raw, str):
         raise ValueError("is not a string")
@@ -208,6 +226,13 @@ _SETTINGS = (
     # Where the NER models run. Automatic is right almost always; the
     # exceptions are a shared GPU somebody else is filling and a machine
     # with more than one, neither of which the pipeline can guess.
+    # The quality gate. Default "never": a degraded conversion is still a
+    # conversion, and on seventeenth-century OCR block 1 is never empty.
+    _Declaration("fail_on", "TDOUCE_FAIL_ON",
+                 "quality.fail_on", _as_fail_on, "never"),
+    _Declaration("max_page_loss", "TDOUCE_MAX_PAGE_LOSS",
+                 "quality.max_page_loss",
+                 _as_number(minimum=0.0, maximum=100.0), 100.0),
     _Declaration("ner_device", "TDOUCE_NER_DEVICE",
                  "models.device", _as_device, "auto"),
     _Declaration("ner_confidence_threshold", "TDOUCE_NER_CONFIDENCE",
@@ -324,6 +349,8 @@ class Settings:
     modernize_concurrency: int
     modernize_similarity_min: float
     health_timeout: float
+    fail_on: str
+    max_page_loss: float
     ner_device: str
     ner_confidence_threshold: float
     max_workers: int

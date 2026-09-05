@@ -104,6 +104,12 @@ def settings_from(args, env=None, parser=None):
 
     flags.update(options.resolve_phases(parser, getattr(args, "phase_ops", None)))
 
+    if getattr(args, "strict", False):
+        # An alias, resolved here so that only one name reaches the
+        # settings: two spellings of one level is two things to keep in
+        # step.
+        flags.setdefault("fail_on", "incident")
+
     if getattr(args, "force", False):
         flags["skip_existing"] = False
     elif getattr(args, "skip_existing", False):

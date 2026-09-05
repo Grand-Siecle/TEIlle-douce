@@ -253,13 +253,20 @@ class TEI:
         joined_texts, carried = dehyphenate_lines(original_texts, zone_types=zone_types)
 
         try:
+            batch_losses = {}
             modernized = modernize_texts(
-                joined_texts, lang="fra", progress_callback=progress_callback
+                joined_texts, lang="fra", progress_callback=progress_callback,
+                losses=batch_losses,
             )
         except Exception as e:
             logger.error("Modernization failed: %s: %r", type(e).__name__, e)
             stats["server_unavailable"] = True
             return stats
+
+        # A batch that never reached the service is a loss with a size,
+        # not a silence: without this, sixty-four unsent lines read like
+        # sixty-four lines that were already modern.
+        stats.update(batch_losses)
 
         if modernized is None:
             # modernize_texts hands back the originals when there was

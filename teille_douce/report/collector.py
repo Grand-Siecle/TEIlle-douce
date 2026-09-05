@@ -96,10 +96,16 @@ class Run:
             rate=rate, waiting=waiting, timeout=timeout, note=note,
             reason=reason, elapsed=elapsed)
         if state is PhaseState.LOST:
+            # A reporter must not be able to kill the run it reports on.
+            # `render_phase_loss` refuses a lost phase with no cause and
+            # no denominator — rightly, when a call site is writing one —
+            # but here the caller is already in trouble, and raising would
+            # also leave the record holding a loss the journal never got.
+            reason = reason or "cause unknown"
+            total = 0 if total is None else total
             self.lost(Loss(Code.PHASE_LOST, document, name,
                            Locator.document(document), count=done,
-                           total=total if total is not None else 0,
-                           detail=reason))
+                           total=total, detail=reason))
             # Through `render_phase_loss` and not a sentence of its own:
             # the denominator is what makes the zero readable, and a
             # second way of writing a loss is a second way of writing it
@@ -128,10 +134,26 @@ class Run:
                        detail=reason))
         self._events.append(Event("archive-failed", name, reason))
 
+    def volume_unreadable(self, name, reason):
+        """A volume this process may not open.
+
+        An incident and not a source defect: the ALTO may be perfectly
+        good, and the remedy is a mode change rather than a repack.
+        """
+        self._failed_archives.append((name, reason))
+        self.lost(Loss(Code.VOLUME_UNREADABLE, name, "expand",
+                       Locator.document(name), count=1, total=1,
+                       detail=reason))
+        self._events.append(Event("unreadable", name, reason))
+
     def document_finished(self, name, ok, reason="", at=None):
         if ok:
             self._written += 1
-            self._pages_written += self._open_pages
+            # What was read, not what was offered: a volume of 754 pages
+            # losing 3 wrote 751 surfaces, and claiming 754 one line above
+            # "pages unusable 3 of 754" is the summary contradicting
+            # itself. `pages_read` is tracked for exactly this.
+            self._pages_written += (self._open_read or self._open_pages)
             self._events.append(Event("done", name, ""))
         else:
             self._failed.append((name, reason))
@@ -189,11 +211,18 @@ class Run:
                          f"{loss.step}.{loss.code.value}  {loss.detail}".strip())
         return tuple(lines)
 
+    def pages_lost(self, document):
+        """Pages of one volume that produced no <surface>."""
+        return sum(loss.count for loss in self.record.losses()
+                   if loss.document == document
+                   and loss.code is Code.PAGE_UNUSABLE)
+
     @property
     def failed_archives(self):
         return tuple(self._failed_archives)
 
-    def finished(self, exit_code, elapsed=None, fail_on="never", headline=""):
+    def finished(self, exit_code, elapsed=None, fail_on="never", headline="",
+                 page_loss_failures=(), max_page_loss=100.0):
         return RunOutcome(
             input_dir=self.input_dir, output_dir=self.output_dir,
             volumes_total=self.volumes_total,
@@ -206,4 +235,6 @@ class Run:
             exit_code=exit_code, fail_on=fail_on,
             failed_documents=tuple(self._failed),
             failed_archives=tuple(self._failed_archives),
-            headline=headline)
+            headline=headline,
+            page_loss_failures=tuple(page_loss_failures),
+            max_page_loss=max_page_loss)

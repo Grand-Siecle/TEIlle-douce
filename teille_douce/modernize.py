@@ -113,7 +113,7 @@ def check_api(lang="fra"):
         return False
 
 
-def modernize_texts(texts, lang="fra", progress_callback=None):
+def modernize_texts(texts, lang="fra", progress_callback=None, losses=None):
     """
     Modernize a list of text lines via the VieuxParler API.
 
@@ -154,7 +154,7 @@ def modernize_texts(texts, lang="fra", progress_callback=None):
     sendable_texts = [texts[i] for i in sendable_idx]
 
     modernized = asyncio.run(
-        _modernize_all(sendable_texts, base_url, progress_callback)
+        _modernize_all(sendable_texts, base_url, progress_callback, losses)
     )
     if modernized is None:
         return None
@@ -166,8 +166,18 @@ def modernize_texts(texts, lang="fra", progress_callback=None):
     return full
 
 
-async def _modernize_all(texts, base_url, progress_callback=None):
-    """Send all batches with limited concurrency, validate, retry divergent lines."""
+async def _modernize_all(texts, base_url, progress_callback=None, losses=None):
+    """Send all batches with limited concurrency, validate, retry divergent lines.
+
+    `losses`, when given, is filled with what never reached the service.
+    A failed batch used to be swallowed by a `continue` and a DEBUG line,
+    which made sixty-four lines that were never sent indistinguishable
+    from sixty-four that were already modern — one is a loss and the
+    other is a success.
+    """
+    if losses is not None:
+        losses.setdefault("batches_failed", 0)
+        losses.setdefault("lines_lost", 0)
     results = list(texts)  # pre-fill with originals as fallback
     batches = [
         (i, texts[i : i + get_settings().modernize_batch_size])
@@ -203,6 +213,9 @@ async def _modernize_all(texts, base_url, progress_callback=None):
                 logger.debug(
                     "Modernize batch at index %d failed: %s", start, response
                 )
+            if losses is not None:
+                losses["batches_failed"] += 1
+                losses["lines_lost"] += len(_batch_texts)
             continue
         any_success = True
         for j, mod in enumerate(response):

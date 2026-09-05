@@ -15,11 +15,10 @@ def _tok(form="mot"):
 
 
 def _stats():
-    return {
-        "containers_found": 0, "containers_enriched": 0,
-        "containers_skipped": 0, "containers_failed": 0,
-        "tokens_total": 0, "sentences_total": 0,
-    }
+    """La forme reelle, pas une copie : une copie partielle laisse un
+    compteur neuf lever au premier increment, et le test le decouvre a la
+    place de l'appelant."""
+    return pipeline.new_stats()
 
 
 def _job_pour(monkeypatch, corresp="#zone_1", index=0, texte="Titre courant repete"):

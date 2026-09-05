@@ -192,6 +192,8 @@ teille-douce run --fast --dry-run     # what would happen, writing nothing
 | `--device DEV` | Where the NER models run: `auto` (the default: a CUDA GPU if there is one, the CPU otherwise), `cpu`, `cuda`, `cuda:1`, `mps`. Naming one matters on a shared GPU somebody else has filled and on a machine with more than one — neither of which the pipeline can guess. Apple silicon is not chosen automatically: ask for `mps`. The run says which device it chose before loading several gigabytes of model. |
 | `--no-probe` | Do not probe the services; assume they answer. |
 | `--require-services` | A phase whose service is down is fatal (exit 3) **before anything is written**, instead of a warning and a run without that annotation. |
+| `--fail-on never\|incident\|loss` · `--strict` | What counts as a failure at the end of a run. `never` (the default) means losses do not change the exit status. `incident` fails on the third block — a service died, a container raised, a whole phase or a document was lost — which is the block titled *this needs a human*. `loss` adds the defects of the source, which on seventeenth-century OCR is never empty: that level is for a CI freezing an already-clean corpus, not for a daily run. The second block never counts at any level — a guard that rejects a hallucination did its job. `--strict` is `--fail-on incident`. |
+| `--max-page-loss PCT` | A volume losing more than PCT % of its pages is a failure rather than a degraded success. The chain already fails a document whose pages are *all* unusable; this lowers that implicit 100. |
 | `-n, --dry-run` | Resolve everything, list the plan, write nothing. |
 | `--fail-fast` | Stop at the first volume that fails. |
 | `--max-failures N` | Stop after N failed volumes. |
@@ -207,16 +209,16 @@ A document that fails never stops the others: it is logged, reported
 only ways to change that, and both are off by default. When either stops a
 run, the summary says how many volumes were never attempted.
 
-**Exit codes.** `0` everything asked for succeeded · `1` some volumes failed
-· `2` usage error · `3` misconfiguration, nothing ran (input directory
-missing, no volumes found, a selector **or an exclusion** matched nothing, `--require-services`
-with a service down).
-
 A document that fails does not kill the run: the error is logged with its
 traceback, the document is reported as `FAILED`, and processing continues. The
 run ends with a summary and exits **non-zero** if anything failed — so it can be
 trusted in a script. Entity CSVs written before a failure are cleaned up, so
 nothing references a TEI that was never produced.
+
+**Exit codes.** `0` everything asked for succeeded · `1` some volumes
+failed · `2` usage error · `3` misconfiguration and nothing ran · `4`
+everything that ran failed · `5` the quality gate was not met. The table
+under [Troubleshooting](#exit-codes) says what each one asks you to do.
 
 **Logs.** Each run writes its own file, `pipeline_YYYYmmdd_HHMMSS_PID.log`, at
 DEBUG level — the process id is there so that volumes launched in parallel,
@@ -320,6 +322,8 @@ wrapper scripts and CI configurations keep working:
 | `TDOUCE_PYHELLEN_MAX_CONSECUTIVE_FAILURES` | `limits.max_consecutive_failures` | `10` | Circuit breaker: stop calling after this many failures in a row |
 | `TDOUCE_NER_CONFIDENCE` | `limits.ner_confidence` | `0.6` | Below this, an entity prediction is dropped |
 | `TDOUCE_NER_DEVICE` | `models.device` | `auto` | Where the NER models run: `auto`, `cpu`, `cuda`, `cuda:1`, `mps` |
+| `TDOUCE_FAIL_ON` | `quality.fail_on` | `never` | What counts as a failure: `never`, `incident`, `loss` |
+| `TDOUCE_MAX_PAGE_LOSS` | `quality.max_page_loss` | `100` | A volume losing more than this share of its pages is a failure |
 | `TDOUCE_DEBUG` | `output.debug` | `0` | Verbose diagnostics, in the console and in the run log |
 | `TDOUCE_LOG_LEVEL` | `output.log_level` | `WARNING` | Console level |
 | `TDOUCE_LOG_FILE` | `output.log_file` | `pipeline.log` | Run log; each run writes its own timestamped file |
@@ -606,6 +610,21 @@ breakdown and for what the eleven rules check.
 
 **`Directory not found: OCR`** — `OCR/` does not exist. Create it, or point
 `TDOUCE_OCR_DIR` elsewhere.
+
+### Exit codes
+
+| | |
+|---|---|
+| **0** | everything asked for succeeded — losses do not change this, unless `--fail-on` says otherwise |
+| **1** | partial failure: some volumes failed, others did not |
+| **2** | usage error: unknown flag, contradictory flags, unknown config key |
+| **3** | misconfiguration, nothing ran: input missing, empty corpus, a selector matching nothing, `--require-services` with a service down |
+| **4** | total failure: everything that ran failed. Distinct from 1 because the remedy differs — 1 is worth retrying volume by volume, 4 usually means the input or the setup is wrong. A run stopped early by `--fail-fast` is never 4: it did not prove the corpus unconvertible |
+| **5** | the quality gate was not met: everything converted, and `--fail-on` or `--max-page-loss` is still not satisfied. Only when nothing else failed — a failed volume is the more concrete fact and takes the code |
+
+"Everything converted" and "exit 5" only contradict each other if a written
+file and a publishable file are the same thing, which is the distinction
+that flag exists to make.
 
 **`No ALTO documents found in OCR/.`** — `OCR/` has no subdirectory containing
 `.xml` files. Loose XML files at the top level of `OCR/` are not picked up:

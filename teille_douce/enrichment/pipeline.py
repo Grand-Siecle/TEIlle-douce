@@ -37,6 +37,34 @@ logger = logging.getLogger(__name__)
 
 
 
+def new_stats():
+    """The shape of what one document's enrichment reports.
+
+    Defined once so that a caller — a test included — cannot build a
+    partial one and have a counter raise the first time it is incremented.
+
+    `containers_failed` used to be a single counter for four unrelated
+    causes, incremented from four places. A guard refusing to anchor
+    annotations to the wrong characters and a service refusing to answer
+    are not the same fact, and blocks 2 and 3 of the report cannot be
+    written honestly while they share a number. The total stays, so
+    nothing that already reads it changes.
+    """
+    return {
+        "containers_found": 0,
+        "containers_enriched": 0,
+        "containers_skipped": 0,
+        "containers_failed": 0,      # the total, unchanged
+        "containers_broken": 0,      # an exception here — needs a human
+        "containers_refused": 0,     # the service answered no
+        "containers_unanchored": 0,  # a guard refused it — block 2
+        "containers_unsent": 0,      # the breaker never sent it
+        "tokens_total": 0,
+        "sentences_total": 0,
+        "server_unavailable": False,
+    }
+
+
 def enrich_body(root, progress_callback=None):
     """
     Enrich all body containers with linguistic annotations.
@@ -52,15 +80,7 @@ def enrich_body(root, progress_callback=None):
     Returns:
         dict: Statistics about the enrichment process.
     """
-    stats = {
-        "containers_found": 0,
-        "containers_enriched": 0,
-        "containers_skipped": 0,
-        "containers_failed": 0,
-        "tokens_total": 0,
-        "sentences_total": 0,
-        "server_unavailable": False,
-    }
+    stats = new_stats()
 
     # Check PyHellen availability. The server is probed once at startup
     # AND here, per document: it can die mid-run, and that case used to
@@ -93,6 +113,7 @@ def enrich_body(root, progress_callback=None):
         except Exception as e:
             logger.error(f"Failed to prepare container {i}: {e}", exc_info=True)
             stats["containers_failed"] += 1
+            stats["containers_broken"] += 1
             jobs.append(None)
 
     # Pass 2 — concurrent HTTP tagging over one keep-alive connection
@@ -126,6 +147,7 @@ def enrich_body(root, progress_callback=None):
                 f"Failed to enrich container {job.index}: {e}", exc_info=True
             )
             stats["containers_failed"] += 1
+            stats["containers_broken"] += 1
             all_sentences.append([])
 
     # Cross-container sentence chaining
@@ -240,6 +262,13 @@ def _finish_container(job, stats):
             reason = outcome[1] if outcome else "no outcome"
             logger.warning("Container %s: tagging failed (%s)", corresp, reason)
             stats["containers_failed"] += 1
+            # The breaker refusing to send is not the service refusing to
+            # answer: one is this pipeline protecting a server from hours
+            # of sequential timeouts, the other is the server saying no.
+            if outcome and str(outcome[0]) == "breaker":
+                stats["containers_unsent"] += 1
+            else:
+                stats["containers_refused"] += 1
             return None
         _status, block_tokens, block_misaligned = outcome
 
@@ -252,13 +281,18 @@ def _finish_container(job, stats):
         if block_misaligned and block_tokens:
             block_ratio = block_misaligned / len(block_tokens)
             if block_ratio > ENRICHMENT_MAX_MISALIGNED_RATIO:
-                logger.error(
+                logger.warning(
                     "Container %s: %d/%d tokens of a %s block could not be "
                     "anchored (%.0f%% > %.0f%%) — left unenriched",
                     corresp, block_misaligned, len(block_tokens), effective_lang,
                     100 * block_ratio, 100 * ENRICHMENT_MAX_MISALIGNED_RATIO,
                 )
                 stats["containers_failed"] += 1
+                # Block 2, not block 3: more than a fifth of a block could
+                # not be anchored, so the guard refused to attach
+                # annotations to the wrong characters. That is the guard
+                # working, and its level drops from ERROR to WARNING.
+                stats["containers_unanchored"] += 1
                 return None
 
         misaligned += block_misaligned

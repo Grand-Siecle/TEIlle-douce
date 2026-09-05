@@ -342,7 +342,8 @@ def build_sourcedoc(
     Returns:
         tuple: (root, skipped_pages, repaired_ids, minted_ids)
             - root: the updated TEI root element
-            - skipped_pages: sorted page numbers whose ALTO was unusable
+            - skipped_pages: sorted file stems whose ALTO was unusable —
+              the stem is the surface xml:id, so each one is an address
             - repaired_ids: ALTO ids this document had to disambiguate —
               a source defect that was repaired, not a loss, and the
               largest single figure this corpus produces
@@ -460,7 +461,11 @@ def build_sourcedoc(
                     "%s: page %s skipped, ALTO unusable (%s: %s)",
                     document_name, page.num, page.filepath.name, error,
                 )
-                skipped_pages.append(page.num)
+                # The file stem, not the page number: the stem IS the
+                # surface xml:id, so it resolves to a file to open, an
+                # XPath that lands and a IIIF region. A number resolves to
+                # none of those.
+                skipped_pages.append(page.filepath.stem)
             repaired_ids += duplicated
             minted_ids += minted
             results[job_index] = xml_bytes
