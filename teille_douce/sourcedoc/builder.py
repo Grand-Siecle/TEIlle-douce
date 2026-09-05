@@ -136,12 +136,16 @@ def _build_surface_fragment(args):
             run in their names, or no digit at all).
 
     Returns:
-        tuple: (job_index, xml_bytes, error, warning) - the job's position,
-        serialized surface XML (None on failure), an error message (None on
-        success) and a warning (e.g. "recovered malformed XML", None when
-        clean). Errors travel as plain strings: lxml exceptions are not
-        picklable and used to come back as an opaque MaybeEncodingError that
-        killed the whole pool, losing the already-processed pages (audit 5.5).
+        tuple: (job_index, xml_bytes, error, warning, duplicated) - the
+        job's position, serialized surface XML (None on failure), an error
+        message (None on success), a warning (e.g. "recovered malformed
+        XML", None when clean), and how many ALTO ids this page had to
+        disambiguate. The count travels in the tuple because it is the one
+        measurement made inside a worker that the summary needs: a logger
+        call in a forkserver child never reaches the parent. Errors travel
+        as plain strings: lxml exceptions are not picklable and used to
+        come back as an opaque MaybeEncodingError that killed the whole
+        pool, losing the already-processed pages (audit 5.5).
     """
     job_index, filepath, num = args
 
@@ -149,14 +153,14 @@ def _build_surface_fragment(args):
         # Inside the try like everything else: this function must never
         # raise (audit 2.3/5.5), and a worker whose initializer did not
         # run would otherwise take the whole document down with it.
-        _, xml_bytes, warning = _build_surface_fragment_inner(
+        _, xml_bytes, warning, duplicated, minted = _build_surface_fragment_inner(
             _JOB_CONTEXT["document_name"], filepath, num,
             _JOB_CONTEXT["segmonto_zones"], _JOB_CONTEXT["segmonto_lines"],
             _JOB_CONTEXT["config"], _JOB_CONTEXT["iiif_mapping_dict"],
         )
-        return job_index, xml_bytes, None, warning
+        return job_index, xml_bytes, None, warning, duplicated, minted
     except Exception as e:  # audit 2.3: one bad page must not kill the run
-        return job_index, None, f"{type(e).__name__}: {e}", None
+        return job_index, None, f"{type(e).__name__}: {e}", None, 0, 0
 
 
 def _parse_alto(filepath):
@@ -274,12 +278,37 @@ def _build_surface_fragment_inner(document_name, filepath, num, segmonto_zones,
     # Duplicate ALTO ids were disambiguated by SurfaceTree; report them
     # through the return tuple — a logger call inside a forkserver worker
     # never reaches the parent's log file.
-    dup_keys = [k for k, n in surface_tree._seen_keys.items() if n > 1]
-    if dup_keys:
-        dup_note = f"{len(dup_keys)} duplicate ALTO id(s) disambiguated"
+    duplicated = _duplicate_ids(surface_tree._seen_keys)
+    minted = _distinct_ids(surface_tree._seen_keys)
+    if duplicated:
+        dup_note = f"{duplicated} duplicate ALTO id(s) disambiguated"
         warning = f"{warning}; {dup_note}" if warning else dup_note
 
-    return num, etree.tostring(surface, encoding="utf-8"), warning
+    return (num, etree.tostring(surface, encoding="utf-8"), warning,
+            duplicated, minted)
+
+
+def _distinct_ids(seen_keys):
+    """How many ALTO ids this page used at all.
+
+    The denominator the repaired count is measured against: "6 174 of
+    41 908" says a defect was widespread, "6 174 of 6 174" says nothing.
+    """
+    return len({parts for _prefix, parts in seen_keys})
+
+
+def _duplicate_ids(seen_keys):
+    """How many ALTO ids were duplicated — not how many registry entries.
+
+    The registry is keyed on (TEI prefix, ALTO ids), so one duplicated
+    ALTO id reported under `zoneLine_`, `path_`, `line_` and `string_`
+    used to count as four. This figure is printed in the summary as a
+    repaired source defect, and it is the largest number this corpus
+    produces: a fourfold exaggeration would make the biggest line of the
+    report the least trustworthy one.
+    """
+    return len({parts for (_prefix, parts), count in seen_keys.items()
+                if count > 1})
 
 
 def build_sourcedoc(
@@ -311,9 +340,12 @@ def build_sourcedoc(
         iiif_mapping (IIIFMapping): Optional IIIF URL mapping instance.
 
     Returns:
-        tuple: (root, skipped_pages)
+        tuple: (root, skipped_pages, repaired_ids, minted_ids)
             - root: the updated TEI root element
             - skipped_pages: sorted page numbers whose ALTO was unusable
+            - repaired_ids: ALTO ids this document had to disambiguate —
+              a source defect that was repaired, not a loss, and the
+              largest single figure this corpus produces
 
     Raises:
         RuntimeError: if two pages would be emitted under one surface
@@ -393,6 +425,8 @@ def build_sourcedoc(
     results = [None] * len(jobs)
 
     skipped_pages = []
+    repaired_ids = 0
+    minted_ids = 0
 
     # Process pages in parallel
     # No `with Pool(...)`: Pool.__exit__ calls terminate(), which SIGTERMs
@@ -410,7 +444,8 @@ def build_sourcedoc(
         ),
     )
     try:
-        for done, (job_index, xml_bytes, error, warning) in enumerate(
+        for done, (job_index, xml_bytes, error, warning, duplicated,
+                   minted) in enumerate(
             pool.imap_unordered(_build_surface_fragment, jobs), start=1
         ):
             page = ordered_files[job_index]
@@ -426,6 +461,8 @@ def build_sourcedoc(
                     document_name, page.num, page.filepath.name, error,
                 )
                 skipped_pages.append(page.num)
+            repaired_ids += duplicated
+            minted_ids += minted
             results[job_index] = xml_bytes
 
             # Update progress bar if provided
@@ -476,4 +513,4 @@ def build_sourcedoc(
             f"TEI would be unreadable — rename the files"
         )
 
-    return output_tei_root, sorted(skipped_pages)
+    return output_tei_root, sorted(skipped_pages), repaired_ids, minted_ids

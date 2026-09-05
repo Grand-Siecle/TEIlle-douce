@@ -1214,3 +1214,50 @@ def test_the_accounting_balances_on_every_way_out_of_a_run(tmp_path, build):
         == seen["attempted"], f"{seen} in:\n{res.stdout}"
     assert seen["attempted"] + seen["skipped"] + seen["no_alto"] \
         == _volumes_offered(ocr), f"{seen} in:\n{res.stdout}"
+
+
+# =============================================================================
+# What a real run leaves on the screen
+# =============================================================================
+
+def test_a_run_ends_with_the_summary_it_promised(tmp_path):
+    """The summary is the thing a reader is left with, and it is rendered
+    from the record — so if it is not printed, nothing else in the report
+    module is reaching a user."""
+    ocr = tmp_path / "ocr"
+    shutil.copytree(ALTO_MIN, ocr)
+
+    res, _ = _executer_main(tmp_path, ocr, COLUMNS="92", TDOUCE_UI="plain",
+                            **MODE_COURT)
+
+    assert res.returncode == 0
+    assert "the source was defective" in res.stdout
+    assert "withheld on purpose" in res.stdout
+    assert "lost to an incident" in res.stdout
+    assert "to a document only" in res.stdout
+    assert "exit 0 — 1 of 1 volumes converted" in res.stdout
+
+
+def test_the_journal_mode_draws_no_panel(tmp_path):
+    """A live panel redirected to a file is forty thousand half-drawn
+    frames."""
+    ocr = tmp_path / "ocr"
+    shutil.copytree(ALTO_MIN, ocr)
+
+    res, _ = _executer_main(tmp_path, ocr, COLUMNS="92", TDOUCE_UI="plain",
+                            **MODE_COURT)
+
+    assert "ctrl-c" not in res.stdout
+
+
+def test_a_repaired_source_defect_reaches_the_summary(tmp_path):
+    """The fixture volume carries duplicate ALTO ids — the loudest number
+    in this corpus. It belongs in block 1, marked repaired, or the
+    biggest figure in the summary reads as an alarm."""
+    ocr = tmp_path / "ocr"
+    shutil.copytree(ALTO_MIN, ocr)
+
+    res, _ = _executer_main(tmp_path, ocr, COLUMNS="92", TDOUCE_UI="plain",
+                            **MODE_COURT)
+
+    assert "ALTO ids repaired" in res.stdout

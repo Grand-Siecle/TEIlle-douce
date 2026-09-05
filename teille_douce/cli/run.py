@@ -31,6 +31,9 @@ from rich.markup import escape
 
 # Import configuration
 from teille_douce.config import APP_VERSIONS, IIIF_URI, RESPONSIBILITY
+from teille_douce.report.collector import Run as ReportRun
+from teille_douce.report.record import Code, Locator, Loss
+from teille_douce.report.summary import render_summary
 from teille_douce.settings import get_settings, use_settings
 
 # Configure logging
@@ -519,7 +522,8 @@ def select_documents(docs, selectors, exclusions, limit, skip=None):
 
 
 def _process_document(doc_name, filepaths, doc_dir, df_meta, config,
-                      person_db, do_enrich, do_modernize, do_ner, progress):
+                      person_db, do_enrich, do_modernize, do_ner, progress,
+                      reporter=None):
     """
     Run the full conversion pipeline on one document.
 
@@ -576,13 +580,31 @@ def _process_document(doc_name, filepaths, doc_dir, df_meta, config,
         parent_task_pages=task_pages,
     )
 
+    if reporter is not None:
+        reporter.pages_read(doc_name, len(filepaths) - len(tree.skipped_pages))
+        if tree.repaired_ids:
+            # A defect of the source that was REPAIRED: nothing is
+            # missing from the output because of it, and filing it
+            # anywhere but block 1 would make the largest number in the
+            # summary read as an alarm.
+            reporter.lost(Loss(
+                Code.ALTO_IDS_REPAIRED, doc_name, "sourcedoc",
+                Locator.document(doc_name), count=tree.repaired_ids,
+                total=tree.minted_ids or tree.repaired_ids,
+                detail="duplicates disambiguated"))
+        for page in tree.skipped_pages:
+            reporter.lost(Loss(
+                Code.PAGE_UNUSABLE, doc_name, "sourcedoc",
+                Locator.page(doc_name, str(page)), count=1,
+                total=len(filepaths),
+                detail="no <surface> could be built"))
+
     # Unusable pages must be loud: a document with no page at all is a
     # failure, a partial one is flagged here, on the document it belongs
-    # to, and written to the log. It does NOT reach the end-of-run summary
-    # — a nightly wrapper reading that line alone cannot tell a corpus
-    # converted whole from one that lost pages in a dozen volumes. Saying
-    # so is the incident model's job, not a counter bolted onto a line
-    # that already carries four different things.
+    # to, and written to the log. The end-of-run summary carries them too,
+    # from the record: a nightly wrapper reading that line alone cannot
+    # tell a corpus converted whole from one that lost pages in a dozen
+    # volumes.
     if tree.skipped_pages:
         if len(tree.skipped_pages) == len(filepaths):
             raise RuntimeError(
@@ -1242,6 +1264,7 @@ def execute(args):
 
     # Build pipeline configuration
     config = build_config()
+    run_started = perf_counter()
 
     # Process documents with progress bar
     with Progress(
@@ -1256,6 +1279,19 @@ def execute(args):
     ) as progress:
 
         task_docs = progress.add_task("Processing documents", total=len(docs))
+
+        # One object both the panel and the journal read. Created here
+        # because this is the first point at which the run knows what it
+        # is about to attempt, which is what every denominator on the
+        # summary is measured against.
+        reporter_run = ReportRun(
+            input_dir=settings.ocr_dir, output_dir=settings.output_dir,
+            volumes=len(docs) + len(failed_archives),
+            pages=sum(len(paths) for _, paths, _ in docs),
+            log_path=RUN_LOG_FILE or settings.log_file,
+        )
+        for name, reason in failed_archives:
+            reporter_run.archive_failed(name, reason)
 
         ok_docs = []
         stopped_early = False
@@ -1287,9 +1323,11 @@ def execute(args):
                         doc_name, entity_dir, reason,
                     )
             try:
+                reporter_run.document_started(doc_name, len(filepaths))
                 _process_document(
                     doc_name, filepaths, doc_dir, df_meta, config,
                     person_db, do_enrich, do_modernize, do_ner, progress,
+                    reporter=reporter_run,
                 )
             except Exception as e:
                 # Audit 2.1: one broken document must not kill the run.
@@ -1300,6 +1338,8 @@ def execute(args):
                 )
                 console.print(f"[bold red]FAILED[/bold red] {escape(f'{doc_name}: {e}')}")
                 failed_docs.append((doc_name, str(e)))
+                reporter_run.document_finished(doc_name, ok=False,
+                                               reason=str(e))
                 # No orphan side effects: entity CSVs written before the
                 # failure would reference a TEI that was never produced
                 # Only what this run created. `entities_dir` is a setting
@@ -1351,6 +1391,7 @@ def execute(args):
                         progress.update(tid, visible=False)
             else:
                 ok_docs.append(doc_name)
+                reporter_run.document_finished(doc_name, ok=True)
             progress.advance(task_docs)
 
             # Both asked for explicitly; the default is still to convert
@@ -1387,13 +1428,23 @@ def execute(args):
         # Every phase reports what it lost: a run stopped after one failure
         # out of forty must not read as thirty-nine silent successes.
         converted += f" ({never_tried} never attempted, the run stopped early)"
-    if failed_docs:
-        console.print(f"\n[bold yellow]Completed with errors:[/bold yellow] {converted}")
-        for name, reason in failed_docs:
-            console.print(f"  [red]FAILED[/red] {escape(f'{name}: {reason}')}")
-        if RUN_LOG_FILE:
-            console.print(f"[dim]Tracebacks in {escape(str(RUN_LOG_FILE))}[/dim]")
-        sys.exit(EXIT_SOME_FAILED)
+    for name, reason in broken:
+        if not any(name == known for known, _ in reporter_run.failed_archives):
+            reporter_run.archive_failed(name, reason)
+    exit_code = EXIT_SOME_FAILED if failed_docs else EXIT_OK
+    headline = (f"Completed with errors: {converted}" if failed_docs
+                else f"Done. {converted}")
 
-    console.print(f"\n[bold green]Done.[/bold green] {converted}")
+    # One account of the run. The sentence above is the one every wrapper
+    # greps and every accounting test balances, so the report takes it
+    # rather than deriving a second fraction of its own.
+    outcome = reporter_run.finished(exit_code=exit_code, headline=headline,
+                                    elapsed=perf_counter() - run_started)
+    console.print("")
+    for line in render_summary(outcome, width=console.width):
+        console.print(escape(line), highlight=False)
+    if failed_docs and RUN_LOG_FILE:
+        console.print(f"[dim]Tracebacks in {escape(str(RUN_LOG_FILE))}[/dim]")
+    if exit_code:
+        sys.exit(exit_code)
 

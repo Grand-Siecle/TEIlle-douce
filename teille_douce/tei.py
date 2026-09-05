@@ -86,6 +86,10 @@ class TEI:
         self.segmonto_lines = None
         self.lang_stats = None
         self.skipped_pages = []
+        # A source defect that was repaired, kept apart from anything
+        # lost: nothing is missing from the output because of it.
+        self.repaired_ids = 0
+        self.minted_ids = 0
         self._iiif_mapping = None
 
     def build_tree(self):
@@ -121,14 +125,16 @@ class TEI:
 
         Uses parallel processing for performance on large documents.
         Pages whose ALTO could not be used are collected in
-        ``self.skipped_pages`` (list of page numbers).
+        ``self.skipped_pages`` (list of page numbers) and
+        ``self.repaired_ids``.
 
         Args:
             config (dict): Pipeline configuration with IIIF settings.
             progress: Optional Rich progress bar instance.
             parent_task_pages: Optional task ID for progress updates.
         """
-        _, self.skipped_pages = build_sourcedoc(
+        (_, self.skipped_pages, self.repaired_ids,
+         self.minted_ids) = build_sourcedoc(
             self.d,
             self.root,
             self.fp,

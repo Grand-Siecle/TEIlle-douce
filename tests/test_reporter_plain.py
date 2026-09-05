@@ -216,3 +216,12 @@ def test_the_panel_totals_the_three_blocks():
     panel = run.panel()
 
     assert (panel.source_lost, panel.withheld, panel.incidents) == (2, 7, 0)
+
+
+def test_a_run_without_a_log_file_still_has_a_panel():
+    """`--no-log-file` is a supported way to run, and the panel says there
+    is no log rather than pointing at one that does not exist."""
+    run = Run(input_dir=Path("OCR"), output_dir=Path("out"), volumes=1,
+              pages=1, log_path=None)
+
+    assert run.panel().log_path == "(none)"

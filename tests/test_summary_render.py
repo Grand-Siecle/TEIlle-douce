@@ -214,8 +214,21 @@ def test_no_line_is_wider_than_the_panel(width):
                     Locator.page("D1", "f41"), count=388, total=16999,
                     detail="no <surface> could be built"))
 
-    for line in render_summary(outcome(record=record), width=width):
+    long_headline = ("Completed with errors: 1/2 documents converted "
+                     "(1 more skipped, already converted) "
+                     "(1 more held no ALTO)")
+    rendered_lines = render_summary(
+        outcome(record=record, headline=long_headline), width=width)
+
+    for line in rendered_lines:
+        if long_headline in line:
+            # The one exception, and it is data rather than chrome: the
+            # cap keeps composed blocks scannable, and cutting the run's
+            # accounting to fit would turn a number into a wrong number.
+            continue
         assert len(line) <= min(width, 100), repr(line)
+
+    assert any(long_headline in line for line in rendered_lines)
 
 
 def test_the_summary_is_plain_text_carrying_no_markup():
@@ -237,11 +250,15 @@ def test_the_elapsed_time_is_written_the_way_a_human_says_it():
     assert "31s" in rendered(outcome(elapsed=31))
 
 
-def test_one_archive_is_not_written_as_archives():
+def test_a_failed_archive_is_named_in_the_list_and_counted_in_the_remedy():
+    """It is a volume that did not convert, whatever shape it arrived in,
+    so --retry-failed has to know about it."""
     text = rendered(outcome(volumes_written=26, exit_code=1,
                             failed_archives=(("x.zip", "not a zip"),)))
 
-    assert "1 archive" in text and "1 archives" not in text
+    assert "x.zip" in text and "not a zip" in text
+    assert "convert the 1 volume that failed" in text
+    assert "1 volumes" not in text
 
 
 def test_no_line_carries_trailing_whitespace():
@@ -271,3 +288,24 @@ def test_the_gate_shows_the_lines_that_tripped_it_not_every_record():
     assert gate.count("PyHellen down 19:41 → 20:14") == 1
     assert "whole phases" in gate
     assert "3 of 27" in gate
+
+
+def test_a_denominator_is_summed_over_documents_and_not_taken_from_one():
+    """Each document measures its own losses against its own total. Two
+    volumes losing 3 of 754 pages each is 6 of 1 508, not 6 of 754 — and
+    `render_count` refuses the second, which is how this was found."""
+    record = RunRecord()
+    for document in ("D1", "D2"):
+        for page in ("f1", "f2", "f3"):
+            record.add(Loss(Code.PAGE_UNUSABLE, document, "sourcedoc",
+                            Locator.page(document, page), count=1, total=754))
+
+    assert "6 of 1 508 pages" in rendered(outcome(record=record))
+
+
+def test_one_document_is_still_measured_against_its_own_total():
+    record = RunRecord()
+    record.add(Loss(Code.PAGE_UNUSABLE, "D1", "sourcedoc",
+                    Locator.page("D1", "f1"), count=3, total=754))
+
+    assert "3 of 754 pages" in rendered(outcome(record=record))

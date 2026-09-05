@@ -32,13 +32,15 @@ class Event:
 class Run:
     """Everything one run knows about itself, as it goes."""
 
-    def __init__(self, input_dir, output_dir, volumes, pages, log_path,
+    def __init__(self, input_dir, output_dir, volumes, pages, log_path=None,
                  services=(), started_at=None):
         self.input_dir = Path(input_dir)
         self.output_dir = Path(output_dir)
         self.volumes_total = volumes
         self.pages_total = pages
-        self.log_path = Path(log_path)
+        # `--no-log-file` is a supported way to run: the panel then says
+        # there is no log rather than pointing at one that is not there.
+        self.log_path = Path(log_path) if log_path is not None else None
         self.services = tuple(services)
         self.started_at = started_at if started_at is not None else time.monotonic()
 
@@ -163,7 +165,8 @@ class Run:
         return PanelState(
             input_dir=str(self.input_dir), output_dir=str(self.output_dir),
             elapsed=int(now - self.started_at), eta=eta,
-            services=self.services, log_path=str(self.log_path),
+            services=self.services,
+            log_path=str(self.log_path) if self.log_path else "(none)",
             pages_written=self._pages_written,
             pages_in_flight=self._open_read,
             pages_total=self.pages_total,
@@ -186,7 +189,11 @@ class Run:
                          f"{loss.step}.{loss.code.value}  {loss.detail}".strip())
         return tuple(lines)
 
-    def finished(self, exit_code, elapsed=None, fail_on="never"):
+    @property
+    def failed_archives(self):
+        return tuple(self._failed_archives)
+
+    def finished(self, exit_code, elapsed=None, fail_on="never", headline=""):
         return RunOutcome(
             input_dir=self.input_dir, output_dir=self.output_dir,
             volumes_total=self.volumes_total,
@@ -198,4 +205,5 @@ class Run:
                      else time.monotonic() - self.started_at),
             exit_code=exit_code, fail_on=fail_on,
             failed_documents=tuple(self._failed),
-            failed_archives=tuple(self._failed_archives))
+            failed_archives=tuple(self._failed_archives),
+            headline=headline)

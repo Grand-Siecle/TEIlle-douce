@@ -57,6 +57,11 @@ class RunOutcome:
     failed_documents: tuple = ()
     failed_archives: tuple = ()
     report_path: Path = None
+    # The accounting sentence, composed by the run itself. Taken rather
+    # than recomputed: two places deriving the same fraction is two
+    # accounts of one run, and the reader has no way to tell which to
+    # believe. It is also what a nightly wrapper greps.
+    headline: str = ""
 
 
 def _duration(seconds):
@@ -121,8 +126,17 @@ def _block_lines(outcome, block, width):
             measured = render_count(len({e.document for e in matching}),
                                     outcome.volumes_total, "")
         else:
+            # Each document measures its own losses against its own total,
+            # so the corpus denominator is the sum over documents — taken
+            # once per document, since several losses of one document all
+            # carry the same one. Using the largest instead made two
+            # volumes losing 3 of 754 pages each read "6 of 754", which
+            # `render_count` refuses outright.
+            per_document = {}
+            for entry in matching:
+                per_document[entry.document] = entry.total
             measured = render_count(sum(e.count for e in matching),
-                                    max(e.total for e in matching), unit)
+                                    sum(per_document.values()), unit)
         detail = next((e.detail for e in matching if e.detail), "")
         if code.repaired:
             detail = (detail + " (repaired)").strip()
@@ -153,9 +167,10 @@ def _next_steps(outcome):
     a problem that did not happen teaches the reader to skip the block.
     """
     steps = []
-    if outcome.failed_documents or outcome.failed_archives:
+    failed = len(outcome.failed_documents) + len(outcome.failed_archives)
+    if failed:
         steps.append(("teille-douce run --retry-failed",
-                      f"convert the {len(outcome.failed_documents)} that failed"))
+                      f"convert the {_plural(failed, 'volume')} that failed"))
         if outcome.failed_documents:
             first = outcome.failed_documents[0][0]
             steps.append((f"teille-douce run {first} -vv",
@@ -203,15 +218,17 @@ def render_summary(outcome, width=92):
                           room))
     lines.append(_rule(room, "═"))
     lines.append("")
+    headline = outcome.headline or (
+        f"{outcome.volumes_written}/{outcome.volumes_total} documents converted")
+    # Never truncated, unlike everything else here. The cap exists so
+    # that composed blocks stay scannable; this line is the run's
+    # accounting, and a cut number is a wrong number where a long line is
+    # only long.
+    lines.append(f"  {headline}")
     lines.append(_columns(
-        f"  converted    {render_count(outcome.volumes_written, outcome.volumes_total, 'volumes')}"
-        f" → {outcome.output_dir}",
+        f"      → {outcome.output_dir}",
         f"{render_count(outcome.pages_written, outcome.pages_total, 'pages')} written",
         room))
-    if outcome.failed_documents or outcome.failed_archives:
-        lines.append(
-            f"  failed       {_plural(len(outcome.failed_documents), 'volume')}"
-            f" · {_plural(len(outcome.failed_archives), 'archive')}")
     lines.append("")
 
     for block in Block:
@@ -221,7 +238,10 @@ def render_summary(outcome, width=92):
     if outcome.failed_documents or outcome.failed_archives:
         lines.append("  failed")
         for name, reason in (*outcome.failed_documents, *outcome.failed_archives):
-            lines.append(f"    {name:<22}{reason}"[:room])
+            # The FAILED token stays: it is what every wrapper this
+            # project has greps for, and aligning the name into a column
+            # instead would break on the first long one anyway.
+            lines.append(f"    FAILED {name}: {reason}"[:room])
         lines.append("")
 
     lines.append(_located_line(outcome.record.located(), room))

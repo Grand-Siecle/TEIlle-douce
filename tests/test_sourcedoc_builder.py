@@ -235,7 +235,7 @@ def test_build_sourcedoc_orders_surfaces_by_page_despite_imap_unordered(tmp_path
     f2 = write_alto(tmp_path, "f2.xml", GOOD_ALTO_TMPL.format(word="pagetwo"))
 
     output_root = etree.Element("TEI")
-    result, skipped = build_sourcedoc("DOC1", output_root, [f2, f1], [], [], {})
+    result, skipped, *_ = build_sourcedoc("DOC1", output_root, [f2, f1], [], [], {})
 
     assert result is output_root
     assert skipped == []
@@ -304,7 +304,7 @@ def test_build_sourcedoc_reports_duplicate_alto_ids_from_workers(tmp_path, monke
 
     output_root = etree.Element("TEI")
     with caplog.at_level(logging.WARNING, logger="teille_douce.sourcedoc.builder"):
-        _, skipped = build_sourcedoc("DOC1", output_root, [f], [], [], {})
+        _, skipped, *_ = build_sourcedoc("DOC1", output_root, [f], [], [], {})
 
     assert skipped == []
     ids = [el.get(XML_ID) for el in output_root.iter() if el.get(XML_ID)]
@@ -353,7 +353,7 @@ def test_malformed_alto_page_does_not_crash_the_run(tmp_path, monkeypatch, caplo
 
     output_root = etree.Element("TEI")
     with caplog.at_level(logging.WARNING, logger="teille_douce.sourcedoc.builder"):
-        _, skipped = build_sourcedoc(
+        _, skipped, *_ = build_sourcedoc(
             "DOC1", output_root,
             [good, tmp_path / "f2.xml", tmp_path / "f3.xml"],
             {}, [], [], {},
@@ -414,7 +414,7 @@ def test_build_sourcedoc_keeps_both_pages_when_page_numbers_collide(
 
     output_root = etree.Element("TEI")
     with caplog.at_level(logging.WARNING, logger="teille_douce.sourcedoc.builder"):
-        _, skipped = build_sourcedoc(
+        _, skipped, *_ = build_sourcedoc(
             "DOC1", output_root, [first, second], [], [], {}
         )
 
@@ -450,7 +450,7 @@ def test_build_sourcedoc_keeps_both_pages_when_no_filename_has_a_number(
 
     output_root = etree.Element("TEI")
     with caplog.at_level(logging.WARNING, logger="teille_douce.sourcedoc.builder"):
-        _, skipped = build_sourcedoc(
+        _, skipped, *_ = build_sourcedoc(
             "DOC1", output_root, [plate, cover], [], [], {}
         )
 
@@ -536,3 +536,38 @@ def test_the_workers_are_handed_the_settings_this_run_resolved(tmp_path,
     assert chosen in seen["initargs"], (
         "the resolved Settings never reached the worker initializer"
     )
+
+
+def test_the_duplicate_count_is_of_alto_ids_and_not_of_registry_keys():
+    """It is the loudest number this corpus produces, and it is wrong.
+
+    The registry is keyed on (TEI prefix, ALTO ids), so ONE duplicated
+    ALTO id reported under `zoneLine_`, `path_`, `line_` and `string_`
+    counts as four. Since this figure is about to be printed in the
+    summary as a repaired source defect, a fourfold exaggeration would
+    make the biggest line of the report the least trustworthy one."""
+    from teille_douce.sourcedoc.builder import _duplicate_ids
+
+    seen = {
+        ("zoneLine_", ("B1", "L1")): 2,
+        ("path_", ("B1", "L1")): 2,
+        ("line_", ("B1", "L1")): 2,
+        ("string_", ("B1", "L1")): 2,
+        ("zone_", ("B2",)): 1,
+    }
+
+    assert _duplicate_ids(seen) == 1
+
+
+def test_two_genuinely_different_duplicated_ids_count_as_two():
+    from teille_douce.sourcedoc.builder import _duplicate_ids
+
+    seen = {("line_", ("B1", "L1")): 2, ("line_", ("B2", "L9")): 3}
+
+    assert _duplicate_ids(seen) == 2
+
+
+def test_nothing_duplicated_counts_as_nothing():
+    from teille_douce.sourcedoc.builder import _duplicate_ids
+
+    assert _duplicate_ids({("zone_", ("B1",)): 1}) == 0
