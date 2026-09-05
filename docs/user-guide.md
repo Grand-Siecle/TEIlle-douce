@@ -226,14 +226,17 @@ under [Troubleshooting](#exit-codes) says what each one asks you to do.
 record:
 
 ```
-tei_output/.teille-douce/runs/20260903-180824/
+tei_output/.teille-douce/runs/20260903-180824-0031415/
     run.json         what was asked (argv, every setting and where it came
                      from) and what happened to each volume
     incidents.jsonl  one incident per line, appended as it happens
     pipeline.log     this run's log, moved in at the end
 ```
 
-The log is the transcript and `incidents.jsonl` is its index; no fact is
+The directory is named for when the run started and the process that ran
+it: two volumes launched in parallel start inside the same second, and one
+would otherwise overwrite the other's record. The log is the transcript and
+`incidents.jsonl` is its index; no fact is
 stored twice in two forms that could diverge. The JSONL is written line by
 line so that a Ctrl-C in the fourth hour keeps everything before it. The
 last ten runs are kept, and a directory is pruned whole — an index must not

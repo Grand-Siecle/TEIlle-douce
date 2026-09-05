@@ -589,3 +589,29 @@ def test_the_digest_line_prints_only_what_the_fold_actually_knows():
 
     assert "18 006" not in line
     assert "2 volumes" in line
+
+
+def test_a_dead_service_appears_even_when_its_label_does_not_fit():
+    """Sorting it first was not enough: the fill is first-fit, so a label
+    too long to fit was skipped and a shorter LIVE one kept its place —
+    the same outcome, at the width the module calls its floor."""
+    crowded = state(
+        log_path="tei_output/.teille-douce/runs/20260903-180824-0282822/pipeline.log",
+        services=(Service("PyHellen", up=True),
+                  Service("VieuxParler", up=False, lost_at="17:04"),
+                  Service("NER local", up=None)))
+
+    for width in (56, 57, 58, 59, 60, 72, 92):
+        banner = text(crowded, width=width)[1]
+        assert "VieuxParler" in banner, (width, banner)
+
+
+def test_three_dead_services_all_reach_the_banner_somehow():
+    crowded = state(services=tuple(
+        Service(name, up=False, lost_at="17:04")
+        for name in ("PyHellen", "VieuxParler", "NER local")))
+
+    banner = text(crowded, width=56)[1]
+
+    assert banner.count("✗") >= 1
+    assert "+2" in banner or banner.count("✗") == 3

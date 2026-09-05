@@ -82,15 +82,6 @@ def enrich_body(root, progress_callback=None):
     """
     stats = new_stats()
 
-    # Check PyHellen availability. The server is probed once at startup
-    # AND here, per document: it can die mid-run, and that case used to
-    # return all-zero stats that no console message keyed on — the
-    # document ended up silently unannotated (audit 2.7).
-    if not check_server():
-        logger.warning("PyHellen server not available, skipping enrichment")
-        stats["server_unavailable"] = True
-        return stats
-
     # Front matter travels with the body: a title page is the most
     # metadata-dense page of a volume, it must not stay unannotated.
     body = content_root(root)
@@ -101,7 +92,22 @@ def enrich_body(root, progress_callback=None):
     # Collect all containers in document order
     containers = [e for e in body.iter() if _local(e.tag) in ENRICHMENT_CONTAINERS]
 
+    # Counted BEFORE the probe. This is the denominator every loss of
+    # this phase is measured against, and setting it after the point
+    # where a dead service returns is what made the one case it exists
+    # for — the service dying — render "0 of 0 containers". A
+    # denominator that depends on the phase succeeding is not one.
     stats["containers_found"] = len(containers)
+
+    # Check PyHellen availability. The server is probed once at startup
+    # AND here, per document: it can die mid-run, and that case used to
+    # return all-zero stats that no console message keyed on — the
+    # document ended up silently unannotated (audit 2.7).
+    if not check_server():
+        logger.warning("PyHellen server not available, skipping enrichment")
+        stats["server_unavailable"] = True
+        return stats
+
     logger.debug("Found %d containers to enrich", len(containers))
 
     # Pass 1 — sequential, cheap: extract text, dehyphenate, derive the

@@ -1709,3 +1709,33 @@ def test_a_refusal_keeps_the_log_the_operator_named(tmp_path):
 
     assert res.returncode == 3
     assert list(tmp_path.glob("mine_*.log")), sorted(tmp_path.iterdir())
+
+
+def test_an_unreadable_volume_reaches_the_counts_the_panel_shows(tmp_path):
+    """It was recorded after the panel came down, so a finished run read
+    "1 written · 0 failed · 1 to go" beside "incident 0" — over a summary
+    that reported one."""
+    import json
+    import stat
+
+    ocr = tmp_path / "ocr"
+    shutil.copytree(ALTO_MIN, ocr)
+    shut = ocr / "LIV9002_reconciled"
+    shutil.copytree(ocr / DOCUMENT, shut)
+
+    if not _unreadable(shut):
+        __import__("os").chmod(shut, stat.S_IRWXU)
+        pytest.skip("running as a user that ignores file permissions")
+    try:
+        res, sortie = _executer_main(tmp_path, ocr, args=("--dashboard",),
+                                     COLUMNS="100", **MODE_COURT)
+    finally:
+        __import__("os").chmod(shut, stat.S_IRWXU)
+
+    assert res.returncode == 1
+    assert "1 written       1 failed       0 to go" in res.stdout
+    assert "incident 1" in res.stdout
+
+    run, = _runs_of(sortie)
+    indexed = (run / "incidents.jsonl").read_text(encoding="utf-8")
+    assert json.loads(indexed.splitlines()[0])["code"] == "volume_unreadable"

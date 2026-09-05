@@ -813,6 +813,22 @@ def apply_modernization(root, modernized_texts):
     return count
 
 
+def count_containers(root):
+    """How many containers this document offers modernization.
+
+    Read before the service is asked anything: it is the denominator the
+    phase's losses are measured against, and counting it inside the walk
+    that only runs once the service answered is what kept a dead service
+    reporting "0 of 0 containers".
+    """
+    # On the local name: bare and namespaced tags coexist in the same
+    # tree (audit 4.2), and `iter("ab")` sees only the bare ones — so a
+    # namespaced document counted zero containers and its denominator
+    # went back to being useless.
+    return sum(1 for element in root.iter()
+               if local_tag(element.tag) in TEXT_CONTAINERS)
+
+
 def apply_modernization_enriched(root, corresp_to_mod, stats=None):
     """
     Post-process an enriched body to insert <choice><orig>/<reg> per line.
@@ -845,11 +861,6 @@ def apply_modernization_enriched(root, corresp_to_mod, stats=None):
     # for VieuxParler round-trips whose readings nothing consumed —
     # the title page came back modernized and was dropped on the floor.
     for container in body.iter(*TEXT_CONTAINERS):
-        # The denominator every loss of this phase is measured against.
-        # Without it a lost modernization rendered "0 of 0 containers" —
-        # the one sentence the report exists to make impossible.
-        if stats is not None:
-            stats["containers_found"] = stats.get("containers_found", 0) + 1
         has_sentences = any(local_tag(c.tag) == "s" for c in container)
 
         if has_sentences:

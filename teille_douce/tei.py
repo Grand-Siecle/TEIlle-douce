@@ -243,6 +243,11 @@ class TEI:
             "server_unavailable": False,
         }
 
+        # Before anything can fail: the denominator of this phase's
+        # losses must not depend on the phase succeeding.
+        from .body.builder import count_containers
+        stats["containers_found"] = count_containers(self.root)
+
         # Get line texts
         if line_data is None:
             line_data = self.extract_line_data()

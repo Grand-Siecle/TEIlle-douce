@@ -1,6 +1,6 @@
 """What a run leaves behind for the reader who comes back on Thursday.
 
-    tei_output/.teille-douce/runs/20260903-180824/
+    tei_output/.teille-douce/runs/20260903-180824-0031415/
         run.json         settings, argv, status per document
         incidents.jsonl  one incident per line, append-only, greppable
         pipeline.log     this run's log, beside its own index

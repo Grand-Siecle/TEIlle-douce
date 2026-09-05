@@ -63,7 +63,7 @@ class WarningDigest:
         body = _PREFIX.sub("", message.strip())
         line = self._lines.get(shape)
         if line is None:
-            line = DigestLine(shape=shape, example=_PREFIX.sub("", message),
+            line = DigestLine(shape=shape, example=body,
                               first_document=document)
             self._lines[shape] = line
         line.occurrences += 1

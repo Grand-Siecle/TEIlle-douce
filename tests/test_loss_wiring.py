@@ -152,16 +152,14 @@ def test_a_lost_modernization_also_says_how_much_it_refused():
     assert loss.total == 900
 
 
-def test_the_body_walk_counts_the_containers_it_offers():
-    """The denominator has to come from the phase that had them."""
+def test_the_containers_a_document_offers_are_counted_before_anything_runs():
+    """The denominator has to come from the document, not from the walk
+    that only happens once the service has answered."""
     from lxml import etree
 
-    from teille_douce.body.builder import apply_modernization_enriched
+    from teille_douce.body.builder import count_containers
 
     body = etree.fromstring(
         "<body><ab><lb corresp='#a'/>un</ab><ab><lb corresp='#b'/>deux</ab></body>")
-    stats = {"containers_found": 0}
 
-    apply_modernization_enriched(body, {}, stats=stats)
-
-    assert stats["containers_found"] == 2
+    assert count_containers(body) == 2

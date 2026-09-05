@@ -732,8 +732,12 @@ def panel_installed(reporter, active):
         # one frame inward.
         try:
             panel.__exit__(None, None, None)
-        except BaseException:
-            pass
+        except BaseException as reason:
+            # Swallowed so the rest of the teardown still happens, but
+            # not silently: a Live that failed to stop leaves the cursor
+            # somewhere, and the operator is owed the reason.
+            logging.getLogger(__name__).warning(
+                "the live panel did not shut down cleanly (%s)", reason)
         _set_quiet(was_quiet)
         root.removeHandler(digest)
         for handler in replaced:
@@ -1615,6 +1619,18 @@ def execute(args):
             reporter_run.on_incident = store.incident
         for name, reason in failed_archives:
             reporter_run.archive_failed(name, reason)
+        for name, reason in broken:
+            if any(name == known for known, _ in reporter_run.failed_archives):
+                continue
+            # Before the loop, like the archives: recorded after the panel
+            # came down, an unreadable volume never reached the counts the
+            # panel shows, so a finished run still read "1 to go" beside
+            # "incident 0" over a summary reporting one.
+            #
+            # And filing it as a corrupt archive gave the wrong diagnosis
+            # and an address that is a directory: the problem is
+            # permissions, and repacking would not fix it.
+            reporter_run.volume_unreadable(name, reason)
 
         # Per volume, because a share only means something against one
         # volume's own pages: 388 lost out of 400 is a file nobody wants
@@ -1779,13 +1795,6 @@ def execute(args):
         # Every phase reports what it lost: a run stopped after one failure
         # out of forty must not read as thirty-nine silent successes.
         converted += f" ({never_tried} never attempted, the run stopped early)"
-    for name, reason in broken:
-        if any(name == known for known, _ in reporter_run.failed_archives):
-            continue
-        # Filing it as a corrupt archive gave the reader the wrong
-        # diagnosis and an address that is a directory: the problem is
-        # permissions, and repacking the volume would not fix it.
-        reporter_run.volume_unreadable(name, reason)
     # 1 covered "one volume broke" and "all forty broke" alike. A wrapper
     # can now tell a partial failure, worth retrying volume by volume,
     # from a total one, which usually means the input or the setup is

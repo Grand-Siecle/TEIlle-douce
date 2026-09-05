@@ -261,15 +261,23 @@ def _services(state, room, unicode_):
     def fill(reserve):
         budget = room - cells(right) - 2 - reserve
         kept, used, dropped = [], 0, 0
-        # A dead service first: `✗ NAME LOST hh:mm` is the longest label
-        # by construction, so a first-fit pass dropped exactly the one
-        # the banner exists to show and kept a service nobody asked for.
+        # A dead service first, and never skipped: `✗ NAME LOST hh:mm` is
+        # the longest label by construction, so ordering alone still let
+        # a first-fit pass drop exactly the one the banner exists to show
+        # and keep a service nobody asked for. A dead one that will not
+        # fit whole is shortened instead — a truncated alarm still reads
+        # as an alarm, an absent one does not.
         ordered = sorted(labels, key=lambda pair: pair[1] != "vermilion")
         for text, style in ordered:
             width = cells(text) + (3 if kept else 0)
             if used + width > budget:
-                dropped += 1
-                continue
+                room_left = budget - used - (3 if kept else 0)
+                if style == "vermilion" and room_left >= 6:
+                    text = clip(text, room_left)
+                    width = cells(text) + (3 if kept else 0)
+                else:
+                    dropped += 1
+                    continue
             if kept:
                 kept.append(Span("   "))
                 used += 3
