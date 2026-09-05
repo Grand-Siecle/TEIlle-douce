@@ -127,7 +127,11 @@ def pad(left, right, room, keep="right"):
             # SPACE between the columns, and falling through on account
             # of it clipped a left that fitted.
             return left if cells(left) == room else clip(left, room)
-        return left + " " + clip(right, room - cells(left) - 1)
+        shortened = clip(right, room - cells(left) - 1)
+        # No separator without something after it: one cell of room left
+        # produced `left + " " + ""`, and the same string goes into a log
+        # file where a trailing space is noise.
+        return f"{left} {shortened}" if shortened else left
     if cells(right) + 2 > room:
         return clip(left + " " + right, room)
     return clip(left, room - cells(right) - 1) + " " + right

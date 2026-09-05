@@ -527,3 +527,54 @@ def test_the_launcher_answers_a_ctrl_c_in_its_own_imports(tmp_path):
     assert finished.returncode == 130, finished.stderr.decode()[-2000:]
     assert b"Traceback" not in finished.stderr, finished.stderr.decode()
     assert b"Interrupted" in finished.stderr
+
+
+def test_a_teardown_that_raises_gives_the_signal_back(monkeypatch, tmp_path):
+    """The hold is taken in the loop's `finally`, which is INSIDE the
+    `with panel_installed(...)`, and the only release is after it. A
+    teardown that raised therefore left the process deaf to Ctrl-C —
+    and now that the hold is taken on every way out of the loop, not
+    only after a first interrupt, that is every teardown failure rather
+    than a coincidence of two.
+
+    In process, because the assertion is about the handler this process
+    is left with: a subprocess that dies of the teardown has no "after".
+    """
+    import contextlib
+    import os
+    import signal
+
+    from teille_douce.cli import app
+    from teille_douce.cli.app import settings_from
+    from teille_douce.settings import set_settings
+
+    from test_e2e_pipeline import ALTO_MIN, FIXTURES
+
+    for csv in ("metadata_livre.csv", "metadata_personne.csv"):
+        shutil.copy(FIXTURES / csv, tmp_path / csv)
+    monkeypatch.chdir(tmp_path)
+
+    @contextlib.contextmanager
+    def explodes_on_the_way_out(reporter, active):
+        yield None
+        raise RuntimeError("teardown exploded")
+
+    monkeypatch.setattr(run_module, "panel_installed", explodes_on_the_way_out)
+
+    monkeypatch.setenv("TDOUCE_NER", "0")
+    monkeypatch.setenv("TDOUCE_ENRICHMENT", "0")
+    monkeypatch.setenv("TDOUCE_MODERNIZE", "0")
+    parser = app.build_parser()
+    args = parser.parse_args(["run", "--no-config", "-i", str(ALTO_MIN),
+                              "-o", str(tmp_path / "out")])
+    set_settings(settings_from(args, parser=parser))
+
+    before = signal.getsignal(signal.SIGINT)
+    with pytest.raises(RuntimeError, match="teardown exploded"):
+        run_module.execute(args)
+
+    assert signal.getsignal(signal.SIGINT) is before, (
+        "the process is left deaf to Ctrl-C")
+    # And it really is deaf otherwise: the default handler raises.
+    with pytest.raises(KeyboardInterrupt):
+        os.kill(os.getpid(), signal.SIGINT)

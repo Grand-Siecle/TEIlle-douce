@@ -612,7 +612,10 @@ def test_the_page_accounting_survives_an_absolute_output_path():
 
     for width in range(48, 121):
         shown = render_summary(outcome(output_dir=absolute), width=width)
-        assert any("16 999 of 16 999 pages written" in line
+        # Below about fifty columns the count takes a line of its own,
+        # and drops the word: the arrow line above already says these
+        # are what was written, and the eight figures are what matter.
+        assert any("16 999 of 16 999 pages" in line
                    for line in shown), (width, shown[:8])
 
 
@@ -658,3 +661,51 @@ def test_a_loss_measured_in_lines_is_not_relabelled_batches():
 
     assert "57 of 1 402 lines" in shown
     assert "batches" not in shown
+
+
+# =============================================================================
+# The three lines that carry a number, at every width
+# =============================================================================
+
+def test_the_page_accounting_keeps_both_its_count_and_its_path():
+    """Rewritten once already for this: `pad(keep="right")` clips the
+    COMPOSITE, so below thirty-eight columns it cut the count and above
+    that it left a path that was one ellipsis and no arrow."""
+    absolute = Path("/home/rayondemiel/univ_geneve/test_tei_ouput/tei_output")
+
+    for width in range(28, 121):
+        shown = "\n".join(render_summary(outcome(output_dir=absolute),
+                                         width=width))
+        assert "16 999 of 16 999 pages" in shown, (width, shown[:400])
+        assert "→" in shown, (width, shown[:400])
+        assert "tei_output" in shown, (width, shown[:400])
+
+
+def test_the_located_line_prints_both_figures_whole():
+    """`clip` took the second apart mid-number below forty-two columns.
+    Its own docstring says both print even at zero, because a blind spot
+    has to be a visible line — and half a figure is not one."""
+    record = RunRecord()
+    record.add(Loss(Code.PAGE_UNUSABLE, "D1", "sourcedoc",
+                    Locator.page("D1", "f1"), count=1699998, total=2779999))
+    record.add(Loss(Code.READING_REJECTED, "D2", "modernize",
+                    Locator.document("D2"), count=2779000, total=2779999))
+
+    for width in range(28, 121):
+        shown = "\n".join(render_summary(outcome(record=record), width=width))
+        assert "1 699 998" in shown, (width, shown)
+        assert "2 779 000" in shown, (width, shown)
+
+
+def test_no_line_of_a_summary_ends_in_whitespace():
+    """The same strings go into a log file, where trailing runs of spaces
+    are noise — which is what `_MARGIN`'s own comment says."""
+    record = RunRecord()
+    record.add(Loss(Code.DOCUMENT_FAILED, "D1", "run", Locator.document("D1"),
+                    count=1, total=1, detail=""))
+
+    for width in range(28, 121):
+        for line in render_summary(
+                outcome(record=record, exit_code=4, volumes_written=0,
+                        failed_documents=(("D1", ""),)), width=width):
+            assert line == line.rstrip(), (width, repr(line))

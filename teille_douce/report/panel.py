@@ -316,9 +316,17 @@ def _phase_span(phase, room, unicode_, tick=0, reserved=0):
     # module away. No production phase name is wide today; the next one
     # to be added must not have to know that.
     named = phase.name + " " * max(1, 13 - cells(phase.name))
+    # Measured, not assumed. `room - 15` was right for a twelve-cell name
+    # and the column is thirteen now, so every PENDING and LOST line ran
+    # one cell past the edge — and where a clock follows, that one cell
+    # was the room `reserved` had just set aside for it, which turned
+    # `1:12:40` into `1:12:…` at every width. A budget written as a
+    # literal is a budget that goes wrong the first time the thing it
+    # counts changes size.
+    body_room = room - 3 - cells(named)
     if phase.state is PhaseState.PENDING:
         return [Span(f"   {named}", ""),
-                Span(clip(f"{idle} pending", room - 15), "graphite")]
+                Span(clip(f"{idle} pending", body_room), "graphite")]
 
     if phase.state is PhaseState.LOST:
         body = render_phase_loss(PhaseState.LOST, phase.done, phase.total,
@@ -326,7 +334,7 @@ def _phase_span(phase, room, unicode_, tick=0, reserved=0):
         # Clipped like everything else: this is the longest line the
         # panel composes, and it is the one whose cause must be loud.
         return [Span(f"   {named}"),
-                Span(clip(f"{bad} {body}", room - 15), "vermilion")]
+                Span(clip(f"{bad} {body}", body_room), "vermilion")]
 
     if phase.state is PhaseState.RUNNING:
         # A phase that does not know its denominator yet says so by

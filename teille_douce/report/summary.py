@@ -415,25 +415,34 @@ def render_summary(outcome, width=92):
     # short relative path, so the suite could not see it.
     written = (f"{render_count(outcome.pages_written, outcome.pages_total, 'pages')}"
                f" written")
-    for_path = room - cells(written) - 9
-    if for_path >= 8:
-        lines.append(pad(f"      → {shorten_path(outcome.output_dir, for_path)}",
-                         written, room, keep="right"))
+    # `- _MARGIN` like every other composed line: this one passed the
+    # bare room, so it alone ran to a hundred cells where its neighbours
+    # stop at ninety-eight.
+    for_path = room - _MARGIN - cells(written) - 9
+    beside = shorten_path(outcome.output_dir, for_path)
+    # One line only while the path still names its leaf. At forty-seven
+    # columns eight cells was "enough", and `…_output` is not the
+    # directory anybody typed.
+    if for_path >= 8 and Path(outcome.output_dir).name in beside:
+        lines.append(pad(f"      → {beside}", written, room - _MARGIN,
+                         keep="right"))
     else:
         # Neither `pad` direction helps once the two together will not
         # fit: `keep="right"` clips the COMPOSITE, so below thirty-eight
         # columns it cut the count, and above that it left a path that
         # was one ellipsis. Same remedy as a block entry — the count
         # takes a line of its own.
-        lines.append(clip(f"      → {shorten_path(outcome.output_dir, room - 8)}",
-                          room))
+        lines.append(clip(
+            f"      → {shorten_path(outcome.output_dir, room - _MARGIN - 8)}",
+            room - _MARGIN))
         # The count alone, and without the word: the arrow line above
         # already says these are what was written, and at thirty columns
         # `1 699 998 of 2 779 999 pages written` does not fit however it
         # is indented — while the eight figures do.
         bare = render_count(outcome.pages_written, outcome.pages_total,
                             "pages")
-        lines.append(f"{' ' * max(0, min(8, room - cells(bare)))}{bare}")
+        lines.append(
+            f"{' ' * max(0, min(8, room - _MARGIN - cells(bare)))}{bare}")
     lines.append("")
 
     for block in Block:

@@ -723,3 +723,57 @@ def test_the_panel_is_never_taller_than_the_height_it_was_given():
 
 def test_a_finished_run_is_not_offered_a_volume_to_abandon():
     assert "stop the run" in text(state(current=None))[-1]
+
+
+# =============================================================================
+# A phase line gives way in a stated order, and never in its numbers
+# =============================================================================
+
+def test_a_phase_line_drops_its_bar_then_its_aside_and_never_its_numbers():
+    """Composed and clipped, the bar pushed the line over and the clip
+    took `waiting 47s/120s` down to `waiting 47s/12…` — a twelve-second
+    timeout on a hundred-and-twenty-second one, on the line whose entire
+    job is telling slow from hung, at the panel's own minimum width."""
+    from teille_douce.report.text import cells
+
+    phase = PhaseLine("modernize", PhaseState.RUNNING, done=318, total=1402,
+                      unit="containers", waiting=47, timeout=120,
+                      elapsed=4360)
+    running = state(current=DocumentLine(name="D", pages=754, elapsed=291,
+                                         phases=(phase,)))
+
+    for width in range(56, 141):
+        line = next(l for l in text(running, width=width) if "modernize" in l)
+        assert cells(line) <= min(width, 100), (width, cells(line), line)
+        assert "318/1 402 containers" in line, (width, line)
+        assert "1:12:40" in line, (width, line)
+        if "waiting" in line:
+            assert "waiting 47s/120s" in line, (width, line)
+
+
+def test_the_phase_column_is_measured_in_cells_like_everything_else():
+    """`{phase.name:<12}` padded by `len`, and the two branches that clip
+    against it used a literal `room - 15` — so widening the column by one
+    put every PENDING and LOST line one cell past the edge, and where a
+    clock followed it took the room the clock had been promised."""
+    from teille_douce.report.text import cells
+
+    for name in ("ner", "modernize.retry", "漢字巻物", "a" * 30):
+        for phase_state in (PhaseState.PENDING, PhaseState.LOST,
+                            PhaseState.DONE):
+            phase = PhaseLine(name, phase_state, done=318, total=430,
+                              unit="containers", elapsed=4360,
+                              reason="PyHellen stopped answering at 19:41")
+            one = state(current=DocumentLine(name="D", pages=7, elapsed=3,
+                                             phases=(phase,)))
+            for width in range(56, 141):
+                line = next(l for l in text(one, width=width)
+                            if name[:6] in l)
+                assert cells(line) <= min(width, 100), (
+                    name, phase_state, width, cells(line), line)
+                assert "1:12:40" in line, (name, phase_state, width, line)
+
+
+def test_the_foot_groups_its_number_like_every_other_on_the_panel():
+    assert "1 699 998 already written" in text(
+        state(volumes_written=1699998, current=None))[-1]
