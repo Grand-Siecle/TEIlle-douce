@@ -809,7 +809,12 @@ def test_the_panel_holds_its_contract_over_names_it_will_never_meet():
     for phase in _every_phase_shape():
         wide = state(
             source_lost=1699998, withheld=999999, incidents=999999,
-            log_path="漢字巻物のログ_20260906_183307.log",
+            # A name the CHARACTER cut overflows on: nine wide glyphs
+            # and no separator to fall back to. The one it had before
+            # was long enough that `name[-room:]` happened to fit, so
+            # the mutation that measures in cells and cuts in characters
+            # went unnoticed.
+            log_path="漢字巻物のログ",
             current=DocumentLine(name="D", pages=7, elapsed=3,
                                  phases=(phase,)))
         for width in range(24, 141):
@@ -834,11 +839,18 @@ def test_a_lost_phases_cause_sits_under_the_mark_it_explains():
     lost = state(current=DocumentLine(name="D", pages=7, elapsed=3,
                                       phases=(phase,)))
 
-    for width in range(40, 141):
+    # From twenty-four, not from forty. The old indent and the new one
+    # agree at every width where the head fits whole — which is every
+    # width above twenty-nine, so a sweep that started at forty passed
+    # against the code it was written to condemn.
+    for width in range(24, 141):
         lines = text(lost, width=width)
-        head = next(l for l in lines if "reconstruction" in l)
-        cause = next(l for l in lines if "was up" in l)
-        assert cause.index("(") == head.index("✗"), (width, head, cause)
+        at = next(i for i, l in enumerate(lines) if "recon" in l)
+        head, cause = lines[at], lines[at + 1]
+        if not cause.strip():
+            continue        # no room for any of it; the head said so
+        assert cause.index(cause.strip()[0]) == head.index("✗"), (
+            width, head, cause)
 
 
 def test_the_totals_row_keeps_its_three_counts_or_the_one_that_matters():

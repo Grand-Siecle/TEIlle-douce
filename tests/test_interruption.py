@@ -710,3 +710,75 @@ def test_a_handler_set_outside_python_does_not_make_release_raise():
 
     assert verdict.value.code == 5
     assert signal.getsignal(signal.SIGINT) is signal.default_int_handler
+
+
+def test_release_off_the_main_thread_does_not_replace_the_verdict():
+    """The recovery clause was the call that failed. `signal.signal`
+    raises `ValueError` for exactly one reason — not the main thread —
+    and the `except (TypeError, ValueError)` answered it by making the
+    identical call, which raised the identical error out of the
+    `finally` and took the run's exit code with it. It could only ever
+    re-raise what it caught."""
+    import signal
+    import threading
+
+    escaped = []
+
+    def off_the_main_thread():
+        held = run_module.HeldInterrupts()
+        held._held = signal.default_int_handler   # as if it had held
+        try:
+            with run_module.finishing(held):
+                raise SystemExit(5)
+        except BaseException as reason:
+            escaped.append(reason)
+
+    worker = threading.Thread(target=off_the_main_thread)
+    worker.start()
+    worker.join(timeout=10)
+
+    assert escaped and isinstance(escaped[0], SystemExit), escaped
+    assert escaped[0].code == 5
+
+
+def test_a_release_that_could_not_restore_still_forgets_it_was_holding():
+    """Left set by an exception on the way through, the object believes
+    it is still holding and the next `hold()` is a no-op — so the stretch
+    after it runs unprotected while thinking it is not."""
+    import signal
+
+    held = run_module.HeldInterrupts()
+    held._held = object()          # nothing `signal.signal` will accept
+
+    assert held.release() is False
+    held.hold()
+    assert held._held is not run_module._UNSET_SIGNAL, (
+        "hold() did nothing, so release() had not forgotten")
+    held.release()
+    assert signal.getsignal(signal.SIGINT) is not None
+
+
+def test_the_note_survives_a_console_handler_on_a_closed_stream():
+    """`logging`'s own `handleError` catches `OSError` alone, so a
+    console handler at INFO over a closed stream raised `ValueError` out
+    of the `finally` — verbatim the failure the guard one statement
+    below it was written to prevent."""
+    import io
+    import logging
+    import signal
+
+    closed = io.StringIO()
+    closed.close()
+    watcher = logging.StreamHandler(closed)
+    watcher.setLevel(logging.INFO)
+    root = logging.getLogger()
+    root.addHandler(watcher)
+    try:
+        with pytest.raises(SystemExit) as verdict:
+            with run_module.finishing(run_module.HeldInterrupts()):
+                signal.raise_signal(signal.SIGINT)
+                raise SystemExit(5)
+    finally:
+        root.removeHandler(watcher)
+
+    assert verdict.value.code == 5

@@ -767,9 +767,19 @@ def test_every_composed_line_leaves_the_margin_the_module_reserves():
 
     for width in range(24, 141):
         room = min(width, MAX_WIDTH) - _MARGIN
+        # With a failed volume and a `next` block: those are two of the
+        # three call sites the margin fix touched, and a fixture without
+        # them renders neither — the "fixture that never reached a
+        # failed volume or a next step" shape, inside the test written
+        # to replace it.
         shown = outcome(record=record,
                         output_dir=Path("/home/rayondemiel/univ/tei_output"),
-                        headline="26/27 documents converted")
+                        headline="26/27 documents converted",
+                        volumes_written=26, exit_code=1,
+                        failed_documents=(("BDD_1685_Felibien_tome_II",
+                                           "KeyError 'Date_edition'"),),
+                        report_path=Path(
+                            "tei_output/.teille-douce/runs/20260903-180824-0031415"))
         for line in render_summary(shown, width=width):
             # A rule spans the width on purpose; the margin is for the
             # lines that carry words.

@@ -740,20 +740,32 @@ class HeldInterrupts:
         is written and printed. An interrupt that arrives after the run
         has finished its work has stopped nothing.
         """
-        if self._held is not _UNSET_SIGNAL:
-            try:
-                signal.signal(signal.SIGINT, self._held)
-            except (TypeError, ValueError):
-                # `getsignal` answers None for a handler installed
-                # outside Python — the premise `_UNSET_SIGNAL` exists
-                # for — and `signal(SIGINT, None)` is a TypeError. It
-                # came out of the `finally` that calls this and replaced
-                # the run's own exit code, which is the one thing this
-                # method's docstring promises it will never do. The
-                # default is the honest fallback: a Ctrl-C works again,
-                # which is all the caller needed.
-                signal.signal(signal.SIGINT, signal.default_int_handler)
-            self._held = _UNSET_SIGNAL
+        try:
+            if self._held is not _UNSET_SIGNAL:
+                try:
+                    signal.signal(signal.SIGINT, self._held)
+                except TypeError:
+                    # `getsignal` answers None for a handler installed
+                    # outside Python — the premise `_UNSET_SIGNAL` exists
+                    # for — and `signal(SIGINT, None)` is a TypeError.
+                    # The default is the honest fallback: a Ctrl-C works
+                    # again, which is all the caller needed.
+                    #
+                    # `ValueError` is NOT caught here, and that is the
+                    # point: `signal.signal` raises it for exactly one
+                    # reason, not being on the main thread — so the
+                    # recovery is the identical call and raises the
+                    # identical error. Catching it here could only ever
+                    # re-raise what it caught. It is caught below, with
+                    # everything else, because nothing this method does
+                    # is worth the run's exit code.
+                    signal.signal(signal.SIGINT, signal.default_int_handler)
+        except Exception:
+            pass
+        # Cleared whatever happened. Left set by an exception on the way
+        # through, the object still believes it is holding, and the next
+        # `hold()` is a no-op.
+        self._held = _UNSET_SIGNAL
         held, self._arrived = bool(self._arrived), []
         return held
 
@@ -784,7 +796,6 @@ def finishing(interrupts=None):
             # copy survived, which is the wrong way round.
             note = ("a Ctrl-C arrived while the report was being written; "
                     "the report and the manifest are complete")
-            logging.getLogger(__name__).info(note)
             # Only when the log line would NOT be seen. At the default
             # level INFO reaches the file alone, so this print is the one
             # visible copy; under `-vv` the console shows INFO too and
@@ -795,6 +806,13 @@ def finishing(interrupts=None):
                 and handler.level <= logging.INFO
                 for handler in logging.getLogger().handlers)
             try:
+                # Inside the guard, not above it: `logging`'s own
+                # `handleError` catches `OSError` alone, so a console
+                # handler on a closed stream raised `ValueError` out of
+                # this `finally` — verbatim the failure the rest of this
+                # comment says the guard exists to prevent, one
+                # statement above it.
+                logging.getLogger(__name__).info(note)
                 # `sys.stderr` is None under `2>&-`, and `print(file=None)`
                 # falls back to STDOUT — which puts the note back into
                 # the report, after the verdict, which is the placement
