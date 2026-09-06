@@ -13,6 +13,7 @@
 # Run: venv/bin/python -m pytest tests/test_interruption.py -q
 # -----------------------------------------------------------
 import json
+import pathlib
 import shutil
 import sys
 from pathlib import Path
@@ -520,14 +521,21 @@ def test_the_launcher_answers_a_ctrl_c_in_its_own_imports(tmp_path):
         "        return None\n"
         "sys.meta_path.insert(0, Interrupts())\n", encoding="utf-8")
 
-    finished = subprocess.run(
-        [sys.executable, str(RACINE / "main.py"), "run", "--help"],
-        capture_output=True,
-        env={**os.environ, "PYTHONPATH": str(tmp_path)})
+    # BOTH entry points. The guard lived in `main.py` alone, and the
+    # installed `teille-douce` — the form every page of the
+    # documentation uses — imported `teille_douce.cli` from setuptools'
+    # own wrapper, outside anything that could catch the signal.
+    ways = ([sys.executable, str(RACINE / "main.py"), "run", "--help"],
+            [str(pathlib.Path(sys.executable).parent / "teille-douce"),
+             "run", "--help"])
+    for way in ways:
+        finished = subprocess.run(
+            way, capture_output=True,
+            env={**os.environ, "PYTHONPATH": str(tmp_path)})
 
-    assert finished.returncode == 130, finished.stderr.decode()[-2000:]
-    assert b"Traceback" not in finished.stderr, finished.stderr.decode()
-    assert b"Interrupted" in finished.stderr
+        assert finished.returncode == 130, (way, finished.stderr.decode()[-2000:])
+        assert b"Traceback" not in finished.stderr, (way, finished.stderr.decode())
+        assert b"Interrupted" in finished.stderr, way
 
 
 def test_a_teardown_that_raises_gives_the_signal_back(monkeypatch, tmp_path):
@@ -741,24 +749,51 @@ def test_release_off_the_main_thread_does_not_replace_the_verdict():
     assert escaped[0].code == 5
 
 
-def test_a_release_that_could_not_restore_still_forgets_it_was_holding():
-    """Left set by an exception on the way through, the object believes
-    it is still holding and the next `hold()` is a no-op — so the stretch
-    after it runs unprotected while thinking it is not."""
+def test_a_release_that_could_not_restore_leaves_ctrl_c_working():
+    """Two things a failed restore must not do: leave the object
+    believing it still holds — the next `hold()` is then a no-op and the
+    stretch after it runs unprotected while thinking it is not — and
+    leave the DEFERRING LAMBDA installed with no record of the real
+    handler, which is the process deaf for good.
+
+    The earlier version of this test set `_held = object()`, the
+    `TypeError` arm, which behaved the same before the change: it passed
+    against the code it was written for.
+    """
     import signal
 
-    held = run_module.HeldInterrupts()
-    held._held = object()          # nothing `signal.signal` will accept
+    real = signal.signal
+    mine = lambda *_: None                                   # noqa: E731
+    real(signal.SIGINT, mine)
+    try:
+        held = run_module.HeldInterrupts()
+        held.hold()
+        deferring = signal.getsignal(signal.SIGINT)
+        assert deferring is not mine, "hold() installed nothing"
 
-    assert held.release() is False
-    held.hold()
-    assert held._held is not run_module._UNSET_SIGNAL, (
-        "hold() did nothing, so release() had not forgotten")
-    held.release()
-    assert signal.getsignal(signal.SIGINT) is not None
+        def refuses_that_one(number, handler):
+            if handler is mine:
+                raise RuntimeError("the disposition could not be set")
+            return real(number, handler)
+
+        run_module.signal.signal = refuses_that_one
+        try:
+            assert held.release() is False
+        finally:
+            run_module.signal.signal = real
+
+        assert held._held is run_module._UNSET_SIGNAL, "it still thinks it holds"
+        assert signal.getsignal(signal.SIGINT) is not deferring, (
+            "the deferring lambda was left installed with nothing to "
+            "restore it")
+        with pytest.raises(KeyboardInterrupt):
+            signal.raise_signal(signal.SIGINT)
+    finally:
+        real(signal.SIGINT, signal.default_int_handler)
 
 
-def test_the_note_survives_a_console_handler_on_a_closed_stream():
+def test_the_note_survives_a_console_handler_on_a_closed_stream(
+        monkeypatch):
     """`logging`'s own `handleError` catches `OSError` alone, so a
     console handler at INFO over a closed stream raised `ValueError` out
     of the `finally` — verbatim the failure the guard one statement
@@ -773,6 +808,14 @@ def test_the_note_survives_a_console_handler_on_a_closed_stream():
     watcher.setLevel(logging.INFO)
     root = logging.getLogger()
     root.addHandler(watcher)
+    # And a closed `sys.stderr` too, which is the whole premise: a
+    # handler's own `handleError` swallows the write and then writes the
+    # complaint to stderr, where its `except OSError` does not cover the
+    # `ValueError` a closed stream raises. Without this the test passed
+    # against the code it was written to condemn.
+    also_closed = io.StringIO()
+    also_closed.close()
+    monkeypatch.setattr(sys, "stderr", also_closed)
     try:
         with pytest.raises(SystemExit) as verdict:
             with run_module.finishing(run_module.HeldInterrupts()):
@@ -782,3 +825,102 @@ def test_the_note_survives_a_console_handler_on_a_closed_stream():
         root.removeHandler(watcher)
 
     assert verdict.value.code == 5
+
+
+def test_the_operators_own_copy_of_the_note_is_the_one_nothing_tested():
+    """`spoken` asked whether any root handler was a non-file
+    `StreamHandler` at INFO or below. pytest's capture handler is
+    exactly that, at level 0 — so inside the suite the answer was always
+    yes, the print was never executed by any of thirteen hundred tests,
+    and the two tests written to reach it stopped one line short. At the
+    default level, `-q` and `-qq`, that print is the operator's ONLY
+    copy."""
+    import io
+    import logging
+    import signal
+
+    captured = io.StringIO()
+    root = logging.getLogger()
+    watching = logging.StreamHandler(captured)      # not stdout, not stderr
+    watching.setLevel(logging.DEBUG)
+    root.addHandler(watching)
+    held = run_module.HeldInterrupts()
+    try:
+        with run_module.finishing(held):
+            signal.raise_signal(signal.SIGINT)
+    finally:
+        root.removeHandler(watching)
+
+    # A handler that is not on stdout or stderr is not a console, so the
+    # print is what the operator gets.
+    assert held.said == [True], (held.said, captured.getvalue())
+
+
+def test_a_console_at_info_gets_the_note_from_the_log_and_not_twice():
+    """`-vv` puts the console at INFO, and the note was then said once
+    through the log and once through the print."""
+    import logging
+    import signal
+
+    root = logging.getLogger()
+    talking = logging.StreamHandler(sys.stderr)
+    talking.setLevel(logging.INFO)
+    root.addHandler(talking)
+    held = run_module.HeldInterrupts()
+    try:
+        with run_module.finishing(held):
+            signal.raise_signal(signal.SIGINT)
+    finally:
+        root.removeHandler(talking)
+
+    assert held.said == []
+
+
+def test_a_clean_run_interrupted_in_the_panels_teardown_keeps_its_record(
+        monkeypatch, tmp_path):
+    """The hold taken in the loop's own `finally` — the fix of round ten,
+    on a run that finished cleanly — was guarded by nothing: replacing it
+    with `pass` left the whole suite green. The test named for it raises
+    its signal inside `gate_verdict`, which is already under
+    `finishing()`, so the stretch that `finally` exists for was never
+    entered.
+
+    Raised inside the progress bar's teardown, which is the first thing
+    that happens after the loop and before `finishing`.
+    """
+    import signal
+
+    from teille_douce.cli import app
+    from teille_douce.cli.app import settings_from
+    from teille_douce.settings import set_settings
+
+    from test_e2e_pipeline import ALTO_MIN, FIXTURES
+
+    for csv in ("metadata_livre.csv", "metadata_personne.csv"):
+        shutil.copy(FIXTURES / csv, tmp_path / csv)
+    monkeypatch.chdir(tmp_path)
+
+    class InterruptsOnTheWayOut(run_module.Progress):
+        def __exit__(self, *exception):
+            signal.raise_signal(signal.SIGINT)
+            return super().__exit__(*exception)
+
+    monkeypatch.setattr(run_module, "Progress", InterruptsOnTheWayOut)
+    for name in ("TDOUCE_NER", "TDOUCE_ENRICHMENT", "TDOUCE_MODERNIZE"):
+        monkeypatch.setenv(name, "0")
+    parser = app.build_parser()
+    args = parser.parse_args(["run", "--no-config", "-i", str(ALTO_MIN),
+                              "-o", str(tmp_path / "out")])
+    set_settings(settings_from(args, parser=parser))
+
+    # Caught rather than let through: unheld, the signal escapes here
+    # and aborts the whole pytest session instead of failing one named
+    # test, which in CI is a run with no result rather than a red one.
+    try:
+        run_module.execute(args)    # exit 0: it converted everything
+    except KeyboardInterrupt:
+        pytest.fail("the interrupt was not held across the teardown")
+
+    runs = sorted((tmp_path / "out" / ".teille-douce" / "runs").iterdir())
+    assert len(runs) == 1, "the run directory was lost with the signal"
+    assert (runs[0] / "run.json").exists()

@@ -646,13 +646,18 @@ def test_the_banner_never_runs_past_the_edge_however_many_services_die():
 def test_the_top_line_keeps_the_elapsed_and_the_estimate():
     """It clipped the composed line, so the right column went first: an
     absolute `-o` path — the ordinary case, not the edge — took the
-    elapsed time and the eta off the panel on every single frame."""
+    elapsed time and the eta off the panel on every single frame.
+
+    The WHOLE right column, not its first field: asserting `elapsed
+    47:12` alone passed under a clip, because `elapsed` is what comes
+    first and the estimate is what a clip eats."""
     absolute = state(
         output_dir="/home/rayondemiel/univ_geneve/tei_output_grand_siecle")
 
     for width in (56, 72, 92, 100):
         header = text(absolute, width=width)[0]
-        assert "elapsed 47:12" in header, (width, header)
+        assert header.endswith("elapsed 47:12   eta ~3h04 (median of 7)"), (
+            width, header)
 
 
 def test_a_shortened_path_keeps_the_directory_it_names():
@@ -833,7 +838,16 @@ def test_a_lost_phases_cause_sits_under_the_mark_it_explains():
     head itself was shortened it landed past the mark — and at
     four-and-twenty columns it swallowed the cause whole. Two fixes of
     one round disagreeing with each other."""
-    phase = PhaseLine("reconstruction-align", PhaseState.LOST, done=0,
+    # A CJK name too: the indent is measured in cells, and the mutation
+    # that measures it in characters is the one the docstring cites.
+    for name in ("reconstruction-align", "漢字巻物のログ"):
+        _the_cause_sits_under_the_mark(name)
+
+
+def _the_cause_sits_under_the_mark(name):
+    from teille_douce.report.text import cells
+
+    phase = PhaseLine(name, PhaseState.LOST, done=0,
                       total=430, unit="containers", note="(was up at start)",
                       reason="PyHellen stopped answering")
     lost = state(current=DocumentLine(name="D", pages=7, elapsed=3,
@@ -845,12 +859,15 @@ def test_a_lost_phases_cause_sits_under_the_mark_it_explains():
     # against the code it was written to condemn.
     for width in range(24, 141):
         lines = text(lost, width=width)
-        at = next(i for i, l in enumerate(lines) if "recon" in l)
+        at = next(i for i, l in enumerate(lines) if name[:4] in l)
         head, cause = lines[at], lines[at + 1]
         if not cause.strip():
             continue        # no room for any of it; the head said so
-        assert cause.index(cause.strip()[0]) == head.index("✗"), (
-            width, head, cause)
+        # In cells, like the panel itself: `str.index` is a character
+        # offset, and with a wide-glyph name the two differ — which is
+        # exactly the mutation this is here to catch.
+        assert cells(cause[:len(cause) - len(cause.lstrip())]) == \
+            cells(head[:head.index("✗")]), (width, head, cause)
 
 
 def test_the_totals_row_keeps_its_three_counts_or_the_one_that_matters():

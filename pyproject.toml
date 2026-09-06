@@ -62,7 +62,7 @@ ner = [
 ]
 
 [project.scripts]
-teille-douce = "teille_douce.cli:main"
+teille-douce = "teille_douce.launcher:main"
 
 [project.urls]
 Homepage = "https://github.com/rayondemiel/TEIlle-douce"

@@ -202,6 +202,30 @@ from whether a number is zero — which is how "0" came to mean four different
 things in one column — and reserves the red `LOST` for a phase that lost the
 ground under it, with a cause and a scope or it raises.
 
+### A test that cannot fail is worse than no test
+
+The report PR took fourteen review rounds, and by the end the production
+code was sound and the guards around it were not: fifteen tests passed
+under a mutation of the very line they were named for. The shapes, so
+they can be recognised:
+
+- a **sweep that starts above the defect** — the cause-alignment test ran
+  from forty columns and the two indents it compares differ only below
+  thirty;
+- a **fixture that never renders the block** — the margin test had no
+  failed volume and no `next` step, so two of the three call sites it
+  guards were never composed;
+- a **negative assertion satisfied by absence** — `not any("1 volumes")`
+  over a summary whose verdict short-circuited before composing the
+  sentence;
+- an **environment the suite makes untrue** — pytest's log-capture
+  handler is a `StreamHandler` with no filename, so a "is there a console
+  at INFO?" predicate was always true under the suite and the branch
+  behind it was executed by none of thirteen hundred tests.
+
+The remedy is mechanical and takes a minute: revert the file the test
+guards, run the test alone, and confirm it fails. Do it for every fix.
+
 ### A loss belongs to one of three blocks
 
 The word "lost" covered three unrelated causes with three different remedies,

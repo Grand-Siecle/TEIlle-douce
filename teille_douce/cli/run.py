@@ -715,6 +715,11 @@ class HeldInterrupts:
     def __init__(self):
         self._held = _UNSET_SIGNAL
         self._arrived = []
+        # Whether the note reached the operator through the print rather
+        # than through the log. Recorded because the choice is made by a
+        # predicate over the root logger's handlers, and no test can see
+        # the difference from the outside.
+        self.said = []
 
     def hold(self):
         if self._held is not _UNSET_SIGNAL:
@@ -760,8 +765,22 @@ class HeldInterrupts:
                     # everything else, because nothing this method does
                     # is worth the run's exit code.
                     signal.signal(signal.SIGINT, signal.default_int_handler)
-        except Exception:
-            pass
+        except BaseException:
+            # BaseException, not Exception: a SIGINT delivered between
+            # the restore and the return is a `KeyboardInterrupt`, and
+            # it escaped this `finally` over the run's own verdict —
+            # which is the defect four rounds ago was written to end,
+            # surviving in the guard meant to close it.
+            #
+            # And the default installed here, not merely swallowed: the
+            # line below forgets what was held, so a restore that failed
+            # would otherwise leave the deferring lambda in place with
+            # no record of the real handler — the next `hold()` saving a
+            # lambda, and the process deaf for good.
+            try:
+                signal.signal(signal.SIGINT, signal.default_int_handler)
+            except BaseException:
+                pass
         # Cleared whatever happened. Left set by an exception on the way
         # through, the object still believes it is holding, and the next
         # `hold()` is a no-op.
@@ -796,13 +815,26 @@ def finishing(interrupts=None):
             # copy survived, which is the wrong way round.
             note = ("a Ctrl-C arrived while the report was being written; "
                     "the report and the manifest are complete")
+            # Where the note went, for the one test that can tell the
+            # print's branch from the log's — the two are chosen by a
+            # predicate over the root logger's handlers, and a test
+            # process has handlers a terminal does not.
+            printed = interrupts.said
             # Only when the log line would NOT be seen. At the default
             # level INFO reaches the file alone, so this print is the one
             # visible copy; under `-vv` the console shows INFO too and
             # the note was said twice.
+            # A handler ON STDOUT OR STDERR, not any `StreamHandler`
+            # without a filename. pytest's own capture handler is one of
+            # those, at level 0 — so under the suite this was always
+            # true, the print below was never executed by any test, and
+            # the two tests written to reach it stopped here. The
+            # operator's only copy of this note at the default level was
+            # covered by nothing.
             spoken = any(
                 isinstance(handler, logging.StreamHandler)
-                and not hasattr(handler, "baseFilename")
+                and getattr(handler, "stream", None) in (sys.stdout,
+                                                         sys.stderr)
                 and handler.level <= logging.INFO
                 for handler in logging.getLogger().handlers)
             try:
@@ -824,6 +856,7 @@ def finishing(interrupts=None):
                 if sys.stderr is not None and not spoken:
                     print("  (a Ctrl-C arrived while the report was being "
                           "written; it is complete)", file=sys.stderr)
+                    printed.append(True)
             except Exception:
                 pass
 

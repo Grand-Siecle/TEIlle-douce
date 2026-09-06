@@ -33,7 +33,7 @@ def rendered(outcome_):
     return "\n".join(render_summary(outcome_, width=92))
 
 
-def _exempt(line, headline=""):
+def _exempt(line, headline="", room=10 ** 6):
     """The three kinds of line the module says it will not cut, and why.
 
     The headline and the verdict are the run's accounting — a cut number
@@ -42,6 +42,8 @@ def _exempt(line, headline=""):
     not run. All three wrap in a terminal and lose nothing.
     """
     import re
+
+    from teille_douce.report.text import cells
 
     bare = line.lstrip()
     # The headline is exempt whatever it says — `run.py` composes it, and
@@ -56,7 +58,13 @@ def _exempt(line, headline=""):
             # terminal is narrower than the figure it is being told. The
             # same rule as the two above — a number is printed whole or
             # not at all.
-            or bool(re.fullmatch(r"[\d\u202f ]+ of [\d\u202f ]+ \w+", bare)))
+            #
+            # Exempt only where the FIGURE itself does not fit. Exempting
+            # the whole line let its indent grow past the margin unseen,
+            # which is the one of the three margin call sites the test
+            # written for them could not reach.
+            or (bool(re.fullmatch(r"[\d\u202f ]+ of [\d\u202f ]+ \w+", bare))
+                and cells(bare) > room))
 
 
 # =============================================================================
@@ -565,13 +573,30 @@ def test_the_widest_summary_this_pipeline_can_produce_still_fits():
 
 
 def test_one_volume_is_not_written_as_one_volumes():
+    """A negative assertion satisfied by absence is not an assertion:
+    the fixture left `fail_on="never"`, so `_verdict` short-circuited
+    and the sentence under test was never composed. It asserts the
+    sentence now, and its agreement with its own noun."""
     record = RunRecord()
     record.add(Loss(Code.PHASE_LOST, "D1", "enrich", Locator.document("D1"),
                     count=1402, total=1402, detail="PyHellen down"))
 
-    shown = render_summary(outcome(record=record, exit_code=5), width=92)
+    shown = render_summary(outcome(record=record, exit_code=5,
+                                   fail_on="incident"), width=92)
+    verdict = next(line for line in shown if line.lstrip().startswith("exit "))
 
-    assert not any("1 volumes" in line for line in shown), shown
+    assert "1 volume carries no enrich at all" in verdict, verdict
+
+    for index in range(2, 4):
+        many = RunRecord()
+        for number in range(index):
+            document = f"D{number}"
+            many.add(Loss(Code.PHASE_LOST, document, "enrich",
+                          Locator.document(document), count=1402, total=1402,
+                          detail="PyHellen down"))
+        spoken = "\n".join(render_summary(
+            outcome(record=many, exit_code=5, fail_on="incident"), width=92))
+        assert f"{index} volumes carry no enrich at all" in spoken, spoken
 
 
 def test_the_count_is_the_last_thing_a_narrow_line_gives_up():
@@ -732,7 +757,7 @@ def test_every_line_of_a_summary_fits_its_terminal():
                     headline="26/27 documents converted")
     for width in range(24, 141):
         for line in render_summary(shown, width=width):
-            if _exempt(line, shown.headline):
+            if _exempt(line, shown.headline, min(width, 100)):
                 continue
             assert cells(line) <= min(width, 100), (width, cells(line), line)
 
@@ -783,7 +808,7 @@ def test_every_composed_line_leaves_the_margin_the_module_reserves():
         for line in render_summary(shown, width=width):
             # A rule spans the width on purpose; the margin is for the
             # lines that carry words.
-            if (_exempt(line, shown.headline) or not line.strip()
+            if (_exempt(line, shown.headline, room) or not line.strip()
                     or set(line) <= {"═", "─"}):
                 continue
             assert cells(line) <= room, (width, cells(line), room, line)
