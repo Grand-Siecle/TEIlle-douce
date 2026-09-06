@@ -50,7 +50,8 @@ def reset_models():
 
 def run_ner(root, person_db, document_name, models=None,
             entity_types=None, ner_models=None, containers=None,
-            confidence_threshold=None, cert_thresholds=None, output_dir=None):
+            confidence_threshold=None, cert_thresholds=None, output_dir=None,
+            losses=None):
     """
     Run phases 7-9 of the NER pipeline on one document.
 
@@ -102,7 +103,7 @@ def run_ner(root, person_db, document_name, models=None,
     # Phase 9: resolve + CSV + header + @ref
     return resolve_entities(
         root, aligned, entity_types, person_db, output_dir, document_name,
-        cert_thresholds=cert_thresholds,
+        cert_thresholds=cert_thresholds, losses=losses,
     )
 
 

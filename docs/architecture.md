@@ -94,6 +94,34 @@ teille_douce/
     app.py                   Argument parser, subcommand dispatch, flags → Settings
     options.py               Every option of `run`, and the phase fold
     run.py                   Run orchestration, per-document isolation
+  report/                    What a run did, and what it lost
+    counts.py                A loss is never a bare integer: a count carries
+                             its denominator or it raises
+    text.py                  Cells, clipping, two columns on one line. Shared
+                             by the panel and the summary, which had two
+                             implementations of the same contract and broke
+                             it in two different ways
+    record.py                The three blocks and typed locators. A page id
+                             IS the ALTO file stem, so it resolves to a file,
+                             an XPath and a IIIF region
+    digest.py                Repeated warnings, folded by shape
+    summary.py               The end-of-run report, as plain text
+    panel.py                 The live view — a pure function of state and
+                             width, so six moments of a four-hour run are
+                             testable without a terminal
+    collector.py             What the run talks to. Both reporters read it,
+                             which is why they cannot disagree
+    dashboard.py             The live view on a real screen — the only file
+                             here that touches Rich. Draws on a clock, not
+                             only on a change: minutes pass between two
+                             events, and a frozen panel reads as a hung run
+    select.py                Which reporter a run gets
+    store.py                 What a run leaves on disk: the manifest, the
+                             index of its incidents, and its log
+    logging_bridge.py        WARNING+ records to the digest, never to the
+                             screen
+    gate.py                  --fail-on: the third block is the definition of
+                             "important", and the second never counts
   tei.py                     The TEI class — facade carrying document state
   constants.py               Namespaces, SegmOnto taxonomies, POS tagsets
   dates.py                   Reading the dates the corpus writes (CSV cells, text)

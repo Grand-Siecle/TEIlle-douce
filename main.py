@@ -7,7 +7,17 @@ harness and any wrapper script written over the past two years invoke it
 by name.
 """
 
-from teille_douce.cli import main
-
 if __name__ == "__main__":
-    raise SystemExit(main())
+    try:
+        # Imported inside the guard: pulling in pandas and lxml is a
+        # quarter of a second, and a Ctrl-C in it used to come out as a
+        # traceback from somewhere inside pandas. Nothing has run yet, so
+        # there is nothing to report — but a traceback says otherwise.
+        from teille_douce.cli import main
+
+        raise SystemExit(main())
+    except KeyboardInterrupt:
+        import sys
+
+        print("\nInterrupted.", file=sys.stderr)
+        raise SystemExit(130)

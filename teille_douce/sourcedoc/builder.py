@@ -11,6 +11,7 @@ ALTO XML files. Uses multiprocessing for parallel page processing.
 
 import logging
 import multiprocessing
+import signal
 from pathlib import Path
 from multiprocessing import cpu_count
 
@@ -20,6 +21,9 @@ from rich.markup import escape as markup_escape
 from teille_douce.settings import get_settings, set_settings
 
 logger = logging.getLogger(__name__)
+
+# "no handler was installed", told apart from a handler that IS None.
+_UNSET = object()
 
 # fork() in a multi-threaded parent (rich's progress refresh thread,
 # coverage's tracing) deadlocks intermittently — observed locally and in
@@ -98,6 +102,45 @@ def extract_labels(source):
 _JOB_CONTEXT = {}
 
 
+def warm_up():
+    """Start the forkserver now, with SIGINT ignored across its birth.
+
+    It is started lazily by the first `Pool()` otherwise, and it inherits
+    the parent's signal dispositions for good — so a Ctrl-C arriving
+    while it preloads this module killed it mid-import and printed a
+    `multiprocessing/forkserver.py` traceback across the report, once
+    straight through the final verdict line. The worker initializer
+    cannot help: it has not run yet.
+
+    Done ONCE, here, rather than around every `Pool()`. Wrapping each
+    pool meant a window per volume, and three interrupts in fourteen
+    landed in one and were swallowed — a Ctrl-C that does nothing is
+    worse than an ugly traceback. This window is a single instant at
+    startup, before there is anything to interrupt.
+    """
+    if _MP_CONTEXT.get_start_method() != "forkserver":
+        return
+    from multiprocessing import forkserver
+
+    # `_UNSET`, for the same reason `build_sourcedoc` uses it: a handler
+    # set outside Python reads back as None, and `previous is not None`
+    # then skips the restore. Here that would leave SIG_IGN installed for
+    # the WHOLE run rather than for one document — Ctrl-C dead from the
+    # first volume to the last.
+    held = _UNSET
+    try:
+        held = signal.signal(signal.SIGINT, signal.SIG_IGN)
+    except ValueError:      # pragma: no cover - not the main thread
+        pass
+    try:
+        forkserver.ensure_running()
+    except Exception as reason:     # pragma: no cover - defensive
+        logger.debug("could not start the forkserver early (%s)", reason)
+    finally:
+        if held is not _UNSET:
+            signal.signal(signal.SIGINT, held)
+
+
 def _init_worker(document_name, segmonto_zones, segmonto_lines, config,
                  iiif_mapping_dict, settings=None):
     """Store one document's invariants in the worker process.
@@ -109,6 +152,13 @@ def _init_worker(document_name, segmonto_zones, segmonto_lines, config,
     plumbing is here so that the first one to do so is correct rather than
     silently reading the environment behind the CLI's back.
     """
+    # A Ctrl-C reaches the whole process group, so every worker took it
+    # too and died where it stood — half of all interrupt timings printed
+    # a `multiprocessing/forkserver.py` traceback across the report, once
+    # straight through the final verdict line. The parent owns the
+    # signal: it stops the loop, terminates the pool and prints a
+    # coherent report, and a worker that ignores SIGINT lets it.
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
     if settings is not None:
         set_settings(settings)
     _JOB_CONTEXT.update(
@@ -136,12 +186,16 @@ def _build_surface_fragment(args):
             run in their names, or no digit at all).
 
     Returns:
-        tuple: (job_index, xml_bytes, error, warning) - the job's position,
-        serialized surface XML (None on failure), an error message (None on
-        success) and a warning (e.g. "recovered malformed XML", None when
-        clean). Errors travel as plain strings: lxml exceptions are not
-        picklable and used to come back as an opaque MaybeEncodingError that
-        killed the whole pool, losing the already-processed pages (audit 5.5).
+        tuple: (job_index, xml_bytes, error, warning, duplicated) - the
+        job's position, serialized surface XML (None on failure), an error
+        message (None on success), a warning (e.g. "recovered malformed
+        XML", None when clean), and how many ALTO ids this page had to
+        disambiguate. The count travels in the tuple because it is the one
+        measurement made inside a worker that the summary needs: a logger
+        call in a forkserver child never reaches the parent. Errors travel
+        as plain strings: lxml exceptions are not picklable and used to
+        come back as an opaque MaybeEncodingError that killed the whole
+        pool, losing the already-processed pages (audit 5.5).
     """
     job_index, filepath, num = args
 
@@ -149,14 +203,14 @@ def _build_surface_fragment(args):
         # Inside the try like everything else: this function must never
         # raise (audit 2.3/5.5), and a worker whose initializer did not
         # run would otherwise take the whole document down with it.
-        _, xml_bytes, warning = _build_surface_fragment_inner(
+        _, xml_bytes, warning, duplicated, minted = _build_surface_fragment_inner(
             _JOB_CONTEXT["document_name"], filepath, num,
             _JOB_CONTEXT["segmonto_zones"], _JOB_CONTEXT["segmonto_lines"],
             _JOB_CONTEXT["config"], _JOB_CONTEXT["iiif_mapping_dict"],
         )
-        return job_index, xml_bytes, None, warning
+        return job_index, xml_bytes, None, warning, duplicated, minted
     except Exception as e:  # audit 2.3: one bad page must not kill the run
-        return job_index, None, f"{type(e).__name__}: {e}", None
+        return job_index, None, f"{type(e).__name__}: {e}", None, 0, 0
 
 
 def _parse_alto(filepath):
@@ -274,12 +328,37 @@ def _build_surface_fragment_inner(document_name, filepath, num, segmonto_zones,
     # Duplicate ALTO ids were disambiguated by SurfaceTree; report them
     # through the return tuple — a logger call inside a forkserver worker
     # never reaches the parent's log file.
-    dup_keys = [k for k, n in surface_tree._seen_keys.items() if n > 1]
-    if dup_keys:
-        dup_note = f"{len(dup_keys)} duplicate ALTO id(s) disambiguated"
+    duplicated = _duplicate_ids(surface_tree._seen_keys)
+    minted = _distinct_ids(surface_tree._seen_keys)
+    if duplicated:
+        dup_note = f"{duplicated} duplicate ALTO id(s) disambiguated"
         warning = f"{warning}; {dup_note}" if warning else dup_note
 
-    return num, etree.tostring(surface, encoding="utf-8"), warning
+    return (num, etree.tostring(surface, encoding="utf-8"), warning,
+            duplicated, minted)
+
+
+def _distinct_ids(seen_keys):
+    """How many ALTO ids this page used at all.
+
+    The denominator the repaired count is measured against: "6 174 of
+    41 908" says a defect was widespread, "6 174 of 6 174" says nothing.
+    """
+    return len({parts for _prefix, parts in seen_keys})
+
+
+def _duplicate_ids(seen_keys):
+    """How many ALTO ids were duplicated — not how many registry entries.
+
+    The registry is keyed on (TEI prefix, ALTO ids), so one duplicated
+    ALTO id reported under `zoneLine_`, `path_`, `line_` and `string_`
+    used to count as four. This figure is printed in the summary as a
+    repaired source defect, and it is the largest number this corpus
+    produces: a fourfold exaggeration would make the biggest line of the
+    report the least trustworthy one.
+    """
+    return len({parts for (_prefix, parts), count in seen_keys.items()
+                if count > 1})
 
 
 def build_sourcedoc(
@@ -311,9 +390,13 @@ def build_sourcedoc(
         iiif_mapping (IIIFMapping): Optional IIIF URL mapping instance.
 
     Returns:
-        tuple: (root, skipped_pages)
+        tuple: (root, skipped_pages, repaired_ids, minted_ids)
             - root: the updated TEI root element
-            - skipped_pages: sorted page numbers whose ALTO was unusable
+            - skipped_pages: sorted file stems whose ALTO was unusable —
+              the stem is the surface xml:id, so each one is an address
+            - repaired_ids: ALTO ids this document had to disambiguate —
+              a source defect that was repaired, not a loss, and the
+              largest single figure this corpus produces
 
     Raises:
         RuntimeError: if two pages would be emitted under one surface
@@ -393,6 +476,8 @@ def build_sourcedoc(
     results = [None] * len(jobs)
 
     skipped_pages = []
+    repaired_ids = 0
+    minted_ids = 0
 
     # Process pages in parallel
     # No `with Pool(...)`: Pool.__exit__ calls terminate(), which SIGTERMs
@@ -401,16 +486,59 @@ def build_sourcedoc(
     # forever (observed as intermittent 15-minute CI timeouts). Results
     # are fully consumed first, then close()+join() lets workers exit
     # cleanly; terminate() only on an actual error.
-    pool = _MP_CONTEXT.Pool(
-        workers,
-        initializer=_init_worker,
-        initargs=(
-            document_name, segmonto_zones, segmonto_lines, config,
-            iiif_mapping_dict, settings,
-        ),
-    )
+    # A Ctrl-C arriving while the pool is being born catches a worker
+    # half-unpickled and prints its traceback across the report — the
+    # parent has gone and the pipe with it. So the signal is DEFERRED
+    # here, not ignored: ignoring it lost three interrupts in fourteen,
+    # and a Ctrl-C that does nothing is worse than an ugly traceback.
+    # It is raised again below, once there is a pool to shut down.
+    deferred = []
+
+    def _hold(signum, frame):
+        deferred.append(signum)
+
+    # A sentinel, not None: `signal.signal` legitimately returns None for
+    # a handler set outside Python, and treating that as "we never
+    # installed one" leaks the deferral just as surely as no restore at
+    # all would.
+    held = _UNSET
     try:
-        for done, (job_index, xml_bytes, error, warning) in enumerate(
+        held = signal.signal(signal.SIGINT, _hold)
+    except ValueError:      # pragma: no cover - not the main thread
+        pass
+    try:
+        pool = _MP_CONTEXT.Pool(
+            workers,
+            initializer=_init_worker,
+            initargs=(
+                document_name, segmonto_zones, segmonto_lines, config,
+                iiif_mapping_dict, settings,
+            ),
+        )
+    except BaseException:
+        # The interrupt outranks whatever `Pool()` raised. Without this
+        # the deferred SIGINT was dropped on the floor: `execute` catches
+        # Exception per document and the run carried on, having been
+        # asked to stop.
+        if held is not _UNSET:
+            signal.signal(signal.SIGINT, held)
+        if deferred:
+            raise KeyboardInterrupt
+        raise
+    finally:
+        # In a `finally`, because `Pool()` raises: too many open files,
+        # a forkserver that will not start. `execute` catches Exception
+        # around each document, so without this the run carried on over
+        # every remaining volume with the deferring handler still
+        # installed — Ctrl-C dead for the rest of the process, which is
+        # the outcome deferring instead of ignoring exists to avoid.
+        if held is not _UNSET:
+            signal.signal(signal.SIGINT, held)
+    try:
+        if deferred:
+            raise KeyboardInterrupt
+        for done, (job_index, xml_bytes, error, warning, duplicated,
+                   minted) in enumerate(
             pool.imap_unordered(_build_surface_fragment, jobs), start=1
         ):
             page = ordered_files[job_index]
@@ -425,7 +553,13 @@ def build_sourcedoc(
                     "%s: page %s skipped, ALTO unusable (%s: %s)",
                     document_name, page.num, page.filepath.name, error,
                 )
-                skipped_pages.append(page.num)
+                # The file stem, not the page number: the stem IS the
+                # surface xml:id, so it resolves to a file to open, an
+                # XPath that lands and a IIIF region. A number resolves to
+                # none of those.
+                skipped_pages.append(page.filepath.stem)
+            repaired_ids += duplicated
+            minted_ids += minted
             results[job_index] = xml_bytes
 
             # Update progress bar if provided
@@ -476,4 +610,4 @@ def build_sourcedoc(
             f"TEI would be unreadable — rename the files"
         )
 
-    return output_tei_root, sorted(skipped_pages)
+    return output_tei_root, sorted(skipped_pages), repaired_ids, minted_ids

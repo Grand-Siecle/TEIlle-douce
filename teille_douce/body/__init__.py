@@ -14,7 +14,8 @@ Usage:
     build_body(root, text.data)
 """
 
-from .builder import build_body, apply_modernization, apply_modernization_enriched
+from .builder import (build_body, apply_modernization,
+                      apply_modernization_enriched, count_containers)
 from .note_links import link_notes_to_lines
 from .text import Text
 
@@ -22,6 +23,7 @@ __all__ = [
     "build_body",
     "apply_modernization",
     "apply_modernization_enriched",
+    "count_containers",
     "link_notes_to_lines",
     "Text",
 ]

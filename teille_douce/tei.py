@@ -22,7 +22,8 @@ from .utils.xml import content_root, declare_responsibility
 logger = logging.getLogger(__name__)
 from .teiheader import build_header, update_extent
 from .sourcedoc import build_sourcedoc
-from .body import build_body, apply_modernization, apply_modernization_enriched, Text
+from .body import (build_body, apply_modernization,
+                   apply_modernization_enriched, count_containers, Text)
 from .metadata import IIIFMapping
 from .lang import build_langusage
 from .enrichment import enrich_body as _enrich_body
@@ -86,6 +87,10 @@ class TEI:
         self.segmonto_lines = None
         self.lang_stats = None
         self.skipped_pages = []
+        # A source defect that was repaired, kept apart from anything
+        # lost: nothing is missing from the output because of it.
+        self.repaired_ids = 0
+        self.minted_ids = 0
         self._iiif_mapping = None
 
     def build_tree(self):
@@ -121,14 +126,16 @@ class TEI:
 
         Uses parallel processing for performance on large documents.
         Pages whose ALTO could not be used are collected in
-        ``self.skipped_pages`` (list of page numbers).
+        ``self.skipped_pages`` (list of page numbers) and
+        ``self.repaired_ids``.
 
         Args:
             config (dict): Pipeline configuration with IIIF settings.
             progress: Optional Rich progress bar instance.
             parent_task_pages: Optional task ID for progress updates.
         """
-        _, self.skipped_pages = build_sourcedoc(
+        (_, self.skipped_pages, self.repaired_ids,
+         self.minted_ids) = build_sourcedoc(
             self.d,
             self.root,
             self.fp,
@@ -229,9 +236,29 @@ class TEI:
         stats = {
             "lines_found": 0,
             "lines_modernized": 0,
+            # Counted while walking the body: a phase that reports what
+            # it lost has to know what it was given, or its zero cannot
+            # be read.
+            "containers_found": 0,
             "containers_failed": 0,
             "server_unavailable": False,
         }
+
+        # Before anything can fail: the denominator of this phase's
+        # losses must not depend on the phase succeeding.
+        #
+        # `content_root`, not the whole tree. Scanning teiHeader and
+        # sourceDoc as well counted containers the phase will never
+        # touch — right today only because the header's <note>s are
+        # written after modernization runs — and put back the full-tree
+        # Python walk `utils.xml` exists to avoid: 473 elements against
+        # 90 on the eight-page fixture.
+        # Guarded like its sibling `apply_modernization_enriched`: a tree
+        # with no <body> yet has no content root, and counting nothing is
+        # the right answer rather than an AttributeError from inside the
+        # denominator.
+        body = content_root(self.root)
+        stats["containers_found"] = 0 if body is None else count_containers(body)
 
         # Get line texts
         if line_data is None:
@@ -247,13 +274,20 @@ class TEI:
         joined_texts, carried = dehyphenate_lines(original_texts, zone_types=zone_types)
 
         try:
+            batch_losses = {}
             modernized = modernize_texts(
-                joined_texts, lang="fra", progress_callback=progress_callback
+                joined_texts, lang="fra", progress_callback=progress_callback,
+                losses=batch_losses,
             )
         except Exception as e:
             logger.error("Modernization failed: %s: %r", type(e).__name__, e)
             stats["server_unavailable"] = True
             return stats
+
+        # A batch that never reached the service is a loss with a size,
+        # not a silence: without this, sixty-four unsent lines read like
+        # sixty-four lines that were already modern.
+        stats.update(batch_losses)
 
         if modernized is None:
             # modernize_texts hands back the originals when there was

@@ -113,7 +113,7 @@ def check_api(lang="fra"):
         return False
 
 
-def modernize_texts(texts, lang="fra", progress_callback=None):
+def modernize_texts(texts, lang="fra", progress_callback=None, losses=None):
     """
     Modernize a list of text lines via the VieuxParler API.
 
@@ -154,7 +154,7 @@ def modernize_texts(texts, lang="fra", progress_callback=None):
     sendable_texts = [texts[i] for i in sendable_idx]
 
     modernized = asyncio.run(
-        _modernize_all(sendable_texts, base_url, progress_callback)
+        _modernize_all(sendable_texts, base_url, progress_callback, losses)
     )
     if modernized is None:
         return None
@@ -166,14 +166,46 @@ def modernize_texts(texts, lang="fra", progress_callback=None):
     return full
 
 
-async def _modernize_all(texts, base_url, progress_callback=None):
-    """Send all batches with limited concurrency, validate, retry divergent lines."""
+async def _modernize_all(texts, base_url, progress_callback=None, losses=None):
+    """Send all batches with limited concurrency, validate, retry divergent lines.
+
+    `losses`, when given, is filled with what never reached the service.
+    A failed batch used to be swallowed by a `continue` and a DEBUG line,
+    which made sixty-four lines that were never sent indistinguishable
+    from sixty-four that were already modern — one is a loss and the
+    other is a success.
+    """
+    if losses is not None:
+        losses.setdefault("batches_failed", 0)
+        losses.setdefault("lines_lost", 0)
+        # A reading the guard refused: the service answered, and what it
+        # answered was rejected for diverging from the original. Block 2,
+        # not block 3 — the guard did its job — and it was counted into a
+        # local, written to a DEBUG line and dropped, so the summary said
+        # "withheld on purpose … nothing" over a run that had withheld
+        # hundreds.
+        losses.setdefault("readings_rejected", 0)
+        # Block 3: a retry the service never answered. `lines_lost`
+        # carries them too, because a line whose retry never arrived is a
+        # line that never reached VieuxParler.
+        losses.setdefault("retries_unreachable", 0)
+        # What each count is measured against. `lines_offered` is every
+        # sendable line of the first pass, which is the denominator for a
+        # reading the guard refused — but not for a retry: a retry phase
+        # that lost every one of its six lines read `6 of 40`, fifteen
+        # per cent, when it had lost all of them.
+        losses.setdefault("lines_offered", 0)
+        losses.setdefault("lines_retried", 0)
+        losses.setdefault("batches_total", 0)
+        losses["lines_offered"] += len(texts)
     results = list(texts)  # pre-fill with originals as fallback
     batches = [
         (i, texts[i : i + get_settings().modernize_batch_size])
         for i in range(0, len(texts), get_settings().modernize_batch_size)
     ]
     total_batches = len(batches)
+    if losses is not None:
+        losses["batches_total"] += total_batches
     completed = 0
     sem = asyncio.Semaphore(get_settings().modernize_concurrency)
 
@@ -203,6 +235,9 @@ async def _modernize_all(texts, base_url, progress_callback=None):
                 logger.debug(
                     "Modernize batch at index %d failed: %s", start, response
                 )
+            if losses is not None:
+                losses["batches_failed"] += 1
+                losses["lines_lost"] += len(_batch_texts)
             continue
         any_success = True
         for j, mod in enumerate(response):
@@ -242,11 +277,18 @@ async def _modernize_all(texts, base_url, progress_callback=None):
 
         retried = 0
         still_bad = 0
+        unreachable = 0
         for (idx, orig), resp in zip(divergent, retry_responses):
             if isinstance(resp, Exception) or resp is None or not resp:
                 if get_settings().debug:
                     logger.debug("Retry failed for line %d: %s", idx, resp)
-                still_bad += 1
+                # The REQUEST failed. Counted apart from a reading the
+                # guard refused: one is the service dying, the other is
+                # the pipeline working. Both went into `still_bad`, so a
+                # VieuxParler that died during the retry phase produced
+                # zero incidents and `--fail-on incident` passed — block
+                # 2 never counts at any level, by design.
+                unreachable += 1
                 continue
             mod = resp[0]
             if _is_divergent(orig, mod):
@@ -261,10 +303,20 @@ async def _modernize_all(texts, base_url, progress_callback=None):
                 results[idx] = mod
                 retried += 1
 
+        if losses is not None:
+            losses["readings_rejected"] += still_bad
+            losses["retries_unreachable"] += unreachable
+            losses["lines_retried"] += len(divergent)
+            # NOT added to `lines_lost`: that counter is the failed
+            # BATCHES' own detail, and folding the retry lines into it
+            # made block 3's two lines claim twenty-two lines for sixteen
+            # distinct ones, six of them attributed to a batch that never
+            # contained them.
         if get_settings().debug:
             logger.debug(
-                "Retry results: %d fixed, %d still divergent (kept original)",
-                retried, still_bad,
+                "Retry results: %d fixed, %d still divergent (kept "
+                "original), %d never answered",
+                retried, still_bad, unreachable,
             )
 
     return results if any_success else None

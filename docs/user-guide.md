@@ -182,6 +182,7 @@ teille-douce run --fast --dry-run     # what would happen, writing nothing
 | `-x, --exclude PATTERN` | Drop volumes after selection. Repeatable. **A pattern matching nothing stops the run**, like a selector: an exclusion that silently misses converts at full cost the volume it was meant to hold back. A standing `-x` in a wrapper therefore has to be removed the day its volume leaves the corpus. |
 | `--limit N` | Convert at most N of those selected, in order. |
 | `--skip-existing` / `--force` | Skip volumes already converted / convert them anyway. |
+| `--retry-failed` | Convert only the volumes the last run reported `FAILED`, read from its `run.json`. Exits 3 when the last run had no failures — there is no selector, and nothing to retry is not a typo. |
 | `-i, --input` · `-o, --output` | Input and output directories. |
 | `--entities` · `--metadata` · `--persons` | Entity CSVs, and the two catalogues. |
 | `--fast` | No annotation phase at all: no service, no model. |
@@ -192,6 +193,9 @@ teille-douce run --fast --dry-run     # what would happen, writing nothing
 | `--device DEV` | Where the NER models run: `auto` (the default: a CUDA GPU if there is one, the CPU otherwise), `cpu`, `cuda`, `cuda:1`, `mps`. Naming one matters on a shared GPU somebody else has filled and on a machine with more than one — neither of which the pipeline can guess. Apple silicon is not chosen automatically: ask for `mps`. The run says which device it chose before loading several gigabytes of model. |
 | `--no-probe` | Do not probe the services; assume they answer. |
 | `--require-services` | A phase whose service is down is fatal (exit 3) **before anything is written**, instead of a warning and a run without that annotation. |
+| `--fail-on never\|incident\|loss` · `--strict` | What counts as a failure at the end of a run. `never` (the default) means losses do not change the exit status. `incident` fails on the third block — a service died, a container raised, a whole phase or a document was lost — which is the block titled *this needs a human*. `loss` adds the defects of the source, which on seventeenth-century OCR is never empty: that level is for a CI freezing an already-clean corpus, not for a daily run. The second block never counts at any level — a guard that rejects a hallucination did its job. `--strict` is `--fail-on incident`. |
+| `--max-page-loss PCT` | A volume losing more than PCT % of its pages is a failure rather than a degraded success. The chain already fails a document whose pages are *all* unusable; this lowers that implicit 100. |
+| `--dashboard` · `--plain` | Draw the live panel, or print the per-document lines without one. Chosen automatically: a panel in a terminal, plain output in a pipe, a CI log (`CI`, `GITHUB_ACTIONS`, …), a `TERM=dumb`, a window under 56×16 (the panel is fifteen rows before a single incident), or under `-q`. `TDOUCE_UI=auto\|plain\|dashboard` sits between the automatic rules and these flags. The end-of-run report is rendered from the same record either way, so it is identical to the byte. |
 | `-n, --dry-run` | Resolve everything, list the plan, write nothing. |
 | `--fail-fast` | Stop at the first volume that fails. |
 | `--max-failures N` | Stop after N failed volumes. |
@@ -207,20 +211,46 @@ A document that fails never stops the others: it is logged, reported
 only ways to change that, and both are off by default. When either stops a
 run, the summary says how many volumes were never attempted.
 
-**Exit codes.** `0` everything asked for succeeded · `1` some volumes failed
-· `2` usage error · `3` misconfiguration, nothing ran (input directory
-missing, no volumes found, a selector **or an exclusion** matched nothing, `--require-services`
-with a service down).
-
 A document that fails does not kill the run: the error is logged with its
 traceback, the document is reported as `FAILED`, and processing continues. The
 run ends with a summary and exits **non-zero** if anything failed — so it can be
 trusted in a script. Entity CSVs written before a failure are cleaned up, so
 nothing references a TEI that was never produced.
 
-**Logs.** Each run writes its own file, `pipeline_YYYYmmdd_HHMMSS_PID.log`, at
-DEBUG level — the process id is there so that volumes launched in parallel,
-which start inside the same second, do not truncate each other's log. The console shows warnings and errors only, unless you set
+**Exit codes.** `0` everything asked for succeeded · `1` some volumes
+failed · `2` usage error · `3` misconfiguration and nothing ran · `4`
+everything that ran failed · `5` the quality gate was not met. The table
+under [Troubleshooting](#exit-codes) says what each one asks you to do.
+
+**What a run leaves behind.** Beside the TEI, each run keeps its own
+record:
+
+```
+tei_output/.teille-douce/runs/20260903-180824-0031415/
+    run.json         what was asked (argv, every setting and where it came
+                     from) and what happened to each volume
+    incidents.jsonl  one incident per line, appended as it happens
+    pipeline.log     this run's log, moved in at the end
+```
+
+The directory is named for when the run started and the process that ran
+it: two volumes launched in parallel start inside the same second, and one
+would otherwise overwrite the other's record. The log is the transcript and
+`incidents.jsonl` is its index; no fact is
+stored twice in two forms that could diverge. The JSONL is written line by
+line so that a Ctrl-C in the fourth hour keeps everything before it. The
+last ten runs are kept, and a directory is pruned whole — an index must not
+outlive its transcript.
+
+`--retry-failed` reads the last `run.json` and converts only what that run
+reported `FAILED`.
+
+**Logs.** Each run writes its own file at DEBUG level, named
+`pipeline_YYYYmmdd_HHMMSS_PID.log` while it runs and moved into the run
+directory as `pipeline.log` at the end. The process id is in the working
+name so that volumes launched in parallel, which start inside the same
+second, do not truncate each other's log. A `--log-file` you name is an
+instruction: it stays where you put it. The console shows warnings and errors only, unless you set
 `-v` (`-vv` for debug). Move or disable the run log with `--log-file` / `--no-log-file`.
 
 **Cost.** With every annotation phase enabled, a full volume takes tens of
@@ -320,6 +350,9 @@ wrapper scripts and CI configurations keep working:
 | `TDOUCE_PYHELLEN_MAX_CONSECUTIVE_FAILURES` | `limits.max_consecutive_failures` | `10` | Circuit breaker: stop calling after this many failures in a row |
 | `TDOUCE_NER_CONFIDENCE` | `limits.ner_confidence` | `0.6` | Below this, an entity prediction is dropped |
 | `TDOUCE_NER_DEVICE` | `models.device` | `auto` | Where the NER models run: `auto`, `cpu`, `cuda`, `cuda:1`, `mps` |
+| `TDOUCE_FAIL_ON` | `quality.fail_on` | `never` | What counts as a failure: `never`, `incident`, `loss` |
+| `TDOUCE_UI` | `output.ui` | `auto` | Which reporter to use: `auto`, `plain`, `dashboard` |
+| `TDOUCE_MAX_PAGE_LOSS` | `quality.max_page_loss` | `100` | A volume losing more than this share of its pages is a failure |
 | `TDOUCE_DEBUG` | `output.debug` | `0` | Verbose diagnostics, in the console and in the run log |
 | `TDOUCE_LOG_LEVEL` | `output.log_level` | `WARNING` | Console level |
 | `TDOUCE_LOG_FILE` | `output.log_file` | `pipeline.log` | Run log; each run writes its own timestamped file |
@@ -606,6 +639,21 @@ breakdown and for what the eleven rules check.
 
 **`Directory not found: OCR`** — `OCR/` does not exist. Create it, or point
 `TDOUCE_OCR_DIR` elsewhere.
+
+### Exit codes
+
+| | |
+|---|---|
+| **0** | everything asked for succeeded — losses do not change this, unless `--fail-on` says otherwise |
+| **1** | partial failure: some volumes failed, others did not |
+| **2** | usage error, on the command line: unknown flag, a value a flag will not take, two flags that contradict each other (`--force --skip-existing`, `--plain --dashboard`, `--no-probe --require-services`) |
+| **3** | misconfiguration, nothing ran: input missing, empty corpus, a selector matching nothing, `--require-services` with a service down, a config file that is unreadable or names a key this pipeline does not have |
+| **4** | total failure: everything that ran failed, including the case where nothing could even be opened. Distinct from 1 because the remedy differs — 1 is worth retrying volume by volume, 4 usually means the input or the setup is wrong. A run stopped early by `--fail-fast` is never 4: it did not prove the corpus unconvertible |
+| **5** | the quality gate was not met: everything converted, and `--fail-on` or `--max-page-loss` is still not satisfied. Only when nothing else failed — a failed volume is the more concrete fact and takes the code |
+
+"Everything converted" and "exit 5" only contradict each other if a written
+file and a publishable file are the same thing, which is the distinction
+that flag exists to make.
 
 **`No ALTO documents found in OCR/.`** — `OCR/` has no subdirectory containing
 `.xml` files. Loose XML files at the top level of `OCR/` are not picked up:

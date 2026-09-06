@@ -28,6 +28,8 @@ _OPTION_FOR_SETTING = {
     "modernize_batch_size": "--batch-size",
     "modernize_concurrency": "--concurrency",
     "pyhellen_concurrency": "--concurrency",
+    "fail_on": "--fail-on",
+    "max_page_loss": "--max-page-loss",
     "ner_device": "--device",
     "log_file": "--log-file",
     "log_level": "--log-level",
@@ -187,6 +189,11 @@ def add_run_arguments(parser):
         "--limit", type=_at_least_one, metavar="N", default=none,
         help="convert at most N of the selected volumes, in order",
     )
+    selection.add_argument(
+        "--retry-failed", dest="retry_failed", action="store_true",
+        default=False,
+        help="convert only the volumes the last run reported FAILED",
+    )
     resume = selection.add_mutually_exclusive_group()
     resume.add_argument(
         "--skip-existing", action="store_true",
@@ -277,6 +284,31 @@ def add_run_arguments(parser):
                         default=none,
                         help="where the NER models run: auto, cpu, cuda, "
                              "cuda:1, mps  [auto]")
+
+    quality = parser.add_argument_group("quality gate")
+    quality.add_argument("--fail-on", dest="fail_on",
+                         choices=("never", "incident", "loss"), default=none,
+                         help="what counts as a failure: never, incident "
+                              "(a service died, a container raised, a whole "
+                              "phase or a document was lost), or loss "
+                              "(also the defects of the source)  [never]")
+    quality.add_argument("--strict", dest="strict", action="store_true",
+                         default=False,
+                         help="alias of --fail-on incident")
+    quality.add_argument("--max-page-loss", dest="max_page_loss", metavar="PCT",
+                         default=none,
+                         help="a volume losing more than PCT%% of its pages "
+                              "is a failure, not a degraded success  [100]")
+
+    view = parser.add_argument_group("output")
+    seeing = view.add_mutually_exclusive_group()
+    seeing.add_argument("--dashboard", dest="dashboard", action="store_true",
+                        default=False,
+                        help="draw the live panel even where it would not be "
+                             "chosen automatically")
+    seeing.add_argument("--plain", dest="plain", action="store_true",
+                        default=False,
+                        help="one line per event, no live panel")
 
     failure = parser.add_argument_group("failure handling")
     failure.add_argument("-n", "--dry-run", action="store_true",

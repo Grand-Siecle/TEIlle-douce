@@ -74,6 +74,44 @@ def _as_device(raw):
     return value
 
 
+_UI = ("auto", "plain", "dashboard")
+
+
+def _as_ui(raw):
+    """Which reporter to use, as a value the layers can refuse.
+
+    It used to be read straight out of `os.environ`, so it was the one
+    TDOUCE_* variable with no flag layer, no config layer, no origin, and
+    no place in the manifest — and an empty one, which is a normal CI
+    idiom, aborted the run with a usage error after the metadata had
+    loaded.
+    """
+    if not isinstance(raw, str):
+        raise ValueError("is not a reporter name")
+    value = raw.strip().lower()
+    if value not in _UI:
+        raise ValueError(f"is not one of {', '.join(_UI)}")
+    return value
+
+
+_FAIL_ON = ("never", "incident", "loss")
+
+
+def _as_fail_on(raw):
+    """What counts as a failure at the end of a run.
+
+    A closed set, and validated here rather than left to a comparison
+    somewhere downstream: `--fail-on incidents` silently meaning "never"
+    is how a CI gate stops guarding without anyone noticing.
+    """
+    if not isinstance(raw, str):
+        raise ValueError("is not a level name")
+    value = raw.strip().lower()
+    if value not in _FAIL_ON:
+        raise ValueError(f"is not one of {', '.join(_FAIL_ON)}")
+    return value
+
+
 def _as_str(raw):
     if not isinstance(raw, str):
         raise ValueError("is not a string")
@@ -208,6 +246,14 @@ _SETTINGS = (
     # Where the NER models run. Automatic is right almost always; the
     # exceptions are a shared GPU somebody else is filling and a machine
     # with more than one, neither of which the pipeline can guess.
+    # The quality gate. Default "never": a degraded conversion is still a
+    # conversion, and on seventeenth-century OCR block 1 is never empty.
+    _Declaration("ui", "TDOUCE_UI", "output.ui", _as_ui, "auto"),
+    _Declaration("fail_on", "TDOUCE_FAIL_ON",
+                 "quality.fail_on", _as_fail_on, "never"),
+    _Declaration("max_page_loss", "TDOUCE_MAX_PAGE_LOSS",
+                 "quality.max_page_loss",
+                 _as_number(minimum=0.0, maximum=100.0), 100.0),
     _Declaration("ner_device", "TDOUCE_NER_DEVICE",
                  "models.device", _as_device, "auto"),
     _Declaration("ner_confidence_threshold", "TDOUCE_NER_CONFIDENCE",
@@ -293,6 +339,17 @@ def find_config_file(start=None):
     return None
 
 
+def _plain(value):
+    """A value json.dumps will accept, whatever the converter produced."""
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, dict):
+        return {str(k): _plain(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_plain(item) for item in value]
+    return value
+
+
 @dataclass(frozen=True, slots=True)
 class Rejection:
     """A value a layer offered and the converter refused."""
@@ -324,6 +381,9 @@ class Settings:
     modernize_concurrency: int
     modernize_similarity_min: float
     health_timeout: float
+    ui: str
+    fail_on: str
+    max_page_loss: float
     ner_device: str
     ner_confidence_threshold: float
     max_workers: int
@@ -356,6 +416,54 @@ class Settings:
         names = {d.env for d in _SETTINGS if d.env}
         names.add(_MODERNIZE_URL_ENV)
         return frozenset(names)
+
+    def as_manifest(self):
+        """Every setting, its value, and where the value came from.
+
+        Written into run.json so that "why did it write there" is
+        answerable three days later — by the origin, which is the part
+        the value cannot tell you. Keyed on the config key rather than
+        the attribute name, because that is what a reader would type to
+        change it — so a setting with no config key (`TDOUCE_TEI_RNG`,
+        which points the schema tests at a `tei_all.rng` and is not a
+        property of the corpus) is not in here.
+
+        Everything is coerced to a JSON-safe form here: a Path or an Enum
+        surviving into the dump would only be discovered at the end of a
+        four-hour run.
+        """
+        manifest = {}
+        for declaration in _SETTINGS:
+            if not declaration.key:
+                continue
+            entry = {
+                "value": _plain(getattr(self, declaration.name)),
+                "origin": self.origin(declaration.name),
+            }
+            standing = manifest.get(declaration.key)
+            if standing is None:
+                manifest[declaration.key] = entry
+            elif standing != entry:
+                # Two settings may share a config key on purpose, and one
+                # `TDOUCE_*` variable can then move only one of them. The
+                # loop simply overwrote, so `run.json` asserted a value
+                # and an origin the other path never used, and the value
+                # that WAS used went unrecorded. When they diverge each
+                # gets its own line; when they agree the shared key
+                # stands, which is the ordinary case and the one a reader
+                # would type.
+                manifest.pop(declaration.key, None)
+                for other in _SETTINGS:
+                    if other.key == declaration.key:
+                        manifest[f"{other.key} ({other.name})"] = {
+                            "value": _plain(getattr(self, other.name)),
+                            "origin": self.origin(other.name),
+                        }
+        manifest[_MODERNIZE_URL.key] = {
+            "value": _plain(self.modernize_api),
+            "origin": self.origin("modernize_url"),
+        }
+        return manifest
 
     @staticmethod
     def config_keys():

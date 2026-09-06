@@ -393,9 +393,13 @@ def test_court_un_document_casse_ne_tue_pas_le_run(tmp_path):
     assert res.returncode != 0
     assert "LIV9000_reconciled" in res.stdout
     assert "1/2" in res.stdout
-    # audit 2.10 : le log du run est horodate (pipeline_YYYYMMDD_HHMMSS.log),
-    # un prochain run n'ecrasera donc pas la trace de cet echec
-    assert list(tmp_path.glob("pipeline_*.log")), sorted(tmp_path.iterdir())
+    # audit 2.10 : chaque run garde sa propre trace, un prochain run
+    # n'ecrasera donc pas celle de cet echec. Elle vit desormais dans le
+    # repertoire du run, a cote de l'index de ce qu'il a perdu : les deux
+    # sont elagues ensemble, donc aucun ne peut survivre a l'autre.
+    runs = sorted((sortie / ".teille-douce" / "runs").iterdir())
+    assert (runs[-1] / "pipeline.log").exists(), sorted(tmp_path.iterdir())
+    assert not list(tmp_path.glob("pipeline_*.log")), "un orphelin est reste"
 
 
 @pytest.mark.e2e

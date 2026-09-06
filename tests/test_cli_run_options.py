@@ -1297,3 +1297,26 @@ def test_a_named_device_still_overrides_what_flair_chose(monkeypatch):
 
     assert models.camembert is not None
     assert flair.device == "device(cpu)"
+
+
+def test_two_settings_that_share_a_config_key_are_both_recorded():
+    """Both `modernize_concurrency` and `pyhellen_concurrency` declare
+    `limits.concurrency`, and the manifest loop simply overwrote — so
+    `run.json` asserted a value and an origin the other path never used,
+    and the value that WAS used went unrecorded. One `TDOUCE_*` variable
+    can move only one of them, which is when it matters."""
+    from teille_douce.settings import Settings
+
+    split = Settings.load(env={"TDOUCE_MODERNIZE_CONCURRENCY": "2",
+                               "TDOUCE_PYHELLEN_CONCURRENCY": "7"},
+                          flags={}).as_manifest()
+    recorded = {key: entry["value"] for key, entry in split.items()
+                if "concurrency" in key}
+
+    assert sorted(recorded.values()) == [2, 7], recorded
+    assert all("(" in key for key in recorded), recorded
+
+    # And when they agree, the shared key stands — it is what a reader
+    # would type to change them.
+    together = Settings.load(env={}, flags={}).as_manifest()
+    assert "limits.concurrency" in together

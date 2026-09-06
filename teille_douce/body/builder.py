@@ -813,6 +813,35 @@ def apply_modernization(root, modernized_texts):
     return count
 
 
+def text_containers(root):
+    """Every container modernization may touch, in document order.
+
+    One walk, used both to do the work and to count what the work was
+    given. They were two: `iter(*TEXT_CONTAINERS)` here, which matches
+    BARE tags only, and a `local_tag` filter in the counter — and bare
+    and namespaced tags coexist in the same tree (audit 4.2). A
+    denominator produced by a different walk from its numerator is not a
+    denominator.
+
+    A list and not a generator: the caller inserts `<choice>` into the
+    containers as it goes, and a live `iter()` over a tree being edited
+    is a walk whose behaviour depends on where the edit landed.
+    """
+    return [element for element in root.iter()
+            if local_tag(element.tag) in TEXT_CONTAINERS]
+
+
+def count_containers(root):
+    """How many containers this document offers modernization.
+
+    Read before the service is asked anything: it is the denominator the
+    phase's losses are measured against, and counting it inside the walk
+    that only runs once the service answered is what kept a dead service
+    reporting "0 of 0 containers".
+    """
+    return len(text_containers(root))
+
+
 def apply_modernization_enriched(root, corresp_to_mod, stats=None):
     """
     Post-process an enriched body to insert <choice><orig>/<reg> per line.
@@ -844,7 +873,7 @@ def apply_modernization_enriched(root, corresp_to_mod, stats=None):
     # enriched and scanned for entities, so leaving them out here paid
     # for VieuxParler round-trips whose readings nothing consumed —
     # the title page came back modernized and was dropped on the floor.
-    for container in body.iter(*TEXT_CONTAINERS):
+    for container in text_containers(body):
         has_sentences = any(local_tag(c.tag) == "s" for c in container)
 
         if has_sentences:

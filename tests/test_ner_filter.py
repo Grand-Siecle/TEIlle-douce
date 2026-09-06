@@ -680,3 +680,30 @@ def test_the_prefilters_reproduce_the_reference_decisions():
     for i, j in attendues:
         if noms[i] in groupe_de and noms[j] in groupe_de:
             assert groupe_de[noms[i]] == groupe_de[noms[j]], (noms[i], noms[j])
+
+
+def test_a_pruned_entity_is_counted_and_not_only_logged():
+    """An entity that reached resolution and was then dropped is
+    something the pipeline could have emitted and chose not to — block 2,
+    "withheld on purpose". It went to a `logger.info` and nowhere else,
+    so the block read "nothing" on runs that had withheld hundreds, which
+    is one of the two cases CLAUDE.md names for it."""
+    from teille_douce.enrichment.ner_filter import filter_resolved_entities
+    from teille_douce.enrichment.ner_resolve import ResolvedEntity
+    from teille_douce.enrichment.ner_align import AlignedEntity
+
+    def entity(name, confidence, mentions=1):
+        mention = AlignedEntity(entity_type="person", text=name,
+                                confidence=confidence, model="camembert",
+                                w_elements=[])
+        return ResolvedEntity(entity_type="person", canonical_name=name,
+                              xml_id=f"person-{name}",
+                              mentions=[mention] * mentions)
+
+    losses = {}
+    kept = filter_resolved_entities(
+        [entity("Poussin", 0.9), entity("Bruit", 0.1), entity("Autre", 0.2)],
+        losses=losses)
+
+    assert [e.canonical_name for e in kept] == ["Poussin"]
+    assert losses == {"entities_filtered": 2, "entities_offered": 3}

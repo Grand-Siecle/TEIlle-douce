@@ -380,7 +380,8 @@ def fix_canonical_names(entities):
         logger.info("NER filter: fixed %d duplicated canonical names", fixed)
 
 
-def filter_resolved_entities(entities, min_confidence_single=0.55):
+def filter_resolved_entities(entities, min_confidence_single=0.55,
+                             losses=None):
     """
     Prune single-mention entities with low confidence.
 
@@ -411,6 +412,15 @@ def filter_resolved_entities(entities, min_confidence_single=0.55):
 
     if pruned:
         logger.info("NER filter: pruned %d low-confidence single-mention entities", pruned)
+    if losses is not None:
+        # Block 2. An entity that made it all the way to resolution and
+        # was then dropped is something the pipeline could have emitted
+        # and chose not to — which is what "withheld on purpose" means.
+        # It went to a `logger.info` and nowhere else, so the block read
+        # "nothing" on runs that had withheld hundreds.
+        losses["entities_filtered"] = losses.get("entities_filtered", 0) + pruned
+        losses["entities_offered"] = (losses.get("entities_offered", 0)
+                                      + len(entities))
     return kept
 
 

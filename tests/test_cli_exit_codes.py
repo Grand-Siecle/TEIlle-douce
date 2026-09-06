@@ -64,14 +64,19 @@ def test_excluding_every_volume_stops_the_run(tmp_path):
 
 def test_a_corpus_of_only_broken_archives_is_a_failure_not_a_misconfiguration(tmp_path):
     """The input was there and unreadable, which is a different diagnosis —
-    and the failures have to be named, not swallowed."""
+    and the failures have to be named, not swallowed.
+
+    4 and not 1: nothing was converted and everything that could fail
+    did, which is the whole distinction 4 draws. 1 tells a wrapper to
+    retry volume by volume, and there is no volume here worth retrying.
+    """
     ocr = tmp_path / "ocr"
     ocr.mkdir()
     (ocr / "broken.zip").write_bytes(b"not a zip at all")
 
     res, _ = _executer_main(tmp_path, ocr, **MODE_COURT)
 
-    assert res.returncode == 1
+    assert res.returncode == 4
     assert "broken.zip" in res.stdout
 
 
@@ -618,7 +623,10 @@ def test_a_failure_touches_no_entity_file_when_ner_did_not_run(tmp_path):
     finally:
         sortie.chmod(0o700)
 
-    assert res.returncode == 1
+    # 4 and not 1: this corpus holds one volume and it failed, so
+    # everything that ran failed — which is a different diagnosis from
+    # "two of forty broke" and now has its own code.
+    assert res.returncode == 4
     assert (entities / "from-a-previous-run.csv").exists(), (
         "a failure with NER off removed files it never wrote"
     )
@@ -654,14 +662,18 @@ def test_an_empty_selected_volume_names_itself(tmp_path):
 def test_no_probe_and_require_services_contradict_each_other(tmp_path):
     """One says "assume the services answer", the other "prove they do".
     Refused before expand_archives unpacks anything, because
-    --require-services promises to fail before a single write."""
+    --require-services promises to fail before a single write.
+
+    2, like every other contradictory pair. It exited 3, so a wrapper
+    keying on 2 for "the command line is wrong" got one answer for
+    `--force --skip-existing` and another for this."""
     ocr = tmp_path / "ocr"
     shutil.copytree(ALTO_MIN, ocr)
 
     res, sortie = _executer_main(
         tmp_path, ocr, args=("--no-probe", "--require-services"), **MODE_COURT)
 
-    assert res.returncode == 3
+    assert res.returncode == 2
     assert "--no-probe" in res.stdout and "--require-services" in res.stdout
     assert not sortie.exists()
 
@@ -1106,7 +1118,7 @@ def test_the_refusal_to_read_anything_still_names_what_held_no_alto(tmp_path):
 
     res, _ = _executer_main(tmp_path, ocr, COLUMNS="200", **MODE_COURT)
 
-    assert res.returncode == 1
+    assert res.returncode == 4
     assert "1 volume(s) could not be opened. (1 more held no ALTO)" \
         in res.stdout
 
@@ -1183,7 +1195,7 @@ def _corpus_nothing_readable(ocr, out):
     (ocr / "LIV9005_reconciled.zip").write_bytes(b"not a zip")
     (ocr / "LIV9003_reconciled").mkdir()
     (ocr / "LIV9003_reconciled" / "n.txt").write_text("x", encoding="utf-8")
-    return (), 1
+    return (), 4
 
 
 @pytest.mark.parametrize("build", [
@@ -1214,3 +1226,631 @@ def test_the_accounting_balances_on_every_way_out_of_a_run(tmp_path, build):
         == seen["attempted"], f"{seen} in:\n{res.stdout}"
     assert seen["attempted"] + seen["skipped"] + seen["no_alto"] \
         == _volumes_offered(ocr), f"{seen} in:\n{res.stdout}"
+
+
+# =============================================================================
+# What a real run leaves on the screen
+# =============================================================================
+
+def test_a_run_ends_with_the_summary_it_promised(tmp_path):
+    """The summary is the thing a reader is left with, and it is rendered
+    from the record — so if it is not printed, nothing else in the report
+    module is reaching a user."""
+    ocr = tmp_path / "ocr"
+    shutil.copytree(ALTO_MIN, ocr)
+
+    res, _ = _executer_main(tmp_path, ocr, COLUMNS="92", TDOUCE_UI="plain",
+                            **MODE_COURT)
+
+    assert res.returncode == 0
+    assert "the source was defective" in res.stdout
+    assert "withheld on purpose" in res.stdout
+    assert "lost to an incident" in res.stdout
+    assert "to a document only" in res.stdout
+    assert "exit 0 — 1 of 1 volumes converted" in res.stdout
+
+
+def test_the_journal_mode_draws_no_panel(tmp_path):
+    """A live panel redirected to a file is forty thousand half-drawn
+    frames."""
+    ocr = tmp_path / "ocr"
+    shutil.copytree(ALTO_MIN, ocr)
+
+    res, _ = _executer_main(tmp_path, ocr, COLUMNS="92", TDOUCE_UI="plain",
+                            **MODE_COURT)
+
+    assert "ctrl-c" not in res.stdout
+
+
+def test_a_repaired_source_defect_reaches_the_summary(tmp_path):
+    """The fixture volume carries duplicate ALTO ids — the loudest number
+    in this corpus. It belongs in block 1, marked repaired, or the
+    biggest figure in the summary reads as an alarm."""
+    ocr = tmp_path / "ocr"
+    shutil.copytree(ALTO_MIN, ocr)
+
+    res, _ = _executer_main(tmp_path, ocr, COLUMNS="92", TDOUCE_UI="plain",
+                            **MODE_COURT)
+
+    assert "ALTO ids repaired" in res.stdout
+
+
+# =============================================================================
+# 4: everything that ran failed.  5: nothing failed, and it is still not enough
+# =============================================================================
+
+def _volume_of_unusable_alto(ocr, name):
+    (ocr / name).mkdir(parents=True)
+    (ocr / name / "f1.xml").write_text("not ALTO at all", encoding="utf-8")
+
+
+def test_a_corpus_where_everything_failed_says_so_with_its_own_code(tmp_path):
+    """1 covered "one volume broke" and "all forty broke" alike. A wrapper
+    can now tell a partial failure, which is worth retrying volume by
+    volume, from a total one, which usually means the input or the
+    configuration is wrong."""
+    ocr = tmp_path / "ocr"
+    ocr.mkdir()
+    _volume_of_unusable_alto(ocr, "LIV9001_reconciled")
+    _volume_of_unusable_alto(ocr, "LIV9002_reconciled")
+
+    res, _ = _executer_main(tmp_path, ocr, COLUMNS="200", **MODE_COURT)
+
+    assert res.returncode == 4
+    assert "0/2 documents converted" in res.stdout
+
+
+def test_one_failure_among_several_is_still_a_partial_failure(tmp_path):
+    ocr = tmp_path / "ocr"
+    shutil.copytree(ALTO_MIN, ocr)
+    _volume_of_unusable_alto(ocr, "LIV9002_reconciled")
+
+    res, _ = _executer_main(tmp_path, ocr, COLUMNS="200", **MODE_COURT)
+
+    assert res.returncode == 1
+
+
+def test_a_run_that_lost_pages_still_succeeds_unless_asked_otherwise(tmp_path):
+    """The default. A degraded conversion is still a conversion."""
+    ocr = tmp_path / "ocr"
+    shutil.copytree(ALTO_MIN, ocr)
+    (ocr / DOCUMENT / "zzz_broken.xml").write_text("not ALTO", encoding="utf-8")
+
+    res, _ = _executer_main(tmp_path, ocr, COLUMNS="200", **MODE_COURT)
+
+    assert res.returncode == 0
+    assert "pages unusable" in res.stdout
+
+
+def test_the_quality_gate_turns_that_same_run_into_a_failure(tmp_path):
+    """Everything converted, and it is still not acceptable — which only
+    reads as a contradiction if a written file and a publishable file are
+    the same thing."""
+    ocr = tmp_path / "ocr"
+    shutil.copytree(ALTO_MIN, ocr)
+    (ocr / DOCUMENT / "zzz_broken.xml").write_text("not ALTO", encoding="utf-8")
+
+    res, _ = _executer_main(tmp_path, ocr, args=("--fail-on", "loss"),
+                            COLUMNS="200", **MODE_COURT)
+
+    assert res.returncode == 5
+    assert "quality gate --fail-on loss" in res.stdout
+    assert "NOT MET" in res.stdout
+
+
+def test_the_gate_never_overrides_a_real_failure(tmp_path):
+    """A failed volume is the more concrete fact and takes the code: 1 is
+    rerun with --retry-failed, 5 is decide whether you accept what was
+    lost."""
+    ocr = tmp_path / "ocr"
+    shutil.copytree(ALTO_MIN, ocr)
+    _volume_of_unusable_alto(ocr, "LIV9002_reconciled")
+
+    res, _ = _executer_main(tmp_path, ocr, args=("--fail-on", "loss"),
+                            COLUMNS="200", **MODE_COURT)
+
+    assert res.returncode == 1
+
+
+def test_a_volume_losing_most_of_its_pages_is_not_a_degraded_success(tmp_path):
+    ocr = tmp_path / "ocr"
+    shutil.copytree(ALTO_MIN, ocr)
+    for index in range(30):
+        (ocr / DOCUMENT / f"zzz_{index}.xml").write_text("no", encoding="utf-8")
+
+    res, _ = _executer_main(tmp_path, ocr, args=("--max-page-loss", "50"),
+                            COLUMNS="200", **MODE_COURT)
+
+    assert res.returncode == 5
+    assert "max-page-loss" in res.stdout
+
+
+def test_the_headline_and_the_verdict_count_the_same_volumes(tmp_path):
+    """The whole reason the report takes the accounting sentence instead
+    of deriving one: an unreadable directory was in the headline's
+    denominator and not in the verdict's, so the two lines of one summary
+    disagreed about how big the corpus was."""
+    import re
+    import stat
+
+    ocr = tmp_path / "ocr"
+    shutil.copytree(ALTO_MIN, ocr)
+    shut = ocr / "LIV9002_reconciled"
+    shutil.copytree(ocr / DOCUMENT, shut)
+
+    if not _unreadable(shut):
+        __import__("os").chmod(shut, stat.S_IRWXU)
+        pytest.skip("running as a user that ignores file permissions")
+    try:
+        res, _ = _executer_main(tmp_path, ocr, COLUMNS="200", **MODE_COURT)
+    finally:
+        __import__("os").chmod(shut, stat.S_IRWXU)
+
+    headline = re.search(r"(\d+)/(\d+) documents converted", res.stdout)
+    verdict = re.search(r"exit \d+ — \d+ of (\d+) volumes", res.stdout)
+
+    assert headline and verdict
+    assert headline.group(2) == verdict.group(1), res.stdout
+
+
+def test_an_unreadable_volume_is_an_incident_and_not_a_corrupt_archive(tmp_path):
+    """The ALTO may be perfectly good; the remedy is a mode change, not a
+    repack. Filing it under corrupt archives gave the wrong diagnosis and
+    an address that is a directory."""
+    import stat
+
+    ocr = tmp_path / "ocr"
+    shutil.copytree(ALTO_MIN, ocr)
+    shut = ocr / "LIV9002_reconciled"
+    shutil.copytree(ocr / DOCUMENT, shut)
+
+    if not _unreadable(shut):
+        __import__("os").chmod(shut, stat.S_IRWXU)
+        pytest.skip("running as a user that ignores file permissions")
+    try:
+        res, _ = _executer_main(tmp_path, ocr, COLUMNS="200", **MODE_COURT)
+    finally:
+        __import__("os").chmod(shut, stat.S_IRWXU)
+
+    assert "volumes unreadable" in res.stdout
+    assert "archives corrupt" not in res.stdout
+
+
+# =============================================================================
+# The panel, on a real run
+# =============================================================================
+
+def test_the_dashboard_can_actually_be_asked_for(tmp_path):
+    """Nine hundred lines of panel that no run could display would be nine
+    hundred lines of decoration. Forced on with no terminal, because that
+    is the only way a test can see it at all."""
+    ocr = tmp_path / "ocr"
+    shutil.copytree(ALTO_MIN, ocr)
+
+    res, sortie = _executer_main(tmp_path, ocr, args=("--dashboard",),
+                                 COLUMNS="100", **MODE_COURT)
+
+    assert res.returncode == 0
+    assert (sortie / f"{DOCUMENT}.tei.xml").exists()
+    assert "ctrl-c" in res.stdout, "the panel never drew"
+    assert "exit 0" in res.stdout, "the summary must survive the panel"
+
+
+def test_the_two_reporters_end_on_the_same_summary(tmp_path):
+    """One record, two presenters. If the summary differed, there would be
+    two accounts of one run and no way to tell which to believe."""
+    def summary_of(ui, where):
+        ocr = where / "ocr"
+        shutil.copytree(ALTO_MIN, ocr)
+        res, _ = _executer_main(where, ocr, args=(ui,), COLUMNS="100",
+                                **MODE_COURT)
+        start = res.stdout.index("TEIlle-douce finished")
+        body = res.stdout[start:].splitlines()
+        # Two things legitimately differ between two runs: how long they
+        # took, and where each one wrote. Everything else must match.
+        return [line.replace(str(where), "<run>") for line in body
+                if "finished" not in line]
+
+    panel = summary_of("--dashboard", tmp_path / "a")
+    journal = summary_of("--plain", tmp_path / "b")
+
+    assert panel == journal
+
+
+def test_asking_for_both_reporters_is_a_usage_error(tmp_path):
+    ocr = tmp_path / "ocr"
+    shutil.copytree(ALTO_MIN, ocr)
+
+    res, _ = _executer_main(tmp_path, ocr, args=("--plain", "--dashboard"),
+                            **MODE_COURT)
+
+    assert res.returncode == 2
+
+
+# =============================================================================
+# What a run leaves behind, and what the next one can do with it
+# =============================================================================
+
+def _runs_of(sortie):
+    root = sortie / ".teille-douce" / "runs"
+    return sorted(p for p in root.iterdir()) if root.is_dir() else []
+
+
+def test_a_run_writes_its_manifest_beside_its_output(tmp_path):
+    """A reader coming back on Thursday needs to know what was asked for
+    and what happened to each volume."""
+    import json
+
+    ocr = tmp_path / "ocr"
+    shutil.copytree(ALTO_MIN, ocr)
+
+    res, sortie = _executer_main(tmp_path, ocr, args=("--fast",),
+                                 **MODE_COURT)
+
+    run, = _runs_of(sortie)
+    manifest = json.loads((run / "run.json").read_text(encoding="utf-8"))
+    assert manifest["exit_code"] == 0
+    assert manifest["documents"][DOCUMENT] == "ok"
+    # What was typed, not what it resolved to: a bare invocation records
+    # a bare invocation, which is the thing a reader would re-run.
+    assert manifest["argv"][0] == "teille-douce"
+    assert "--fast" in manifest["argv"]
+    # And where every value came from, which is the part the value
+    # cannot tell you three days later.
+    assert manifest["settings"]["paths.input"]["origin"].startswith("env")
+
+
+def test_a_failed_volume_is_named_in_the_manifest(tmp_path):
+    import json
+
+    ocr = tmp_path / "ocr"
+    shutil.copytree(ALTO_MIN, ocr)
+    (ocr / "LIV9002_reconciled").mkdir()
+    (ocr / "LIV9002_reconciled" / "f1.xml").write_text("no", encoding="utf-8")
+
+    res, sortie = _executer_main(tmp_path, ocr, **MODE_COURT)
+
+    run, = _runs_of(sortie)
+    manifest = json.loads((run / "run.json").read_text(encoding="utf-8"))
+    assert manifest["documents"]["LIV9002_reconciled"] == "failed"
+
+
+def test_retry_failed_converts_exactly_what_the_last_run_could_not(tmp_path):
+    """The remedy the summary offers. Without it the operator reads three
+    names off the screen and retypes them."""
+    ocr = tmp_path / "ocr"
+    shutil.copytree(ALTO_MIN, ocr)
+    broken = ocr / "LIV9002_reconciled"
+    broken.mkdir()
+    (broken / "f1.xml").write_text("no", encoding="utf-8")
+
+    first, sortie = _executer_main(tmp_path, ocr, **MODE_COURT)
+    assert first.returncode == 1
+
+    # Repair it, then retry only what failed.
+    shutil.rmtree(broken)
+    shutil.copytree(ocr / DOCUMENT, broken)
+    again, _ = _executer_main(tmp_path, ocr, args=("--retry-failed",),
+                              COLUMNS="200", **MODE_COURT)
+
+    assert again.returncode == 0
+    assert "1/1 documents converted" in again.stdout
+    assert DOCUMENT not in again.stdout.split("Done.")[0].split("->")[-1]
+
+
+def test_retry_failed_with_nothing_to_retry_says_so(tmp_path):
+    """Not "a selector matched nothing": there is no selector, and the
+    previous run simply had no failures."""
+    ocr = tmp_path / "ocr"
+    shutil.copytree(ALTO_MIN, ocr)
+
+    res, _ = _executer_main(tmp_path, ocr, args=("--retry-failed",),
+                            COLUMNS="200", **MODE_COURT)
+
+    assert res.returncode == 3
+    assert "nothing failed" in res.stdout
+
+
+def test_only_the_last_ten_runs_are_kept(tmp_path):
+    ocr = tmp_path / "ocr"
+    shutil.copytree(ALTO_MIN, ocr)
+    sortie = tmp_path / "out"
+    runs = sortie / ".teille-douce" / "runs"
+    runs.mkdir(parents=True)
+    for day in range(1, 13):
+        (runs / f"202601{day:02d}-100000").mkdir()
+
+    _executer_main(tmp_path, ocr, **MODE_COURT)
+
+    assert len(_runs_of(sortie)) == 10
+
+
+def test_the_log_ends_up_beside_the_record_of_what_it_describes(tmp_path):
+    """Twenty-one orphan logs accumulated at the root because `log_file`
+    was the one setting with no home. The index and the transcript are
+    pruned together, so neither can outlive the other."""
+    ocr = tmp_path / "ocr"
+    shutil.copytree(ALTO_MIN, ocr)
+
+    res, sortie = _executer_main(tmp_path, ocr, **MODE_COURT)
+
+    run, = _runs_of(sortie)
+    assert (run / "pipeline.log").exists()
+    assert not list(tmp_path.glob("pipeline_*.log")), "an orphan was left"
+
+
+def test_a_run_that_refuses_to_start_still_leaves_nothing(tmp_path):
+    """Including the run directory: it lives under the output directory,
+    so creating it eagerly would have written where exit 3 promises
+    nothing is written."""
+    ocr = tmp_path / "ocr"
+    ocr.mkdir()
+    _archive_without_alto(ocr)
+
+    res, sortie = _executer_main(tmp_path, ocr, **MODE_COURT)
+
+    assert res.returncode == 3
+    assert not sortie.exists()
+
+
+def test_the_remedy_the_summary_prints_actually_works_for_an_archive(tmp_path):
+    """The manifest wrote `LIV9003_reconciled.zip` while every selector
+    matches a stem, so the `--retry-failed` the summary offers answered
+    "No volume matches" and exited 3."""
+    ocr = tmp_path / "ocr"
+    shutil.copytree(ALTO_MIN, ocr)
+    (ocr / "LIV9003_reconciled.zip").write_bytes(b"not a zip")
+
+    first, sortie = _executer_main(tmp_path, ocr, COLUMNS="200", **MODE_COURT)
+    assert first.returncode == 1
+    assert "--retry-failed" in first.stdout
+
+    # Repair the archive, then take the summary at its word.
+    (ocr / "LIV9003_reconciled.zip").unlink()
+    source = ALTO_MIN / DOCUMENT
+    with zipfile.ZipFile(ocr / "LIV9003_reconciled.zip", "w") as zf:
+        for page in source.rglob("*.xml"):
+            zf.write(page, f"LIV9003_reconciled/{page.relative_to(source)}")
+
+    again, _ = _executer_main(tmp_path, ocr, args=("--retry-failed",),
+                              COLUMNS="200", **MODE_COURT)
+
+    assert again.returncode == 0, again.stdout
+
+
+def test_a_corpus_nothing_could_be_opened_from_still_leaves_a_record(tmp_path):
+    """Two volumes failed and the next run was told nothing did: the
+    refusal exits before the store exists."""
+    import json
+
+    ocr = tmp_path / "ocr"
+    ocr.mkdir()
+    for name in ("LIV9101_reconciled", "LIV9102_reconciled"):
+        (ocr / f"{name}.zip").write_bytes(b"not a zip")
+
+    res, sortie = _executer_main(tmp_path, ocr, COLUMNS="200", **MODE_COURT)
+
+    assert res.returncode == 4
+    run, = _runs_of(sortie)
+    manifest = json.loads((run / "run.json").read_text(encoding="utf-8"))
+    assert manifest["documents"] == {"LIV9101_reconciled": "failed",
+                                     "LIV9102_reconciled": "failed"}
+    # And the index, not only the manifest. The document loop never
+    # starts on this path, so no reporter was ever built: the run that
+    # failed hardest was the one that left no account of why.
+    # No incident index, and rightly: a corrupt archive is block 1, the
+    # source being defective, and an index of everything is an index of
+    # nothing. The manifest above is what a --retry-failed reads.
+    assert not (run / "incidents.jsonl").exists()
+
+
+def test_a_corpus_nothing_could_be_opened_from_indexes_its_incidents(tmp_path):
+    """The other half of the same door. An unreadable DIRECTORY is block
+    3 — a mode to change, not a file to repack — and the document loop
+    never starts on this path, so no reporter was ever built and the run
+    that failed hardest left no account of why."""
+    import json
+    import stat
+
+    ocr = tmp_path / "ocr"
+    ocr.mkdir()
+    shut = ocr / "LIV9201_reconciled"
+    shutil.copytree(ALTO_MIN / DOCUMENT, shut)
+
+    if not _unreadable(shut):
+        __import__("os").chmod(shut, stat.S_IRWXU)
+        pytest.skip("running as a user that ignores file permissions")
+    try:
+        res, sortie = _executer_main(tmp_path, ocr, COLUMNS="200",
+                                     **MODE_COURT)
+    finally:
+        __import__("os").chmod(shut, stat.S_IRWXU)
+
+    assert res.returncode == 4, res.stdout[-2000:]
+    run, = _runs_of(sortie)
+    indexed = [json.loads(line) for line
+               in (run / "incidents.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert [(entry["code"], entry["document"]) for entry in indexed] \
+        == [("volume_unreadable", "LIV9201_reconciled")]
+
+
+def test_a_manifest_that_cannot_be_read_is_not_silence(tmp_path):
+    """"nothing failed last time" over an unreadable record sends the
+    operator away believing the last run was clean."""
+    ocr = tmp_path / "ocr"
+    shutil.copytree(ALTO_MIN, ocr)
+    first, sortie = _executer_main(tmp_path, ocr, **MODE_COURT)
+    run, = _runs_of(sortie)
+    (run / "run.json").write_text('{"documents": {"D1"', encoding="utf-8")
+
+    res, _ = _executer_main(tmp_path, ocr, args=("--retry-failed",),
+                            COLUMNS="200", **MODE_COURT)
+
+    assert res.returncode == 3
+    assert "could not be read" in res.stdout
+    assert "nothing failed" not in res.stdout
+
+
+def test_a_refusal_leaves_no_log_behind_either(tmp_path):
+    """Exit 3 promises nothing was written, and a warning emitted before
+    the refusal opened the lazy handler. This is how twenty-five orphan
+    logs came to sit at the repository root."""
+    ocr = tmp_path / "ocr"
+    ocr.mkdir()
+    (ocr / "LIV9001_reconciled").mkdir()
+
+    res, sortie = _executer_main(tmp_path, ocr, **MODE_COURT)
+
+    assert res.returncode == 3
+    assert not sortie.exists()
+    assert not list(tmp_path.glob("pipeline_*.log")), sorted(tmp_path.iterdir())
+
+
+def test_the_other_early_failure_path_keeps_a_record_too(tmp_path):
+    """The record was added to one of the two paths that exit before the
+    run loop. A corrupt archive beside an already-converted volume takes
+    the other one."""
+    import json
+
+    ocr = tmp_path / "ocr"
+    shutil.copytree(ALTO_MIN, ocr)
+    (ocr / "LIV9003_reconciled.zip").write_bytes(b"not a zip")
+    out = tmp_path / "out"
+    out.mkdir()
+    (out / f"{DOCUMENT}.tei.xml").write_text("<TEI/>", encoding="utf-8")
+
+    res, sortie = _executer_main(tmp_path, ocr, args=("--skip-existing",),
+                                 COLUMNS="200", **MODE_COURT)
+
+    assert res.returncode == 1
+    run, = _runs_of(sortie)
+    manifest = json.loads((run / "run.json").read_text(encoding="utf-8"))
+    assert manifest["documents"]["LIV9003_reconciled"] == "failed"
+
+
+def test_an_early_failure_keeps_its_log_beside_its_index(tmp_path):
+    """An index that outlives its transcript is what pruning them
+    together exists to prevent."""
+    ocr = tmp_path / "ocr"
+    ocr.mkdir()
+    (ocr / "LIV9101_reconciled.zip").write_bytes(b"not a zip")
+
+    res, sortie = _executer_main(tmp_path, ocr, **MODE_COURT)
+
+    run, = _runs_of(sortie)
+    assert (run / "pipeline.log").exists()
+    assert not list(tmp_path.glob("pipeline_*.log")), "an orphan was left"
+
+
+def test_a_refusal_keeps_the_log_the_operator_named(tmp_path):
+    """`--log-file` is an instruction, and the summary path already says
+    so. The refusal path was deleting it."""
+    ocr = tmp_path / "ocr"
+    ocr.mkdir()
+    (ocr / "LIV9001_reconciled").mkdir()
+    named = tmp_path / "mine.log"
+
+    res, _ = _executer_main(tmp_path, ocr, args=("--log-file", str(named)),
+                            **MODE_COURT)
+
+    assert res.returncode == 3
+    assert list(tmp_path.glob("mine_*.log")), sorted(tmp_path.iterdir())
+
+
+def test_an_unreadable_volume_reaches_the_counts_the_panel_shows(tmp_path):
+    """It was recorded after the panel came down, so a finished run read
+    "1 written · 0 failed · 1 to go" beside "incident 0" — over a summary
+    that reported one."""
+    import json
+    import stat
+
+    ocr = tmp_path / "ocr"
+    shutil.copytree(ALTO_MIN, ocr)
+    shut = ocr / "LIV9002_reconciled"
+    shutil.copytree(ocr / DOCUMENT, shut)
+
+    if not _unreadable(shut):
+        __import__("os").chmod(shut, stat.S_IRWXU)
+        pytest.skip("running as a user that ignores file permissions")
+    try:
+        res, sortie = _executer_main(tmp_path, ocr, args=("--dashboard",),
+                                     COLUMNS="100", **MODE_COURT)
+    finally:
+        __import__("os").chmod(shut, stat.S_IRWXU)
+
+    assert res.returncode == 1
+    assert "1 written       1 failed       0 to go" in res.stdout
+    assert "incident 1" in res.stdout
+
+    run, = _runs_of(sortie)
+    indexed = (run / "incidents.jsonl").read_text(encoding="utf-8")
+    assert json.loads(indexed.splitlines()[0])["code"] == "volume_unreadable"
+
+
+def test_a_single_interrupt_on_a_clean_run_still_leaves_the_record(tmp_path):
+    """The hold lived inside the loop's `except KeyboardInterrupt`, so it
+    was only ever reached when a FIRST interrupt had already arrived. A
+    run that finished its volumes and was then interrupted during the
+    panel's teardown, the accounting or the gate lost the run directory,
+    the manifest and the summary alike — and `--retry-failed` afterwards
+    had nothing to read."""
+    import json
+    import os
+    import signal
+    import subprocess
+    import sys
+
+    from test_e2e_pipeline import (ALTO_MIN, FIXTURES, RACINE,
+                                   _env_couverture_sous_processus)
+
+    for csv in ("metadata_livre.csv", "metadata_personne.csv"):
+        shutil.copy(FIXTURES / csv, tmp_path / csv)
+    sortie = tmp_path / "out"
+
+    # The signal is raised from inside `gate_verdict`, which runs after
+    # every volume is converted: timing it would be measuring the
+    # scheduler.
+    (tmp_path / "sitecustomize.py").write_text(
+        "import os, signal\n"
+        "if os.environ.get('TD_INTERRUPT_AT_GATE'):\n"
+        "    import teille_douce.report.gate as gate\n"
+        "    real = gate.gate_verdict\n"
+        "    def once(level, record):\n"
+        "        signal.raise_signal(signal.SIGINT)\n"
+        "        return real(level, record)\n"
+        "    gate.gate_verdict = once\n", encoding="utf-8")
+
+    finished = subprocess.run(
+        [sys.executable, str(RACINE / "main.py"), "run"],
+        cwd=tmp_path, capture_output=True,
+        env={**os.environ, "TDOUCE_OCR_DIR": str(ALTO_MIN),
+             "TDOUCE_OUTPUT_DIR": str(sortie), "TDOUCE_NER": "0",
+             "TDOUCE_ENRICHMENT": "0", "TDOUCE_MODERNIZE": "0",
+             "NO_COLOR": "1", "PYTHONPATH": str(tmp_path),
+             "TD_INTERRUPT_AT_GATE": "1",
+             **_env_couverture_sous_processus()})
+
+    out = finished.stdout.decode()
+    assert "documents converted" in out, out[-2000:]
+    run, = _runs_of(sortie)
+    manifest = json.loads((run / "run.json").read_text(encoding="utf-8"))
+    assert manifest["documents"] == {DOCUMENT: "ok"}
+
+
+def test_the_headline_names_which_kind_of_run_this_was(tmp_path):
+    """The line every wrapper greps, composed by `execute` and taken
+    verbatim by the report. `Done.` on a run with failures and
+    `Completed with errors` on a clean one are one swap apart, and
+    nothing asserted which is which."""
+    ocr = tmp_path / "ocr"
+    shutil.copytree(ALTO_MIN, ocr)
+
+    clean, _ = _executer_main(tmp_path, ocr, **MODE_COURT)
+    assert "Done. 1/1 documents converted" in clean.stdout, clean.stdout[-1500:]
+    assert "Completed with errors" not in clean.stdout
+
+    (ocr / "LIV9004_reconciled.zip").write_bytes(b"not a zip")
+    broken, _ = _executer_main(tmp_path, ocr, COLUMNS="200",
+                               args=("--force",), **MODE_COURT)
+    assert "Completed with errors: 1/2" in broken.stdout, broken.stdout[-1500:]
+    assert "Done. " not in broken.stdout
