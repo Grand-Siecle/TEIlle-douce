@@ -881,3 +881,13 @@ def test_the_totals_row_keeps_its_three_counts_or_the_one_that_matters():
         row = next(l for l in text(big, width=width)
                    if "inc" in l and "incident" not in l or "incident" in l)
         assert "999 999" in row, (width, row)
+
+
+def test_the_counts_row_says_which_number_is_which():
+    """Nothing asserted that the three columns carry the numbers their
+    words claim: written and failed could be swapped and every test
+    stayed green, on the row an operator reads first."""
+    counted = state(volumes_written=7, volumes_failed=1, volumes_to_go=19)
+    row = next(line for line in text(counted) if "written" in line)
+
+    assert row.index("7 written") < row.index("1 failed") < row.index("19 to go")

@@ -307,3 +307,26 @@ def test_a_document_that_fails_says_which_phase_it_was_in():
     loss, = [entry for entry in run.record.losses()
              if entry.code is Code.DOCUMENT_FAILED]
     assert loss.step == "enrich"
+
+
+def test_a_lost_phase_that_never_learned_its_total_does_not_kill_the_run():
+    """`max(0, total - done)` over a `None` total is a TypeError from
+    inside the reporter — the one component that must never end the run
+    — and Rich's own indeterminate total IS `None`, so it arrives from
+    an ordinary progress callback. The normalisation that prevents it
+    was a line no test exercised."""
+    run = a_run()
+    run.document_started("D1", pages=10)
+
+    run.phase("D1", "enrich", PhaseState.LOST, done=0, total=None,
+              unit="containers", reason="PyHellen stopped answering")
+
+    loss, = run.record.losses(Block.INCIDENT)
+    assert (loss.count, loss.total) == (0, 0)
+    # And it renders, which is the other half: `render_count` refuses a
+    # missing denominator, rightly, and the panel is where it would have
+    # raised.
+    from teille_douce.report.panel import as_text, render_panel
+
+    assert any("enrich" in line
+               for line in as_text(render_panel(run.panel(), width=92)))

@@ -1835,3 +1835,22 @@ def test_a_single_interrupt_on_a_clean_run_still_leaves_the_record(tmp_path):
     run, = _runs_of(sortie)
     manifest = json.loads((run / "run.json").read_text(encoding="utf-8"))
     assert manifest["documents"] == {DOCUMENT: "ok"}
+
+
+def test_the_headline_names_which_kind_of_run_this_was(tmp_path):
+    """The line every wrapper greps, composed by `execute` and taken
+    verbatim by the report. `Done.` on a run with failures and
+    `Completed with errors` on a clean one are one swap apart, and
+    nothing asserted which is which."""
+    ocr = tmp_path / "ocr"
+    shutil.copytree(ALTO_MIN, ocr)
+
+    clean, _ = _executer_main(tmp_path, ocr, **MODE_COURT)
+    assert "Done. 1/1 documents converted" in clean.stdout, clean.stdout[-1500:]
+    assert "Completed with errors" not in clean.stdout
+
+    (ocr / "LIV9004_reconciled.zip").write_bytes(b"not a zip")
+    broken, _ = _executer_main(tmp_path, ocr, COLUMNS="200",
+                               args=("--force",), **MODE_COURT)
+    assert "Completed with errors: 1/2" in broken.stdout, broken.stdout[-1500:]
+    assert "Done. " not in broken.stdout

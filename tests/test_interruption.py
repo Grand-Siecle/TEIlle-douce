@@ -924,3 +924,42 @@ def test_a_clean_run_interrupted_in_the_panels_teardown_keeps_its_record(
     runs = sorted((tmp_path / "out" / ".teille-douce" / "runs").iterdir())
     assert len(runs) == 1, "the run directory was lost with the signal"
     assert (runs[0] / "run.json").exists()
+
+
+def test_release_swallows_a_base_exception_and_not_merely_an_exception():
+    """The guard was widened from `Exception` to `BaseException` because
+    a SIGINT delivered between the restore and the return is a
+    `KeyboardInterrupt` — out of the `finally`, over the run's verdict,
+    which is the defect four rounds earlier was written to end.
+
+    The three tests around it inject `TypeError`, `ValueError` and
+    `RuntimeError`: every one of them exercises the mechanism and none
+    the distinguishing case, so the word that was changed was guarded by
+    nothing. A fifth shape for the guide: a test that reaches the fix's
+    machinery but not the fix's own case.
+    """
+    import signal
+
+    real = signal.signal
+    held = run_module.HeldInterrupts()
+    held.hold()
+
+    def interrupted(number, handler):
+        raise KeyboardInterrupt
+
+    run_module.signal.signal = interrupted
+    escaped = None
+    try:
+        with run_module.finishing(held):
+            raise SystemExit(5)
+    except BaseException as reason:
+        escaped = reason
+    finally:
+        run_module.signal.signal = real
+        real(signal.SIGINT, signal.default_int_handler)
+
+    # Caught by hand rather than with `pytest.raises`: unguarded, what
+    # escapes is a `KeyboardInterrupt`, which aborts the whole session
+    # instead of failing one named test.
+    assert isinstance(escaped, SystemExit), type(escaped).__name__
+    assert escaped.code == 5

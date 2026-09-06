@@ -106,7 +106,10 @@ def test_a_repaired_defect_is_not_written_as_a_loss():
 
     text = rendered(outcome(record=record))
 
-    assert "repaired" in text
+    # The MARKER, not the label. `"repaired" in text` was satisfied by
+    # `ALTO ids repaired`, the name of the code, so the marker that says
+    # nothing was lost to it could be deleted with the test still green.
+    assert "(repaired)" in text
     assert "6 174 of 41 908" in text
 
 
@@ -812,3 +815,30 @@ def test_every_composed_line_leaves_the_margin_the_module_reserves():
                     or set(line) <= {"═", "─"}):
                 continue
             assert cells(line) <= room, (width, cells(line), room, line)
+
+
+def test_a_block_with_nothing_in_it_says_nothing_rather_than_showing_none():
+    """A heading with an empty space under it cannot be told from a
+    phase that was never checked, which is the whole reason the blocks
+    are named rather than implied. The test above asserts the headings;
+    this asserts the word under them."""
+    shown = render_summary(outcome(), width=92)
+    headings = [i for i, line in enumerate(shown)
+                if line.startswith(("  the source was defective",
+                                    "  withheld on purpose",
+                                    "  lost to an incident"))]
+
+    assert len(headings) == 3
+    for at in headings:
+        assert shown[at + 1].strip() == "nothing", (at, shown[at + 1])
+
+
+def test_the_summary_prints_the_headline_it_was_given_and_not_its_own():
+    """One account of the run: the sentence every wrapper greps and every
+    accounting test balances is composed once, by the run, and the report
+    takes it. A second fraction derived here would be a second account
+    the reader has no way to choose between."""
+    spoken = rendered(outcome(headline="Completed with errors: 25/27 "
+                                       "documents converted"))
+
+    assert "Completed with errors: 25/27 documents converted" in spoken

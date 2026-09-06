@@ -229,3 +229,39 @@ def test_a_service_dying_mid_run_is_one_loss_per_document_after_it():
 
     assert record.total(Block.INCIDENT) == 0, "no container was lost twice"
     assert record.whole_phases_lost() == 3
+
+
+def test_a_repaired_defect_is_not_in_the_arithmetic_at_all():
+    """Duplicate ALTO ids are the loudest figure this corpus produces —
+    six thousand of them on a clean run — and nothing is lost to them.
+    Counted by `total()`, the panel's `source` cell turns every ordinary
+    run into an alarm.
+
+    Asserted here because nothing did: `total()` skipping `repaired` was
+    a line no test ever exercised with a repaired loss in the record.
+    """
+    record = RunRecord()
+    record.add(Loss(Code.ALTO_IDS_REPAIRED, "D1", "sourcedoc",
+                    Locator.page("D1", "f88"), count=6174, total=41908,
+                    detail="duplicates disambiguated"))
+    record.add(Loss(Code.PAGE_UNUSABLE, "D1", "sourcedoc",
+                    Locator.page("D1", "f41"), count=3, total=754,
+                    detail="no <surface> could be built"))
+
+    assert record.total(Block.SOURCE) == 3
+    assert record.located()["precise"] == 3
+
+
+def test_two_phases_lost_in_one_volume_are_one_volume():
+    """`whole_phases_lost` counts the VOLUMES carrying no phase, not the
+    losses: with PyHellen and VieuxParler both down, one volume produces
+    two entries, and the verdict said "2 volumes carry no enrich and no
+    modernize" of a corpus with one. Every test until now used one phase
+    per volume, where a set and a list agree."""
+    record = RunRecord()
+    for phase in ("enrich", "modernize"):
+        record.add(Loss(Code.PHASE_LOST, "LIV0038", phase,
+                        Locator.document("LIV0038"), count=1402, total=1402,
+                        detail="the service stopped answering"))
+
+    assert record.whole_phases_lost() == 1

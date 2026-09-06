@@ -221,7 +221,12 @@ they can be recognised:
 - an **environment the suite makes untrue** — pytest's log-capture
   handler is a `StreamHandler` with no filename, so a "is there a console
   at INFO?" predicate was always true under the suite and the branch
-  behind it was executed by none of thirteen hundred tests.
+  behind it was executed by none of thirteen hundred tests;
+- a test that reaches the fix's **mechanism but not its own case** — three
+  tests injected `TypeError`, `ValueError` and `RuntimeError` at a guard
+  that had just been widened from `except Exception` to
+  `except BaseException`, so the word that changed was covered by none of
+  them.
 
 The remedy is mechanical and takes a minute: revert the file the test
 guards, run the test alone, and confirm it fails. Do it for every fix.
