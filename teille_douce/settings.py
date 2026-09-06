@@ -42,11 +42,14 @@ from teille_douce import config
 # =============================================================================
 
 def _as_path(raw):
+    """A path the pipeline will WRITE. Nothing is required to exist."""
     # A TOML file supplies integers and booleans too, and Path(42) raises
     # TypeError, which is not what the layers promise to do with a value
     # they cannot use.
     if not isinstance(raw, (str, Path)):
         raise ValueError("is not a path")
+    if isinstance(raw, str) and not raw.strip():
+        raise ValueError("is empty")
     try:
         # A shell expands ~ before the variable is ever read, but a config
         # file and a quoted flag do not: without this, "~/tei" is a
@@ -54,6 +57,9 @@ def _as_path(raw):
         return Path(raw).expanduser()
     except RuntimeError:
         raise ValueError("names a home directory that cannot be resolved")
+
+
+
 
 
 _DEVICE = re.compile(r"^(auto|cpu|mps|cuda(:\d+)?)$")
@@ -464,6 +470,53 @@ class Settings:
             "origin": self.origin("modernize_url"),
         }
         return manifest
+
+    # What each path is FOR. Resolution stays pure — `info` and `check`
+    # must be able to read a configuration on a machine with no corpus —
+    # so the check lives here, and the callers decide what to do with the
+    # answer: `run` refuses, `check` lists it.
+    READS = (("ocr_dir", "dir", "-i / TDOUCE_OCR_DIR / paths.input"),
+             ("metadata_csv", "file",
+              "--metadata / TDOUCE_METADATA_CSV / paths.metadata"),
+             ("persons_csv", "file",
+              "--persons / TDOUCE_PERSONS_CSV / paths.persons"),
+             ("tei_rng", "file", "TDOUCE_TEI_RNG"))
+
+    def unreadable_inputs(self):
+        """Every path this run will READ that it cannot.
+
+        The documentation says the converters "reject empty, unusable,
+        non-finite and out-of-range values"; for a path they rejected
+        nothing. A mistyped `TDOUCE_METADATA_CSV` converted a whole
+        corpus with placeholder headers and exited 0 — forty minutes to
+        produce files nobody wants, reported as a success.
+
+        Only what is read. An output directory does not have to exist:
+        it is created. The role is the difference, and it is declared in
+        `READS` rather than guessed from the name.
+
+        Returns:
+            tuple: one `(setting, path, reason, where)` per path that
+            cannot be read, in declaration order.
+        """
+        answers = []
+        for name, kind, where in self.READS:
+            path = getattr(self, name)
+            if path is None:
+                continue
+            if not path.exists():
+                reason = ("does not exist" if kind == "file"
+                          else "is not there")
+            elif kind == "dir" and not path.is_dir():
+                reason = "is not a directory"
+            elif kind == "file" and path.is_dir():
+                reason = "is a directory, not a file"
+            elif not os.access(path, os.R_OK):
+                reason = "cannot be read"
+            else:
+                continue
+            answers.append((name, path, reason, where))
+        return tuple(answers)
 
     @staticmethod
     def config_keys():

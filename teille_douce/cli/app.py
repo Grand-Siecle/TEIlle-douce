@@ -51,6 +51,18 @@ def build_parser():
     options.add_run_arguments(run_parser)
     parser.set_defaults(command="run")
 
+    # The commands that write nothing, and the two that rebuild what the
+    # repository versions. Their arguments are declared by the modules
+    # that implement them, so a flag cannot exist in one place and be
+    # parsed in another.
+    from teille_douce.cli import fixture
+
+    fixture.add_arguments(subparsers.add_parser(
+        "fixture",
+        help="rebuild the versioned test fixture (needs the private corpus)",
+        description="Rebuild the minimal ALTO fixture, or the golden file "
+                    "the strict end-to-end diff compares against."))
+
     return parser
 
 
@@ -334,7 +346,9 @@ def main(argv=None):
     # `--version` must do neither.
     from teille_douce.cli import run as run_command
 
-    commands = {"run": run_command.execute}
+    from teille_douce.cli import fixture
+
+    commands = {"run": run_command.execute, "fixture": fixture.execute}
     try:
         return commands[args.command](args)
     except KeyboardInterrupt:

@@ -1429,8 +1429,18 @@ def execute(args):
     # is_dir(), not exists(): -i now makes it easy to point the input at a
     # file, and iterdir() would then raise NotADirectoryError instead of
     # the exit 3 the contract promises.
-    if not settings.ocr_dir.is_dir():
-        console.print(f"[red]Directory not found: {escape(str(settings.ocr_dir))}[/red]")
+    # Every path this run will READ, before it reads any of them. The
+    # input directory was checked here and the two catalogues were not,
+    # so a mistyped `TDOUCE_METADATA_CSV` warned once, converted
+    # twenty-seven volumes with placeholder headers and exited 0 —
+    # forty minutes to produce files nobody wants, reported as a
+    # success. `teille-douce check` asks the same question in two
+    # seconds; this is what happens when nobody asked.
+    unreadable = settings.unreadable_inputs()
+    if unreadable:
+        for name, path, reason, where in unreadable:
+            console.print(f"[red]{escape(where.split(' / ')[0])}: "
+                          f"{escape(str(path))} {reason}.[/red]")
         _refuse(settings=settings)
 
     # Checked here rather than at mkdir time: -o naming an existing file
