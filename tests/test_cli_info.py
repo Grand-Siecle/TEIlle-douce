@@ -58,6 +58,28 @@ def test_every_layer_is_printed_whether_or_not_it_offered_anything():
     assert item.offers[3].value == "http://localhost:8000"
 
 
+def test_the_four_layers_are_each_on_a_line_of_their_own(tmp_path):
+    """The whole of what `info NAME` is for, and nothing asserted it:
+    `scripts/mutate.py` deleted the line that renders them and the suite
+    stayed green. The tests above are about the resolved DATA; this one
+    is about what reaches the screen."""
+    report = gathered(tmp_path, body="[limits]\njobs = 4\n",
+                      env={"TDOUCE_JOBS": "6"})
+
+    lines = command.render(report, width=110, name="max_workers")
+
+    for layer, where in (("flag", "-j/--jobs"),
+                         ("env", "TDOUCE_JOBS"),
+                         ("config", "limits.jobs"),
+                         ("default", "config.py")):
+        said, = [line for line in lines if line.strip().startswith(layer)]
+        assert where in said, said
+    # And each layer's own value, said against it.
+    assert any("6" in line and "TDOUCE_JOBS" in line for line in lines)
+    assert any("4" in line and "limits.jobs" in line for line in lines)
+    assert any("<- used" in line and "TDOUCE_JOBS" in line for line in lines)
+
+
 def test_the_config_file_is_named_even_when_nothing_in_it_was_used(tmp_path):
     """A file found by walking up and forgotten is the least debuggable
     thing in the design. It is named whether or not it won anything."""
