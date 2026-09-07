@@ -13,6 +13,7 @@
 # Run: venv/bin/python -m pytest tests/test_cli_report.py -q
 # -----------------------------------------------------------
 import json
+from pathlib import Path
 
 import pytest
 
@@ -704,3 +705,41 @@ def test_the_command_the_footer_offers_means_this_run(tmp_path):
 
     assert "--run 20260903-180824-0031415" in offered
     assert f"-o {tmp_path}" in offered or f"-o '{tmp_path}'" in offered
+
+
+def test_a_manifest_that_is_a_fifo_does_not_block_the_reader(tmp_path):
+    """The index beside it is guarded with `is_file`; the manifest was
+    not, and `--runs` reads every run kept here — one such directory
+    took the whole listing with it, for ever."""
+    import os
+    import subprocess
+    import sys
+
+    where = a_run(tmp_path, manifest=False)
+    os.mkfifo(where / "run.json")
+
+    finished = subprocess.run(
+        [sys.executable, "-c",
+         "from teille_douce.report.store import read_run;"
+         f"run = read_run({str(where)!r});"
+         "print(len(run.incidents)); print(bool(run.unreadable))"],
+        capture_output=True, text=True, timeout=60,
+        cwd=str(Path(__file__).resolve().parent.parent))
+
+    assert finished.returncode == 0, finished.stderr
+    assert finished.stdout.split() == ["3", "True"]
+
+
+def test_a_record_that_could_not_be_read_is_not_a_clean_run(tmp_path, capsys):
+    """The screen said `unreadable run.json` and the exit code told the
+    wrapper the run was clean. The honest answer to "was it clean" is "I
+    cannot tell you that"."""
+    from teille_douce.settings import use_settings
+
+    a_run(tmp_path, incidents=(), manifest=False)
+
+    with use_settings(output_dir=tmp_path):
+        code = command.execute(parse([]))
+
+    assert code == 1
+    assert "unreadable" in capsys.readouterr().out

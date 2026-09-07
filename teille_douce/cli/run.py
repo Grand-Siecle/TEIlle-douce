@@ -1709,7 +1709,13 @@ def execute(args):
     # Collect documents to process
     docs, without_alto, unreadable, unreadable_skips = [], [], [], []
     for d in ready_dirs:
-        xmls = sorted(d.rglob("*.xml"))
+        # Regular files only. A FIFO named `f1.xml` in a volume blocked
+        # `etree.parse` in the main process, so the run never returned
+        # and nothing reached the screen — the worst way for a command
+        # to fail, and the same shape as a mapping CSV that is a FIFO.
+        # `is_file` follows the symlink and answers no to a FIFO, a
+        # directory and a broken link alike.
+        xmls = sorted(page for page in d.rglob("*.xml") if page.is_file())
         if xmls:
             docs.append((d.name, xmls, d))
         elif not _selected(d.name):

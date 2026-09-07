@@ -533,8 +533,14 @@ class Settings:
                           else "is not there")
             elif kind == "dir" and not path.is_dir():
                 reason = "is not a directory"
-            elif kind == "file" and path.is_dir():
-                reason = "is a directory, not a file"
+            elif kind == "file" and not path.is_file():
+                # Not `is_dir()` alone: a FIFO passed that check, and
+                # pandas then waited for a writer that never came — the
+                # whole command hung with nothing on screen. `is_file`
+                # follows the symlink and answers no to a directory, a
+                # FIFO and a socket alike.
+                reason = ("is a directory, not a file" if path.is_dir()
+                          else "is not a regular file")
             elif not os.access(path, os.R_OK):
                 reason = "cannot be read"
             else:

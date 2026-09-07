@@ -360,7 +360,14 @@ def read_run(path):
     path = Path(path)
     manifest, unreadable, incidents = {}, [], []
     try:
-        manifest = json.loads((path / "run.json").read_text(encoding="utf-8"))
+        record = path / "run.json"
+        if record.exists() and not record.is_file():
+            # A FIFO here blocks the read for ever, and `--runs` reads
+            # every run kept: one such directory took the listing with
+            # it. The index below is guarded with `is_file`; the
+            # manifest was not.
+            raise ValueError("is not a regular file")
+        manifest = json.loads(record.read_text(encoding="utf-8"))
         if not isinstance(manifest, dict):
             raise ValueError("not a run manifest")
     except (OSError, ValueError, RecursionError) as reason:

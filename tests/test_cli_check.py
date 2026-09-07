@@ -427,3 +427,58 @@ def test_an_input_directory_that_cannot_be_listed_does_not_raise(tmp_path):
     assert answer.verdict == 3
     assert answer.unusable
     assert "not readable" in command.render(answer, width=92)[-1]
+
+
+def test_a_catalogue_that_is_a_fifo_is_refused_rather_than_read(tmp_path):
+    """`inspect` read the catalogues before asking which paths this run
+    could read, so `check --metadata <fifo>` blocked in pandas waiting
+    for a writer that never came — the command never returned and
+    nothing reached the screen. `run` asks first; the ordering had been
+    fixed for the corpus and not for the two catalogues, one line down.
+
+    In a subprocess with a timeout: a regression HANGS, and a suite that
+    hangs says nothing.
+    """
+    import os
+    import subprocess
+    import sys
+
+    ocr = a_corpus(tmp_path)
+    blocking = tmp_path / "cat.csv"
+    os.mkfifo(blocking)
+
+    finished = subprocess.run(
+        [sys.executable, "-c",
+         "import sys;"
+         "from teille_douce.preflight import inspect;"
+         "from teille_douce.settings import Settings;"
+         f"s = Settings.load(env={{}}, flags={{'ocr_dir': {str(ocr)!r},"
+         f" 'output_dir': {str(tmp_path / 'out')!r},"
+         f" 'metadata_csv': {str(blocking)!r},"
+         " 'enrich': False, 'modernize': False, 'ner': False});"
+         "answer = inspect(s, probe=False);"
+         "print(answer.verdict);"
+         "print([name for name, _, _, _ in answer.unusable])"],
+        capture_output=True, text=True, timeout=60,
+        cwd=str(Path(__file__).resolve().parent.parent))
+
+    assert finished.returncode == 0, finished.stderr
+    verdict, refused = finished.stdout.splitlines()
+    assert verdict == "3"
+    assert "metadata_csv" in refused
+
+
+def test_a_page_that_is_a_fifo_is_not_counted_as_a_page(tmp_path):
+    """A FIFO named `f2.xml` blocks `etree.parse` in the run's main
+    process, so counting it here made `check` answer "usable · N pages"
+    about a corpus the run cannot finish — a preflight disagreeing with
+    its run, which this module says is worse than none."""
+    import os
+
+    ocr = a_corpus(tmp_path)
+    os.mkfifo(ocr / "LIV9001_reconciled" / "content" / "data" / "doc_1"
+              / "zzz.xml")
+
+    answer = inspect(settings_for(tmp_path, ocr), probe=False)
+
+    assert answer.pages == 8, "the FIFO was counted as a ninth page"

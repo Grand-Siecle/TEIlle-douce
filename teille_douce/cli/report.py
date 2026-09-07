@@ -560,4 +560,9 @@ def execute(args):
     # 1 when block 3 is not empty, whatever the selectors left: the
     # question a wrapper asks this command is "did that run need a
     # human", and narrowing the view must not change the answer.
-    return 1 if run.incidents else 0
+    #
+    # And 1 when the record could not be read, which is not the same as
+    # a run that lost nothing: the screen said `unreadable run.json` and
+    # the exit code told the wrapper the run was clean. The honest
+    # answer to "was it clean" is "I cannot tell you that".
+    return 1 if (run.incidents or run.unreadable) else 0

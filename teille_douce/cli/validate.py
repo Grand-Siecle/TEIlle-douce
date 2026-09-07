@@ -166,6 +166,11 @@ def expand(given, output_dir):
     for name in given:
         path = Path(name)
         if not path.is_dir():
+            if path.exists() and not path.is_file():
+                # A FIFO blocks `etree.parse` for ever. `_check` catches
+                # exceptions per file and cannot catch a block.
+                refuse(f"{path} is not a regular file", MISCONFIGURED,
+                       "teille-douce validate")
             files.append(path)
             continue
         try:

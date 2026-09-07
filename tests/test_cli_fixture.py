@@ -305,3 +305,17 @@ def test_the_golden_needs_the_dev_extra_and_says_so(tmp_path, monkeypatch,
 
     assert raised.value.code == 3
     assert "pip install -e" in capsys.readouterr().err
+
+
+def test_a_target_that_is_a_broken_symlink_is_refused(tmp_path, capsys):
+    """`exists()` is False for a broken symlink, so the guard returned
+    early and `mkdir(exist_ok=True)` then raised `FileExistsError` —
+    exit 1, the third hole in this guard, found after two were closed."""
+    link = tmp_path / "link"
+    link.symlink_to(tmp_path / "nowhere")
+
+    with pytest.raises(SystemExit) as raised:
+        fixture._removable(link)
+
+    assert raised.value.code == 3
+    assert "broken symlink" in capsys.readouterr().err

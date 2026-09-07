@@ -221,7 +221,9 @@ each thing worth looking at *and what a run would do about it*:
     LIV0099_vide           the directory holds no ALTO
                            — nothing would be converted from it
 
-  usable, with 5 things to look at      teille-douce check --strict fails on these
+  usable, with 5 things to look at
+  teille-douce check -i OCR_test -o tei_test --strict
+      fails on these
 ```
 
 Four of the ten [troubleshooting](#troubleshooting) entries below are
@@ -807,7 +809,8 @@ it looks like it means.
   I1  LIV0044_reconciled     phase_lost                            148 of 148
   I2  LIV0326_v1_reconciled  document_failed                             1 of 1
 
-  teille-douce report --why I1 for one of them, --limits for what is not here
+  teille-douce report --run 20260903-180824-0031415 --why I1
+      one of them in full; --limits for what is not here
 ```
 
 Exit codes: **0** the third block is empty, **1** it is not — whatever the

@@ -154,6 +154,12 @@ def _removable(target):
     it and saves a home directory the day they do not.
     """
     target = Path(target)
+    if target.is_symlink() and not target.exists():
+        # A broken symlink: `exists()` is False, so this returned early
+        # and `mkdir(exist_ok=True)` then raised `FileExistsError` —
+        # the third hole in this guard, found after two were closed.
+        refuse(f"--target is a broken symlink: {target}", MISCONFIGURED,
+               "teille-douce fixture")
     if not target.exists() or target.resolve() == DEFAULT_TARGET.resolve():
         return
     if not target.is_dir():

@@ -134,7 +134,14 @@ def _volumes(ocr_dir):
             if not _is_readable(entry):
                 unreadable.append((entry.name, "cannot be listed"))
                 continue
-            pages = sorted(entry.rglob("*.xml"))
+            # Regular files only. A FIFO named `f1.xml` blocks
+            # `etree.parse` in the main process, so `run` never returns
+            # and nothing reaches the screen; counting it here as a page
+            # made `check` answer "usable · N pages" about a corpus the
+            # run cannot finish — a preflight disagreeing with its run,
+            # which is the one thing this module says it must not do.
+            pages = sorted(page for page in entry.rglob("*.xml")
+                           if page.is_file())
             if pages:
                 volumes.append((entry.name, pages))
             else:
@@ -284,6 +291,15 @@ def inspect(settings, probe=True):
     """Everything `check` reports, measured once."""
     import logging
 
+    # FIRST, before anything is opened, as `run` does: a path this run
+    # would read and cannot is answered by asking, not by discovering it
+    # inside pandas. A `--metadata` that is a FIFO otherwise blocked the
+    # read for ever and the command never returned — the ordering was
+    # right for the corpus and wrong for the two catalogues, which is
+    # the same call-site-at-a-time mistake one line down.
+    unusable = settings.unreadable_inputs()
+    refused = {name for name, _, _, _ in unusable}
+
     volumes, archives, without_alto, unreadable = _volumes(settings.ocr_dir)
     names = [name for name, _ in volumes]
 
@@ -297,8 +313,12 @@ def inspect(settings, probe=True):
     for logger in quiet:
         logger.setLevel(logging.CRITICAL)
     try:
-        catalogue = _catalogue(settings, names)
-        persons = _persons(settings)
+        catalogue = (_catalogue(settings, names) if "metadata_csv" not in refused
+                     else {"path": settings.metadata_csv, "rows": None,
+                           "matched": 0, "unmatched": list(names)})
+        persons = (_persons(settings) if "persons_csv" not in refused
+                   else {"path": settings.persons_csv, "loaded": False,
+                         "count": 0})
         orderings = {name: Files(name, pages).order_files()
                      for name, pages in volumes}
     finally:
@@ -382,4 +402,4 @@ def inspect(settings, probe=True):
         output_writable=_writable(settings.output_dir),
         catalogue=catalogue, persons=persons, services=services,
         attention=tuple(attention),
-        unusable=settings.unreadable_inputs())
+        unusable=unusable)

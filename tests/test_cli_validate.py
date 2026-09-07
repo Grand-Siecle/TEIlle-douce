@@ -500,3 +500,18 @@ def test_a_directory_that_cannot_be_listed_is_not_a_directory_that_is_empty(
     said = capsys.readouterr().err
     assert "cannot be listed" in said
     assert "nothing to check" not in said
+
+
+def test_a_file_that_is_not_a_regular_file_is_refused(tmp_path, capsys):
+    """`_check` catches exceptions per file and cannot catch a block:
+    `etree.parse` on a FIFO waits for a writer that never comes."""
+    import os
+
+    blocking = tmp_path / "doc.xml"
+    os.mkfifo(blocking)
+
+    with pytest.raises(SystemExit) as raised:
+        command.execute(parse(["--no-odd", str(blocking)]))
+
+    assert raised.value.code == 3
+    assert "not a regular file" in capsys.readouterr().err
