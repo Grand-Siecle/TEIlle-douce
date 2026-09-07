@@ -94,12 +94,12 @@ emits. Emit a new element without declaring it and `tests/test_odd.py` fails, on
 purpose. Recompile and commit source plus derivatives together:
 
 ```bash
-venv/bin/python scripts/build_odd.py
+teille-douce odd build
 git add schema/teille-douce.odd schema/teille-douce.rng schema/teille-douce.sch schema/teille-douce.svrl.xsl
 ```
 
 Never edit `teille-douce.rng`, `teille-douce.sch` or `teille-douce.svrl.xsl` by hand;
-`build_odd.py --check` catches it if you do. See [docs/schema.md](docs/schema.md).
+`teille-douce odd check` catches it if you do. See [docs/schema.md](docs/schema.md).
 
 ### Coverage only goes up
 
@@ -136,7 +136,7 @@ venv/bin/python -m pytest                                   # all green
 venv/bin/python -m coverage run -m pytest \
   && venv/bin/python -m coverage combine \
   && venv/bin/python -m coverage report                     # ratchet holds
-venv/bin/python scripts/build_odd.py --check                # derivatives match the ODD
+teille-douce odd check                                     # derivatives match the ODD
 ```
 
 And, if you touched anything that reaches the output, validate on real

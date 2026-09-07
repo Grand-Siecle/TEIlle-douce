@@ -160,12 +160,12 @@ def test_les_types_de_rs_suivent_la_table_des_entites():
 def test_les_schemas_derives_sont_versionnes():
     for produit in (RNG, SCH, SVRL):
         assert produit.exists(), (
-            f"{produit.name} manque : venv/bin/python scripts/build_odd.py")
+            f"{produit.name} manque : teille-douce odd build")
 
 
 def test_le_relaxng_ne_contient_aucun_motif_impossible():
     """Un <notAllowed/> survivant rendrait le schema incompilable par
-    libxml2 (scripts/rng_simplify.py explique pourquoi)."""
+    libxml2 (teille_douce/odd/simplify.py explique pourquoi)."""
     grammaire = etree.parse(str(RNG))
     restants = list(grammaire.iter(
         "{http://relaxng.org/ns/structure/1.0}notAllowed"))
@@ -202,12 +202,12 @@ def test_la_verification_de_derive_ignore_l_horodatage_de_generation():
     compilations du meme ODD different d'une ligne. --check doit voir la
     derive reelle sans crier sur cette ligne-la -- meme convention que la
     normalisation du golden E2E."""
-    from scripts.build_odd import sans_horodatage
+    from teille_douce.odd import without_the_date
 
     a = "<!-- This file generated 2026-09-03T09:05:15Z by 'extract-isosch.xsl'. -->"
     b = "<!-- This file generated 2026-09-03T09:05:25Z by 'extract-isosch.xsl'. -->"
-    assert sans_horodatage(a) == sans_horodatage(b)
-    assert sans_horodatage(a) != sans_horodatage(a.replace("extract", "autre"))
+    assert without_the_date(a) == without_the_date(b)
+    assert without_the_date(a) != without_the_date(a.replace("extract", "autre"))
 
 
 # -----------------------------------------------------------

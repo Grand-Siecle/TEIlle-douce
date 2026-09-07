@@ -55,8 +55,13 @@ def build_parser():
     # repository versions. Their arguments are declared by the modules
     # that implement them, so a flag cannot exist in one place and be
     # parsed in another.
-    from teille_douce.cli import fixture
+    from teille_douce.cli import fixture, odd
 
+    odd.add_arguments(subparsers.add_parser(
+        "odd",
+        help="compile the project schema from its ODD, or check it",
+        description="Compile schema/teille-douce.odd into the RelaxNG, "
+                    "Schematron and SVRL artefacts versioned beside it."))
     fixture.add_arguments(subparsers.add_parser(
         "fixture",
         help="rebuild the versioned test fixture (needs the private corpus)",
@@ -346,9 +351,10 @@ def main(argv=None):
     # `--version` must do neither.
     from teille_douce.cli import run as run_command
 
-    from teille_douce.cli import fixture
+    from teille_douce.cli import fixture, odd
 
-    commands = {"run": run_command.execute, "fixture": fixture.execute}
+    commands = {"run": run_command.execute, "fixture": fixture.execute,
+                "odd": odd.execute}
     try:
         return commands[args.command](args)
     except KeyboardInterrupt:

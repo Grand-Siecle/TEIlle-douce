@@ -145,7 +145,7 @@ recompile and read the diff of the generated schemas.
 | `schema/teille-douce.sch` | Schematron constraints, readable form. | — |
 | `schema/teille-douce.svrl.xsl` | Schematron constraints, executable form. | `saxonche` |
 | `scripts/build_odd.py` | Compiles the ODD into the three derivatives. | — |
-| `scripts/rng_simplify.py` | RELAX NG §4.19/§4.20 reductions, needed before lxml reads the schema. | — |
+| `teille_douce/odd/simplify.py` | RELAX NG §4.19/§4.20 reductions, needed before lxml reads the schema. | — |
 | `scripts/validate_tei.py` | Runs everything, plus the document-wide Python invariants. | — |
 
 Two implementation constraints shape all of this and are documented at length in
@@ -157,7 +157,7 @@ session:
   NG spec requires reducing those inside sequences, and libxml2 does not. The
   observed effects were a schema that would not compile after ten minutes, and —
   on a variant that did compile — a `<zone>` that no longer accepted a nested
-  `<zone>`, rejecting conformant documents. `rng_simplify.py` performs the
+  `<zone>`, rejecting conformant documents. `odd/simplify.py` performs the
   reductions first: 279 patterns eliminated, compilation down to 0.1 s. The
   `core` module remains incompilable after simplification and is imported whole;
   `inventaire-ferme` restores for it the inventory the content model no longer

@@ -88,14 +88,14 @@ markers = [
 
 [tool.coverage.run]
 source = ["teille_douce", "main", "scripts"]
-# build_odd.py pilote une chaine externe -- telechargements, XSLT Saxon,
-# boite a outils TEI -- et ne peut pas s'executer dans la suite : 118 de
-# ses 161 instructions sont hors de portee ici. Seul son helper pur
-# `sans_horodatage` est exerce, par un import explicite de
-# tests/test_odd.py. rng_simplify.py, lui, est de la logique pure et reste
-# mesure (94,7 %).
-omit = ["tests/*", "venv/*", "scripts/build_test_fixture.py",
-        "scripts/build_odd.py"]
+# teille_douce/odd/build.py pilote une chaine externe -- telechargements,
+# XSLT Saxon, boite a outils TEI -- et ne peut pas s'executer dans la
+# suite. Seul son helper pur `without_the_date` est exerce, par un import
+# explicite de tests/test_odd.py. simplify.py, lui, est de la logique pure
+# et reste mesure. Les trois fichiers de scripts/ ne sont plus que des
+# lanceurs d'une ligne, hors mesure comme le reste de scripts/.
+omit = ["tests/*", "venv/*", "scripts/*", "*/teille_douce/odd/build.py",
+        "*/teille_douce/cli/fixture.py"]
 # sourcedoc/builder.py execute du code dans des workers multiprocessing :
 # sans ces deux options, coverage ne voit pas les lignes exercees dans les forks.
 # Consequence : lancer `coverage combine` avant `coverage report`.

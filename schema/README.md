@@ -70,7 +70,7 @@ flowchart TB
     COMP --> B1["odd2relax.xsl"]
     COMP --> C1["extract-isosch.xsl<br/>lang=en"]
 
-    B1 --> B2["rng_simplify.py<br/>RELAX NG §4.19 and §4.20<br/><i>279 patterns eliminated</i>"]
+    B1 --> B2["odd/simplify.py<br/>RELAX NG §4.19 and §4.20<br/><i>279 patterns eliminated</i>"]
     B2 --> RNG["<b>teille-douce.rng</b><br/>383 KB · compiles in 0.1 s"]
 
     C1 --> SCH["<b>teille-douce.sch</b><br/>17 KB"]
@@ -192,7 +192,7 @@ impossible patterns still in place. Two consequences were observed:
   no longer accepted a nested `<zone>`, and the schema rejected conformant
   documents.
 
-`scripts/rng_simplify.py` therefore applies these reductions before lxml reads
+`teille_douce/odd/simplify.py` therefore applies these reductions before lxml reads
 the file. The language the schema recognizes is unchanged; only its writing is.
 Measured effect: 279 patterns eliminated, compilation down to 0.1 s.
 

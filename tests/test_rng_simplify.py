@@ -1,4 +1,4 @@
-# Tests de scripts/rng_simplify.py
+# Tests de teille_douce/odd/simplify.py
 #
 # odd2relax rend une classe TEI videe par l'elagage sous la forme d'un motif
 # <notAllowed/>. C'est correct au sens de la spec RELAX NG -- le motif ne
@@ -12,7 +12,7 @@
 # Run: venv/bin/python -m pytest tests/test_rng_simplify.py -q
 from lxml import etree
 
-from scripts.rng_simplify import simplifier
+from teille_douce.odd import simplify as simplifier
 
 RNG = "http://relaxng.org/ns/structure/1.0"
 
