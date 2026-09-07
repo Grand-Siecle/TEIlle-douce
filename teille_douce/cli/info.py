@@ -332,23 +332,21 @@ def _named(asked):
     """
     import difflib
 
+    from teille_douce.cli.exits import USAGE, refuse
     from teille_douce.settings import declarations
 
     rows = declarations()
     for row in rows:
         if asked in (row.name, row.env, row.key):
             return row.name
-    import sys
-
     known = [row.name for row in rows] + [row.env for row in rows if row.env]
     near = difflib.get_close_matches(asked, known, n=1, cutoff=0.6)
     hint = f" — did you mean {near[0]!r}?" if near else ""
     # stderr and 2, as argparse itself would: this is a value typed on
     # the command line. `SystemExit(2, message)` prints the whole tuple
-    # and exits 1, which is this CLI's code for "some volumes failed".
-    print(f"teille-douce info: unknown setting {asked!r}{hint}",
-          file=sys.stderr)
-    raise SystemExit(2)
+    # and exits 1, which is this CLI's code for "some volumes failed" —
+    # the trap `cli/exits.py` exists to close, in every command at once.
+    refuse(f"unknown setting {asked!r}{hint}", USAGE, "teille-douce info")
 
 
 def execute(args):
