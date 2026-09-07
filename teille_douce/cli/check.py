@@ -14,6 +14,8 @@ Rendering is a pure function of the answer, so every family of attention
 is testable without a terminal and without a corpus.
 """
 
+from pathlib import Path
+
 from teille_douce.preflight import inspect
 from teille_douce.report.text import cells, clip, pad
 
@@ -105,21 +107,55 @@ def render(preflight, width=92, strict=False):
 
     lines.append("")
     lines.append(_verdict(preflight, strict, room))
+    # Only where `--strict` would change something: on an unusable
+    # installation it changes nothing, and a remedy offered for a
+    # problem that did not happen teaches the reader to skip the block.
+    offered = f"  teille-douce check{_addressed(preflight)} --strict"
+    if (preflight.verdict == 1 and not strict
+            and offered.strip() not in lines[-1]):
+        lines.append(offered)
+        lines.append(clip("      fails on these", room))
     return lines
 
 
 def _name(path):
-    from pathlib import Path
-
     return Path(path).name if path else "(none)"
+
+
+def _addressed(preflight):
+    """The `-i`/`-o` that make a `check` mean this one, quoted.
+
+    The footer said `teille-douce check --strict fails on these` with
+    nothing else, so pasted from another working directory it answered
+    "unusable — nothing to convert" about a corpus it had never been
+    shown. `report/summary.py` carries the same rule for the commands it
+    offers, and for the same sentence: a last line that exits 3 is a
+    last line that teaches distrust.
+    """
+    import shlex
+
+    from teille_douce import config
+
+    said = ""
+    if Path(preflight.input_dir) != Path(config.DEFAULT_OCR_DIR):
+        said += f" -i {shlex.quote(str(preflight.input_dir))}"
+    if Path(preflight.output_dir) != Path(config.DEFAULT_OUTPUT_DIR):
+        said += f" -o {shlex.quote(str(preflight.output_dir))}"
+    return said
 
 
 def _verdict(preflight, strict, room):
     verdict = preflight.verdict
     if verdict == 3:
-        why = ("nothing to convert" if not preflight.volumes
-               else "the output cannot be written" if not preflight.output_writable
-               else "an input this run must read is not readable")
+        # The unreadable input first: it is the more specific cause, and
+        # it is also why there are no volumes, so answering "nothing to
+        # convert" sent the reader to look at a corpus rather than at a
+        # mode.
+        why = ("an input this run must read is not readable"
+               if preflight.unusable
+               else "the output cannot be written"
+               if not preflight.output_writable
+               else "nothing to convert")
         return clip(f"  unusable — {why}", room)
     if not preflight.attention:
         return clip("  nothing to report", room)
@@ -127,8 +163,15 @@ def _verdict(preflight, strict, room):
     said = f"  usable, with {count} thing{'s' if count != 1 else ''} to look at"
     if strict:
         return pad(said, "--strict: these are failures", room, keep="right")
-    return pad(said, "teille-douce check --strict fails on these", room,
-               keep="right")
+    # Two lines when the command does not fit beside the verdict: it is
+    # printed whole or not at all, which is the rule `summary` states
+    # for the commands it offers.
+    offered = f"teille-douce check{_addressed(preflight)} --strict"
+    if cells(said) + cells(offered) + 2 <= room:
+        return pad(said, offered, room, keep="right")
+    # The verdict is a sentence and IS clipped; the command below it is
+    # not, and is emitted separately by `render`.
+    return clip(said, room)
 
 
 def add_arguments(parser):

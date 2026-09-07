@@ -320,6 +320,13 @@ def test_every_line_fits_the_terminal_it_was_given(tmp_path, width):
                 + command.render_limits(width=width))
 
     for line in rendered:
+        if line.strip().startswith("teille-douce "):
+            # The one exemption, and the same one `report/summary.py`
+            # states for its `next` block: a command is printed whole or
+            # not at all, because `report --run … -o /srv/expo…` is not
+            # a shorter command, it is one that does not run. A terminal
+            # wraps it and nothing is lost.
+            continue
         assert cells(line) <= room, f"{cells(line)} > {room}: {line!r}"
         # The check sweep asserts this and the report one did not, which
         # is how `--why --context` kept its trailing spaces at 6, 11 and
@@ -632,3 +639,68 @@ def test_the_json_goes_through_the_command(tmp_path, capsys):
                                       "--context"])) == 1
     document = json.loads(capsys.readouterr().out)
     assert document["incidents"][0]["index"] == "I1"
+
+
+def test_a_runs_directory_that_cannot_be_read_is_not_a_directory_with_no_runs(
+        tmp_path, capsys):
+    """`_runs` swallows OSError and answers "no runs", which is right
+    for `prune` — whose caller is a run that must not die over its own
+    housekeeping — and wrong for anyone asking. `failed_last_time`
+    guards this and its comment names the defect; the guard had reached
+    one of the three callers, so `report` said "no run recorded here"
+    over records sitting right there."""
+    import os
+    import stat
+
+    from teille_douce.report.store import RUNS
+    from teille_douce.settings import use_settings
+
+    a_run(tmp_path)
+    os.chmod(tmp_path / RUNS, 0o000)
+    if os.access(tmp_path / RUNS, os.R_OK):
+        os.chmod(tmp_path / RUNS, stat.S_IRWXU)
+        pytest.skip("this user can read a directory with mode 000")
+    try:
+        with use_settings(output_dir=tmp_path):
+            for argv in ([], ["--runs"]):
+                with pytest.raises(SystemExit) as raised:
+                    command.execute(parse(argv))
+                assert raised.value.code == 3
+                said = capsys.readouterr().err
+                assert "cannot be read" in said
+                assert "no run" not in said
+    finally:
+        os.chmod(tmp_path / RUNS, stat.S_IRWXU)
+
+
+def test_a_manifest_nested_past_the_recursion_limit_is_reported(tmp_path):
+    """`json.loads` raises `RecursionError`, which is neither an
+    `OSError` nor a `ValueError`. The widening reached `read_run` and
+    not `failed_last_time`, twelve lines away, reading the same file —
+    so `run --retry-failed` came out as a traceback."""
+    from teille_douce.report.store import RunStore
+
+    where = a_run(tmp_path, manifest=False)
+    (where / "run.json").write_text("[" * 60000 + "]" * 60000,
+                                    encoding="utf-8")
+
+    run = read_run(where)
+    assert run.unreadable and len(run.incidents) == 3
+
+    with pytest.raises(ValueError, match="could not be read"):
+        RunStore.failed_last_time(tmp_path)
+
+
+def test_the_command_the_footer_offers_means_this_run(tmp_path):
+    """It carried neither `--run` nor `-o`, so from another working
+    directory it exited 3, and from the same one it silently answered
+    about the NEWEST run rather than the one on screen. A command that
+    quietly means something else is worse than one that fails."""
+    where = a_run(tmp_path, stamp="20260903-180824-0031415")
+    run = read_run(where)
+
+    offered, = [line for line in command.render(command.select(run), width=92)
+                if "--why" in line]
+
+    assert "--run 20260903-180824-0031415" in offered
+    assert f"-o {tmp_path}" in offered or f"-o '{tmp_path}'" in offered

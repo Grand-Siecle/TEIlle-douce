@@ -17,8 +17,13 @@ letting an exhaustive-looking report be read as exhaustive — and says
 the same about the two things this pipeline cannot measure at all.
 """
 
+import json
+import shlex
+import sys
 from dataclasses import dataclass
+from pathlib import Path
 
+from teille_douce.cli.exits import MISCONFIGURED, USAGE, refuse
 from teille_douce.report.text import cells, clip, pad, shorten_path
 
 MAX_WIDTH = 100
@@ -177,10 +182,38 @@ def render(selection, width=92, context=None):
             lines.append(clip(f"  {' ' * (marker + document + 2)}"
                               f"{item.kind} {item.locator}", room))
     lines.append("")
-    lines.append(clip("  teille-douce report --why "
-                      f"{selection.incidents[0].index} for one of them, "
-                      "--limits for what is not here", room))
+    # The run and the directory, as `summary._where` carries them: this
+    # line carried neither, so from another working directory it exited
+    # 3, and from the same one it silently answered about the NEWEST
+    # run rather than the one on screen — a command that quietly means
+    # something else is worse than one that fails.
+    # Not clipped, on the rule `report/summary.py` states for its own
+    # `next` block: a command is printed whole or not at all, because
+    # `teille-douce report --run … -o /srv/expo…` is not a shorter
+    # command, it is one that does not run. A terminal wraps it and it
+    # is still copy-pasteable.
+    lines.append(f"  teille-douce report{_addressed(run)} "
+                 f"--why {selection.incidents[0].index}")
+    lines.append(clip("      one of them in full; --limits for what is "
+                      "not here", room))
     return lines
+
+
+def _addressed(run):
+    """`--run <name> -o <dir>`, quoted, for a command to be pasted.
+
+    Left off when the output directory is the default, which `report`
+    resolves on its own — the rule `summary._where` follows, one file
+    over, for exactly the same reason.
+    """
+    from teille_douce import config
+
+    said = f" --run {run.name}"
+    # The run directory is `<output>/.teille-douce/runs/<name>`.
+    output = run.path.parent.parent.parent
+    if Path(output) != Path(config.DEFAULT_OUTPUT_DIR):
+        said += f" -o {shlex.quote(str(output))}"
+    return said
 
 
 def _log_name(run):
@@ -226,9 +259,12 @@ def _why(item, run, room, context):
         lines.append(clip(f"    from {shorten_path(_log_name(run), room - 10)}",
                           room).rstrip())
         for line in context:
-            # `rstrip` for the same reason as the line above: at six
-            # columns `clip` leaves the indent and nothing else.
-            lines.append(clip(f"    | {line}", room).rstrip())
+            # No `rstrip` here, unlike the two lines above it: `clip`
+            # ends this one on `…` or on a character at every room, and
+            # `log_context` has already stripped what it returns. A
+            # guard that cannot fire is a claim about the code that is
+            # not true.
+            lines.append(clip(f"    | {line}", room))
     elif run.log:
         lines.append("")
         lines.append(clip("    --context for the log around it", room))
@@ -360,7 +396,12 @@ def _chosen(output_dir, stamp):
     """The run directory asked for, or the last one. None if there is none."""
     from teille_douce.report.store import RunStore
 
-    kept = RunStore.kept(output_dir)
+    try:
+        kept = RunStore.kept(output_dir)
+    except ValueError as reason:
+        # "No run recorded here" is what an unreadable runs directory
+        # used to answer, over records sitting right there.
+        refuse(str(reason), MISCONFIGURED, "teille-douce report")
     if not kept:
         return None
     if not stamp:
@@ -426,10 +467,6 @@ def _as_json(selection, context=None):
 
 
 def execute(args):
-    import json
-    import sys
-
-    from teille_douce.cli.exits import MISCONFIGURED, USAGE, refuse
     from teille_douce.cli.run import console
     from teille_douce.report.store import read_run
     from teille_douce.settings import get_settings
@@ -454,7 +491,11 @@ def execute(args):
     if args.runs:
         from teille_douce.report.store import RunStore
 
-        runs = [read_run(path) for path in reversed(RunStore.kept(output_dir))]
+        try:
+            kept = RunStore.kept(output_dir)
+        except ValueError as reason:
+            refuse(str(reason), MISCONFIGURED, "teille-douce report")
+        runs = [read_run(path) for path in reversed(kept)]
         if args.json:
             json.dump({"runs": [{"run": run.name,
                                  "started": (run.started.isoformat()

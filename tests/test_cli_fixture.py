@@ -184,3 +184,69 @@ def test_asking_for_the_fixture_and_the_golden_at_once_is_refused(capsys):
     # usage error, and `raise SystemExit(str)` exits 1.
     assert raised.value.code == 2
     assert "different things" in capsys.readouterr().err
+
+
+def test_a_target_that_is_not_a_fixture_is_not_removed(tmp_path, capsys):
+    """`--target` is new in this instalment: the old script's target was
+    a constant, and the `rmtree` inherited that constant's safety. It no
+    longer has it — `fixture build --target ~/notes` removed the
+    directory whole, with nothing to undo it. This module exists because
+    asking for the help destroyed a versioned file, and the remedy had
+    reached the parser and stopped one line short of the removal."""
+    home = tmp_path / "notes"
+    (home / "subdir").mkdir(parents=True)
+    (home / "IMPORTANT.txt").write_text("keep", encoding="utf-8")
+
+    # Through `build`, not `_removable` alone: the guard existing and
+    # the guard being CALLED are two things, and a test of the first
+    # left deleting the call green.
+    source = tmp_path / "corpus"
+    for relative, _, _ in fixture.PAGES:
+        page = source / relative
+        page.parent.mkdir(parents=True, exist_ok=True)
+        page.write_text("<alto/>", encoding="utf-8")
+
+    with pytest.raises(SystemExit) as raised:
+        fixture.build(source=source, target=home, say=lambda *_: None)
+
+    assert raised.value.code == 3
+    assert "does not look like a fixture" in capsys.readouterr().err
+    assert (home / "IMPORTANT.txt").read_text(encoding="utf-8") == "keep"
+    assert (home / "subdir").exists()
+
+
+def test_what_a_previous_build_left_is_removable(tmp_path):
+    """Three things are: the versioned fixture, a directory that is not
+    there yet, and one holding exactly what a build leaves."""
+    fixture._removable(tmp_path / "not-there-yet")
+    fixture._removable(fixture.DEFAULT_TARGET)
+
+    built = tmp_path / "again"
+    (built / "content" / "data" / "doc_1").mkdir(parents=True)
+    (built / "gallica-bnf-fr-iiif-manifest-json.csv").write_text(
+        "x", encoding="utf-8")
+
+    fixture._removable(built)             # must not raise
+
+
+def test_the_golden_needs_the_dev_extra_and_says_so(tmp_path, monkeypatch,
+                                                    capsys):
+    """The harness imports pytest. A checkout installed without the dev
+    extra came out as a traceback with exit 1; the sibling refusal, for
+    a checkout that is not there at all, already exits 3."""
+    import builtins
+
+    real = builtins.__import__
+
+    def without_pytest(name, *rest):
+        if name == "test_e2e_pipeline":
+            raise ImportError("No module named 'pytest'")
+        return real(name, *rest)
+
+    monkeypatch.setattr(builtins, "__import__", without_pytest)
+
+    with pytest.raises(SystemExit) as raised:
+        fixture.rebuild_golden(say=lambda *_: None)
+
+    assert raised.value.code == 3
+    assert "pip install -e" in capsys.readouterr().err

@@ -302,3 +302,38 @@ def test_le_schema_accepte_ce_que_chaque_phase_produit(cas):
     doc = etree.fromstring(texte.encode())
     assert relaxng.validate(doc), "\n".join(
         f"L{e.line}: {e.message}" for e in list(relaxng.error_log)[:6])
+
+
+def test_a_derivative_that_cannot_be_read_is_drift_and_not_a_traceback():
+    """A `teille-douce.rng` re-saved in latin-1 — the case the saxonche
+    widening's own comment names — raises `UnicodeDecodeError` inside
+    `verify`, which came out as a traceback with exit 1. But 1 is what
+    this function returns for real drift, so a CI could not tell a
+    damaged derivative from an edited one."""
+    import tempfile
+    from pathlib import Path
+
+    from teille_douce.odd import build
+
+    with tempfile.TemporaryDirectory() as tmp:
+        schema = Path(tmp) / "schema"
+        schema.mkdir()
+        (schema / "teille-douce.rng").write_bytes("préface".encode("latin-1"))
+        produced = Path(tmp) / "produced"
+        produced.mkdir()
+        (produced / "teille-douce.rng").write_text("x", encoding="utf-8")
+
+        def compile_nothing(destination, **_):
+            return [produced / "teille-douce.rng"]
+
+        # `compile_odd` downloads a hundred megabytes of toolchain; only
+        # the READING of the derivatives is under test here.
+        real = build.compile_odd
+        build.compile_odd = compile_nothing
+        try:
+            code = build.verify(toolchain=object(), schema=schema,
+                                say=lambda *_: None)
+        finally:
+            build.compile_odd = real
+
+    assert code == 1

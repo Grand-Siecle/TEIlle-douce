@@ -136,6 +136,39 @@ def thin_page(source, name, number, target):
     return written.stat().st_size
 
 
+def _removable(target):
+    """Refuse to `rmtree` anything that is not a fixture.
+
+    `--target` is new: on the old script the target was a constant, and
+    the `rmtree` below inherited that constant's safety. It no longer
+    has it — `teille-douce fixture build --target ~/notes` removed the
+    directory whole, with no prompt and nothing to undo it. This module
+    exists because asking for the help destroyed a versioned file; the
+    remedy reached the parser and stopped one line short of the removal
+    itself.
+
+    Three things are removable: the versioned fixture, a directory that
+    does not exist yet, and one that holds what a previous build left —
+    `content/data/doc_1` and nothing a person would miss. Anything else
+    is named and refused, which costs a `rm -rf` the day someone means
+    it and saves a home directory the day they do not.
+    """
+    target = Path(target)
+    if not target.exists() or target.resolve() == DEFAULT_TARGET.resolve():
+        return
+    pages = target / "content" / "data" / "doc_1"
+    strangers = [entry.name for entry in target.iterdir()
+                 if entry.name not in ("content",
+                                       "gallica-bnf-fr-iiif-manifest-json.csv")]
+    if pages.is_dir() and not strangers:
+        return
+    refuse(f"{target} does not look like a fixture and will not be "
+           f"removed: it holds " + (", ".join(sorted(strangers)[:4]) or
+                                    "no content/data/doc_1")
+           + ".\nPass --target somewhere this command may destroy, or "
+             "empty it yourself first.", MISCONFIGURED, "teille-douce fixture")
+
+
 def build(source=DEFAULT_SOURCE, target=DEFAULT_TARGET, say=print):
     """Rebuild the fixture from the private corpus."""
     source, target = Path(source), Path(target)
@@ -153,6 +186,7 @@ def build(source=DEFAULT_SOURCE, target=DEFAULT_TARGET, say=print):
     if missing:
         refuse("source pages missing, nothing was removed:\n  "
                + "\n  ".join(missing), MISCONFIGURED, "teille-douce fixture")
+    _removable(target)
     if target.exists():
         shutil.rmtree(target)
     target.mkdir(parents=True, exist_ok=True)
@@ -191,7 +225,17 @@ def rebuild_golden(say=print):
                "installed distribution does not carry them.",
                MISCONFIGURED, "teille-douce fixture")
     sys.path.insert(0, str(ROOT / "tests"))
-    from test_e2e_pipeline import GOLDEN, MODE_COURT, lancer_pipeline, normaliser
+    try:
+        from test_e2e_pipeline import (GOLDEN, MODE_COURT, lancer_pipeline,
+                                       normaliser)
+    except ImportError as reason:
+        # The harness imports pytest and the rest of the dev extra. A
+        # checkout installed without them is a misconfiguration, not a
+        # traceback with exit 1 — the sibling refusal five lines up, for
+        # a checkout that is not there at all, already exits 3.
+        refuse(f"the end-to-end harness could not be imported ({reason}): "
+               f"pip install -e '.[dev]'", MISCONFIGURED,
+               "teille-douce fixture")
 
     tei = lancer_pipeline(Path(tempfile.mkdtemp()), **MODE_COURT)
     GOLDEN.parent.mkdir(parents=True, exist_ok=True)

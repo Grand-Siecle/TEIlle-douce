@@ -107,12 +107,33 @@ def _volumes(ocr_dir):
     Deliberately simpler than the run's own discovery, which has
     selectors, `--limit` and `--skip-existing` to honour. `check` is
     asked about the installation, not about one invocation.
+
+    It borrows the run's `_is_readable` for the one thing simplicity
+    must not cost: `rglob` swallows a permission error and yields
+    nothing, so an unreadable volume is indistinguishable from an empty
+    one by its contents alone, and calling it empty sends the operator
+    to repack a volume whose only problem is its mode. A preflight that
+    disagreed with the run it precedes would be worse than none, and
+    `run` has said this since PR #33.
     """
-    volumes, archives, without_alto = [], [], []
+    from teille_douce.cli.run import _is_readable
+
+    volumes, archives, without_alto, unreadable = [], [], [], []
     if not ocr_dir.is_dir():
-        return volumes, archives, without_alto
-    for entry in sorted(ocr_dir.iterdir()):
+        return volumes, archives, without_alto, unreadable
+    try:
+        inside = sorted(ocr_dir.iterdir())
+    except OSError:
+        # The input directory itself, and `unreadable_inputs()` already
+        # reports it by name and by layer — this only has to not raise.
+        # `run` asks that question before it touches the corpus; the
+        # ordering had been applied to one of the two callers.
+        return volumes, archives, without_alto, unreadable
+    for entry in inside:
         if entry.is_dir():
+            if not _is_readable(entry):
+                unreadable.append((entry.name, "cannot be listed"))
+                continue
             pages = sorted(entry.rglob("*.xml"))
             if pages:
                 volumes.append((entry.name, pages))
@@ -120,7 +141,7 @@ def _volumes(ocr_dir):
                 without_alto.append(entry.name)
         elif entry.suffix == ".zip":
             archives.append(entry.name)
-    return volumes, archives, without_alto
+    return volumes, archives, without_alto, unreadable
 
 
 def _catalogue(settings, names):
@@ -254,7 +275,7 @@ def inspect(settings, probe=True):
     """Everything `check` reports, measured once."""
     import logging
 
-    volumes, archives, without_alto = _volumes(settings.ocr_dir)
+    volumes, archives, without_alto, unreadable = _volumes(settings.ocr_dir)
     names = [name for name, _ in volumes]
 
     # The modules that log while ANSWERING. `find_metadata_row` says so
@@ -320,6 +341,16 @@ def inspect(settings, probe=True):
         attention.append(Attention(
             name, "the directory holds no ALTO",
             "nothing would be converted from it"))
+
+    for name, reason in unreadable:
+        # Told apart from "holds no ALTO", which is what it looked like:
+        # the volume may well be full, this process is simply not
+        # allowed to open it. `run` reports it as a failure and counts
+        # it in the denominator; here it is a thing to look at, and the
+        # remedy is `chmod`, not repacking.
+        attention.append(Attention(
+            name, f"the directory {reason}",
+            "the run would count it as a failure, not skip it"))
 
     services = _services(settings, probe)
     for service in services:

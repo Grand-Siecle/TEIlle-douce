@@ -262,6 +262,12 @@ def test_every_line_fits_the_terminal_it_was_given():
         room = min(width, command.MAX_WIDTH) - command._MARGIN
         for strict in (False, True):
             for line in command.render(wide, width=width, strict=strict):
+                if "teille-douce " in line and "--strict" in line:
+                    # The one exemption, as in `report/summary.py`: a
+                    # command is printed whole or not at all, since
+                    # `check -i /srv/oc…` is not a shorter command but
+                    # one that does not run.
+                    continue
                 assert cells(line) <= room, (width, cells(line), room, line)
                 assert line == line.rstrip(), (width, repr(line))
 
@@ -299,9 +305,32 @@ def test_a_path_that_cannot_be_read_names_the_layer_that_supplied_it(tmp_path):
 
 
 def test_the_footer_says_what_strict_would_do():
-    assert "--strict" in command.render(an_answer(), width=92)[-1]
+    said = "\n".join(command.render(an_answer(), width=92))
+    assert "--strict" in said
     assert "nothing to report" in command.render(
         an_answer(attention=()), width=92)[-1]
+
+
+def test_the_command_the_footer_offers_means_this_check():
+    """It said `teille-douce check --strict` and nothing else, so pasted
+    from another working directory it answered "unusable — nothing to
+    convert" about a corpus it had never been shown: a last line that
+    exits 3 is a last line that teaches distrust, which is the sentence
+    `summary._where` was written for one file over."""
+    elsewhere = an_answer(input_dir=Path("/srv/ocr in"),
+                          output_dir=Path("/srv/tei out"))
+
+    offered, = [line for line in command.render(elsewhere, width=120)
+                if "teille-douce check" in line]
+
+    assert "-i '/srv/ocr in'" in offered
+    assert "-o '/srv/tei out'" in offered
+    assert "--strict" in offered
+
+    # And the defaults are not repeated back: `check` resolves them.
+    at_home, = [line for line in command.render(an_answer(), width=92)
+                if "teille-douce check" in line]
+    assert " -i " not in at_home and " -o " not in at_home
 
 
 def test_an_output_that_cannot_be_written_is_unusable_not_degraded():
@@ -328,3 +357,54 @@ def test_the_preflight_can_be_asked_about_the_input_a_run_would_be_given(
     assert settings.ocr_dir == ocr
     assert settings.origin("ocr_dir") == "flag"
     assert inspect(settings, probe=False).volumes
+
+
+def test_a_volume_that_cannot_be_listed_is_not_a_volume_with_no_alto(tmp_path):
+    """`rglob` swallows a permission error and yields nothing, so an
+    unreadable volume is indistinguishable from an empty one by its
+    contents alone — and calling it empty sends the operator to repack a
+    volume whose only problem is its mode. `cli/run.py` has said this
+    since PR #33 and has `_is_readable` for it; the preflight that must
+    not disagree with the run did not use it."""
+    import os
+    import stat
+
+    ocr = a_corpus(tmp_path, ("LIV9001_reconciled", "LIV0326_v1_reconciled"))
+    os.chmod(ocr / "LIV0326_v1_reconciled", 0o000)
+    if os.access(ocr / "LIV0326_v1_reconciled", os.R_OK):
+        os.chmod(ocr / "LIV0326_v1_reconciled", stat.S_IRWXU)
+        pytest.skip("this user can read a directory with mode 000")
+    try:
+        answer = inspect(settings_for(tmp_path, ocr), probe=False)
+    finally:
+        os.chmod(ocr / "LIV0326_v1_reconciled", stat.S_IRWXU)
+
+    named = [item for item in answer.attention
+             if item.subject == "LIV0326_v1_reconciled"]
+    assert any("cannot be listed" in item.detail for item in named)
+    assert not any("holds no ALTO" in item.detail for item in named)
+
+
+def test_an_input_directory_that_cannot_be_listed_does_not_raise(tmp_path):
+    """`inspect` walked the corpus before asking `unreadable_inputs()`,
+    so `check` on a chmod-000 `OCR/` came out as a traceback with exit 1
+    — "some volumes failed", from a command that converted nothing.
+    `run` asks that question first; the ordering had been applied to one
+    of the two callers."""
+    import os
+    import stat
+
+    shut = tmp_path / "shut"
+    shut.mkdir()
+    os.chmod(shut, 0o000)
+    if os.access(shut, os.R_OK):
+        os.chmod(shut, stat.S_IRWXU)
+        pytest.skip("this user can read a directory with mode 000")
+    try:
+        answer = inspect(settings_for(tmp_path, shut), probe=False)
+    finally:
+        os.chmod(shut, stat.S_IRWXU)
+
+    assert answer.verdict == 3
+    assert answer.unusable
+    assert "not readable" in command.render(answer, width=92)[-1]

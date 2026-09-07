@@ -12,11 +12,17 @@ from teille_douce.validation import validate
 
 
 def main(argv):
-    """L'ancienne surface, telle que ces tests l'exercaient.
+    """The old surface, as these tests exercised it.
 
-    `--odd` etait alors optionnel et l'est devenu par defaut : un appel
-    qui ne le demandait pas recoit donc `--no-odd`, pour que ces tests
-    disent toujours ce qu'ils disaient."""
+    `--odd` was optional then and is the default now, so a call that did
+    not ask for it is given `--no-odd` — these tests go on saying what
+    they were written to say.
+
+    (The French names below pre-date this file's move into the package
+    and are left alone on purpose; the design note keeps translating
+    them out of a CLI PR. Everything written here is in English, as
+    CLAUDE.md requires.)
+    """
     if "--odd" not in argv:
         argv = ["--no-odd", *argv]
     parsed = _app.build_parser().parse_args(["validate", *argv])
@@ -329,11 +335,15 @@ def test_une_regle_nonfatale_de_la_tei_est_un_avertissement():
 
 def test_odd_sans_schema_compile_le_dit_au_lieu_de_planter(tmp_path, monkeypatch,
                                                            capsys):
-    """--odd sur un depot ou build_odd.py n'a jamais tourne doit nommer la
-    commande a lancer, pas echouer sur un fichier introuvable.
+    """--odd on a checkout where the ODD was never compiled must name
+    the command to run, not fail on a file it cannot find.
 
-    Sortie 3 : rien n'a tourne. 1 signifie « des fichiers ont echoue a la
-    validation », ce que le message dementait."""
+    Exit 3: nothing ran. 1 means "some files failed validation", which
+    the message itself contradicted.
+
+    (The name stays French: this file's names are, and renaming them is
+    a `chore/` of its own, out of scope by the design note. What is new
+    here is written in English, as CLAUDE.md requires.)"""
     import teille_douce.validation.schemas as vt
     monkeypatch.setattr(vt, "ODD_RNG", tmp_path / "absent.rng")
     with pytest.raises(SystemExit) as leve:
@@ -451,9 +461,9 @@ def test_sans_odd_le_script_dit_ce_qu_il_n_a_pas_verifie(tmp_path, capsys):
     with pytest.raises(SystemExit):
         main([_ecrire(tmp_path, TEI_OK)])
     sortie = capsys.readouterr().out
-    # La note nomme les invariants, pas le drapeau : elle est aussi
-    # imprimee quand le schema n'est pas installe du tout, ou renvoyer
-    # vers --odd conseillerait la seule chose qui echouerait.
+    # The note names the invariants, not the flag: it is printed too
+    # when the schema is not installed at all, where pointing at --odd
+    # would recommend the one thing that would fail.
     assert "langUsage" in sortie and "ORCID" in sortie
     assert "not checked" in sortie.lower()
 
@@ -546,3 +556,28 @@ def test_les_fichiers_se_controlent_en_parallele(tmp_path, capsys):
     sequentiel = capsys.readouterr().out
     assert parallele == sequentiel
     assert "NCName" in parallele
+
+
+def test_a_saxonche_that_is_broken_reads_as_one_that_is_absent(monkeypatch):
+    """A SaxonC wheel whose native library will not load raises
+    `OSError`, not `ImportError`. `project_schematron` runs in the
+    worker, where `except Exception` covers it; the widening had reached
+    one site of three."""
+    import builtins
+
+    import teille_douce.validation.schemas as vt
+    from teille_douce.validation import Missing
+
+    real = builtins.__import__
+
+    def refuse_saxon(name, *rest):
+        if name == "saxonche":
+            raise OSError("libsaxonc.so: cannot open shared object file")
+        return real(name, *rest)
+
+    monkeypatch.setattr(builtins, "__import__", refuse_saxon)
+
+    with pytest.raises(Missing) as raised:
+        vt.project_schematron()
+
+    assert "cannot be used" in str(raised.value)

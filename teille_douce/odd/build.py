@@ -315,8 +315,23 @@ def verify(toolchain=None, odd=ODD, schema=SCHEMA, say=print):
             versioned = Path(schema) / artefact.name
             if not versioned.exists():
                 drifted.append(f"{artefact.name}: missing from schema/")
-            elif without_the_date(artefact.read_text(encoding="utf-8")) != \
-                    without_the_date(versioned.read_text(encoding="utf-8")):
+                continue
+            try:
+                # A derivative hand-edited and saved in latin-1 — the
+                # exact case the saxonche widening's comment names — is
+                # a `UnicodeDecodeError`, and so is one this process may
+                # not read. Out of `odd check` both were a traceback
+                # with exit 1, which is also what this function returns
+                # for real drift, so a CI could not tell them apart.
+                # Which is the whole point of the exit code.
+                same = (without_the_date(artefact.read_text(encoding="utf-8"))
+                        == without_the_date(
+                            versioned.read_text(encoding="utf-8")))
+            except (OSError, ValueError) as reason:
+                drifted.append(f"{artefact.name}: could not be read "
+                               f"({type(reason).__name__}: {reason})")
+                continue
+            if not same:
                 drifted.append(f"{artefact.name}: no longer matches the ODD")
     if drifted:
         say("\nDRIFT:")

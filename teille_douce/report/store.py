@@ -157,6 +157,13 @@ class RunStore:
 
     @staticmethod
     def _runs(output_dir):
+        """Every run directory, oldest first. Swallows OSError.
+
+        Which is right for `prune`, whose caller is a run that must not
+        die over its own housekeeping, and wrong for anyone ASKING —
+        `failed_last_time` says so in as many words and asks the
+        question itself. `kept` is the version for askers.
+        """
         root = Path(output_dir) / RUNS
         try:
             if not root.is_dir():
@@ -170,7 +177,24 @@ class RunStore:
     def kept(cls, output_dir):
         """Every run still on disk, oldest first — what `report --runs`
         lists. `prune` keeps the last ten, whole directory by whole
-        directory."""
+        directory.
+
+        Raises `ValueError` when the directory is there and cannot be
+        read. `_runs` swallows that and answers "no runs", which the
+        caller then prints as "no run has been recorded here yet" — a
+        counter left at zero because a permission died, over records
+        that are sitting right there. `failed_last_time` guards this
+        already and its comment names the defect; the guard had reached
+        one of the three callers.
+        """
+        root = Path(output_dir) / RUNS
+        for step in (root.parent, root):
+            try:
+                if step.exists() and not (step.is_dir()
+                                          and os.access(step, os.R_OK)):
+                    raise ValueError(f"{step} cannot be read")
+            except OSError as reason:
+                raise ValueError(f"{step} could not be read: {reason}")
         return tuple(cls._runs(output_dir))
 
     @classmethod
@@ -218,7 +242,11 @@ class RunStore:
             raise ValueError(
                 f"{latest.name} kept no manifest, so its failures could not "
                 f"be read")
-        except (OSError, ValueError) as reason:
+        except (OSError, ValueError, RecursionError) as reason:
+            # `RecursionError` beside the other two: `json.loads` past
+            # about twenty thousand levels of nesting is neither. The
+            # widening reached `read_run`, twelve lines away, reading
+            # the same file.
             raise ValueError(
                 f"the record of {latest.name} could not be read: {reason}")
         # Shape-checked, not assumed. `json.loads` is happy with `null`,
