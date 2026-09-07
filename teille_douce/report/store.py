@@ -335,20 +335,31 @@ def read_run(path):
         manifest = json.loads((path / "run.json").read_text(encoding="utf-8"))
         if not isinstance(manifest, dict):
             raise ValueError("not a run manifest")
-    except (OSError, ValueError) as reason:
+    except (OSError, ValueError, RecursionError) as reason:
+        # RecursionError: `json.loads` past about twenty thousand levels
+        # of nesting, which is neither an OSError nor a ValueError.
         manifest = {}
         unreadable.append(("run.json", str(reason)))
 
     index = path / "incidents.jsonl"
     if index.is_file():
         try:
+            # `errors="replace"`, and `ValueError` caught beside
+            # `OSError`: a line cut through a multibyte character — by
+            # the Ctrl-C in the fourth hour this format exists for —
+            # raises `UnicodeDecodeError`, which IS a `ValueError`, and
+            # the read of `run.json` eleven lines up already catches it.
+            # `--runs` reads every run kept here, so one damaged old run
+            # took down the whole listing, out of a function whose
+            # docstring promises it never raises.
             for number, line in enumerate(
-                    index.read_text(encoding="utf-8").splitlines(), 1):
+                    index.read_text(encoding="utf-8",
+                                    errors="replace").splitlines(), 1):
                 if not line.strip():
                     continue
                 try:
                     entry = json.loads(line)
-                except ValueError as reason:
+                except (ValueError, RecursionError) as reason:
                     # One malformed line, not the file: it is appended to
                     # as the run goes, so a run killed mid-write leaves a
                     # truncated last line above everything that happened
@@ -366,17 +377,26 @@ def read_run(path):
                                        f"is a {type(entry).__name__}, "
                                        f"not an incident"))
                     continue
+                # `str()` on the fields that are read as text: the
+                # guard above covers the container, and a `document`
+                # that is a dict passed it and crashed one frame later
+                # inside a regular expression. `run.json`'s half of this
+                # reader already checks per field.
+                def _said(name, empty=""):
+                    value = entry.get(name, empty)
+                    return empty if value is None else str(value)
+
                 incidents.append(Incident(
                     index=f"I{len(incidents) + 1}",
-                    code=entry.get("code", "?"),
-                    document=entry.get("document", "?"),
-                    step=entry.get("step", ""),
-                    locator=entry.get("locator", ""),
-                    kind=entry.get("kind", ""),
+                    code=_said("code", "?"),
+                    document=_said("document", "?"),
+                    step=_said("step"),
+                    locator=_said("locator"),
+                    kind=_said("kind"),
                     count=entry.get("count", 0),
                     total=entry.get("total"),
-                    detail=entry.get("detail", "")))
-        except OSError as reason:
+                    detail=_said("detail")))
+        except (OSError, ValueError, RecursionError) as reason:
             unreadable.append(("incidents.jsonl", str(reason)))
 
     # Shape-checked, field by field. `failed_last_time` says why in as

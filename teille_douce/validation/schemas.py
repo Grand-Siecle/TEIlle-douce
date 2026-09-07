@@ -55,9 +55,13 @@ def project_schematron():
     """
     try:
         from saxonche import PySaxonProcessor
-    except ImportError:
-        raise Missing("saxonche is not installed: "
-                      "pip install -r requirements-dev.txt")
+    except Exception as reason:
+        # Not `ImportError` alone: a SaxonC wheel whose native
+        # `libsaxonc` will not load raises `OSError`, and an install
+        # that is broken rather than absent is still a schema this
+        # process cannot apply — which is what `Missing` means.
+        raise Missing(f"saxonche cannot be used ({type(reason).__name__}: "
+                      f"{reason}): pip install -r requirements-dev.txt")
     if not ODD_SVRL.exists():
         raise Missing(_absent(ODD_SVRL))
     processor = PySaxonProcessor(license=False)
@@ -94,9 +98,16 @@ def available(with_odd):
         raise Missing(_absent(ODD_RNG))
     try:
         import saxonche  # noqa: F401
-    except ImportError:
-        return False, ("note: Schematron not applied (saxonche is not "
-                       "installed) — only teille-douce.rng was used")
+    except Exception as reason:
+        # Same widening as above, and for the sharper reason: this runs
+        # in the PARENT, before any worker exists, so an `OSError` here
+        # came out as a traceback and exit 1 — "some files failed
+        # validation" — from `teille-douce validate` with no flags at
+        # all. One broken install must not be reported as a corpus that
+        # does not conform.
+        return False, (f"note: Schematron not applied (saxonche cannot be "
+                       f"used: {type(reason).__name__}) — only "
+                       f"teille-douce.rng was used")
     if not ODD_SVRL.exists():
         return False, (f"note: Schematron not applied ({_absent(ODD_SVRL)}) "
                        f"— only teille-douce.rng was used")

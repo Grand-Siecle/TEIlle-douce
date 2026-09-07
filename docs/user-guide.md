@@ -753,9 +753,16 @@ the TEI marks `role="nonfatal"` are reported as warnings, not errors. Under
 letting you believe the check was complete.
 
 A refusal is not a failed file: **2** for a `--schema` or a `-j` this program
-cannot use, **3** for nothing to check, a demanded `--odd` with no schema
-installed, and a schema that parses and will not compile. One broken argument
-must not be reported as a corpus that does not conform.
+cannot use, **3** for nothing to check, a directory it may not list, a
+demanded `--odd` with no schema installed, and a schema that parses and will
+not compile. One broken argument must not be reported as a corpus that does
+not conform.
+
+A `saxonche` that is installed and will not load narrows the check with a
+note, like one that is absent. A `teille-douce.svrl.xsl` that is *there* and
+that Saxon refuses stops the run instead: absent is a state this guide
+describes, corrupt is a versioned artefact that has been damaged, and
+`teille-douce odd build` rebuilds it.
 
 The project schema is applied without being asked for. It is versioned, so
 applying it needs only `lxml` and `saxonche` — not the toolchain that
@@ -805,9 +812,9 @@ it looks like it means.
 
 Exit codes: **0** the third block is empty, **1** it is not — whatever the
 selectors left on screen, because the question a wrapper asks this command is
-"did that run need a human" — **2** for a value typed on the command line that
-names nothing (`--why I9`, or `--why` under a `--block` that is not indexed),
-and **3** when there is no record here at all.
+"did that run need a human" — **2** for a command line that cannot be
+answered (`--why I9`, or a `--why` whose incident another selector has just
+removed; it says which one), and **3** when there is no record here at all.
 
 **`--limits` is the one that matters in the long run.** It separates what this
 pipeline *cannot* measure from what it *does not measure yet*, and gives the

@@ -87,7 +87,7 @@ def _prepare_worker(schema, with_odd):
     # at all, since `--odd` is on and `-j` is `auto`. The first version
     # of this guard covered `--schema`, which is the flag nobody passes.
     _CONTEXT.update(relaxng=None, odd_rng=None, schematron=None,
-                    unusable=None)
+                    processor=None, unusable=None)
     try:
         if schema:
             _CONTEXT["relaxng"] = etree.RelaxNG(etree.parse(str(schema)))
@@ -101,9 +101,13 @@ def _prepare_worker(schema, with_odd):
     try:
         _CONTEXT["odd_rng"] = project_relaxng()
     except Exception as reason:
-        _CONTEXT["unusable"] = (f"the project schema could not be "
-                                f"compiled: {type(reason).__name__}: "
-                                f"{reason} — teille-douce odd build")
+        # `setdefault`, not assignment: with both broken, the one the
+        # operator typed is the diagnosis they can act on, and it was
+        # being overwritten by the versioned one.
+        _CONTEXT.setdefault("unusable", None)
+        _CONTEXT["unusable"] = _CONTEXT["unusable"] or (
+            f"the project schema could not be compiled: "
+            f"{type(reason).__name__}: {reason} — teille-douce odd build")
     try:
         _CONTEXT["processor"], _CONTEXT["schematron"] = project_schematron()
     except Missing:
@@ -111,14 +115,18 @@ def _prepare_worker(schema, with_odd):
         # again would say it once per process.
         pass
     except Exception as reason:
-        # Not `Missing`: the sheet is there and Saxon refuses it. The
-        # RelaxNG above may still have compiled, so this narrows the
-        # check rather than failing it — and says so once per file
-        # instead of respawning the pool.
+        # Not `Missing`: the sheet is THERE and Saxon refuses it, which
+        # is a versioned artefact that has been corrupted or hand-edited
+        # — a different thing from the documented absences `Missing`
+        # covers, and the run stops on it rather than checking less
+        # without saying so. `--no-odd` runs everything else, and
+        # `teille-douce odd build` rebuilds it. The asymmetry with an
+        # absent sheet is deliberate: absent is a state the guide
+        # describes, corrupt is not.
         _CONTEXT["schematron"] = None
-        _CONTEXT["unusable"] = (f"the project Schematron could not be "
-                                f"compiled: {type(reason).__name__}: "
-                                f"{reason} — teille-douce odd build")
+        _CONTEXT["unusable"] = _CONTEXT["unusable"] or (
+            f"the project Schematron could not be compiled: "
+            f"{type(reason).__name__}: {reason} — teille-douce odd build")
 
 
 def _check(path):
@@ -157,10 +165,21 @@ def expand(given, output_dir):
     files = []
     for name in given:
         path = Path(name)
-        if path.is_dir():
-            files.extend(sorted(path.glob("*.xml")))
-        else:
+        if not path.is_dir():
             files.append(path)
+            continue
+        try:
+            inside = sorted(path.iterdir())
+        except OSError as reason:
+            # `glob` swallows a PermissionError and answers "no files",
+            # so a directory this process may not list refused with
+            # "nothing to check" — a counter left at zero because a
+            # permission died, looking like a directory that had nothing
+            # in it.
+            refuse(f"{path} cannot be listed: {reason}", MISCONFIGURED,
+                   "teille-douce validate")
+        files.extend(entry for entry in inside
+                     if entry.suffix == ".xml" and entry.is_file())
     return files
 
 
@@ -293,6 +312,15 @@ def execute(args):
         _prepare_worker(args.schema, with_odd)
         verdicts = [_check(path) for path in paths]
 
+    # Before the report, not after it: `_applied` reads what `available`
+    # STATS, so a schema that is there and will not compile was listed
+    # as applied in the JSON of a run that was refused two lines later.
+    unusable = {errors[0] for _, errors, _ in verdicts
+                if errors and (errors[0].startswith("--schema could not")
+                               or "could not be compiled" in errors[0])}
+    if len(unusable) == 1 and all(errors for _, errors, _ in verdicts):
+        refuse(unusable.pop(), MISCONFIGURED, "teille-douce validate")
+
     if args.json:
         # What was applied, named. The notes above are suppressed under
         # `--json` — they are prose — so without this a CI reading the
@@ -308,15 +336,6 @@ def execute(args):
         print()
     else:
         _print(verdicts, args.max_errors)
-
-    # A schema that parses as XML and still will not compile reaches
-    # every worker and fails every file identically. That is one broken
-    # argument, not a corpus that does not conform, so it is 3.
-    unusable = {errors[0] for _, errors, _ in verdicts
-                if errors and (errors[0].startswith("--schema could not")
-                               or "could not be compiled" in errors[0])}
-    if len(unusable) == 1 and all(errors for _, errors, _ in verdicts):
-        refuse(unusable.pop(), MISCONFIGURED, "teille-douce validate")
 
     return 1 if any(errors for _, errors, _ in verdicts) else 0
 

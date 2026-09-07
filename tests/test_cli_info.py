@@ -147,13 +147,20 @@ def test_the_flag_column_is_read_off_the_parser_not_invented():
 # The rendering, at every width
 # =============================================================================
 
-@pytest.mark.parametrize("width", [56, 72, 92, 120, 200])
+@pytest.mark.parametrize("width", [2, 12, 30, 42, 56, 72, 92, 120, 200])
 def test_every_line_fits_the_terminal_it_was_given(width):
+    """Against the renderer's own `room` — `min(width, MAX_WIDTH) -
+    _MARGIN` — and from two columns up. It compared to `min(width,
+    MAX_WIDTH)`, two cells looser than the contract, so dropping
+    `- _MARGIN` from `info.render` left the whole suite green; and it
+    started at 56, above every width where a clipping defect lives."""
     report = gathered(env={"TDOUCE_OUTPUT_DIR": "/data/grand-siecle/tei_output"})
-    room = min(width, command.MAX_WIDTH)
+    room = min(width, command.MAX_WIDTH) - command._MARGIN
     for line in (command.render(report, width=width)
-                 + command.render(report, width=width, name="output_dir")):
+                 + command.render(report, width=width, name="output_dir")
+                 + command.render(report, width=width, name="modernize_url")):
         assert cells(line) <= room, f"{cells(line)} > {room}: {line!r}"
+        assert line == line.rstrip(), f"trailing space: {line!r}"
 
 
 def _row_for(lines, name):

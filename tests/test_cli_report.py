@@ -300,7 +300,8 @@ def test_the_json_carries_the_incidents_and_what_could_not_be_read(tmp_path):
 # The rendering, at every width
 # =============================================================================
 
-@pytest.mark.parametrize("width", [20, 30, 42, 56, 72, 92, 120, 200])
+@pytest.mark.parametrize("width", [2, 6, 11, 12, 20, 30, 42, 56, 72, 92,
+                                   120, 200])
 def test_every_line_fits_the_terminal_it_was_given(tmp_path, width):
     """Against the renderer's own room — `min(width, MAX_WIDTH) - 2` —
     and starting at 20, not 56. Comparing to `min(width, MAX_WIDTH)` was
@@ -320,6 +321,11 @@ def test_every_line_fits_the_terminal_it_was_given(tmp_path, width):
 
     for line in rendered:
         assert cells(line) <= room, f"{cells(line)} > {room}: {line!r}"
+        # The check sweep asserts this and the report one did not, which
+        # is how `--why --context` kept its trailing spaces at 6, 11 and
+        # 12 columns: invisible on screen, and there the moment anyone
+        # pastes the output into an issue.
+        assert line == line.rstrip(), f"trailing space: {line!r}"
 
 
 def _rows(run, lines):
@@ -500,6 +506,72 @@ def test_a_block_that_is_not_indexed_is_blamed_rather_than_the_number(
     assert raised.value.code == 2
     said = capsys.readouterr().err
     assert "not indexed" in said and "--block source" in said
+    assert "no incident" not in said
+
+
+def test_a_line_cut_through_a_character_does_not_take_down_the_listing(
+        tmp_path):
+    """The canonical damage this format exists for — a Ctrl-C or a full
+    disk cutting a line — lands in the middle of a multibyte character,
+    and `UnicodeDecodeError` IS a `ValueError`. The read of `run.json`
+    eleven lines above already caught it; this one did not inherit the
+    clause, so `report --runs`, which reads every run kept here, died
+    with a traceback and exit 1."""
+    where = a_run(tmp_path)
+    with open(where / "incidents.jsonl", "ab") as handle:
+        handle.write('{"code": "phase_lost", "document": "LIV0044_r'
+                     .encode("utf-8") + "é".encode("utf-8")[:1] + b"\n")
+
+    run = read_run(where)
+
+    assert len(run.incidents) == 3
+    assert run.unreadable
+    assert command.render_runs([run])
+
+
+def test_a_field_of_the_wrong_type_inside_an_incident_is_read_as_text(
+        tmp_path):
+    """The guard covered the container and not its fields, so a
+    `document` that is a dict passed it and crashed one frame later
+    inside a regular expression. `run.json`'s half of this reader
+    already checks per field."""
+    where = a_run(tmp_path)
+    with open(where / "incidents.jsonl", "a", encoding="utf-8") as handle:
+        handle.write(json.dumps({"code": {"a": 1}, "document": 3,
+                                 "kind": None, "step": None}) + "\n")
+
+    run = read_run(where)
+    odd = run.incidents[-1]
+
+    assert isinstance(odd.code, str) and isinstance(odd.document, str)
+    assert odd.kind == "" and odd.step == ""
+    assert command.render(command.select(run))
+    assert command.render(command.select(run, code="x"))
+    assert command._as_json(command.select(run))
+
+
+@pytest.mark.parametrize("selector,named", [
+    (["--code", "phase"], "--code phase"),
+    (["LIV0044_reconciled"], "the document selector"),
+    (["--block", "source"], "--block source"),
+])
+def test_why_blames_the_selector_that_removed_it_not_the_number(
+        tmp_path, capsys, selector, named):
+    """`--why` is resolved over what the other selectors leave, so
+    "no incident 'I3'" was false whenever one of them had removed it —
+    and `report LIV0044 --code phase_lost` is this module's own example
+    of composing selectors. Only `--block` was special-cased, which left
+    the two commoner ones saying something untrue."""
+    a_run(tmp_path)
+    from teille_douce.settings import use_settings
+
+    with use_settings(output_dir=tmp_path):
+        with pytest.raises(SystemExit) as raised:
+            command.execute(parse([*selector, "--why", "I3"]))
+
+    assert raised.value.code == 2
+    said = capsys.readouterr().err
+    assert named in said
     assert "no incident" not in said
 
 

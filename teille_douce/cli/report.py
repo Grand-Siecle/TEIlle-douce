@@ -146,8 +146,10 @@ def render(selection, width=92, context=None):
         budget = room - cells(said)
         if budget < 12:
             lines.append(clip(said.rstrip(), room))
+            # `rstrip`: under seven columns `shorten_path` has nothing
+            # left to give and the line is four spaces.
             lines.append(clip("    " + shorten_path(_log_name(run), room - 4),
-                              room))
+                              room).rstrip())
         else:
             lines.append(clip(said + shorten_path(_log_name(run), budget),
                               room))
@@ -217,10 +219,16 @@ def _why(item, run, room, context):
         lines.append(clip(f"    {label:<10}{value}", room))
     if context:
         lines.append("")
+        # `rstrip`: below thirteen columns `shorten_path` has nothing
+        # left to give and the line ends in "    from ", trailing space
+        # and all — invisible on screen and there the moment anyone
+        # pastes it into an issue.
         lines.append(clip(f"    from {shorten_path(_log_name(run), room - 10)}",
-                          room))
+                          room).rstrip())
         for line in context:
-            lines.append(clip(f"    | {line}", room))
+            # `rstrip` for the same reason as the line above: at six
+            # columns `clip` leaves the indent and nothing else.
+            lines.append(clip(f"    | {line}", room).rstrip())
     elif run.log:
         lines.append("")
         lines.append(clip("    --context for the log around it", room))
@@ -366,6 +374,25 @@ def _chosen(output_dir, stamp):
     return matching[-1]
 
 
+def _removed_by(run, args):
+    """Which selector took `--why`'s incident out, or None.
+
+    Said in the terms the reader typed. A number that is in the run and
+    not in the view is a contradiction between two halves of one command
+    line, not a number that does not exist.
+    """
+    if not any(item.index == args.why for item in run.incidents):
+        return None
+    if args.block and args.block != "incident":
+        return f"--block {args.block} (that block is not indexed)"
+    item, = [entry for entry in run.incidents if entry.index == args.why]
+    if args.document and item.document != args.document:
+        return f"the document selector {args.document}"
+    if args.code and not _matches_code(item, args.code):
+        return f"--code {args.code}"
+    return None
+
+
 def _as_json(selection, context=None):
     run = selection.run
     # `--why` narrows the prose to one incident; the JSON handed back
@@ -464,16 +491,17 @@ def execute(args):
     selection = select(run, document=args.document, code=args.code,
                        block=args.block, why=args.why)
     if args.why and selection.why is None:
-        # 2: a value typed on the command line that names nothing. Which
-        # is only true when nothing ELSE removed it: `--block source`
-        # empties the list before `--why` is resolved, and blaming the
-        # number the reader had just been shown was the wrong half of
-        # the command line to point at.
-        if args.block and args.block != "incident":
-            refuse(f"--block {args.block} and --why {args.why} cannot both "
-                   f"be answered: the {args.block} block is not indexed — "
-                   f"teille-douce report --limits", USAGE,
-                   "teille-douce report")
+        # 2 either way, but not the same sentence. `--why` is resolved
+        # last, over what the other selectors left, so blaming the
+        # number was wrong whenever one of them had removed it — and
+        # `report LIV0044 --code phase_lost` is this module's own
+        # example of composing selectors. Special-casing `--block` alone
+        # left the two commoner selectors saying something false.
+        removed = _removed_by(run, args)
+        if removed:
+            refuse(f"{args.why} is in {run.name}, and {removed} leaves it "
+                   f"out — the selectors compose, and --why is answered "
+                   f"over what they leave", USAGE, "teille-douce report")
         refuse(f"no incident {args.why!r} in {run.name} — "
                f"teille-douce report lists them by number",
                USAGE, "teille-douce report")

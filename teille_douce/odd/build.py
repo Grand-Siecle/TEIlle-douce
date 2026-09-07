@@ -182,9 +182,13 @@ class Toolchain:
 def _processor():
     try:
         from saxonche import PySaxonProcessor
-    except ImportError:
+    except Exception:
+        # A wheel whose native runtime will not load raises OSError, not
+        # ImportError, and `odd check` exits 1 for schema drift and
+        # nothing else: a CI could not tell a broken install from a
+        # derivative someone had edited by hand.
         refuse(
-            "saxonche is missing: pip install -r requirements-dev.txt\n"
+            "saxonche cannot be used: pip install -r requirements-dev.txt\n"
             "(SaxonC-HE, the XSLT 2.0 engine; no JVM required)",
             MISCONFIGURED, "teille-douce odd")
     return PySaxonProcessor

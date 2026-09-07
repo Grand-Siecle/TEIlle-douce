@@ -371,15 +371,58 @@ def test_a_worker_never_raises_whatever_it_cannot_compile(tmp_path,
     for absent_or_broken in (broken, tmp_path / "gone.rng"):
         monkeypatch.setattr(schemas, "ODD_RNG", absent_or_broken)
         command._prepare_worker(None, True)          # must not raise
-        assert "could not be compiled" in command._CONTEXT["unusable"]
+        assert "project schema could not be compiled" in \
+            command._CONTEXT["unusable"]
         assert command._CONTEXT["odd_rng"] is None
 
-    monkeypatch.setattr(schemas, "project_schematron",
-                        lambda: (_ for _ in ()).throw(RuntimeError("saxon")))
-    monkeypatch.setattr(schemas, "ODD_RNG",
-                        tmp_path / "still-not-there.rng")
-    command._prepare_worker(None, True)
+
+def test_a_schematron_saxon_refuses_is_reported_and_does_not_raise(
+        monkeypatch):
+    """The distinguishing case of the Schematron branch, which the
+    first version of this guard never posed: the RelaxNG COMPILES and
+    only the sheet is refused.
+
+    Written first with `ODD_RNG` broken as well, so `unusable` already
+    held the RelaxNG message and `schematron is None` was already true
+    from the `_CONTEXT.update` at the top — a negative assertion
+    satisfied by absence, and replacing the whole branch with `pass`
+    left it green. Its cost: exit 1 with `"applied": [… svrl.xsl]` and
+    no note, which is the partial check looking complete that this
+    module exists to prevent.
+    """
+    from teille_douce.validation import schemas
+
+    def saxon_refuses():
+        raise RuntimeError("SXXP0003 the stylesheet is not well formed")
+
+    monkeypatch.setattr(schemas, "project_schematron", saxon_refuses)
+
+    command._prepare_worker(None, True)          # must not raise
+
+    assert command._CONTEXT["odd_rng"] is not None, (
+        "the RelaxNG must have compiled, or this is the other branch")
     assert command._CONTEXT["schematron"] is None
+    assert "Schematron could not be compiled" in command._CONTEXT["unusable"]
+    assert "SXXP0003" in command._CONTEXT["unusable"]
+
+
+def test_a_schematron_that_is_merely_absent_is_not_the_same_thing(
+        monkeypatch):
+    """`Missing` is a documented state — saxonche not installed, `odd
+    build` not run — and narrows the check with a note the parent has
+    already printed. A sheet Saxon REFUSES is a versioned artefact that
+    has been corrupted, and stops the run."""
+    from teille_douce.validation import Missing, schemas
+
+    def not_installed():
+        raise Missing("saxonche is not installed")
+
+    monkeypatch.setattr(schemas, "project_schematron", not_installed)
+
+    command._prepare_worker(None, True)
+
+    assert command._CONTEXT["schematron"] is None
+    assert command._CONTEXT["unusable"] is None
 
 
 def test_a_project_schema_that_will_not_compile_fails_the_run_at_three(
@@ -403,3 +446,57 @@ def test_a_project_schema_that_will_not_compile_fails_the_run_at_three(
     assert raised.value.code == 3
     said = capsys.readouterr().err
     assert "could not be compiled" in said and "odd build" in said
+
+
+def test_a_saxonche_that_is_broken_rather_than_absent_is_not_a_traceback(
+        tmp_path, monkeypatch, capsys):
+    """A SaxonC wheel whose native `libsaxonc` will not load raises
+    `OSError`, not `ImportError`. `available()` runs in the PARENT,
+    before any worker exists, so it came out as a traceback and exit 1 —
+    "some files failed validation" — from `teille-douce validate` with
+    no flags at all. One broken install must not be reported as a corpus
+    that does not conform."""
+    import builtins
+
+    from teille_douce.validation import schemas
+
+    real = builtins.__import__
+
+    def refuse_saxon(name, *rest):
+        if name == "saxonche":
+            raise OSError("libsaxonc.so: cannot open shared object file")
+        return real(name, *rest)
+
+    monkeypatch.setattr(builtins, "__import__", refuse_saxon)
+
+    applicable, note = schemas.available(with_odd=True)
+
+    assert applicable is False
+    assert "saxonche cannot be used" in note
+
+
+def test_a_directory_that_cannot_be_listed_is_not_a_directory_that_is_empty(
+        tmp_path, capsys):
+    """`glob` swallows a PermissionError and answers "no files", so a
+    directory this process may not list refused with "nothing to check"
+    — a counter left at zero because a permission died, looking like a
+    directory that had nothing in it."""
+    import os
+    import stat
+
+    shut = tmp_path / "shut"
+    shut.mkdir()
+    (shut / "doc.xml").write_text(TEI, encoding="utf-8")
+    os.chmod(shut, 0o000)
+    if os.access(shut, os.R_OK):        # root ignores the mode
+        pytest.skip("this user can read a directory with mode 000")
+    try:
+        with pytest.raises(SystemExit) as raised:
+            command.execute(parse(["--no-odd", str(shut)]))
+    finally:
+        os.chmod(shut, stat.S_IRWXU)
+
+    assert raised.value.code == 3
+    said = capsys.readouterr().err
+    assert "cannot be listed" in said
+    assert "nothing to check" not in said

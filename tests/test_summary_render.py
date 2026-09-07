@@ -880,3 +880,43 @@ def test_the_command_offered_survives_a_space_in_the_path():
         report_path=Path("/srv/tei out/.teille-douce/runs/r1")))
 
     assert "-o '/srv/tei out'" in shown
+
+
+def test_every_command_offered_carries_the_directories_this_run_used():
+    """`--retry-failed` without `-o` resolves the output directory
+    through the four layers and reads a different run's manifest: pasted
+    after a run written to `exports/`, it answers "nothing failed last
+    time" and exits 3 over a volume that had just failed — the last line
+    that teaches distrust, which is what the `-o` on the report line was
+    added to prevent. It was added to one line of three."""
+    record = RunRecord()
+    record.add(Loss(Code.PHASE_LOST, "D1", "enrich", Locator.document("D1"),
+                    count=0, total=1402, detail="PyHellen down"))
+
+    shown = rendered(outcome(
+        record=record, exit_code=1, volumes_written=26,
+        input_dir=Path("/srv/ocr in"), output_dir=Path("/srv/tei out"),
+        failed_documents=(("LIV 0326", "KeyError"),),
+        report_path=Path("/srv/tei out/.teille-douce/runs/r1")))
+
+    for line in [said for said in shown.splitlines()
+                 if said.strip().startswith("teille-douce")]:
+        assert "-o '/srv/tei out'" in line, line
+        assert "-i '/srv/ocr in'" in line, line
+    # And the volume name is quoted too, or it becomes two selectors.
+    assert "run 'LIV 0326' -vv" in shown
+
+
+def test_the_default_directories_are_not_repeated_back():
+    """They are the one thing every command resolves on its own."""
+    record = RunRecord()
+    record.add(Loss(Code.PHASE_LOST, "D1", "enrich", Locator.document("D1"),
+                    count=0, total=1402, detail="PyHellen down"))
+
+    shown = rendered(outcome(
+        record=record, exit_code=1,
+        failed_documents=(("LIV0326", "KeyError"),),
+        report_path=Path("tei_output/.teille-douce/runs/r1")))
+
+    assert " -o " not in shown.split("next")[1]
+    assert " -i " not in shown.split("next")[1]
