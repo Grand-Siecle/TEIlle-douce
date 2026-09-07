@@ -44,14 +44,25 @@ def test_a_demanded_schema_and_an_inherited_one_are_told_apart():
     assert command._odd(parse(["--no-odd"]).odd) == (False, False)
 
 
-def test_the_number_of_workers_is_not_one():
+def test_the_number_of_workers_is_not_one(monkeypatch):
     """It was 1, and every invocation in the documentation passes -j 8.
-    A default everyone overrides is a false default."""
+    A default everyone overrides is a false default.
+
+    The machine is stubbed, both ways round. Asserting `_workers("64", 3)
+    == 3` was true on this laptop and false on the two-core CI runner,
+    where the answer is 2 — a test whose truth depends on the machine
+    proves whichever of the two caps that machine happens to apply.
+    """
     assert parse([]).jobs == "auto"
-    assert command._workers("auto", 40) > 1
-    # Never more than there are files, and never more than the machine.
-    assert command._workers("auto", 1) == 1
-    assert command._workers("64", 3) == 3
+
+    monkeypatch.setattr(command, "cpu_count", lambda: 8)
+    assert command._workers("auto", 40) == 8      # the machine caps it
+    assert command._workers("auto", 1) == 1       # so does the file count
+    assert command._workers("64", 3) == 3         # and so does the flag
+
+    monkeypatch.setattr(command, "cpu_count", lambda: 2)
+    assert command._workers("64", 3) == 2
+    assert command._workers("auto", 40) == 2
 
 
 def test_an_argument_may_be_a_directory(tmp_path):
@@ -181,6 +192,10 @@ def test_the_workers_are_started_with_forkserver_not_fork(tmp_path, monkeypatch)
         return real(method)
 
     monkeypatch.setattr(multiprocessing, "get_context", record)
+    # Two workers whatever the runner has: `_workers` caps on cpu_count,
+    # and a single-core machine would take the sequential path and prove
+    # nothing about the one being fixed here.
+    monkeypatch.setattr(command, "cpu_count", lambda: 4)
     written = tmp_path / "out"
     written.mkdir()
     for name in ("a.xml", "b.xml"):
