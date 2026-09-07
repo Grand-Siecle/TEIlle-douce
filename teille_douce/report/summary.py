@@ -77,6 +77,11 @@ class RunOutcome:
     failed_documents: tuple = ()
     failed_archives: tuple = ()
     report_path: Path = None
+    # The two catalogues, for the commands the `next` block offers: a
+    # command pasted without them reports "no catalogue row" for every
+    # volume, which is a different run from the one being reported.
+    metadata_csv: Path = None
+    persons_csv: Path = None
     # The accounting sentence, composed by the run itself. Taken rather
     # than recomputed: two places deriving the same fraction is two
     # accounts of one run, and the reader has no way to tell which to
@@ -337,12 +342,20 @@ def _tripping_lines(outcome, width):
     return lines
 
 
-def _where(outcome):
-    """The `-i`/`-o` a command needs to mean this run, quoted.
+def _where(outcome, flags=("-i", "-o", "--metadata", "--persons")):
+    """The paths a command needs to mean this run, quoted.
 
     Quoted because `-o tei out` pasted into a shell reads `out` as the
     DOC positional; and left off when the value is the default, which is
     the one thing every command resolves on its own.
+
+    *flags* because the commands offered do not take the same ones:
+    `run` and `check` take all four, `report` takes `-o` alone, and
+    adding `-i` to that one made it an `unrecognized arguments` usage
+    error — the very class this function was written to close, broken by
+    the function itself. Twice: the first version carried `-i` and `-o`
+    and dropped the two catalogues, so a command pasted with a named
+    `--metadata` reported "no catalogue row" for every volume.
 
     `Path(...)` on both sides of the comparison: the default is declared
     as a string in config.py and arrives here as a Path, and
@@ -350,10 +363,17 @@ def _where(outcome):
     tei_output` on every ordinary run.
     """
     said = ""
-    if Path(outcome.input_dir) != Path(config.DEFAULT_OCR_DIR):
-        said += f" -i {shlex.quote(str(outcome.input_dir))}"
-    if Path(outcome.output_dir) != Path(config.DEFAULT_OUTPUT_DIR):
-        said += f" -o {shlex.quote(str(outcome.output_dir))}"
+    for flag, value, default in (
+            ("-i", outcome.input_dir, config.DEFAULT_OCR_DIR),
+            ("-o", outcome.output_dir, config.DEFAULT_OUTPUT_DIR),
+            ("--metadata", getattr(outcome, "metadata_csv", None),
+             config.DEFAULT_METADATA_CSV),
+            ("--persons", getattr(outcome, "persons_csv", None),
+             config.DEFAULT_PERSONS_CSV)):
+        if flag not in flags or value is None:
+            continue
+        if Path(value) != Path(default):
+            said += f" {flag} {shlex.quote(str(value))}"
     return said
 
 
@@ -374,6 +394,8 @@ def _next_steps(outcome):
     # exists to prevent exactly that, and the two lines above it did not
     # have it.
     where = _where(outcome)
+    # `report` takes `-o` and nothing else of the four.
+    reporting = _where(outcome, flags=("-o",))
     failed = len(outcome.failed_documents) + len(outcome.failed_archives)
     if failed:
         steps.append((f"teille-douce run --retry-failed{where}",
@@ -392,7 +414,7 @@ def _next_steps(outcome):
         # about a directory nobody in this run mentioned — a last line
         # that exits 3 is a last line that teaches distrust.
         steps.append((f"teille-douce report --run {outcome.report_path.name}"
-                      f"{where}",
+                      f"{reporting}",
                       "every incident above, and the log around any of them"))
     return steps
 

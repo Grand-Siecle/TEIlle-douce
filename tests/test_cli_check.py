@@ -317,8 +317,12 @@ def test_the_command_the_footer_offers_means_this_check():
     convert" about a corpus it had never been shown: a last line that
     exits 3 is a last line that teaches distrust, which is the sentence
     `summary._where` was written for one file over."""
-    elsewhere = an_answer(input_dir=Path("/srv/ocr in"),
-                          output_dir=Path("/srv/tei out"))
+    elsewhere = an_answer(
+        input_dir=Path("/srv/ocr in"), output_dir=Path("/srv/tei out"),
+        catalogue={"path": Path("/srv/cat alogue.csv"), "rows": 1,
+                   "matched": 1, "unmatched": []},
+        persons={"path": Path("/srv/per sons.csv"), "loaded": True,
+                 "count": 1})
 
     offered, = [line for line in command.render(elsewhere, width=120)
                 if "teille-douce check" in line]
@@ -327,10 +331,25 @@ def test_the_command_the_footer_offers_means_this_check():
     assert "-o '/srv/tei out'" in offered
     assert "--strict" in offered
 
+    # And it parses. `-i` on `report` — which has none — was an
+    # `unrecognized arguments` usage error in the last line of a run,
+    # and asserting flags by name is what let it through.
+    import shlex
+
+    from teille_douce.cli.app import build_parser, normalise
+
+    words = shlex.split(offered.strip())
+    parsed = build_parser().parse_args(normalise(words[1:]))
+    assert parsed.command == "check" and parsed.strict is True
+
     # And the defaults are not repeated back: `check` resolves them.
     at_home, = [line for line in command.render(an_answer(), width=92)
                 if "teille-douce check" in line]
     assert " -i " not in at_home and " -o " not in at_home
+    assert "--metadata" not in at_home and "--persons" not in at_home
+    # The catalogues this check was given, or it answers about others.
+    assert "--metadata '/srv/cat alogue.csv'" in offered
+    assert "--persons '/srv/per sons.csv'" in offered
 
 
 def test_an_output_that_cannot_be_written_is_unusable_not_degraded():

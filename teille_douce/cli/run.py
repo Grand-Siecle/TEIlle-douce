@@ -2058,6 +2058,11 @@ def execute(args):
             panel_holder = {}
             reporter_run = ReportRun(
                 input_dir=settings.ocr_dir, output_dir=settings.output_dir,
+                # For the `next` block alone: a command it offers must
+                # name the catalogues this run was given, or it reports
+                # "no catalogue row" for every volume.
+                metadata_csv=settings.metadata_csv,
+                persons_csv=settings.persons_csv,
                 # `broken` and not `failed_archives`: an unreadable directory
                 # is counted in the denominator everywhere else, and freezing
                 # a different total here let the headline say "1/2 converted"

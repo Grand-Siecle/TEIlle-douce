@@ -123,7 +123,7 @@ def _name(path):
 
 
 def _addressed(preflight):
-    """The `-i`/`-o` that make a `check` mean this one, quoted.
+    """The four paths that make a `check` mean this one, quoted.
 
     The footer said `teille-douce check --strict fails on these` with
     nothing else, so pasted from another working directory it answered
@@ -131,16 +131,28 @@ def _addressed(preflight):
     shown. `report/summary.py` carries the same rule for the commands it
     offers, and for the same sentence: a last line that exits 3 is a
     last line that teaches distrust.
+
+    All four, and not `-i`/`-o` alone: the catalogues are half of what
+    this command answers about, so a footer pasted without them reports
+    "no catalogue row" for every volume — the same rule half applied,
+    which is how it went wrong in `summary` first.
     """
     import shlex
 
     from teille_douce import config
 
     said = ""
-    if Path(preflight.input_dir) != Path(config.DEFAULT_OCR_DIR):
-        said += f" -i {shlex.quote(str(preflight.input_dir))}"
-    if Path(preflight.output_dir) != Path(config.DEFAULT_OUTPUT_DIR):
-        said += f" -o {shlex.quote(str(preflight.output_dir))}"
+    for flag, value, default in (
+            ("-i", preflight.input_dir, config.DEFAULT_OCR_DIR),
+            ("-o", preflight.output_dir, config.DEFAULT_OUTPUT_DIR),
+            ("--metadata", preflight.catalogue.get("path"),
+             config.DEFAULT_METADATA_CSV),
+            ("--persons", preflight.persons.get("path"),
+             config.DEFAULT_PERSONS_CSV)):
+        if value is None:
+            continue
+        if Path(value) != Path(default):
+            said += f" {flag} {shlex.quote(str(value))}"
     return said
 
 

@@ -882,13 +882,20 @@ def test_the_command_offered_survives_a_space_in_the_path():
     assert "-o '/srv/tei out'" in shown
 
 
-def test_every_command_offered_carries_the_directories_this_run_used():
+def test_every_command_offered_carries_the_paths_this_run_used():
     """`--retry-failed` without `-o` resolves the output directory
     through the four layers and reads a different run's manifest: pasted
     after a run written to `exports/`, it answers "nothing failed last
     time" and exits 3 over a volume that had just failed — the last line
     that teaches distrust, which is what the `-o` on the report line was
-    added to prevent. It was added to one line of three."""
+    added to prevent. It was added to one line of three.
+
+    Each command gets the flags IT takes, and all of them: `-i` on
+    `report`, which has none, made that line an `unrecognized
+    arguments` usage error, and leaving the two catalogues off made a
+    pasted `run` report "no catalogue row" for every volume. Both were
+    this same rule, half applied.
+    """
     record = RunRecord()
     record.add(Loss(Code.PHASE_LOST, "D1", "enrich", Locator.document("D1"),
                     count=0, total=1402, detail="PyHellen down"))
@@ -896,15 +903,59 @@ def test_every_command_offered_carries_the_directories_this_run_used():
     shown = rendered(outcome(
         record=record, exit_code=1, volumes_written=26,
         input_dir=Path("/srv/ocr in"), output_dir=Path("/srv/tei out"),
+        metadata_csv=Path("/srv/cat alogue.csv"),
+        persons_csv=Path("/srv/per sons.csv"),
         failed_documents=(("LIV 0326", "KeyError"),),
         report_path=Path("/srv/tei out/.teille-douce/runs/r1")))
 
-    for line in [said for said in shown.splitlines()
-                 if said.strip().startswith("teille-douce")]:
+    offered = [said for said in shown.splitlines()
+               if said.strip().startswith("teille-douce")]
+    assert len(offered) == 3
+    for line in offered:
         assert "-o '/srv/tei out'" in line, line
-        assert "-i '/srv/ocr in'" in line, line
+        if " report " in line:
+            # `report` takes `-o` and nothing else of the four.
+            assert " -i " not in line and "--metadata" not in line, line
+        else:
+            assert "-i '/srv/ocr in'" in line, line
+            assert "--metadata '/srv/cat alogue.csv'" in line, line
+            assert "--persons '/srv/per sons.csv'" in line, line
     # And the volume name is quoted too, or it becomes two selectors.
     assert "run 'LIV 0326' -vv" in shown
+
+
+def test_every_command_offered_actually_parses():
+    """Put through the real parser rather than eyeballed: `-i` on
+    `report`, which has none, was an `unrecognized arguments` usage
+    error in the last line of a run. Asserting the flags by name cannot
+    catch it — `-vv` is two `-v` and is in no `option_strings` — and
+    asserting from memory is how it got there. argparse is the
+    authority, so argparse is asked.
+    """
+    import shlex
+
+    from teille_douce.cli.app import build_parser, normalise
+
+    record = RunRecord()
+    record.add(Loss(Code.PHASE_LOST, "D1", "enrich", Locator.document("D1"),
+                    count=0, total=1402, detail="PyHellen down"))
+    shown = rendered(outcome(
+        record=record, exit_code=1,
+        input_dir=Path("/srv/ocr in"), output_dir=Path("/srv/tei out"),
+        metadata_csv=Path("/srv/cat alogue.csv"),
+        persons_csv=Path("/srv/per sons.csv"),
+        failed_documents=(("LIV 0326", "KeyError"),),
+        report_path=Path("/srv/tei out/.teille-douce/runs/r1")))
+
+    offered = [shlex.split(line) for line in shown.splitlines()
+               if line.strip().startswith("teille-douce ")]
+    assert len(offered) == 3, offered
+    for words in offered:
+        assert words[0] == "teille-douce"
+        # `shlex.split` undoes the quoting, so a path with a space
+        # arrives as one word — which is the whole point of quoting it.
+        parsed = build_parser().parse_args(normalise(words[1:]))
+        assert parsed.command in ("run", "report")
 
 
 def test_the_default_directories_are_not_repeated_back():
