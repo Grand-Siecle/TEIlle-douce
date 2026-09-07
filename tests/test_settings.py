@@ -473,3 +473,44 @@ def test_the_manifest_covers_every_declared_setting():
     manifest = S.load(flags={}, env={}).as_manifest()
 
     assert set(manifest) >= S.config_keys()
+
+
+def test_le_schema_de_test_ne_bloque_pas_une_conversion():
+    """TDOUCE_TEI_RNG ne sert qu'a tests/test_e2e_pipeline.py, et
+    CLAUDE.md dit aux contributeurs de le poser. Declare dans READS, une
+    valeur perimee restee dans un profil de shell refusait TOUTE
+    conversion — sortie 3, « un fichier que ce run doit lire » — a propos
+    d'un fichier qu'aucun run n'ouvre."""
+    from pathlib import Path
+
+    from teille_douce.settings import Settings
+
+    reglages = Settings.load(flags={}, env={"TDOUCE_TEI_RNG": "/nulle/part.rng"},
+                             config_file=None)
+
+    assert reglages.tei_rng == Path("/nulle/part.rng")
+    assert "tei_rng" not in {nom for nom, _, _, _ in Settings.READS}
+    assert reglages.unreadable_inputs() == ()
+
+
+def test_un_chemin_illisible_nomme_la_couche_qui_l_a_fourni(tmp_path):
+    """Le message disait toujours `-i:`, meme quand la valeur venait de
+    TDOUCE_OCR_DIR ou du fichier de configuration : il nommait un drapeau
+    que l'operateur n'avait pas tape."""
+    from teille_douce.settings import Settings
+
+    par_env = Settings.load(flags={}, env={"TDOUCE_OCR_DIR": "/nulle/part"},
+                            config_file=None)
+    (_, _, _, ou_env), = par_env.unreadable_inputs()
+    assert ou_env == "TDOUCE_OCR_DIR"
+
+    fichier = tmp_path / "teille-douce.toml"
+    fichier.write_text('[paths]\ninput = "/nulle/part"\n', encoding="utf-8")
+    par_toml = Settings.load(flags={}, env={}, config_file=fichier)
+    (_, _, _, ou_toml), = par_toml.unreadable_inputs()
+    assert ou_toml.startswith("paths.input in ") and str(fichier) in ou_toml
+
+    par_drapeau = Settings.load(flags={"ocr_dir": "/nulle/part"}, env={},
+                                config_file=None)
+    (_, _, _, ou_drapeau), = par_drapeau.unreadable_inputs()
+    assert ou_drapeau == "-i"

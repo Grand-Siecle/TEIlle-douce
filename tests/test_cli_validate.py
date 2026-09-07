@@ -153,9 +153,16 @@ def test_a_missing_project_schema_names_the_command_that_builds_it(
         schemas.available(with_odd=True)
 
 
-def test_nothing_to_check_is_said_rather_than_reported_as_success(tmp_path):
-    with pytest.raises(SystemExit, match="nothing to check"):
+def test_nothing_to_check_is_said_rather_than_reported_as_success(tmp_path,
+                                                                  capsys):
+    with pytest.raises(SystemExit) as raised:
         command.execute(parse([str(tmp_path)]))
+
+    # 3: nothing ran. It exited 1, which in this CLI means "some files
+    # failed validation" — a wrapper read an empty directory as a corpus
+    # that does not conform.
+    assert raised.value.code == 3
+    assert "nothing to check" in capsys.readouterr().err
 
 
 # =============================================================================
@@ -223,8 +230,9 @@ def test_a_schema_that_is_not_installed_narrows_the_check_and_stops_a_demand(
     printed = capsys.readouterr().out
     assert "not applied" in printed and "[ok]" in printed
 
-    with pytest.raises(SystemExit):
+    with pytest.raises(SystemExit) as raised:
         command.execute(parse(["--odd", str(written)]))
+    assert raised.value.code == 3
 
 
 def test_an_installed_distribution_is_not_told_to_run_odd_build(
@@ -244,7 +252,8 @@ def test_an_installed_distribution_is_not_told_to_run_odd_build(
     assert "pip install -e" in str(raised.value)
 
 
-def test_nothing_to_check_names_the_directory_that_was_asked_about(tmp_path):
+def test_nothing_to_check_names_the_directory_that_was_asked_about(tmp_path,
+                                                                   capsys):
     """It always named the configured output directory, so
     `validate /srv/exports/batch-12` answered about `tei_output` — a path
     the user never mentioned, and one that may well hold files."""
@@ -254,7 +263,8 @@ def test_nothing_to_check_names_the_directory_that_was_asked_about(tmp_path):
     with pytest.raises(SystemExit) as raised:
         command.execute(parse([str(elsewhere)]))
 
-    assert "batch-12" in str(raised.value)
+    assert raised.value.code == 3
+    assert "batch-12" in capsys.readouterr().err
 
 
 def test_the_json_verdicts_say_which_schemas_were_applied(tmp_path, capsys,
@@ -279,3 +289,60 @@ def test_the_json_verdicts_say_which_schemas_were_applied(tmp_path, capsys,
     without_schematron = json.loads(capsys.readouterr().out)
     assert "teille-douce.rng" in without_schematron["applied"]
     assert "teille-douce.svrl.xsl" not in without_schematron["applied"]
+
+
+def test_a_schema_that_cannot_be_read_is_refused_before_any_worker(tmp_path,
+                                                                   capsys):
+    """A `Pool` whose initializer raises respawns its workers for ever.
+    `validate --schema tei_all.rgn out/` — one transposed letter in the
+    invocation the guide, schema.md and schema/README.md all teach —
+    burned two cores with nothing on screen until it was killed, and the
+    parallel path is the default now."""
+    written = tmp_path / "out"
+    written.mkdir()
+    for name in ("a.xml", "b.xml"):
+        (written / name).write_text(TEI, encoding="utf-8")
+
+    with pytest.raises(SystemExit) as raised:
+        command.execute(parse(["--no-odd", "--schema",
+                               str(tmp_path / "absent.rng"), str(written)]))
+    assert raised.value.code == 2
+    assert "is not a file" in capsys.readouterr().err
+
+    not_xml = tmp_path / "notes.md"
+    not_xml.write_text("# not a schema\n", encoding="utf-8")
+    with pytest.raises(SystemExit) as raised:
+        command.execute(parse(["--no-odd", "--schema", str(not_xml),
+                               str(written)]))
+    assert raised.value.code == 2
+    assert "cannot be parsed as XML" in capsys.readouterr().err
+
+    not_rng = tmp_path / "doc.xml"
+    not_rng.write_text(TEI, encoding="utf-8")
+    with pytest.raises(SystemExit) as raised:
+        command.execute(parse(["--no-odd", "--schema", str(not_rng),
+                               str(written)]))
+    assert raised.value.code == 2
+    assert "not a RELAX NG grammar" in capsys.readouterr().err
+
+
+def test_a_schema_that_will_not_compile_fails_the_run_rather_than_the_files(
+        tmp_path, capsys, monkeypatch):
+    """It parses as XML and is a grammar, so the parent lets it through
+    and every worker fails identically on it. That is one broken
+    argument, not a corpus that does not conform, so it is 3 and not the
+    1 that means "some files failed validation"."""
+    monkeypatch.setattr(command, "cpu_count", lambda: 1)
+    broken = tmp_path / "broken.rng"
+    broken.write_text('<grammar xmlns="http://relaxng.org/ns/structure/1.0">'
+                      '<start><ref name="nope"/></start></grammar>',
+                      encoding="utf-8")
+    written = tmp_path / "doc.xml"
+    written.write_text(TEI, encoding="utf-8")
+
+    with pytest.raises(SystemExit) as raised:
+        command.execute(parse(["--no-odd", "--schema", str(broken),
+                               str(written)]))
+
+    assert raised.value.code == 3
+    assert "could not be compiled" in capsys.readouterr().err

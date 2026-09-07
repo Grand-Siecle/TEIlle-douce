@@ -103,8 +103,15 @@ def _head(run, room):
     converted = sum(1 for status in run.documents.values() if status == "ok")
     said = (f"{converted} of {len(run.documents)} converted"
             if run.documents else "no document recorded")
-    return pad(f"  run {run.name}   {when}",
-               f"{said} · exit {run.exit_code}", room, keep="right")
+    return pad(f"  run {run.name}   {when}", f"{said} · {_ended(run)}", room,
+               keep="right")
+
+
+def _ended(run):
+    """How the run left. `exit None` is not an exit code — it is the
+    manifest that was never written, said as though it were one."""
+    return ("no exit code recorded" if run.exit_code is None
+            else f"exit {run.exit_code}")
 
 
 def render(selection, width=92, context=None):
@@ -131,8 +138,19 @@ def render(selection, width=92, context=None):
         # that says what the line is pointing at, and a budget short by
         # five cells lets the outer `clip` do it anyway.
         said = "  it is in the end-of-run summary and in "
-        lines.append(said + shorten_path(_log_name(run),
-                                         room - cells(said)))
+        # `room - cells(said)` goes negative below width 43, where
+        # `shorten_path` answers "" and the sentence was emitted whole,
+        # unclipped, naming nothing — losing the very `pipeline.log` the
+        # budget exists to keep. Below that width the path goes on its
+        # own line, where it has room for its leaf.
+        budget = room - cells(said)
+        if budget < 12:
+            lines.append(clip(said.rstrip(), room))
+            lines.append(clip("    " + shorten_path(_log_name(run), room - 4),
+                              room))
+        else:
+            lines.append(clip(said + shorten_path(_log_name(run), budget),
+                              room))
         return lines
 
     if not selection.incidents:
@@ -243,14 +261,27 @@ def render_runs(runs, width=92):
     for run in runs:
         started = run.started
         when = started.strftime("%Y-%m-%d %H:%M") if started else ""
-        converted = sum(1 for status in run.documents.values()
-                        if status == "ok")
-        said = f"{converted}/{len(run.documents)} converted"
+        if run.documents or not run.unreadable:
+            converted = sum(1 for status in run.documents.values()
+                            if status == "ok")
+            said = f"{converted}/{len(run.documents)} converted"
+        else:
+            # `run.json` is written at the end, so a run killed in the
+            # fourth hour has none. `0/0 converted` is a count with a
+            # false denominator that reads as "this run converted
+            # nothing" — a counter left at zero because something died
+            # must not look like a run that had nothing to do. The
+            # single-run view already said this; the listing did not.
+            said = "record never finished"
         if run.incidents:
             said += f" · {len(run.incidents)} incident"
             said += "s" if len(run.incidents) != 1 else ""
-        lines.append(pad(f"  {run.name}  {when}",
-                         f"{said} · exit {run.exit_code}", room, keep="left"))
+        # `keep="right"`: the aside is what the line is for — how the
+        # run ended — and the name it clips instead is one `--run`
+        # accepts by prefix. `keep="left"` cut "no exit code recorded"
+        # down to "no exit co…" on a 92-column terminal.
+        lines.append(pad(f"  {run.name}  {when}", f"{said} · {_ended(run)}",
+                         room, keep="right"))
     return lines
 
 
@@ -283,7 +314,10 @@ def _wrapped(text, room, indent):
             line = candidate
     if line.strip():
         out.append(line)
-    return out
+    # Clipped as well as wrapped: a word longer than the room — a path, a
+    # `teille_douce.odd.simplify` — cannot be wrapped and was emitted
+    # whole, so `--limits` overran any terminal under 29 columns.
+    return [clip(said, room) for said in out]
 
 
 def add_arguments(parser):
@@ -334,6 +368,11 @@ def _chosen(output_dir, stamp):
 
 def _as_json(selection, context=None):
     run = selection.run
+    # `--why` narrows the prose to one incident; the JSON handed back
+    # every one of them and carried no field naming the one asked for,
+    # so a wrapper reading `incidents[0]` got whichever came first.
+    chosen = ((selection.why,) if selection.why is not None
+              else selection.incidents)
     return {
         "run": run.name,
         "path": str(run.path),
@@ -353,7 +392,8 @@ def _as_json(selection, context=None):
                        "locator": item.locator, "kind": item.kind,
                        "count": item.count, "total": item.total,
                        "detail": item.detail}
-                      for item in selection.incidents],
+                      for item in chosen],
+        "why": selection.why.index if selection.why is not None else None,
         "context": list(context or ()),
     }
 
@@ -362,6 +402,7 @@ def execute(args):
     import json
     import sys
 
+    from teille_douce.cli.exits import MISCONFIGURED, USAGE, refuse
     from teille_douce.cli.run import console
     from teille_douce.report.store import read_run
     from teille_douce.settings import get_settings
@@ -386,16 +427,22 @@ def execute(args):
     path = _chosen(output_dir, args.run)
     if path is None:
         asked = f" matching {args.run!r}" if args.run else ""
-        raise SystemExit(
-            f"no run recorded in {output_dir}{asked} — a run writes its "
-            f"record under .teille-douce/runs/ as it finishes")
+        # 3, and said out loud: the comment above `--runs` claims this
+        # already, `user-guide.md` promises it, and `raise SystemExit(str)`
+        # was quietly exiting 1 — which in this CLI means "some volumes
+        # failed", said by a command that converted nothing.
+        refuse(f"no run recorded in {output_dir}{asked} — a run writes its "
+               f"record under .teille-douce/runs/ as it finishes",
+               MISCONFIGURED, "teille-douce report")
 
     run = read_run(path)
     selection = select(run, document=args.document, code=args.code,
                        block=args.block, why=args.why)
     if args.why and selection.why is None:
-        raise SystemExit(f"no incident {args.why!r} in {run.name} — "
-                         f"teille-douce report lists them by number")
+        # 2: a value typed on the command line that names nothing.
+        refuse(f"no incident {args.why!r} in {run.name} — "
+               f"teille-douce report lists them by number",
+               USAGE, "teille-douce report")
 
     context = (log_context(run, selection.why)
                if args.context and selection.why is not None else None)

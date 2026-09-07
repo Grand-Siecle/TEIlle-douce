@@ -100,6 +100,10 @@ teille_douce/
                              else, so setuptools' generated wrapper cannot
                              pull pandas and lxml in outside the Ctrl-C guard
   cli/
+    exits.py                 The exit codes, and `refuse`. `raise
+                             SystemExit("a message")` exits 1, which here
+                             means "some volumes failed" — so every
+                             refusal written that way blamed the corpus
     app.py                   Argument parser, subcommand dispatch, flags → Settings
     options.py               Every option of `run`, and the phase fold
     run.py                   Run orchestration, per-document isolation

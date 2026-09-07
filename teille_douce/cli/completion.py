@@ -61,9 +61,23 @@ _TAKE_PATHS = {"validate", "run"}
 
 
 def _clean(text):
-    """One line of help, safe to put inside a shell string."""
-    said = " ".join((text or "").split())
-    return said.replace("'", "").replace('"', "").replace("`", "")
+    """One line of help, safe to put inside a shell string.
+
+    Four things go: the quotes and the backtick, which would close the
+    string the description sits in and leave the rest of a file people
+    are told to source as code; the square brackets, because zsh's
+    `_arguments` ends an option description at the first unescaped `]`
+    and almost every flag here documents its default as `[OCR]`; and
+    argparse's `%%`, which is how a literal per cent is written in a
+    help string and is not how it is read.
+    """
+    said = " ".join((text or "").split()).replace("%%", "%")
+    for character in ("'", '"', "`"):
+        said = said.replace(character, "")
+    # Brackets become parentheses rather than disappearing: `[OCR]` says
+    # what the default is, and dropping the marks would leave the
+    # default looking like part of the sentence.
+    return said.replace("[", "(").replace("]", ")")
 
 
 def surface(parser=None):

@@ -38,6 +38,7 @@ from pathlib import Path
 
 from lxml import etree
 
+from teille_douce.cli.exits import MISCONFIGURED, refuse
 from teille_douce.paths import CHECKOUT, ROOT
 
 from .simplify import simplify
@@ -114,8 +115,12 @@ class Toolchain:
 
         missing = [path for path in self.required if not path.exists()]
         if missing:
-            raise SystemExit("incomplete toolchain: "
-                             + ", ".join(str(path) for path in missing))
+            # 3, not 1: nothing was compiled, and `odd check` answers 1
+            # for "the versioned schemas have drifted". A CI could not
+            # tell a real drift from a download that got throttled.
+            refuse("incomplete toolchain: "
+                   + ", ".join(str(path) for path in missing),
+                   MISCONFIGURED, "teille-douce odd")
 
     def _invalidate(self):
         """Remove the three things this class put there, and nothing else.
@@ -141,7 +146,7 @@ class Toolchain:
                 return answer.read()
         except (urllib.error.URLError, TimeoutError) as refused:
             if not shutil.which("gh"):
-                raise SystemExit(
+                refuse(
                     f"the Stylesheets could not be downloaded ({refused}).\n"
                     "GitHub throttles anonymous downloads in bursts: try again\n"
                     "later, or install gh (https://cli.github.com) and log in."
@@ -153,7 +158,7 @@ class Toolchain:
                 # The commonest case is a gh that is installed and not
                 # logged in: its explanation is on stderr, and silencing
                 # it would leave a call trace where the diagnosis goes.
-                raise SystemExit(
+                refuse(
                     "gh api failed for the Stylesheets:\n"
                     + (finished.stderr.decode("utf-8", "replace").strip()
                        or f"exit code {finished.returncode}")
@@ -169,7 +174,8 @@ class Toolchain:
                 tar.extractall(tmp, filter="data")
             roots = list(Path(tmp).iterdir())
             if len(roots) != 1:
-                raise SystemExit(f"unexpected Stylesheets archive: {roots}")
+                refuse(f"unexpected Stylesheets archive: {roots}",
+                       MISCONFIGURED, "teille-douce odd")
             shutil.move(str(roots[0]), str(self.stylesheets))
 
 
@@ -177,7 +183,7 @@ def _processor():
     try:
         from saxonche import PySaxonProcessor
     except ImportError:
-        raise SystemExit(
+        refuse(
             "saxonche is missing: pip install -r requirements-dev.txt\n"
             "(SaxonC-HE, the XSLT 2.0 engine; no JVM required)"
         )
@@ -197,7 +203,8 @@ def _transform(processor, sheet, source, target, **parameters):
     executable = xslt.compile_stylesheet(stylesheet_file=str(sheet))
     executable.transform_to_file(source_file=str(source), output_file=str(target))
     if not Path(target).exists():
-        raise SystemExit(f"{sheet.name} produced nothing for {source}")
+        refuse(f"{sheet.name} produced nothing for {source}",
+               MISCONFIGURED, "teille-douce odd")
 
 
 def compile_odd(destination, toolchain=None, odd=ODD, say=print):
@@ -247,7 +254,7 @@ def compile_odd(destination, toolchain=None, odd=ODD, say=print):
                 "{http://relaxng.org/ns/structure/1.0}notAllowed")))
             say(f"  {removed} patterns removed, {left} left")
             if left:
-                raise SystemExit(
+                refuse(
                     f"{left} <notAllowed/> survived the simplification:\n"
                     "libxml2 could not compile the schema. See "
                     "teille_douce/odd/simplify.py."

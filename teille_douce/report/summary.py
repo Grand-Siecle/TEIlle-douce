@@ -11,6 +11,8 @@ No markup, no colour: this same string goes to a terminal and to a log.
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
+from teille_douce import config
+
 from .counts import _grouped, render_count
 from .gate import gate_verdict
 from .record import Block, Code, RunRecord
@@ -351,12 +353,23 @@ def _next_steps(outcome):
             steps.append((f"teille-douce run {first} -vv",
                           "reproduce with full logging"))
     if outcome.record.losses(Block.INCIDENT) and outcome.report_path:
-        # The file, not a subcommand. `teille-douce report` does not
-        # exist yet, and a run that ends by telling the reader to type
-        # something that exits 2 with "unrecognized arguments" has spent
-        # its last line making itself less trustworthy.
-        steps.append((f"cat {outcome.report_path / 'incidents.jsonl'}",
-                      "every incident above, one JSON line each"))
+        # `teille-douce report` now exists, so this stopped being a
+        # `cat` of the JSONL. The run is named rather than left to
+        # "the last one": by the time anyone types this, a nightly may
+        # have finished after it. `-o` is carried whenever the output
+        # directory is not the default one, because `report` resolves
+        # it through the same four layers and would otherwise answer
+        # about a directory nobody in this run mentioned — a last line
+        # that exits 3 is a last line that teaches distrust.
+        # `Path(...)` on both sides: the default is declared as a string
+        # in config.py and arrives here as a Path, and `Path("tei_output")
+        # == "tei_output"` is False — which put `-o tei_output` on every
+        # default run, offering a flag nobody needs to type.
+        where = ("" if Path(outcome.output_dir) == Path(config.DEFAULT_OUTPUT_DIR)
+                 else f" -o {outcome.output_dir}")
+        steps.append((f"teille-douce report --run {outcome.report_path.name}"
+                      f"{where}",
+                      "every incident above, and the log around any of them"))
     return steps
 
 
@@ -536,10 +549,11 @@ def render_summary(outcome, width=92):
         lines.append("  next")
         for command, why in steps:
             # The command is never clipped, on the same reasoning as the
-            # headline and the verdict: `cat …/incidents.jsonl…` is not a
-            # shorter command, it is one that does not run. A terminal
-            # wraps it and it is still copy-pasteable. The reason beside
-            # it may be shortened, or move under it.
+            # headline and the verdict: `teille-douce report --run
+            # 20260903-1808…` is not a shorter command, it is one that
+            # does not run. A terminal wraps it and it is still
+            # copy-pasteable. The reason beside it may be shortened, or
+            # move under it.
             if cells(f"    {command}") + cells(why) + 2 <= room - _MARGIN:
                 lines.append(_columns(f"    {command}", why, room))
             else:

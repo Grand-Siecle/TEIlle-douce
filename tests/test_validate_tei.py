@@ -327,14 +327,19 @@ def test_une_regle_nonfatale_de_la_tei_est_un_avertissement():
     assert role == "nonfatal"
 
 
-def test_odd_sans_schema_compile_le_dit_au_lieu_de_planter(tmp_path, monkeypatch):
+def test_odd_sans_schema_compile_le_dit_au_lieu_de_planter(tmp_path, monkeypatch,
+                                                           capsys):
     """--odd sur un depot ou build_odd.py n'a jamais tourne doit nommer la
-    commande a lancer, pas echouer sur un fichier introuvable."""
+    commande a lancer, pas echouer sur un fichier introuvable.
+
+    Sortie 3 : rien n'a tourne. 1 signifie « des fichiers ont echoue a la
+    validation », ce que le message dementait."""
     import teille_douce.validation.schemas as vt
     monkeypatch.setattr(vt, "ODD_RNG", tmp_path / "absent.rng")
     with pytest.raises(SystemExit) as leve:
         main(["--odd", _ecrire(tmp_path, TEI_OK)])
-    assert "odd build" in str(leve.value)
+    assert leve.value.code == 3
+    assert "odd build" in capsys.readouterr().err
 
 
 def test_schematron_du_projet_signale_une_feuille_absente(tmp_path, monkeypatch):

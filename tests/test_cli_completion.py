@@ -135,6 +135,30 @@ def test_the_other_shells_accept_what_they_are_given(tmp_path, shell, check):
     assert finished.returncode == 0, finished.stderr
 
 
+def test_the_help_reaches_the_script_as_the_help_reads():
+    """Two escapes leak otherwise. argparse writes a literal per cent as
+    `%%`, so `--max-page-loss` described itself as `PCT%%` in a file
+    `--help` spells `PCT%`; and zsh's `_arguments` ends an option
+    description at the first unescaped `]`, which nearly every flag here
+    has, because it documents its default as `[OCR]`."""
+    known = command.surface()
+    run, = [item for item in known.commands if item.name == "run"]
+    by_flag = {option.flags[0]: option for option in run.options}
+
+    assert "%%" not in by_flag["--max-page-loss"].help
+    assert "PCT%" in by_flag["--max-page-loss"].help
+    assert "(OCR)" in by_flag["-i"].help and "[" not in by_flag["-i"].help
+
+    for shell in command.SHELLS:
+        script = command.WRITERS[shell](known)
+        assert "%%" not in script
+    # zsh delimits with `]`; the only ones left are the ones it writes.
+    zsh = command.zsh(known)
+    for line in zsh.splitlines():
+        if line.strip().startswith("'-") and "[" in line:
+            assert line.count("[") == line.count("]") == 1, line
+
+
 def test_a_quote_in_a_help_string_cannot_break_the_script(tmp_path):
     """Help text is prose written by whoever added the flag. One
     apostrophe would close a shell string and leave the rest of the file

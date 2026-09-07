@@ -24,6 +24,7 @@ from pathlib import Path
 
 from lxml import etree
 
+from teille_douce.cli.exits import MISCONFIGURED, USAGE, refuse
 from teille_douce.paths import CHECKOUT, ROOT
 
 NS_ALTO = "http://www.loc.gov/standards/alto/ns-v4#"
@@ -139,7 +140,8 @@ def build(source=DEFAULT_SOURCE, target=DEFAULT_TARGET, say=print):
     """Rebuild the fixture from the private corpus."""
     source, target = Path(source), Path(target)
     if not source.exists():
-        raise SystemExit(f"source corpus not found: {source}")
+        refuse(f"source corpus not found: {source}", MISCONFIGURED,
+               "teille-douce fixture")
     # EVERY page, before anything is removed. The whole-corpus guard was
     # first and the per-page one was inside the loop, so a single page
     # renamed in the private corpus rmtree'd the versioned fixture, wrote
@@ -149,8 +151,8 @@ def build(source=DEFAULT_SOURCE, target=DEFAULT_TARGET, say=print):
     missing = [relative for relative, _, _ in PAGES
                if not (source / relative).exists()]
     if missing:
-        raise SystemExit("source pages missing, nothing was removed:\n  "
-                         + "\n  ".join(missing))
+        refuse("source pages missing, nothing was removed:\n  "
+               + "\n  ".join(missing), MISCONFIGURED, "teille-douce fixture")
     if target.exists():
         shutil.rmtree(target)
     target.mkdir(parents=True, exist_ok=True)
@@ -183,11 +185,11 @@ def rebuild_golden(say=print):
     import tempfile
 
     if CHECKOUT is None:
-        raise SystemExit(
-            "teille-douce fixture needs the source checkout: the fixture, "
-            "the golden file and the end-to-end harness that produces it "
-            "are versioned beside the sources and an installed "
-            "distribution does not carry them.")
+        refuse("teille-douce fixture needs the source checkout: the "
+               "fixture, the golden file and the end-to-end harness that "
+               "produces it are versioned beside the sources, and an "
+               "installed distribution does not carry them.",
+               MISCONFIGURED, "teille-douce fixture")
     sys.path.insert(0, str(ROOT / "tests"))
     from test_e2e_pipeline import GOLDEN, MODE_COURT, lancer_pipeline, normaliser
 
@@ -228,10 +230,11 @@ def execute(args):
     # golden and never build the fixture, saying nothing about the action
     # it had discarded.
     if args.golden and args.action == "build":
-        raise SystemExit(
-            "fixture build and --golden ask for different things: "
-            "`fixture build` rebuilds the fixture, `fixture golden` "
-            "rebuilds the reference output")
+        # 2: two flags that contradict each other is what the exit-code
+        # table calls a usage error, and `raise SystemExit(str)` exits 1.
+        refuse("fixture build and --golden ask for different things: "
+               "`fixture build` rebuilds the fixture, `fixture golden` "
+               "rebuilds the reference output", USAGE, "teille-douce fixture")
     if args.golden or args.action == "golden":
         rebuild_golden()
         return 0

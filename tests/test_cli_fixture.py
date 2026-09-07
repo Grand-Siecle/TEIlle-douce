@@ -120,16 +120,19 @@ def test_build_writes_where_it_is_told_and_nowhere_else(tmp_path):
     assert _fingerprint(VERSIONED) == before
 
 
-def test_a_missing_corpus_is_said_before_anything_is_removed(tmp_path):
+def test_a_missing_corpus_is_said_before_anything_is_removed(tmp_path, capsys):
     """The refusal has to come first: the old order was `rmtree` and then
     the check, on the one path where the check was the point."""
     target = tmp_path / "out"
     target.mkdir()
     (target / "keep.xml").write_text("<alto/>", encoding="utf-8")
 
-    with pytest.raises(SystemExit, match="source corpus not found"):
+    with pytest.raises(SystemExit) as raised:
         fixture.build(source=tmp_path / "absent", target=target,
                       say=lambda *_: None)
+
+    assert raised.value.code == 3
+    assert "source corpus not found" in capsys.readouterr().err
 
     assert (target / "keep.xml").exists()
 
@@ -145,7 +148,7 @@ def test_the_subcommand_is_reachable_and_defaults_to_build():
     assert args.golden is False
 
 
-def test_the_fixture_is_not_removed_when_a_source_page_has_moved(tmp_path):
+def test_the_fixture_is_not_removed_when_a_source_page_has_moved(tmp_path, capsys):
     """The whole-corpus guard was first and the per-page one was inside
     the loop, so one renamed page in the private corpus rmtree'd the
     versioned fixture, wrote the pages before it, and then raised — the
@@ -160,16 +163,24 @@ def test_the_fixture_is_not_removed_when_a_source_page_has_moved(tmp_path):
     target.mkdir()
     (target / "keep.xml").write_text("<alto/>", encoding="utf-8")
 
-    with pytest.raises(SystemExit, match="nothing was removed"):
+    with pytest.raises(SystemExit) as raised:
         fixture.build(source=source, target=target, say=lambda *_: None)
+
+    assert raised.value.code == 3
+    assert "nothing was removed" in capsys.readouterr().err
 
     assert (target / "keep.xml").exists()
 
 
-def test_asking_for_the_fixture_and_the_golden_at_once_is_refused():
+def test_asking_for_the_fixture_and_the_golden_at_once_is_refused(capsys):
     from teille_douce.cli import app
 
     args = app.build_parser().parse_args(["fixture", "build", "--golden"])
 
-    with pytest.raises(SystemExit, match="different things"):
+    with pytest.raises(SystemExit) as raised:
         fixture.execute(args)
+
+    # 2: the exit-code table calls two flags that contradict each other a
+    # usage error, and `raise SystemExit(str)` exits 1.
+    assert raised.value.code == 2
+    assert "different things" in capsys.readouterr().err

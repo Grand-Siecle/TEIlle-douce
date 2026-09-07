@@ -76,12 +76,17 @@ def render(preflight, width=92, strict=False):
                           room))
 
     for setting, path, reason, where in preflight.unusable:
-        lines.append(_row("unusable", f"{where.split(' / ')[0]} {path}",
-                          reason, room))
+        # `where` is the layer that supplied the value, named as the
+        # operator set it — `TDOUCE_OCR_DIR`, or `paths.input in
+        # ./teille-douce.toml`, and only `-i` when it really was a flag.
+        lines.append(_row("unusable", f"{where} {path}", reason, room))
 
     if preflight.attention:
         lines.append("")
-        lines.append("  needs attention")
+        # Clipped like everything else. It was the one literal in this
+        # renderer that skipped it, so the block heading was the only
+        # line that overran a very narrow terminal.
+        lines.append(clip("  needs attention", room))
         # One column, measured off the widest subject rather than a
         # literal. `{subject:<14}` pads to fourteen and stops, so
         # `LIV0326_v1_reconciled` ran straight into its own detail — the

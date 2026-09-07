@@ -23,12 +23,49 @@ from pathlib import Path
 
 from lxml import etree
 
+from teille_douce.cli.exits import MISCONFIGURED, USAGE, refuse
 from teille_douce.settings import get_settings
 from teille_douce.validation import Missing, available, checks
 
 # Each worker process compiles the schemas once and for all: compiling
 # costs a tenth of a second, and doing it per file would be absurd.
 _CONTEXT = {}
+
+_RELAXNG_NS = "http://relaxng.org/ns/structure/1.0"
+
+
+def _readable_schema(path):
+    """`--schema` names a RELAX NG grammar. Checked before any worker.
+
+    A schema that cannot be read raises inside `_prepare_worker`, and a
+    `Pool` whose initializer raises respawns its workers for ever:
+    `validate --schema tei_all.rgn out/` — one transposed letter in the
+    invocation the guide, schema.md and schema/README.md all teach —
+    burned two cores with nothing on screen until it was killed. The
+    parallel path is the default now (`-j auto`), so the hang is the
+    ordinary case rather than the unlucky one.
+
+    The root element, not the schema: compiling it here would be the
+    second compile this module exists to have removed.
+    """
+    found = Path(path)
+    if not found.is_file():
+        refuse(f"--schema: {found} is not a file", USAGE,
+               "teille-douce validate")
+    try:
+        for _, element in etree.iterparse(str(found), events=("start",)):
+            root = etree.QName(element).localname
+            namespace = etree.QName(element).namespace
+            break
+        else:
+            raise etree.XMLSyntaxError("empty document", None, 0, 0)
+    except (etree.XMLSyntaxError, OSError) as reason:
+        refuse(f"--schema: {found} cannot be parsed as XML ({reason})",
+               USAGE, "teille-douce validate")
+    if namespace != _RELAXNG_NS or root not in ("grammar", "element"):
+        refuse(f"--schema: {found} is not a RELAX NG grammar "
+               f"(its root is <{root}>) — it wants a tei_all.rng",
+               USAGE, "teille-douce validate")
 
 
 def _prepare_worker(schema, with_odd):
@@ -40,8 +77,18 @@ def _prepare_worker(schema, with_odd):
     process. The parent's four objects were never read. On a one-megabyte
     tei_all.rng and a Schematron sheet through Saxon, that was not free.
     """
-    _CONTEXT["relaxng"] = (etree.RelaxNG(etree.parse(str(schema)))
-                           if schema else None)
+    # Nothing in here may raise. The parent has already checked the
+    # shape of `--schema`, and this is the second lock on the same door:
+    # a `Pool` initializer that raises respawns its workers for ever,
+    # which is a hang with no output rather than an error.
+    _CONTEXT["unusable"] = None
+    try:
+        _CONTEXT["relaxng"] = (etree.RelaxNG(etree.parse(str(schema)))
+                               if schema else None)
+    except Exception as reason:
+        _CONTEXT["relaxng"] = None
+        _CONTEXT["unusable"] = (f"--schema could not be compiled: "
+                                f"{type(reason).__name__}: {reason}")
     _CONTEXT["odd_rng"] = None
     _CONTEXT["schematron"] = None
     if with_odd:
@@ -64,6 +111,10 @@ def _check(path):
     DOCTYPE, too deep a nesting — and letting those through stopped
     everything at the first offending file.
     """
+    if _CONTEXT.get("unusable"):
+        # Said once per file rather than raised: the batch is what the
+        # caller asked about, and every file is equally unchecked.
+        return path, [_CONTEXT["unusable"]], []
     try:
         errors, warnings = checks.validate(
             path,
@@ -170,6 +221,12 @@ def add_arguments(parser):
 
 
 def execute(args):
+    # First, before anything is printed: a value typed on the command
+    # line that this program cannot use is a usage error, and a usage
+    # error under a note about what was not checked reads as a remark.
+    if args.schema:
+        _readable_schema(args.schema)
+
     asked = args.files or [get_settings().output_dir]
     files = expand(asked, get_settings().output_dir)
     if not files:
@@ -177,15 +234,16 @@ def execute(args):
         # configured output directory, so `validate /srv/exports/batch-12`
         # answered about `tei_output` — a path they never mentioned and
         # that may well hold files.
-        raise SystemExit("nothing to check: no .xml file in "
-                         + ", ".join(str(path) for path in asked))
+        refuse("nothing to check: no .xml file in "
+               + ", ".join(str(path) for path in asked),
+               MISCONFIGURED, "teille-douce validate")
 
     demanded, with_odd = _odd(args.odd)
     try:
         schematron, note = available(with_odd)
     except Missing as absent:
         if demanded:
-            raise SystemExit(str(absent))
+            refuse(str(absent), MISCONFIGURED, "teille-douce validate")
         schematron, with_odd = False, False
         note = f"note: the project schema was not applied — {absent}"
     if note and not args.json:
@@ -232,6 +290,14 @@ def execute(args):
         print()
     else:
         _print(verdicts, args.max_errors)
+
+    # A schema that parses as XML and still will not compile reaches
+    # every worker and fails every file identically. That is one broken
+    # argument, not a corpus that does not conform, so it is 3.
+    unusable = {errors[0] for _, errors, _ in verdicts
+                if errors and errors[0].startswith("--schema could not")}
+    if len(unusable) == 1 and all(errors for _, errors, _ in verdicts):
+        refuse(unusable.pop(), MISCONFIGURED, "teille-douce validate")
 
     return 1 if any(errors for _, errors, _ in verdicts) else 0
 

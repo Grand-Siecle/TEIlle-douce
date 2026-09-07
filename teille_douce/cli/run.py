@@ -1439,7 +1439,9 @@ def execute(args):
     unreadable = settings.unreadable_inputs()
     if unreadable:
         for name, path, reason, where in unreadable:
-            console.print(f"[red]{escape(where.split(' / ')[0])}: "
+            # `where` is now the layer that supplied the value, not the
+            # first of the three names a setting answers to.
+            console.print(f"[red]{escape(where)}: "
                           f"{escape(str(path))} {reason}.[/red]")
         _refuse(settings=settings)
 

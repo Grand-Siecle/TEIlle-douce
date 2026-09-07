@@ -6,11 +6,15 @@ out. For how the pipeline works internally, see
 
 - [Installation](#installation)
 - [Preparing your input](#preparing-your-input)
+- [The commands](#the-commands)
+- [Before you run: `teille-douce check`](#before-you-run-teille-douce-check)
 - [Running the pipeline](#running-the-pipeline)
 - [Configuration](#configuration)
 - [The annotation services](#the-annotation-services)
 - [Reading the output](#reading-the-output)
 - [Validating the output](#validating-the-output)
+- [Going back to a run: `teille-douce report`](#going-back-to-a-run-teille-douce-report)
+- [Shell completion](#shell-completion)
 - [Troubleshooting](#troubleshooting)
 
 ---
@@ -824,8 +828,17 @@ flag the program no longer has is worse than none.
 
 ## Troubleshooting
 
-**`Directory not found: OCR`** — `OCR/` does not exist. Create it, or point
-`TDOUCE_OCR_DIR` elsewhere.
+**`-i: OCR is not there.`** — the input directory does not exist. Create it,
+or point `-i` / `TDOUCE_OCR_DIR` / `paths.input` elsewhere. The prefix names
+the layer the value actually came from, so `TDOUCE_OCR_DIR: /srv/ocr is not
+there.` means the variable, not the flag; `teille-douce info ocr_dir` prints
+all four layers.
+
+Every path this run will read is checked before anything is opened — the two
+catalogues included, since a mistyped `--metadata` used to convert
+twenty-seven volumes with placeholder headers and exit 0. A catalogue that is
+simply absent at its default location is not an error: the guide says both are
+optional, and the header says so with explicit placeholders.
 
 ### Exit codes
 

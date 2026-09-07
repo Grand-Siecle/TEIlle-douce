@@ -369,12 +369,29 @@ def read_run(path):
         except OSError as reason:
             unreadable.append(("incidents.jsonl", str(reason)))
 
+    # Shape-checked, field by field. `failed_last_time` says why in as
+    # many words — json.loads is happy with `null`, `[]` or a bare
+    # string — and the reader half did not inherit the check, so
+    # `{"argv": null}` came out of a function whose docstring promises
+    # never to raise as a TypeError, and `{"documents": []}` as an
+    # AttributeError two frames further on, inside the renderer.
+    def _of(name, kind, empty):
+        value = manifest.get(name)
+        if value is None:
+            return empty
+        if not isinstance(value, kind):
+            unreadable.append((f"run.json:{name}",
+                               f"is a {type(value).__name__}, not a "
+                               f"{kind.__name__}"))
+            return empty
+        return value
+
     log = path / "pipeline.log"
     return PastRun(
         path=path,
-        argv=tuple(manifest.get("argv", ())),
-        settings=manifest.get("settings", {}),
-        documents=manifest.get("documents", {}),
+        argv=tuple(_of("argv", list, ())),
+        settings=_of("settings", dict, {}),
+        documents=_of("documents", dict, {}),
         exit_code=manifest.get("exit_code"),
         incidents=tuple(incidents),
         log=log if log.is_file() else None,

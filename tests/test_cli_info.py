@@ -156,21 +156,81 @@ def test_every_line_fits_the_terminal_it_was_given(width):
         assert cells(line) <= room, f"{cells(line)} > {room}: {line!r}"
 
 
+def _row_for(lines, name):
+    row, = [line for line in lines
+            if line[2:].startswith(name + " ") or line[2:] == name]
+    return row
+
+
+def _starts_at(row, name):
+    """Where the value begins, in cells from the left margin."""
+    gap = row[2:][len(name):]
+    return cells(name) + cells(gap) - cells(gap.lstrip())
+
+
 @pytest.mark.parametrize("width", [56, 72, 92, 120])
 def test_a_name_never_runs_into_its_own_value(width):
-    """`{name:<24}` pads to twenty-four and stops, which is how the
-    summary, the panel and `check` each lost a column once already.
-    `pyhellen_max_consecutive_failures` is thirty-three, and
-    "YALTAi - You Actually Look Twice At it" thirty-seven."""
+    """`pyhellen_max_consecutive_failures` is thirty-three characters,
+    longer than any column a sane layout gives it, so the gap after a
+    name is `max(2, column - name)` and not `column - name`: the second
+    is empty for that one setting, and the line reads
+    `pyhellen_max_consecutive_failures10`.
+
+    Written twice before it held. "Some run of two spaces exists in the
+    line" is satisfied by `pad`'s right-aligned origin whatever happens
+    at the left edge; "the values all start in one column" is false by
+    design, because the column is capped at a third of the line and that
+    name overruns the cap. The floor is what there is to guard.
+    """
     report = gathered()
-    for line in command.render(report, width=width):
-        stripped = line.strip()
-        if not stripped or stripped.startswith(("config file", "versions")):
-            continue
-        # Two spaces at least between a name and what follows it.
-        head = stripped.split("  ")[0]
-        assert head != stripped or "…" in stripped, (
-            f"nothing separates the name from its value: {line!r}")
+    lines = command.render(report, width=width)
+
+    for item in report.settings:
+        row = _row_for(lines, item.name)
+        after = row[2:][len(item.name):]
+        assert after.startswith("  "), (
+            f"nothing separates {item.name} from its value: {row!r}")
+        assert item.value in row or "…" in row, (
+            f"the value of {item.name} is not on its row: {row!r}")
+
+
+@pytest.mark.parametrize("width", [56, 72, 92, 120])
+def test_every_name_the_cap_has_room_for_shares_one_column(width):
+    """The other half of measuring: a name is ragged only when it
+    overruns the cap the layout puts on the column — a third of the
+    line, so that one thirty-three-character setting cannot push every
+    value on the screen to the right. A literal column of 24 leaves
+    `modernize_similarity_min` starting at 26 with the rest at 24, and
+    it is nowhere near the cap.
+    """
+    report = gathered()
+    room = min(width, command.MAX_WIDTH) - 2
+    cap = max(20, room // 3)
+    lines = command.render(report, width=width)
+
+    starts = {item.name: _starts_at(_row_for(lines, item.name), item.name)
+              for item in report.settings}
+    column = min(starts.values())
+
+    ragged = {name: start for name, start in starts.items()
+              if start != column and cells(name) + 2 <= cap}
+    assert not ragged, (
+        f"names that fit the {cap}-cell cap start their values "
+        f"elsewhere: {ragged}")
+
+
+def test_one_very_long_name_cannot_eat_the_line(width=92):
+    """The column is capped at a third of the room. Unmeasured it would
+    be thirty-five wide because of one setting, and every value on the
+    screen would start there."""
+    report = gathered()
+    room = min(width, command.MAX_WIDTH) - 2
+
+    starts = {_starts_at(_row_for(command.render(report, width=width),
+                                  item.name), item.name)
+              for item in report.settings if cells(item.name) <= 24}
+
+    assert max(starts) <= room // 3 + 2
 
 
 def test_the_versions_written_into_appinfo_are_reported():

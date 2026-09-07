@@ -488,12 +488,17 @@ class Settings:
     # An absent catalogue is only worth refusing when the operator NAMED
     # it — a mistyped `--metadata` is a usage error, a missing default is
     # the documented behaviour — so the caller weighs `origin` too.
+    # `tei_rng` is NOT in here. It is read by one thing —
+    # tests/test_e2e_pipeline.py, to point the schema tests at a
+    # tei_all.rng — and CLAUDE.md tells contributors to set it, so a
+    # stale value left in a shell profile refused every conversion with
+    # "an input this run must read is not readable", over a file no run
+    # has ever opened.
     READS = (("ocr_dir", "dir", "-i / TDOUCE_OCR_DIR / paths.input", True),
              ("metadata_csv", "file",
               "--metadata / TDOUCE_METADATA_CSV / paths.metadata", False),
              ("persons_csv", "file",
-              "--persons / TDOUCE_PERSONS_CSV / paths.persons", False),
-             ("tei_rng", "file", "TDOUCE_TEI_RNG", False))
+              "--persons / TDOUCE_PERSONS_CSV / paths.persons", False))
 
     def unreadable_inputs(self):
         """Every path this run will READ that it cannot.
@@ -534,8 +539,24 @@ class Settings:
                 reason = "cannot be read"
             else:
                 continue
-            answers.append((name, path, reason, where))
+            # The layer that actually supplied it, not the first of the
+            # three names in `where`: the message always said `-i:` even
+            # when the value came from TDOUCE_OCR_DIR or the config file,
+            # so it named a flag the operator had not typed.
+            answers.append((name, path, reason, self._named_by(name, where)))
         return tuple(answers)
+
+    def _named_by(self, name, where):
+        """How the operator set this path, as they would recognise it."""
+        origin = self.origin(name)
+        if origin.startswith("env:"):
+            return origin[4:]
+        if origin.startswith("config:"):
+            key = next((row.key for row in _SETTINGS if row.name == name), name)
+            return f"{key} in {origin[7:]}"
+        # A flag, or a default nobody overrode: the flag is what a
+        # reader would type to change it either way.
+        return where.split(" / ")[0].strip()
 
     @staticmethod
     def config_keys():

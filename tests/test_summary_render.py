@@ -184,20 +184,43 @@ def test_a_clean_run_is_not_told_to_retry_anything():
     assert "--retry-failed" not in rendered(outcome())
 
 
-def test_an_incident_points_at_the_index_that_holds_it():
-    """At the file, not at `teille-douce report --block incident`: that
-    subcommand does not exist, and the run spent its last line telling
-    the reader to type something that exits 2 with "unrecognized
-    arguments"."""
+def test_an_incident_points_at_the_command_that_reads_the_index():
+    """It used to point at the file itself, because `teille-douce
+    report` did not exist and a run whose last line exits 2 with
+    "unrecognized arguments" has spent it making itself less
+    trustworthy. It exists now — and it names the run rather than
+    trusting "the last one", since a nightly may finish between this
+    line being printed and somebody typing it."""
     record = RunRecord()
     record.add(Loss(Code.PHASE_LOST, "D1", "enrich", Locator.document("D1"),
                     count=0, total=1402, detail="PyHellen down"))
 
     shown = rendered(outcome(record=record,
-                             report_path=Path("out/.teille-douce/runs/r1")))
+                             report_path=Path("tei_output/.teille-douce/runs/r1")))
 
-    assert "report --block" not in shown
-    assert "out/.teille-douce/runs/r1/incidents.jsonl" in shown
+    assert "teille-douce report --run r1" in shown
+    assert "incidents.jsonl" not in shown
+
+
+def test_the_command_offered_carries_the_output_directory_it_needs():
+    """`report` resolves the output directory through the same four
+    layers, so a run written with `-o tei_test` must not end by offering
+    a command that answers about `tei_output` — exit 3, and a last line
+    that teaches distrust. The default is left off: it is the one value
+    `report` will reach on its own."""
+    record = RunRecord()
+    record.add(Loss(Code.PHASE_LOST, "D1", "enrich", Locator.document("D1"),
+                    count=0, total=1402, detail="PyHellen down"))
+
+    elsewhere = rendered(outcome(
+        record=record, output_dir=Path("tei_test"),
+        report_path=Path("tei_test/.teille-douce/runs/r1")))
+    at_home = rendered(outcome(
+        record=record, output_dir=Path("tei_output"),
+        report_path=Path("tei_output/.teille-douce/runs/r1")))
+
+    assert "--run r1 -o tei_test" in elsewhere
+    assert " -o " not in at_home.split("next")[1]
 
 
 def test_no_index_is_offered_when_no_record_was_kept():

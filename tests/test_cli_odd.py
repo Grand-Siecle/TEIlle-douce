@@ -62,11 +62,17 @@ def test_the_toolchain_directory_can_be_moved(tmp_path):
     assert all(path.is_relative_to(tmp_path) for path in elsewhere.required)
 
 
-def test_a_missing_odd_is_named_rather_than_traced(monkeypatch, tmp_path):
+def test_a_missing_odd_is_named_rather_than_traced(monkeypatch, tmp_path,
+                                                   capsys):
     monkeypatch.setattr(odd, "ODD", tmp_path / "absent.odd")
 
-    with pytest.raises(SystemExit, match="ODD not found"):
+    with pytest.raises(SystemExit) as raised:
         odd.execute(app.build_parser().parse_args(["odd", "check"]))
+
+    # 3 and not 1: nothing was compiled, and `odd check` answers 1 for
+    # "the versioned schemas have drifted".
+    assert raised.value.code == 3
+    assert "ODD not found" in capsys.readouterr().err
 
 
 def test_refresh_removes_the_toolchain_and_not_what_shares_its_directory(tmp_path):
@@ -88,7 +94,7 @@ def test_refresh_removes_the_toolchain_and_not_what_shares_its_directory(tmp_pat
 
 
 def test_an_installed_distribution_is_not_told_to_build_an_odd_it_has_not_got(
-        monkeypatch, tmp_path):
+        monkeypatch, tmp_path, capsys):
     """The wheel carries `teille_douce/` and nothing else. `ODD not found:
     /…/site-packages/schema/teille-douce.odd` sends someone looking for a
     file that was never installed, and `odd build` cannot produce it."""
@@ -98,5 +104,7 @@ def test_an_installed_distribution_is_not_told_to_build_an_odd_it_has_not_got(
     with pytest.raises(SystemExit) as raised:
         odd.execute(app.build_parser().parse_args(["odd", "build"]))
 
-    assert "checkout" in str(raised.value)
-    assert "ODD not found" not in str(raised.value)
+    assert raised.value.code == 3
+    said = capsys.readouterr().err
+    assert "checkout" in said
+    assert "ODD not found" not in said

@@ -272,13 +272,18 @@ def test_a_clean_run_exits_zero(tmp_path, capsys):
     assert "no incident" in capsys.readouterr().out
 
 
-def test_no_record_at_all_says_where_it_would_have_been(tmp_path):
+def test_no_record_at_all_says_where_it_would_have_been(tmp_path, capsys):
     from teille_douce.settings import use_settings
 
     with use_settings(output_dir=tmp_path):
         with pytest.raises(SystemExit) as raised:
             command.execute(parse([]))
-    assert ".teille-douce" in str(raised.value)
+
+    # 3, which the guide promises and the comment beside `--runs`
+    # claims. `raise SystemExit(str)` exits 1 — "some volumes failed",
+    # from a command that converted nothing.
+    assert raised.value.code == 3
+    assert ".teille-douce" in capsys.readouterr().err
 
 
 def test_the_json_carries_the_incidents_and_what_could_not_be_read(tmp_path):
@@ -295,15 +300,21 @@ def test_the_json_carries_the_incidents_and_what_could_not_be_read(tmp_path):
 # The rendering, at every width
 # =============================================================================
 
-@pytest.mark.parametrize("width", [56, 72, 92, 120, 200])
+@pytest.mark.parametrize("width", [20, 30, 42, 56, 72, 92, 120, 200])
 def test_every_line_fits_the_terminal_it_was_given(tmp_path, width):
+    """Against the renderer's own room — `min(width, MAX_WIDTH) - 2` —
+    and starting at 20, not 56. Comparing to `min(width, MAX_WIDTH)` was
+    two cells looser than the contract, and starting above 42 skipped
+    the widths where the log-path budget goes negative."""
     where = a_run(tmp_path, log="12:00 LIV0044_reconciled: enrich failed\n")
     run = read_run(where)
-    room = min(width, command.MAX_WIDTH)
+    room = min(width, command.MAX_WIDTH) - 2
     rendered = (command.render(command.select(run), width=width)
                 + command.render(command.select(run, why="I2"), width=width,
                                  context=command.log_context(run,
                                                              run.incidents[1]))
+                + command.render(command.select(run, block="source"),
+                                 width=width)
                 + command.render_runs([run], width=width)
                 + command.render_limits(width=width))
 
@@ -311,18 +322,131 @@ def test_every_line_fits_the_terminal_it_was_given(tmp_path, width):
         assert cells(line) <= room, f"{cells(line)} > {room}: {line!r}"
 
 
-@pytest.mark.parametrize("width", [56, 72, 92])
-def test_a_document_never_runs_into_its_own_code(tmp_path, width):
-    """`LIV0326_v1_reconciled` is twenty-one and `container_unanchored`
-    twenty; a literal column loses whichever is longer."""
-    where = a_run(tmp_path)
-    lines = command.render(command.select(read_run(where)), width=width)
+def _rows(run, lines):
+    """The incident rows, found by the marker each one starts with."""
+    return [line for line in lines
+            if any(line.lstrip().startswith(item.index + " ")
+                   for item in run.incidents)]
 
-    for line in lines:
-        if "LIV0326_v1_reconciled" not in line:
-            continue
-        after = line.split("LIV0326_v1_reconciled", 1)[1]
-        assert after.startswith("  ") or after.startswith("…"), line
+
+@pytest.mark.parametrize("width", [92, 120, 200])
+def test_a_document_is_shown_whole_when_the_line_has_room_for_it(tmp_path,
+                                                                 width):
+    """The column is measured off the widest document, not written as a
+    literal: `LIV0326_v1_reconciled` is twenty-one and
+    `container_unanchored` twenty, and `{document:<14}` clips whichever
+    is longer where there was room for both.
+
+    Written first as "what follows the name starts with two spaces",
+    which the mutation it condemns satisfied by CLIPPING the name — no
+    line then contained it, none was examined, and the test passed
+    having asserted nothing.
+    """
+    where = a_run(tmp_path)
+    run = read_run(where)
+
+    rows = _rows(run, command.render(command.select(run), width=width))
+
+    assert len(rows) == len(run.incidents)
+    for row, item in zip(rows, run.incidents):
+        assert item.document in row, f"the name was clipped: {row!r}"
+
+
+@pytest.mark.parametrize("width", [30, 44, 56, 72, 92])
+def test_a_document_never_runs_into_its_own_code(tmp_path, width):
+    """However narrow the terminal, the two are two fields."""
+    where = a_run(tmp_path)
+    run = read_run(where)
+
+    rows = _rows(run, command.render(command.select(run), width=width))
+
+    assert len(rows) == len(run.incidents)
+    for row, item in zip(rows, run.incidents):
+        if item.code not in row:
+            continue            # the code itself did not fit; nothing to space
+        before = row.split(item.code, 1)[0]
+        assert before.endswith("  "), (
+            f"nothing separates the document from its code: {row!r}")
+        shown = before.split(item.index, 1)[1].strip()
+        assert shown, f"the document is not on its row at all: {row!r}"
+        assert item.document.startswith(shown.rstrip("… ")), (
+            f"{shown!r} is not the start of {item.document!r}")
+
+
+def test_a_run_whose_manifest_was_never_written_is_not_listed_as_empty(
+        tmp_path):
+    """`run.json` is written at the end, so a run killed in the fourth
+    hour has none. `0/0 converted · exit None` is a count with a false
+    denominator that reads as "this run converted nothing" — and the
+    single-run view of the same directory says `no document recorded`
+    and prints an `unreadable` line, so the two disagreed."""
+    a_run(tmp_path, stamp="20260904-090000-0031415", manifest=False)
+    from teille_douce.report.store import RunStore
+
+    listed, = command.render_runs(
+        [read_run(path) for path in RunStore.kept(tmp_path)], width=120)[2:]
+
+    assert "0/0" not in listed
+    assert "record never finished" in listed
+    # `exit None` is the manifest that was never written, printed as
+    # though it were an exit code.
+    assert "exit None" not in listed
+    assert "no exit code recorded" in listed
+
+
+def test_the_json_answers_about_the_incident_that_was_asked_for(tmp_path):
+    """`--why I2` narrows the prose to one incident and left the JSON
+    carrying all three, with no field naming the one asked for — so a
+    wrapper reading `incidents[0]` got whichever came first."""
+    where = a_run(tmp_path)
+
+    document = command._as_json(selected(where, why="I2"))
+
+    assert [item["index"] for item in document["incidents"]] == ["I2"]
+    assert document["why"] == "I2"
+    assert command._as_json(selected(where))["why"] is None
+
+
+@pytest.mark.parametrize("manifest", [
+    {"argv": None, "documents": None, "settings": None},
+    {"argv": "teille-douce run", "documents": [], "settings": 3},
+    ["not", "a", "manifest"],
+])
+def test_a_manifest_of_the_wrong_shape_is_reported_not_raised(tmp_path,
+                                                              manifest):
+    """`read_run` promises never to raise on a damaged record, and
+    `failed_last_time` says why the check is needed in as many words:
+    json.loads is happy with `null`, `[]` or a bare string. The reader
+    half did not inherit it, so `{"argv": null}` came out as a TypeError
+    and `{"documents": []}` as an AttributeError inside the renderer."""
+    where = a_run(tmp_path, manifest=False)
+    (where / "run.json").write_text(json.dumps(manifest), encoding="utf-8")
+
+    run = read_run(where)
+
+    assert len(run.incidents) == 3, "the index survives a broken manifest"
+    assert command.render(command.select(run))       # and both views render
+    assert command.render_runs([run])
+
+
+def test_a_field_of_the_wrong_type_is_named_rather_than_ignored(tmp_path):
+    """A null field is a field the manifest does not carry; a string
+    where a list belongs is a record that is wrong, and the difference
+    is worth printing."""
+    where = a_run(tmp_path, manifest=False)
+    (where / "run.json").write_text(
+        json.dumps({"argv": "teille-douce run", "documents": []}),
+        encoding="utf-8")
+
+    named = dict(read_run(where).unreadable)
+
+    assert "run.json:argv" in named and "str" in named["run.json:argv"]
+    assert "run.json:documents" in named
+
+    quiet = a_run(tmp_path, stamp="20260905-090000-0031415", manifest=False)
+    (quiet / "run.json").write_text(json.dumps({"argv": None}),
+                                    encoding="utf-8")
+    assert read_run(quiet).unreadable == ()
 
 
 def test_the_runs_are_listed_newest_first(tmp_path):
@@ -365,9 +489,12 @@ def test_an_incident_number_that_is_not_there_says_so(tmp_path, capsys):
     from teille_douce.settings import use_settings
 
     with use_settings(output_dir=tmp_path):
-        with pytest.raises(SystemExit, match="I9"):
+        with pytest.raises(SystemExit) as raised:
             command.execute(parse(["--why", "I9"]))
-    capsys.readouterr()
+
+    # 2: a value typed on the command line that names nothing.
+    assert raised.value.code == 2
+    assert "I9" in capsys.readouterr().err
 
 
 def test_the_json_goes_through_the_command(tmp_path, capsys):
