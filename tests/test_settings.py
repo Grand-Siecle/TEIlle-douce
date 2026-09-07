@@ -490,7 +490,11 @@ def test_le_schema_de_test_ne_bloque_pas_une_conversion():
 
     assert reglages.tei_rng == Path("/nulle/part.rng")
     assert "tei_rng" not in {nom for nom, _, _, _ in Settings.READS}
-    assert reglages.unreadable_inputs() == ()
+    # Sur les entrees NOMMEES, pas sur le tuple entier : la CI n'a pas de
+    # OCR/, donc `ocr_dir` y figure legitimement, et affirmer le vide
+    # rendait ce test vrai sur cette machine et faux sur la sienne.
+    assert "tei_rng" not in {nom for nom, _, _, _
+                             in reglages.unreadable_inputs()}
 
 
 def test_un_chemin_illisible_nomme_la_couche_qui_l_a_fourni(tmp_path):
