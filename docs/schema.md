@@ -55,7 +55,7 @@ conformance stated independently.
 Every one of these is **local**: it evaluates on an element and its immediate
 neighbourhood. Invariants needing a full document traversal — resolving every
 `@corresp`, checking that each `GraphicZone` has a `<figure>` — stay implemented
-in Python in `scripts/validate_tei.py`, which does them in a single pass. In
+in Python in `teille_douce/validation/checks.py`, in a single pass. In
 Schematron they would be quadratic over documents of a hundred thousand
 elements.
 
@@ -70,13 +70,13 @@ letting you believe the check was complete.
 
 ```bash
 # The project schema: RELAX NG, then Schematron, then the Python invariants
-venv/bin/python scripts/validate_tei.py --odd tei_output/*.xml
+teille-douce validate tei_output
 
 # TEI conformance as well
-venv/bin/python scripts/validate_tei.py --odd --schema tei_all.rng tei_output/*.xml
+teille-douce validate --schema tei_all.rng tei_output
 
 # A corpus, over 8 cores — documents are independent
-venv/bin/python scripts/validate_tei.py --odd -j 8 tei_output/*.xml
+teille-douce validate -j 8 tei_output      # -j is auto by default
 ```
 
 Exit code 1 on any error. Rules the TEI itself marks `role="nonfatal"` are
@@ -146,7 +146,7 @@ recompile and read the diff of the generated schemas.
 | `schema/teille-douce.svrl.xsl` | Schematron constraints, executable form. | `saxonche` |
 | `scripts/build_odd.py` | Compiles the ODD into the three derivatives. | — |
 | `teille_douce/odd/simplify.py` | RELAX NG §4.19/§4.20 reductions, needed before lxml reads the schema. | — |
-| `scripts/validate_tei.py` | Runs everything, plus the document-wide Python invariants. | — |
+| `teille-douce validate` | Runs everything, plus the document-wide Python invariants. | — |
 
 Two implementation constraints shape all of this and are documented at length in
 [`schema/README.md`](../schema/README.md), because each cost a full debugging

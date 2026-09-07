@@ -62,7 +62,7 @@ cp -r /path/to/my-volume OCR/
 teille-douce run --fast
 
 # Check the result
-python3 scripts/validate_tei.py --odd tei_output/*.xml
+teille-douce validate tei_output
 ```
 
 TEI files land in `tei_output/`. The three annotation phases are enabled by
