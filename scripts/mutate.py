@@ -39,6 +39,9 @@ ROOT = Path(__file__).resolve().parent.parent
 # Long enough for a real end-to-end test, short enough that a hang is
 # noticed rather than waited out.
 TIMEOUT = 180
+# Where the original waits while its file is mutated. A suffix, so it
+# sits beside the file and `restore_any` finds it by walking the tree.
+BACKUP = ".mutate-backup"
 
 
 def _statement(tree, line):
@@ -107,7 +110,7 @@ def _mutated(source, line, transform):
 def _replace_with_pass(tree, target):
     """Swap one statement for `pass`, wherever it sits in the tree."""
     for parent in ast.walk(tree):
-        for field, value in ast.iter_fields(parent):
+        for _, value in ast.iter_fields(parent):
             if not isinstance(value, list):
                 continue
             for index, item in enumerate(value):
@@ -121,8 +124,14 @@ def _runs_clean(tests):
     """True when the tests pass — which, under a mutation, is bad news."""
     try:
         finished = subprocess.run(
-            [sys.executable, "-m", "pytest", *tests, "-q", "--no-header",
-             "-p", "no:cacheprovider"],
+            # `-x`: the answer is "did ANY test notice", so the first
+            # one that does is the whole answer. A caught mutation costs
+            # seconds instead of the eighty a full suite takes, which is
+            # what makes `--changed` usable rather than only correct —
+            # and most mutations are caught, so most of the run is that
+            # saving.
+            [sys.executable, "-m", "pytest", *tests, "-x", "-q",
+             "--no-header", "-p", "no:cacheprovider"],
             cwd=ROOT, capture_output=True, text=True, timeout=TIMEOUT)
     except subprocess.TimeoutExpired:
         # A hang is a caught mutation: the guard that was removed was
@@ -130,6 +139,37 @@ def _runs_clean(tests):
         # noticed.
         return False
     return finished.returncode == 0
+
+
+def _keep(path):
+    """Put the file back, whatever happens to this process.
+
+    Not a `try/finally`: a `finally` does not run when the process is
+    KILLED, and the first thing this tool did on a real branch was get
+    terminated mid-mutation by a timeout, leaving `report/text.py`
+    unparsed and stripped of every comment in the working tree. A tool
+    that edits your source has to survive its own death.
+
+    So the original goes to a sibling file first. `restore_any()` puts
+    back whatever a previous run left behind, and runs before anything
+    else — the recovery is on the next invocation, which is the only
+    place it can be.
+    """
+    kept = path.with_suffix(path.suffix + BACKUP)
+    kept.write_bytes(path.read_bytes())
+    return kept
+
+
+def restore_any(say=print):
+    """Undo what a killed run left behind. Returns what it restored."""
+    restored = []
+    for kept in ROOT.rglob("*" + BACKUP):
+        original = kept.with_suffix("")
+        original.write_bytes(kept.read_bytes())
+        kept.unlink()
+        restored.append(original.relative_to(ROOT))
+        say(f"restored {original.relative_to(ROOT)} from a killed run")
+    return restored
 
 
 def check(target, tests, say=print):
@@ -154,6 +194,7 @@ def check(target, tests, say=print):
         if mutated is None:
             say(f"  {label:22} skipped (nothing to mutate)")
             continue
+        kept = _keep(path)
         path.write_text(mutated, encoding="utf-8")
         try:
             if _runs_clean(tests):
@@ -163,28 +204,62 @@ def check(target, tests, say=print):
                 say(f"  {label:22} caught")
         finally:
             path.write_text(source, encoding="utf-8")
+            kept.unlink(missing_ok=True)
     return survivors
 
 
+# Not measured, so not mutated: `tests/` is the thing being judged, and
+# `scripts/` is one-line launchers plus this file. `pyproject.toml`'s
+# coverage `omit` says the same in the same words.
+SKIP = ("tests/", "scripts/")
+
+
 def changed_lines(base="main"):
-    """Every line this branch added, as `path:line`.
+    """Every STATEMENT this branch touched, as `path:line`, once each.
 
     The question is never "is this package well tested" but "does what I
-    just wrote hold", so the default target is the diff.
+    just wrote hold", so the target is the diff. Resolved to statements
+    and deduplicated: a diff is lines, and a two-line statement counted
+    twice runs the whole suite twice for one answer — 275 targets for
+    this branch became 30.
+
+    Comments, blank lines and docstrings resolve to no statement worth
+    mutating and drop out here rather than costing a suite run each.
     """
     finished = subprocess.run(
         ["git", "diff", "-U0", f"{base}...HEAD", "--", "*.py"],
         cwd=ROOT, capture_output=True, text=True)
-    targets, path = [], None
+    touched, path = {}, None
     for line in finished.stdout.splitlines():
         if line.startswith("+++ b/"):
             path = line[6:]
-        elif line.startswith("@@") and path and not path.startswith("tests/"):
+        elif line.startswith("@@") and path and not path.startswith(SKIP):
             span = re.search(r"\+(\d+)(?:,(\d+))?", line)
             start = int(span.group(1))
-            for offset in range(int(span.group(2) or 1)):
-                targets.append(f"{path}:{start + offset}")
+            touched.setdefault(path, set()).update(
+                range(start, start + int(span.group(2) or 1)))
+
+    targets = []
+    for path, lines in touched.items():
+        try:
+            tree = ast.parse((ROOT / path).read_text(encoding="utf-8"))
+        except (OSError, SyntaxError):
+            continue
+        starts = set()
+        for line in sorted(lines):
+            node = _statement(tree, line)
+            if node is None or _is_prose(node):
+                continue
+            starts.add(node.lineno)
+        targets.extend(f"{path}:{start}" for start in sorted(starts))
     return targets
+
+
+def _is_prose(node):
+    """A docstring: text, not behaviour, and mutating it proves nothing."""
+    return (isinstance(node, ast.Expr)
+            and isinstance(node.value, ast.Constant)
+            and isinstance(node.value.value, str))
 
 
 def main(argv=None):
@@ -210,8 +285,17 @@ def main(argv=None):
     else:
         parser.error("a FILE:LINE, or --changed")
 
+    restore_any()
     survived = 0
     for target in targets:
+        mutations = _mutations(_statement(
+            ast.parse((ROOT / target.rpartition(":")[0]).read_text(
+                encoding="utf-8")), int(target.rpartition(":")[2])) or ast.Pass())
+        if not mutations:
+            # A `def`, a `class`, a whole `try`: emptying one says
+            # nothing useful, and printing a bare header for it makes
+            # the report look like it found nothing when it did not look.
+            continue
         print(target)
         try:
             survived += len(check(target, tests))

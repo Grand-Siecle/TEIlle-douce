@@ -104,14 +104,19 @@ source = ["teille_douce", "main", "scripts"]
 # XSLT Saxon, boite a outils TEI -- et ne peut pas s'executer dans la
 # suite. Seuls ses helpers purs `without_the_date` et `Toolchain` sont
 # exerces, par tests/test_odd.py et tests/test_cli_odd.py. simplify.py,
-# lui, est de la logique pure et reste mesure. Les trois fichiers de
-# scripts/ ne sont plus que des lanceurs d'une ligne, hors mesure comme
-# le reste de scripts/.
+# lui, est de la logique pure et reste mesure. Les trois LANCEURS de
+# scripts/ ne font qu'une ligne chacun et restent hors mesure ;
+# scripts/mutate.py, lui, est un vrai outil — il ecrit dans des fichiers
+# suivis par git — et il est mesure, pour la meme raison que
+# cli/fixture.py est revenu dans la liste : omettre du code teste
+# soustrait au cliquet ce qu'il est cense compter.
 #
 # cli/fixture.py a ete retire de cette liste : il y etait entre avec le
 # script dont il vient, et tests/test_cli_fixture.py l'exerce -- l'omettre
 # soustrayait au cliquet du code effectivement teste, et surtout mesure.
-omit = ["tests/*", "venv/*", "scripts/*", "*/teille_douce/odd/build.py"]
+omit = ["tests/*", "venv/*", "scripts/validate_tei.py",
+        "scripts/build_odd.py", "scripts/build_test_fixture.py",
+        "*/teille_douce/odd/build.py"]
 # sourcedoc/builder.py execute du code dans des workers multiprocessing :
 # sans ces deux options, coverage ne voit pas les lignes exercees dans les forks.
 # Consequence : lancer `coverage combine` avant `coverage report`.
