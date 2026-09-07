@@ -20,6 +20,7 @@ interleave — so nothing here is called from a child.
 import json
 import os
 import shutil
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
@@ -166,6 +167,13 @@ class RunStore:
             return []
 
     @classmethod
+    def kept(cls, output_dir):
+        """Every run still on disk, oldest first — what `report --runs`
+        lists. `prune` keeps the last ten, whole directory by whole
+        directory."""
+        return tuple(cls._runs(output_dir))
+
+    @classmethod
     def latest(cls, output_dir):
         runs = cls._runs(output_dir)
         return runs[-1] if runs else None
@@ -244,3 +252,130 @@ class RunStore:
             if spare is not None and old.resolve() == spare:
                 continue
             shutil.rmtree(old, ignore_errors=True)
+
+
+# =============================================================================
+# Coming back to a run that is over
+# =============================================================================
+#
+# The other half of the class above. `report` reads what `RunStore` wrote,
+# so the two live in one file: a reader kept somewhere else drifts from
+# the writer at the first field either of them adds.
+
+
+@dataclass(frozen=True, slots=True)
+class Incident:
+    """One line of `incidents.jsonl`, with the number `report` gives it.
+
+    The number is positional and assigned at read time — `I1` is the
+    first line of the file — so `report --why I3` names something stable
+    for as long as the run directory exists, which is what the JSONL's
+    append-only shape already guarantees.
+    """
+
+    index: str
+    code: str
+    document: str
+    step: str
+    locator: str
+    kind: str
+    count: int
+    total: object
+    detail: str
+
+
+@dataclass(frozen=True, slots=True)
+class PastRun:
+    """What one finished run left behind, read back."""
+
+    path: Path
+    argv: tuple = ()
+    settings: dict = field(default_factory=dict)
+    documents: dict = field(default_factory=dict)
+    exit_code: object = None
+    incidents: tuple = ()
+    log: Path | None = None
+    unreadable: tuple = ()          # (file, reason)
+
+    @property
+    def name(self):
+        return self.path.name
+
+    @property
+    def started(self):
+        """When the run started, from the directory name.
+
+        The name is `<stamp>-<pid>`, and the stamp is what it is for:
+        `report --run 20260903-180824` names a run without its pid.
+        """
+        stamp = self.name.rsplit("-", 1)[0]
+        try:
+            return datetime.strptime(stamp, "%Y%m%d-%H%M%S")
+        except ValueError:
+            return None
+
+    @property
+    def failed(self):
+        return tuple(name for name, status in self.documents.items()
+                     if status != "ok")
+
+
+def read_run(path):
+    """One run directory, read back. Never raises on a damaged record.
+
+    A report of a run that went wrong is exactly the case where the
+    record may be half written — a Ctrl-C in the fourth hour, a disk
+    that filled — and refusing to say anything about the rest of it
+    would fail the reader precisely when they need it. What could not be
+    read is listed as such and the rest is reported.
+    """
+    path = Path(path)
+    manifest, unreadable, incidents = {}, [], []
+    try:
+        manifest = json.loads((path / "run.json").read_text(encoding="utf-8"))
+        if not isinstance(manifest, dict):
+            raise ValueError("not a run manifest")
+    except (OSError, ValueError) as reason:
+        manifest = {}
+        unreadable.append(("run.json", str(reason)))
+
+    index = path / "incidents.jsonl"
+    if index.is_file():
+        try:
+            for number, line in enumerate(
+                    index.read_text(encoding="utf-8").splitlines(), 1):
+                if not line.strip():
+                    continue
+                try:
+                    entry = json.loads(line)
+                except ValueError as reason:
+                    # One malformed line, not the file: it is appended to
+                    # as the run goes, so a run killed mid-write leaves a
+                    # truncated last line above everything that happened
+                    # before it.
+                    unreadable.append((f"incidents.jsonl:{number}",
+                                       str(reason)))
+                    continue
+                incidents.append(Incident(
+                    index=f"I{len(incidents) + 1}",
+                    code=entry.get("code", "?"),
+                    document=entry.get("document", "?"),
+                    step=entry.get("step", ""),
+                    locator=entry.get("locator", ""),
+                    kind=entry.get("kind", ""),
+                    count=entry.get("count", 0),
+                    total=entry.get("total"),
+                    detail=entry.get("detail", "")))
+        except OSError as reason:
+            unreadable.append(("incidents.jsonl", str(reason)))
+
+    log = path / "pipeline.log"
+    return PastRun(
+        path=path,
+        argv=tuple(manifest.get("argv", ())),
+        settings=manifest.get("settings", {}),
+        documents=manifest.get("documents", {}),
+        exit_code=manifest.get("exit_code"),
+        incidents=tuple(incidents),
+        log=log if log.is_file() else None,
+        unreadable=tuple(unreadable))

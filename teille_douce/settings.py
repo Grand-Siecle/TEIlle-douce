@@ -592,6 +592,31 @@ class Settings:
         return cls(**values, origins=origins, rejected=tuple(rejected))
 
 
+def declarations():
+    """Every runtime setting, as the rows the four layers are read from.
+
+    `info` renders the layers from these rows rather than from a list of
+    its own: a second list diverges at the first setting added, and the
+    whole point of this table is that declaring a setting once is what
+    keeps the layers, the guide and the CLI from drifting apart.
+
+    `modernize_url` is in here and not in `Settings`: it is the base URL
+    every language with no override of its own falls back to, so it is a
+    layer like any other and `info` has to be able to answer for it.
+    """
+    return _SETTINGS + (_MODERNIZE_URL,)
+
+
+def config_values(path):
+    """A config file flattened into {"section.key": value}, or {}.
+
+    The same reading `Settings.load` does, anchoring included, so that
+    `info` shows what the file actually offered rather than what it
+    literally contains.
+    """
+    return _read_config_file(path)
+
+
 def _read_config_file(path):
     """Flatten a TOML file into {"section.key": value}."""
     if path is None:

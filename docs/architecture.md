@@ -108,6 +108,15 @@ teille_douce/
     fixture.py               `fixture`: rebuild the versioned fixture
     check.py                 `check`: the preflight, rendered — a pure
                              function of the answer, a width and `--strict`
+    info.py                  `info`: the four layers of one setting, and
+                             which of them took effect. Reads the table in
+                             settings.py, never a list of its own
+    report.py                `report`: what a past run left behind, and
+                             `--limits` — what cannot be measured, told
+                             apart from what is not measured yet
+    completion.py            `completion`: bash/zsh/fish, read off the
+                             parser. A copied list of flags diverges at the
+                             first PR that adds one
   preflight.py               What `check` answers: usable, degraded, or not
                              runnable. Writes nothing, and poses four of the
                              ten troubleshooting diagnoses of the user guide
@@ -142,7 +151,10 @@ teille_douce/
                              events, and a frozen panel reads as a hung run
     select.py                Which reporter a run gets
     store.py                 What a run leaves on disk: the manifest, the
-                             index of its incidents, and its log
+                             index of its incidents, and its log — and
+                             `read_run`, which reads them back for
+                             `report`, in the same file as the writer so
+                             the two cannot drift
     logging_bridge.py        WARNING+ records to the digest, never to the
                              screen
     gate.py                  --fail-on: the third block is the definition of

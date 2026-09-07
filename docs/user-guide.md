@@ -434,6 +434,36 @@ but empty counts as unusable: a wrapper doing
 would otherwise silently disable the service. If a value of yours was ignored,
 there is a `RuntimeWarning` naming it and giving the reason.
 
+### Where a value came from: `teille-douce info`
+
+Four layers per setting is a trap rather than a feature without a way to ask
+the chain where a value came from — and the config file is the sharpest edge
+of it, because it is found by walking *up* from the working directory, so one
+you have forgotten is the least debuggable thing in the design.
+
+```bash
+teille-douce info                    # every setting, and which layer set it
+teille-douce info pyhellen_url       # one setting, layer by layer
+teille-douce info TDOUCE_JOBS        # named by its variable, or by its TOML key
+teille-douce info --json             # the same, for a wrapper
+```
+
+```
+  pyhellen_url = http://pyhellen.labo:9000            (env TDOUCE_PYHELLEN_URL)
+
+  flag     --pyhellen           (not given)
+  env      TDOUCE_PYHELLEN_URL  http://pyhellen.labo:9000              <- used
+  config   services.pyhellen    ./teille-douce.toml: http://localhost:8000
+  default  config.py            http://localhost:8000
+```
+
+A layer that offered a value the converters refused says so on its own line —
+which is the answer to "why is my variable ignored", printed where you are
+looking rather than in a `RuntimeWarning` scrolled past four hours ago. With
+no argument, every setting is listed, the ones nobody set marked apart from
+the ones somebody did, the config file named whether or not anything in it
+won, and the versions that land in `<appInfo>` at the end.
+
 ## The annotation services
 
 Three phases are optional and enabled by default. Each is probed once before the
@@ -714,6 +744,65 @@ curl -sSL -o tei_all.rng https://tei-c.org/release/xml/tei/custom/schema/relaxng
 
 Validation costs roughly 0.7 s per MB; see [schema.md](schema.md) for the
 breakdown and for what the eleven rules check.
+
+## Going back to a run: `teille-douce report`
+
+Every run leaves a directory under `tei_output/.teille-douce/runs/`: the
+manifest, the incident index, and its own log. `report` reads it. It touches
+no corpus, so it is instant and cannot damage anything.
+
+```bash
+teille-douce report                          # the last run
+teille-douce report --runs                   # the runs kept here, newest first
+teille-douce report --run 20260903-180824    # a precise one; the pid is optional
+teille-douce report LIV0044_reconciled       # one volume
+teille-douce report --code phase             # by loss code; a prefix is enough
+teille-douce report --why I2 --context       # one incident, and the log around it
+teille-douce report --limits                 # what could not be measured, and why
+teille-douce report --json                   # the same, for a wrapper
+```
+
+The selectors compose: `report LIV0044_reconciled --code container` means what
+it looks like it means.
+
+```
+  run 20260903-180824-0031415   2026-09-03 18:08      1 of 2 converted · exit 1
+
+  2 incidents
+
+  I1  LIV0044_reconciled     phase_lost                            148 of 148
+  I2  LIV0326_v1_reconciled  document_failed                             1 of 1
+
+  teille-douce report --why I1 for one of them, --limits for what is not here
+```
+
+Exit codes: **0** the third block is empty, **1** it is not — whatever the
+selectors left on screen, because the question a wrapper asks this command is
+"did that run need a human" — and **3** when there is no record here at all.
+
+**`--limits` is the one that matters in the long run.** It separates what this
+pipeline *cannot* measure from what it *does not measure yet*, and gives the
+second kind its price so that someone can decide to pay it. Entities dropped
+below the NER threshold are the first kind: the threshold is applied inside
+GLiNER's own inference, so what it cost has no denominator to be a fraction
+of. Blocks 1 and 2 over a past run are the second: `incidents.jsonl` indexes
+block 3 alone — an index of everything is an index of nothing — so the defects
+of the source and what the guards withheld are in the end-of-run summary and
+in the log, and `report --block source` says so rather than answering
+"nothing", which would be read as "the run lost nothing that way".
+
+## Shell completion
+
+```bash
+teille-douce completion bash > ~/.local/share/bash-completion/completions/teille-douce
+teille-douce completion zsh  > ~/.zfunc/_teille-douce
+teille-douce completion fish > ~/.config/fish/completions/teille-douce.fish
+```
+
+`teille-douce run --fail-on <TAB>` then offers `never incident loss`, because
+the parser declares those three — not because a list of them was copied into a
+shell script. Regenerate the file after an upgrade; a completion offering a
+flag the program no longer has is worse than none.
 
 ## Troubleshooting
 
