@@ -55,8 +55,13 @@ def build_parser():
     # repository versions. Their arguments are declared by the modules
     # that implement them, so a flag cannot exist in one place and be
     # parsed in another.
-    from teille_douce.cli import fixture, odd, validate
+    from teille_douce.cli import check, fixture, odd, validate
 
+    check.add_arguments(subparsers.add_parser(
+        "check",
+        help="is this installation usable, and what would a run cost",
+        description="Diagnose the input, the output, the catalogues and the "
+                    "services, without converting anything."))
     validate.add_arguments(subparsers.add_parser(
         "validate",
         help="check produced TEI against the project schema and the known "
@@ -358,10 +363,11 @@ def main(argv=None):
     # `--version` must do neither.
     from teille_douce.cli import run as run_command
 
-    from teille_douce.cli import fixture, odd, validate
+    from teille_douce.cli import check, fixture, odd, validate
 
-    commands = {"run": run_command.execute, "fixture": fixture.execute,
-                "odd": odd.execute, "validate": validate.execute}
+    commands = {"run": run_command.execute, "check": check.execute,
+                "fixture": fixture.execute, "odd": odd.execute,
+                "validate": validate.execute}
     try:
         return commands[args.command](args)
     except KeyboardInterrupt:

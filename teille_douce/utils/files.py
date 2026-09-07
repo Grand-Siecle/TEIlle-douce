@@ -89,6 +89,32 @@ class Files:
         return sorted(numbered + others, key=lambda x: x.num)
 
 
+def pages_sharing_a_number(document_name, filepaths):
+    """Files whose names give one page number, grouped by that number.
+
+    `order_files` reads the first digit run of the stem, so `f12.xml` and
+    `f12-np.xml` both give 12, and every digit-less file gets one
+    sentinel. Colliding files are all converted — the jobs are routed by
+    position — but the number they share is the IIIF view their zones'
+    @source is built from, and `surface/@n` derives from the same
+    numbers, so the numbering is ambiguous and the operator has to be
+    told which files made it so.
+
+    Lifted out of `build_sourcedoc` so the preflight can ask the same
+    question without converting anything: forty minutes to learn that two
+    files claim page 12 is the cost this exists to remove.
+
+    Returns:
+        dict: {page number: [Path, …]}, only where there is more than one,
+            in page order. `NO_PAGE_NUMBER` is one of the keys.
+    """
+    by_number = {}
+    for ordered in Files(document_name, filepaths).order_files():
+        by_number.setdefault(ordered.num, []).append(ordered.filepath)
+    return {number: paths for number, paths in sorted(by_number.items())
+            if len(paths) > 1}
+
+
 def parse_document_id(document_name):
     """
     Parse a document folder name into (internal_id, volume).

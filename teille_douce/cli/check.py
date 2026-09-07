@@ -1,0 +1,160 @@
+"""`teille-douce check` — is this installation usable, and what will it cost?
+
+The command that was missing. The only way to know whether the input was
+well formed was to convert the whole corpus; the user guide says so of
+`--dry-run`, which resolves everything and lists a plan without asking
+whether the catalogue matches anything.
+
+It shares the run's analyses rather than repeating them, because a
+preflight that disagreed with the run it precedes would be worse than
+none. And it writes nothing at all — the acceptance criterion of the six
+commands this instalment adds.
+
+Rendering is a pure function of the answer, so every family of attention
+is testable without a terminal and without a corpus.
+"""
+
+from teille_douce.preflight import inspect
+from teille_douce.report.text import cells, clip, pad
+
+MAX_WIDTH = 100
+_MARGIN = 2
+
+
+def _grouped(number):
+    return f"{number:,}".replace(",", " ")
+
+
+def _row(label, value, aside, room):
+    """`label  value  …aside`, the aside flush right.
+
+    The aside is what a reader scans for — `writable`, `1 unmatched`,
+    `refused` — so it is the half that survives, as it is on the panel.
+    """
+    left = f"  {label:<11}{value}"
+    return pad(left, aside, room, keep="right")
+
+
+def render(preflight, width=92, strict=False):
+    """The whole answer, as a list of lines."""
+    room = min(width, MAX_WIDTH) - _MARGIN
+    lines = []
+
+    volumes = len(preflight.volumes)
+    counted = (f"{_grouped(volumes)} volume{'s' if volumes != 1 else ''} · "
+               f"{_grouped(preflight.pages)} pages")
+    if preflight.archives:
+        counted += (f" · {preflight.archives} "
+                    f"archive{'s' if preflight.archives != 1 else ''}")
+    lines.append(_row("input", str(preflight.input_dir), counted, room))
+
+    written = "writable" if preflight.output_writable else "NOT WRITABLE"
+    if preflight.already_converted:
+        written += (f" · {preflight.already_converted} already converted")
+    lines.append(_row("output", str(preflight.output_dir), written, room))
+
+    catalogue = preflight.catalogue
+    if catalogue.get("rows") is None:
+        said = "did not load"
+    else:
+        said = (f"{_grouped(catalogue['rows'])} rows · "
+                f"{catalogue['matched']} matched")
+        if catalogue["unmatched"]:
+            said += f" · {len(catalogue['unmatched'])} unmatched"
+    lines.append(_row("catalogue", _name(catalogue["path"]), said, room))
+
+    persons = preflight.persons
+    lines.append(_row("", _name(persons["path"]),
+                      f"{_grouped(persons['count'])} persons"
+                      if persons["loaded"] else "did not load", room))
+
+    for index, service in enumerate(preflight.services):
+        lines.append(_row("services" if index == 0 else "",
+                          f"{service.name:<12}{service.endpoint}",
+                          service.state
+                          + (f" ({service.detail})" if service.detail else ""),
+                          room))
+
+    for setting, path, reason, where in preflight.unusable:
+        lines.append(_row("unusable", f"{where.split(' / ')[0]} {path}",
+                          reason, room))
+
+    if preflight.attention:
+        lines.append("")
+        lines.append("  needs attention")
+        # One column, measured off the widest subject rather than a
+        # literal. `{subject:<14}` pads to fourteen and stops, so
+        # `LIV0326_v1_reconciled` ran straight into its own detail — the
+        # defect `summary._entry` was fixed for, reproduced in a new
+        # file the week after. The consequence lines up under the detail,
+        # which is why it is measured too.
+        column = max(cells(item.subject) for item in preflight.attention)
+        column = min(column + 2, max(16, room // 3))
+        for item in preflight.attention:
+            gap = " " * max(2, column - cells(item.subject))
+            # The subject, then what is wrong, then what it costs. A line
+            # that says something is wrong without saying what it costs
+            # is a line an operator learns to skip.
+            lines.append(clip(f"    {item.subject}{gap}{item.detail}", room))
+            lines.append(clip(f"    {' ' * column}— {item.consequence}", room))
+
+    lines.append("")
+    lines.append(_verdict(preflight, strict, room))
+    return lines
+
+
+def _name(path):
+    from pathlib import Path
+
+    return Path(path).name if path else "(none)"
+
+
+def _verdict(preflight, strict, room):
+    verdict = preflight.verdict
+    if verdict == 3:
+        why = ("nothing to convert" if not preflight.volumes
+               else "the output cannot be written" if not preflight.output_writable
+               else "an input this run must read is not readable")
+        return clip(f"  unusable — {why}", room)
+    if not preflight.attention:
+        return clip("  nothing to report", room)
+    count = len(preflight.attention)
+    said = f"  usable, with {count} thing{'s' if count != 1 else ''} to look at"
+    if strict:
+        return pad(said, "--strict: these are failures", room, keep="right")
+    return pad(said, "teille-douce check --strict fails on these", room,
+               keep="right")
+
+
+def add_arguments(parser):
+    """The surface of `teille-douce check`."""
+    parser.add_argument(
+        "--strict", action="store_true",
+        help="treat anything worth looking at as a failure, for CI")
+    parser.add_argument(
+        "--no-probe", dest="probe", action="store_false", default=True,
+        help="do not ask the services anything; for a machine that is offline")
+    return parser
+
+
+def execute(args):
+    from teille_douce.settings import get_settings
+
+    from teille_douce.cli.run import console
+
+    answer = inspect(get_settings(), probe=args.probe)
+    for line in render(answer, width=console.width, strict=args.strict):
+        console.print(line, highlight=False)
+
+    if answer.verdict == 3:
+        return 3
+    # An imperfect corpus is NOT a failure. The design note settles it in
+    # one line — "on seventeenth-century OCR, imperfection is the normal
+    # state" — and a preflight that exited non-zero on the normal state
+    # would make every nightly red for ever, which is how a check comes
+    # to be run with `|| true` and stops being read.
+    #
+    # `--strict` is what a wrapper asks for when it wants none of them,
+    # and 1 rather than 2: 2 is the usage error, and a wrapper reading
+    # exit codes would have been told its command line was wrong.
+    return 1 if (args.strict and answer.attention) else 0
