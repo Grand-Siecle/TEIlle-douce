@@ -110,15 +110,15 @@ requirement, forty times cheaper.
 derivatives by hand.**
 
 ```bash
-venv/bin/python scripts/build_odd.py            # after any change to the ODD
-venv/bin/python scripts/build_odd.py --check    # do the derivatives match the source?
-venv/bin/python scripts/build_odd.py --refresh  # re-download the toolchain
+teille-douce odd build                     # after any change to the ODD
+teille-douce odd check                     # do the derivatives match the source?
+teille-douce odd build --refresh           # re-download the toolchain
 ```
 
 The procedure:
 
 1. Edit `schema/teille-douce.odd`.
-2. Recompile: `venv/bin/python scripts/build_odd.py`.
+2. Recompile: `teille-douce odd build`.
 3. Verify: `venv/bin/python -m pytest tests/test_odd.py tests/test_e2e_pipeline.py`.
 4. Commit the source **and the three derivatives in the same commit**.
 
@@ -144,7 +144,7 @@ recompile and read the diff of the generated schemas.
 | `schema/teille-douce.rng` | Content model (RELAX NG). | `lxml` |
 | `schema/teille-douce.sch` | Schematron constraints, readable form. | — |
 | `schema/teille-douce.svrl.xsl` | Schematron constraints, executable form. | `saxonche` |
-| `scripts/build_odd.py` | Compiles the ODD into the three derivatives. | — |
+| `teille-douce odd build` | Compiles the ODD into the three derivatives. | — |
 | `teille_douce/odd/simplify.py` | RELAX NG §4.19/§4.20 reductions, needed before lxml reads the schema. | — |
 | `teille-douce validate` | Runs everything, plus the document-wide Python invariants. | — |
 

@@ -2,7 +2,7 @@
 
 `teille-douce.odd` is the TEI customization of TEIlle-douce: the normative description
 of the documents the pipeline produces. The three other files are derived from
-it by `scripts/build_odd.py` and must never be edited directly.
+it by `teille-douce odd build` and must never be edited directly.
 
 | File | Role | Applied by |
 |---|---|---|
@@ -45,7 +45,7 @@ The customization constrains on three levels.
 These constraints are all local: each evaluates on an element and its immediate
 neighbourhood. Invariants requiring a full traversal of the document — resolving
 `@corresp`, checking that each `GraphicZone` has a `<figure>` — stay implemented
-in Python in `scripts/validate_tei.py`, which handles them in a single pass.
+in Python in `teille_douce/validation/checks.py`, in a single pass.
 Expressed in Schematron they would be quadratic over documents of a hundred
 thousand elements.
 
@@ -80,7 +80,7 @@ flowchart TB
     STY -. " " .-> B1
     SCHX -. " " .-> D1
 
-    RNG --> USE["validate_tei.py --odd<br/>end-to-end tests"]
+    RNG --> USE["teille-douce validate<br/>end-to-end tests"]
     SVRL --> USE
 
     classDef source fill:#1f6feb22,stroke:#1f6feb,stroke-width:2px
@@ -97,7 +97,7 @@ The XSLT engine is SaxonC-HE, distributed as a pip wheel (`saxonche`): XSLT 2.0
 with neither JVM nor ant, unlike the shell scripts shipped with the Stylesheets.
 A full compilation runs in under a second.
 
-The toolchain versions are pinned at the top of `scripts/build_odd.py`. Raising
+The toolchain versions are pinned at the top of `teille_douce/odd/build.py`. Raising
 them is a deliberate change: recompile, then examine the diff of the generated
 schemas.
 
@@ -105,13 +105,13 @@ schemas.
 
 ```bash
 # Validation against the project schema: RELAX NG, then Schematron
-venv/bin/python scripts/validate_tei.py --odd tei_output/*.xml
+teille-douce validate tei_output
 
 # Over a corpus: documents are independent
-venv/bin/python scripts/validate_tei.py --odd -j 8 tei_output/*.xml
+teille-douce validate -j 8 tei_output      # -j is auto by default
 
 # Validation against tei_all, if a copy is available (not versioned, ~1 MB)
-venv/bin/python scripts/validate_tei.py --schema tei_all.rng tei_output/*.xml
+teille-douce validate --schema tei_all.rng tei_output
 ```
 
 Five local invariants — prose in `<langUsage>`, an unsplit IIIF `idno`, a
@@ -130,9 +130,9 @@ skipped, with an explicit reason, when `saxonche` is not installed.
 ## Regeneration
 
 ```bash
-venv/bin/python scripts/build_odd.py            # after any change to the ODD
-venv/bin/python scripts/build_odd.py --check    # do the derivatives match the source?
-venv/bin/python scripts/build_odd.py --refresh  # re-download the toolchain
+teille-douce odd build                     # after any change to the ODD
+teille-douce odd check                     # do the derivatives match the source?
+teille-douce odd build --refresh  # re-download the toolchain
 ```
 
 `--check` recompiles into a temporary directory and compares against the
@@ -224,7 +224,7 @@ constraint declared in the ODD is missing from the generated Schematron.
 ## Modification procedure
 
 1. Edit `teille-douce.odd`.
-2. Recompile: `venv/bin/python scripts/build_odd.py`.
+2. Recompile: `teille-douce odd build`.
 3. Verify: `venv/bin/python -m pytest tests/test_odd.py tests/test_e2e_pipeline.py`.
 4. Commit the source and the three derived files in the same commit.
 

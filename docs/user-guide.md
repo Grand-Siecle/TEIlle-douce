@@ -606,13 +606,13 @@ Two different questions, two validations.
 
 ```bash
 # Is it a conformant output of THIS pipeline? (RELAX NG + Schematron + Python)
-python3 scripts/validate_tei.py --odd tei_output/*.xml
+teille-douce validate tei_output
 
 # Is it conformant TEI at all? (needs a tei_all.rng, ~1 MB, not versioned)
-python3 scripts/validate_tei.py --schema tei_all.rng tei_output/*.xml
+teille-douce validate --schema tei_all.rng tei_output
 
 # Both, on many files, spread over 8 cores
-python3 scripts/validate_tei.py --odd --schema tei_all.rng -j 8 tei_output/*.xml
+teille-douce validate --schema tei_all.rng tei_output
 ```
 
 `tei_all` establishes TEI conformance but detects neither a non-existent zone

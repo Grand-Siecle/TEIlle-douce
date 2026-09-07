@@ -81,11 +81,12 @@ service is unreachable. Everything else always runs.
 
 ```
 main.py                      Compatibility launcher over teille_douce.cli
-scripts/
-  validate_tei.py            Output validation (known failure modes + ODD)
-  build_odd.py               Compiles schema/teille-douce.odd → rng, sch, svrl.xsl
-  rng_simplify.py            RELAX NG §4.19/§4.20 reductions (see schema/README.md)
-  build_test_fixture.py      Regenerates tests/fixtures/ from the private corpus
+scripts/                     One-line launchers, kept because the CI, the
+  validate_tei.py            documentation and two years of wrapper scripts
+  build_odd.py               invoke them by name. They carry nothing:
+  build_test_fixture.py      `scripts/` is not importable from an installed
+                             distribution, so the subcommands could not have
+                             shared their logic, only duplicated it.
 teille_douce/
   config.py                  What describes the project: versions, taxonomies,
                              thresholds, responsibility — plus the defaults
@@ -94,6 +95,15 @@ teille_douce/
     app.py                   Argument parser, subcommand dispatch, flags → Settings
     options.py               Every option of `run`, and the phase fold
     run.py                   Run orchestration, per-document isolation
+    validate.py              `validate`: which schemas, how many workers
+    odd.py                   `odd`: build the schema from the ODD, or check it
+    fixture.py               `fixture`: rebuild the versioned fixture
+  validation/
+    checks.py                The known failure modes, in one pass over the tree
+    schemas.py               What can be applied — asked without compiling it
+  odd/
+    build.py                 The ODD → rng/sch/svrl chain, and its pinned toolchain
+    simplify.py              RELAX NG §4.19/§4.20 reductions (see schema/README.md)
   report/                    What a run did, and what it lost
     counts.py                A loss is never a bare integer: a count carries
                              its denominator or it raises

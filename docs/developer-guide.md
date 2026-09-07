@@ -105,7 +105,7 @@ input produce identical files. It also means any intended change to the output
 requires regenerating the reference:
 
 ```bash
-venv/bin/python scripts/build_test_fixture.py --golden
+teille-douce fixture --golden
 ```
 
 ## The fixture
@@ -129,8 +129,8 @@ labels actually present in the 27-volume corpus.
 Regenerating it needs the private `OCR/` corpus:
 
 ```bash
-venv/bin/python scripts/build_test_fixture.py            # the fixture
-venv/bin/python scripts/build_test_fixture.py --golden   # the reference output
+teille-douce fixture build            # the fixture
+teille-douce fixture --golden   # the reference output
 ```
 
 `tests/fixtures/metadata_livre.csv` and `metadata_personne.csv` are minimal
@@ -315,12 +315,12 @@ The order below is the one the conventions above imply.
 3. **Declare any new element or attribute in the ODD**, recompile, and commit
    source and derivatives together:
    ```bash
-   venv/bin/python scripts/build_odd.py
+   teille-douce odd build
    venv/bin/python -m pytest tests/test_odd.py tests/test_e2e_pipeline.py
    ```
 4. **Regenerate the golden** if the output changed on purpose:
    ```bash
-   venv/bin/python scripts/build_test_fixture.py --golden
+   teille-douce fixture --golden
    ```
    and read the diff before committing it.
 5. **Raise the ratchet** if you added meaningful coverage:
@@ -331,7 +331,7 @@ The order below is the one the conventions above imply.
 6. **Validate real output**, not just the fixture:
    ```bash
    teille-douce run --fast -i OCR_test -o tei_test
-   venv/bin/python scripts/validate_tei.py --odd tei_test/*.xml
+   teille-douce validate tei_test
    ```
 
 `CONTRIBUTING.md` has the pre-PR checklist in short form.
@@ -359,7 +359,7 @@ missing or mislabelled zone upstream.
 looks wrong and search for it in the same file — you land on the coordinates and
 the IIIF crop URL of the region, which you can open in a browser.
 
-**Validate before hypothesizing.** `scripts/validate_tei.py --odd` on the
+**Validate before hypothesizing.** `teille-douce validate` on the
 suspect file often names the problem directly, with an XPath.
 
 **Expect multiprocessing to hide things.** Exceptions inside page workers are

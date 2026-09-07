@@ -30,7 +30,7 @@ that means:
 - the relevant part of the run's `pipeline_*.log`;
 - what the output contains versus what it should contain.
 
-If the output is well-formed but wrong, `scripts/validate_tei.py --odd` on it
+If the output is well-formed but wrong, `teille-douce validate` on it
 often names the problem with an XPath. Include that.
 
 ## Working on the code
@@ -81,7 +81,7 @@ output, the end-to-end golden diff is part of the test, and you regenerate the
 reference deliberately:
 
 ```bash
-venv/bin/python scripts/build_test_fixture.py --golden
+teille-douce fixture --golden
 ```
 
 Read that diff before committing it. It is the most direct statement of what
@@ -144,7 +144,7 @@ documents rather than only on the fixture:
 
 ```bash
 teille-douce run --fast -i OCR_test -o tei_test
-venv/bin/python scripts/validate_tei.py --odd tei_test/*.xml
+teille-douce validate tei_test
 ```
 
 The pull request description should say what changed and why, and name anything
