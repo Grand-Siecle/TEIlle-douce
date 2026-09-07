@@ -157,6 +157,24 @@ Page images are referenced, never copied. Two ways to supply them:
 For a non-Gallica server whose Image API base cannot be guessed from its
 manifest URL, set `IIIF_URI["image_base"]` in `teille_douce/config.py`.
 
+## The commands
+
+```
+teille-douce run         convert ALTO volumes to TEI                (the default)
+             check       is this installation usable, and what will it cost
+             validate    check produced TEI against the project schema
+             info        which layer set this value
+             report      go back to a run that is over
+             completion  a shell completion for bash, zsh or fish
+             odd         compile the project schema from its ODD    (maintainers)
+             fixture     rebuild the versioned test fixture         (maintainers)
+```
+
+With no command, `run` is assumed: `teille-douce`, `teille-douce LIV0044` and
+`teille-douce --fast` all convert. Five of the commands write nothing at all —
+everything but `run`, `odd` and `fixture` — so they are safe to type on a
+machine mid-run. `teille-douce --help` lists them; each has its own `--help`.
+
 ## Before you run: `teille-douce check`
 
 A full conversion takes tens of minutes. `check` answers, in about two

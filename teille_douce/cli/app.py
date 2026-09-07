@@ -34,6 +34,11 @@ def build_parser():
         prog="teille-douce",
         description="Convert ALTO XML documents to TEI P5 with the SegmOnto "
                     "taxonomy.",
+        epilog="With no COMMAND, `run` is assumed: `teille-douce`, "
+               "`teille-douce LIV0044` and `teille-douce --fast` all "
+               "convert. `teille-douce run --help` lists what run takes; "
+               "every other command has its own --help. Five of them write "
+               "nothing at all: check, validate, info, report, completion.",
     )
     parser.add_argument(
         "-V", "--version",
@@ -262,9 +267,15 @@ def normalise(argv, commands=None):
     if argv and argv[0] in ("-V", "--version"):
         return argv
     if argv and argv[0] in ("-h", "--help"):
-        # The bare invocation IS `run`, so its help is `run`'s: the bare
-        # parser alone would list a command and nothing you can pass it.
-        return ["run", *argv]
+        # The top-level help, which lists the commands. It used to be
+        # rewritten to `run --help`, on the ground that the bare parser
+        # listed one command and nothing you could pass it — true when
+        # `run` was the only command, and the reason it stopped being
+        # true is this instalment: `teille-douce --help` was the one
+        # place someone would look for `check`, `info` and `report`, and
+        # it named none of them. The epilog says `run` is the default
+        # and where its options are.
+        return argv
 
     takes_a_value = _value_taking_options()
     index = None

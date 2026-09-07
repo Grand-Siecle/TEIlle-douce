@@ -43,12 +43,23 @@ def test_an_option_given_before_the_subcommand_survives_it():
     assert parse(["--skip-existing", "run"]).skip_existing is True
 
 
-def test_bare_help_is_the_help_of_run():
-    """`teille-douce -h` with no subcommand must document what a bare
-    invocation actually does. The top-level parser alone lists a command
-    and none of the options you can pass it."""
-    assert app.normalise(["-h"]) == ["run", "-h"]
-    assert app.normalise(["--help"]) == ["run", "--help"]
+def test_bare_help_lists_the_commands_and_says_which_one_is_the_default():
+    """It used to be rewritten to `run --help`, because the top-level
+    parser listed one command and none of the options you could pass it.
+    With eight commands, `teille-douce --help` is the one place someone
+    looks for `check`, `info` and `report`, and naming none of them made
+    them undiscoverable. The epilog carries what the rewrite protected:
+    that a bare invocation converts."""
+    assert app.normalise(["-h"]) == ["-h"]
+    assert app.normalise(["--help"]) == ["--help"]
+
+    parser = app.build_parser()
+    printed = parser.format_help()
+    for command in ("check", "validate", "info", "report", "odd", "fixture",
+                    "completion"):
+        assert command in printed, f"{command} is not in the bare help"
+    assert "run` is assumed" in printed
+    assert "run --help" in printed
 
 
 def test_a_short_cluster_ending_in_a_value_taking_letter_keeps_its_value():
