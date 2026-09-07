@@ -241,7 +241,16 @@ def test_every_line_fits_the_terminal_it_was_given():
     """The rule the report package spent fourteen review rounds on, and
     the reason this renderer borrows its `pad`: a subject wider than its
     column runs into its own detail, which is where `summary._entry` was
-    wrong for three rounds running."""
+    wrong for three rounds running.
+
+    Against the renderer's own `room`, and from two columns up. It swept
+    `range(40, 141)` and compared to `min(width, MAX_WIDTH)`, which is
+    two cells looser than the contract and starts above the widths where
+    the only unclipped line in this file lived: `  needs attention` is
+    seventeen cells and was appended as a literal, so it overran every
+    terminal under nineteen columns. A sweep that starts above the
+    defect is the first of the five hollow shapes.
+    """
     wide = an_answer(
         input_dir=Path("/home/rayondemiel/univ_geneve/corpus/grand-siecle"),
         attention=tuple(
@@ -249,10 +258,12 @@ def test_every_line_fits_the_terminal_it_was_given():
             for name in ("A", "LIV0326_v1_reconciled",
                          "BDD_1685_Felibien_Entretiens_tome_II")))
 
-    for width in range(40, 141):
-        for line in command.render(wide, width=width):
-            assert cells(line) <= min(width, command.MAX_WIDTH), (width, line)
-            assert line == line.rstrip(), (width, repr(line))
+    for width in range(2, 141):
+        room = min(width, command.MAX_WIDTH) - command._MARGIN
+        for strict in (False, True):
+            for line in command.render(wide, width=width, strict=strict):
+                assert cells(line) <= room, (width, cells(line), room, line)
+                assert line == line.rstrip(), (width, repr(line))
 
 
 def test_a_subject_never_runs_into_its_own_detail():
@@ -266,6 +277,25 @@ def test_a_subject_never_runs_into_its_own_detail():
     assert len(said) == 2
     for line in said:
         assert "  no catalogue row" in line, line
+
+
+def test_a_path_that_cannot_be_read_names_the_layer_that_supplied_it(tmp_path):
+    """The line said `-i /srv/ocr is not there` whatever had set the
+    value, so it named a flag the operator had not typed. It now names
+    the layer, as `settings.unreadable_inputs` reports it.
+
+    Which layer it IS is decided in `settings._named_by` and guarded
+    there; what this fixes is that the renderer passes it through whole
+    rather than reaching into it.
+    """
+    answer = an_answer(unusable=(("ocr_dir", Path("/srv/ocr"), "is not there",
+                                  "TDOUCE_OCR_DIR"),))
+
+    said, = [line for line in command.render(answer, width=92)
+             if "/srv/ocr" in line]
+
+    assert "TDOUCE_OCR_DIR" in said
+    assert " -i " not in said
 
 
 def test_the_footer_says_what_strict_would_do():

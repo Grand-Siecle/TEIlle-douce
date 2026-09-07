@@ -346,3 +346,60 @@ def test_a_schema_that_will_not_compile_fails_the_run_rather_than_the_files(
 
     assert raised.value.code == 3
     assert "could not be compiled" in capsys.readouterr().err
+
+
+def test_a_worker_never_raises_whatever_it_cannot_compile(tmp_path,
+                                                          monkeypatch):
+    """The guard covered `--schema` and nothing else, which is the flag
+    nobody passes: the parent's `available()` only STATS the project
+    schemas, so a truncated `odd build` or a hand-edited derivative made
+    every worker's initializer raise — under `teille-douce validate`
+    with no flags at all, since `--odd` is on and `-j` is `auto`. A
+    `Pool` whose initializer raises respawns its workers for ever.
+
+    Asserted on `_prepare_worker` itself rather than through a pool:
+    this is the distinguishing case, and reaching it through a pool is
+    what a regression would HANG on rather than fail.
+    """
+    from teille_douce.validation import schemas
+
+    broken = tmp_path / "teille-douce.rng"
+    broken.write_text('<grammar xmlns="http://relaxng.org/ns/structure/1.0">'
+                      '<start><ref name="nope"/></start></grammar>',
+                      encoding="utf-8")
+
+    for absent_or_broken in (broken, tmp_path / "gone.rng"):
+        monkeypatch.setattr(schemas, "ODD_RNG", absent_or_broken)
+        command._prepare_worker(None, True)          # must not raise
+        assert "could not be compiled" in command._CONTEXT["unusable"]
+        assert command._CONTEXT["odd_rng"] is None
+
+    monkeypatch.setattr(schemas, "project_schematron",
+                        lambda: (_ for _ in ()).throw(RuntimeError("saxon")))
+    monkeypatch.setattr(schemas, "ODD_RNG",
+                        tmp_path / "still-not-there.rng")
+    command._prepare_worker(None, True)
+    assert command._CONTEXT["schematron"] is None
+
+
+def test_a_project_schema_that_will_not_compile_fails_the_run_at_three(
+        tmp_path, capsys, monkeypatch):
+    """One broken schema, not a corpus that does not conform — so it is
+    3, and said once, rather than 1 and once per file."""
+    from teille_douce.validation import schemas
+
+    monkeypatch.setattr(command, "cpu_count", lambda: 1)
+    broken = tmp_path / "teille-douce.rng"
+    broken.write_text('<grammar xmlns="http://relaxng.org/ns/structure/1.0">'
+                      '<start><ref name="nope"/></start></grammar>',
+                      encoding="utf-8")
+    monkeypatch.setattr(schemas, "ODD_RNG", broken)
+    written = tmp_path / "doc.xml"
+    written.write_text(TEI, encoding="utf-8")
+
+    with pytest.raises(SystemExit) as raised:
+        command.execute(parse([str(written)]))
+
+    assert raised.value.code == 3
+    said = capsys.readouterr().err
+    assert "could not be compiled" in said and "odd build" in said

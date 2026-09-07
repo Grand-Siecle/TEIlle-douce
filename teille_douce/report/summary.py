@@ -8,6 +8,7 @@ one to believe.
 No markup, no colour: this same string goes to a terminal and to a log.
 """
 
+import shlex
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
@@ -361,12 +362,16 @@ def _next_steps(outcome):
         # it through the same four layers and would otherwise answer
         # about a directory nobody in this run mentioned — a last line
         # that exits 3 is a last line that teaches distrust.
+        # Quoted: `-o tei out` pasted into a shell reads `out` as the
+        # DOC positional and exits 3 saying "no run recorded in tei" —
+        # the last line that teaches distrust, which is what the `-o` is
+        # here to prevent.
         # `Path(...)` on both sides: the default is declared as a string
         # in config.py and arrives here as a Path, and `Path("tei_output")
         # == "tei_output"` is False — which put `-o tei_output` on every
         # default run, offering a flag nobody needs to type.
         where = ("" if Path(outcome.output_dir) == Path(config.DEFAULT_OUTPUT_DIR)
-                 else f" -o {outcome.output_dir}")
+                 else f" -o {shlex.quote(str(outcome.output_dir))}")
         steps.append((f"teille-douce report --run {outcome.report_path.name}"
                       f"{where}",
                       "every incident above, and the log around any of them"))

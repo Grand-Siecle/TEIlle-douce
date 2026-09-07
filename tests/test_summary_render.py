@@ -865,3 +865,18 @@ def test_the_summary_prints_the_headline_it_was_given_and_not_its_own():
                                        "documents converted"))
 
     assert "Completed with errors: 25/27 documents converted" in spoken
+
+
+def test_the_command_offered_survives_a_space_in_the_path():
+    """`-o tei out` pasted into a shell reads `out` as the DOC
+    positional: exit 3, "no run recorded in tei" — the last line that
+    teaches distrust, which is the thing the `-o` is there to prevent."""
+    record = RunRecord()
+    record.add(Loss(Code.PHASE_LOST, "D1", "enrich", Locator.document("D1"),
+                    count=0, total=1402, detail="PyHellen down"))
+
+    shown = rendered(outcome(
+        record=record, output_dir=Path("/srv/tei out"),
+        report_path=Path("/srv/tei out/.teille-douce/runs/r1")))
+
+    assert "-o '/srv/tei out'" in shown

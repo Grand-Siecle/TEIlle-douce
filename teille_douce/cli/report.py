@@ -408,7 +408,17 @@ def execute(args):
     from teille_douce.settings import get_settings
 
     width = console.width
+    # `--json` on every branch, not only the last one: it is documented
+    # as "the same lines, as one JSON object", and `--limits --json` and
+    # `--runs --json` printed prose to the stdout a wrapper was parsing.
     if args.limits:
+        if args.json:
+            json.dump({"limits": [{"kind": kind, "subject": subject,
+                                   "why": why, "price": price}
+                                  for kind, subject, why, price in LIMITS]},
+                      sys.stdout, ensure_ascii=False, indent=2)
+            print()
+            return 0
         for line in render_limits(width):
             console.print(line, highlight=False)
         return 0
@@ -418,8 +428,23 @@ def execute(args):
         from teille_douce.report.store import RunStore
 
         runs = [read_run(path) for path in reversed(RunStore.kept(output_dir))]
-        for line in render_runs(runs, width):
-            console.print(line, highlight=False)
+        if args.json:
+            json.dump({"runs": [{"run": run.name,
+                                 "started": (run.started.isoformat()
+                                             if run.started else None),
+                                 "documents": dict(run.documents),
+                                 "incidents": len(run.incidents),
+                                 "exit_code": run.exit_code,
+                                 "unreadable": [{"file": name,
+                                                 "reason": reason}
+                                                for name, reason
+                                                in run.unreadable]}
+                                for run in runs]},
+                      sys.stdout, ensure_ascii=False, indent=2)
+            print()
+        else:
+            for line in render_runs(runs, width):
+                console.print(line, highlight=False)
         # Nothing recorded is 3, as it is below: the question was about a
         # run, and there is none to answer about.
         return 0 if runs else 3
@@ -439,7 +464,16 @@ def execute(args):
     selection = select(run, document=args.document, code=args.code,
                        block=args.block, why=args.why)
     if args.why and selection.why is None:
-        # 2: a value typed on the command line that names nothing.
+        # 2: a value typed on the command line that names nothing. Which
+        # is only true when nothing ELSE removed it: `--block source`
+        # empties the list before `--why` is resolved, and blaming the
+        # number the reader had just been shown was the wrong half of
+        # the command line to point at.
+        if args.block and args.block != "incident":
+            refuse(f"--block {args.block} and --why {args.why} cannot both "
+                   f"be answered: the {args.block} block is not indexed — "
+                   f"teille-douce report --limits", USAGE,
+                   "teille-douce report")
         refuse(f"no incident {args.why!r} in {run.name} — "
                f"teille-douce report lists them by number",
                USAGE, "teille-douce report")

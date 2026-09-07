@@ -356,6 +356,16 @@ def read_run(path):
                     unreadable.append((f"incidents.jsonl:{number}",
                                        str(reason)))
                     continue
+                if not isinstance(entry, dict):
+                    # `null`, `3`, `[]` and `"x"` are all valid JSON and
+                    # none of them has `.get`. One such line took down
+                    # `report --runs`, which reads every run kept here,
+                    # with a traceback out of a function whose docstring
+                    # promises it never raises.
+                    unreadable.append((f"incidents.jsonl:{number}",
+                                       f"is a {type(entry).__name__}, "
+                                       f"not an incident"))
+                    continue
                 incidents.append(Incident(
                     index=f"I{len(incidents) + 1}",
                     code=entry.get("code", "?"),

@@ -747,10 +747,15 @@ certainty indication. `--odd` answers that complementary question, using the
 project's own customization: a closed element inventory, closed value lists for
 `zone/@type` and `rs/@type`, and eleven Schematron rules.
 
-The command exits **1** on any error, so it drops straight into CI. Rules the
-TEI marks `role="nonfatal"` are reported as warnings, not errors. Under
+The command exits **1** when a file fails, so it drops straight into CI. Rules
+the TEI marks `role="nonfatal"` are reported as warnings, not errors. Under
 `--no-odd` five local invariants go unchecked, and it says so rather than
 letting you believe the check was complete.
+
+A refusal is not a failed file: **2** for a `--schema` or a `-j` this program
+cannot use, **3** for nothing to check, a demanded `--odd` with no schema
+installed, and a schema that parses and will not compile. One broken argument
+must not be reported as a corpus that does not conform.
 
 The project schema is applied without being asked for. It is versioned, so
 applying it needs only `lxml` and `saxonche` — not the toolchain that
@@ -800,7 +805,9 @@ it looks like it means.
 
 Exit codes: **0** the third block is empty, **1** it is not — whatever the
 selectors left on screen, because the question a wrapper asks this command is
-"did that run need a human" — and **3** when there is no record here at all.
+"did that run need a human" — **2** for a value typed on the command line that
+names nothing (`--why I9`, or `--why` under a `--block` that is not indexed),
+and **3** when there is no record here at all.
 
 **`--limits` is the one that matters in the long run.** It separates what this
 pipeline *cannot* measure from what it *does not measure yet*, and gives the

@@ -77,30 +77,48 @@ def _prepare_worker(schema, with_odd):
     process. The parent's four objects were never read. On a one-megabyte
     tei_all.rng and a Schematron sheet through Saxon, that was not free.
     """
-    # Nothing in here may raise. The parent has already checked the
-    # shape of `--schema`, and this is the second lock on the same door:
-    # a `Pool` initializer that raises respawns its workers for ever,
-    # which is a hang with no output rather than an error.
-    _CONTEXT["unusable"] = None
+    # NOTHING in here may raise — a `Pool` initializer that raises
+    # respawns its workers for ever, which is a hang with no output
+    # rather than an error. The whole body is inside the guard, not the
+    # `--schema` line alone: the parent's `available()` only STATS
+    # `teille-douce.rng` and `teille-douce.svrl.xsl`, it never compiles
+    # them, so a truncated `odd build` or a hand-edited derivative made
+    # every worker raise — under `teille-douce validate` with no flags
+    # at all, since `--odd` is on and `-j` is `auto`. The first version
+    # of this guard covered `--schema`, which is the flag nobody passes.
+    _CONTEXT.update(relaxng=None, odd_rng=None, schematron=None,
+                    unusable=None)
     try:
-        _CONTEXT["relaxng"] = (etree.RelaxNG(etree.parse(str(schema)))
-                               if schema else None)
+        if schema:
+            _CONTEXT["relaxng"] = etree.RelaxNG(etree.parse(str(schema)))
     except Exception as reason:
-        _CONTEXT["relaxng"] = None
         _CONTEXT["unusable"] = (f"--schema could not be compiled: "
                                 f"{type(reason).__name__}: {reason}")
-    _CONTEXT["odd_rng"] = None
-    _CONTEXT["schematron"] = None
-    if with_odd:
-        from teille_douce.validation.schemas import (project_relaxng,
-                                                     project_schematron)
+    if not with_odd:
+        return
+    from teille_douce.validation.schemas import (project_relaxng,
+                                                 project_schematron)
+    try:
         _CONTEXT["odd_rng"] = project_relaxng()
-        try:
-            _CONTEXT["processor"], _CONTEXT["schematron"] = project_schematron()
-        except Missing:
-            # The parent has already said so once; a worker saying it
-            # again would say it once per process.
-            pass
+    except Exception as reason:
+        _CONTEXT["unusable"] = (f"the project schema could not be "
+                                f"compiled: {type(reason).__name__}: "
+                                f"{reason} — teille-douce odd build")
+    try:
+        _CONTEXT["processor"], _CONTEXT["schematron"] = project_schematron()
+    except Missing:
+        # The parent has already said so once; a worker saying it
+        # again would say it once per process.
+        pass
+    except Exception as reason:
+        # Not `Missing`: the sheet is there and Saxon refuses it. The
+        # RelaxNG above may still have compiled, so this narrows the
+        # check rather than failing it — and says so once per file
+        # instead of respawning the pool.
+        _CONTEXT["schematron"] = None
+        _CONTEXT["unusable"] = (f"the project Schematron could not be "
+                                f"compiled: {type(reason).__name__}: "
+                                f"{reason} — teille-douce odd build")
 
 
 def _check(path):
@@ -295,7 +313,8 @@ def execute(args):
     # every worker and fails every file identically. That is one broken
     # argument, not a corpus that does not conform, so it is 3.
     unusable = {errors[0] for _, errors, _ in verdicts
-                if errors and errors[0].startswith("--schema could not")}
+                if errors and (errors[0].startswith("--schema could not")
+                               or "could not be compiled" in errors[0])}
     if len(unusable) == 1 and all(errors for _, errors, _ in verdicts):
         refuse(unusable.pop(), MISCONFIGURED, "teille-douce validate")
 

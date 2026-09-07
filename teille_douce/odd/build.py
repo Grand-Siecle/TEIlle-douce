@@ -149,8 +149,8 @@ class Toolchain:
                 refuse(
                     f"the Stylesheets could not be downloaded ({refused}).\n"
                     "GitHub throttles anonymous downloads in bursts: try again\n"
-                    "later, or install gh (https://cli.github.com) and log in."
-                )
+                    "later, or install gh (https://cli.github.com) and log in.",
+                    MISCONFIGURED, "teille-douce odd")
             say(f"  anonymous throttled ({refused}) — retrying through gh api")
             finished = subprocess.run(["gh", "api", STYLESHEETS_API],
                                       capture_output=True)
@@ -162,8 +162,8 @@ class Toolchain:
                     "gh api failed for the Stylesheets:\n"
                     + (finished.stderr.decode("utf-8", "replace").strip()
                        or f"exit code {finished.returncode}")
-                    + "\n(log in with `gh auth login`, or try again later)"
-                )
+                    + "\n(log in with `gh auth login`, or try again later)",
+                    MISCONFIGURED, "teille-douce odd")
             return finished.stdout
 
     def _unpack_stylesheets(self, archive):
@@ -185,8 +185,8 @@ def _processor():
     except ImportError:
         refuse(
             "saxonche is missing: pip install -r requirements-dev.txt\n"
-            "(SaxonC-HE, the XSLT 2.0 engine; no JVM required)"
-        )
+            "(SaxonC-HE, the XSLT 2.0 engine; no JVM required)",
+            MISCONFIGURED, "teille-douce odd")
     return PySaxonProcessor
 
 
@@ -257,8 +257,8 @@ def compile_odd(destination, toolchain=None, odd=ODD, say=print):
                 refuse(
                     f"{left} <notAllowed/> survived the simplification:\n"
                     "libxml2 could not compile the schema. See "
-                    "teille_douce/odd/simplify.py."
-                )
+                    "teille_douce/odd/simplify.py.",
+                    MISCONFIGURED, "teille-douce odd")
 
             # 3. -> ISO Schematron
             say(f"extract-isosch (lang={MESSAGE_LANGUAGE})")

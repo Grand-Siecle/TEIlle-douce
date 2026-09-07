@@ -449,6 +449,60 @@ def test_a_field_of_the_wrong_type_is_named_rather_than_ignored(tmp_path):
     assert read_run(quiet).unreadable == ()
 
 
+def test_a_jsonl_line_that_is_not_an_object_does_not_take_down_the_listing(
+        tmp_path):
+    """`null`, `3`, `[]` and `"x"` are all valid JSON and none of them
+    has `.get`. One such line raised out of `read_run` — whose docstring
+    promises it never does — and `--runs` reads every run kept here, so
+    one damaged line in one old run took down the whole listing."""
+    where = a_run(tmp_path)
+    with open(where / "incidents.jsonl", "a", encoding="utf-8") as handle:
+        handle.write("null\n3\n[]\n\"x\"\n")
+
+    run = read_run(where)
+
+    assert len(run.incidents) == 3
+    assert len(run.unreadable) == 4
+    assert all("not an incident" in reason for _, reason in run.unreadable)
+    assert command.render_runs([run])              # and the listing renders
+
+
+def test_json_is_honoured_on_every_branch(tmp_path, capsys):
+    """It is documented as "the same lines, as one JSON object", and
+    `--limits --json` and `--runs --json` printed prose into the stdout
+    a wrapper was parsing."""
+    a_run(tmp_path)
+    from teille_douce.settings import use_settings
+
+    with use_settings(output_dir=tmp_path):
+        assert command.execute(parse(["--limits", "--json"])) == 0
+        limits = json.loads(capsys.readouterr().out)
+        assert {row["kind"] for row in limits["limits"]} == {"impossible",
+                                                             "not yet"}
+
+        assert command.execute(parse(["--runs", "--json"])) == 0
+        runs = json.loads(capsys.readouterr().out)
+    assert runs["runs"][0]["incidents"] == 3
+
+
+def test_a_block_that_is_not_indexed_is_blamed_rather_than_the_number(
+        tmp_path, capsys):
+    """`--block source` empties the list before `--why` is resolved, so
+    the refusal blamed `I1` — a number the reader had just been shown —
+    for a filter typed on the other half of the same command line."""
+    a_run(tmp_path)
+    from teille_douce.settings import use_settings
+
+    with use_settings(output_dir=tmp_path):
+        with pytest.raises(SystemExit) as raised:
+            command.execute(parse(["--block", "source", "--why", "I1"]))
+
+    assert raised.value.code == 2
+    said = capsys.readouterr().err
+    assert "not indexed" in said and "--block source" in said
+    assert "no incident" not in said
+
+
 def test_the_runs_are_listed_newest_first(tmp_path):
     a_run(tmp_path, stamp="20260903-180824-0031415")
     a_run(tmp_path, stamp="20260904-090000-0031415", incidents=())
