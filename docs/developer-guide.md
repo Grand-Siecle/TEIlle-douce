@@ -229,7 +229,14 @@ they can be recognised:
 - an **environment the suite makes untrue** — pytest's log-capture
   handler is a `StreamHandler` with no filename, so a "is there a console
   at INFO?" predicate was always true under the suite and the branch
-  behind it was executed by none of thirteen hundred tests;
+  behind it was executed by none of thirteen hundred tests. **The machine
+  is part of that environment**, and CI is not this laptop: it has no
+  `OCR/` and two cores, so `_workers("64", 3) == 3` and
+  `unreadable_inputs() == ()` were both true here and false there. Stub
+  `cpu_count` on both sides of a bound, assert on the entry you mean
+  rather than on an empty collection, and run the suite once with the
+  corpus moved aside — `mv OCR /tmp/OCR-parked`, run, move it back —
+  before pushing;
 - a test that reaches the fix's **mechanism but not its own case** — three
   tests injected `TypeError`, `ValueError` and `RuntimeError` at a guard
   that had just been widened from `except Exception` to
