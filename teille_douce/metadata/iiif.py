@@ -156,8 +156,21 @@ class IIIFMapping:
 
         # Validate candidates
         for csv_path in candidates:
+            # A regular file, first of all. A FIFO named like a mapping
+            # reports zero bytes, so it passed the size cap below and
+            # `read_csv` then waited for a writer that never came: the
+            # whole command hung with nothing on screen, `run` and
+            # `check` alike. A directory or a broken symlink raised
+            # instead. `is_file` follows the symlink and answers no to
+            # all three.
+            if not csv_path.is_file():
+                continue
             # Skip very large files
-            if csv_path.stat().st_size > IIIF_CSV_MAX_SIZE:
+            try:
+                too_big = csv_path.stat().st_size > IIIF_CSV_MAX_SIZE
+            except OSError:
+                continue
+            if too_big:
                 continue
 
             try:

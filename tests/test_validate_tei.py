@@ -1,4 +1,4 @@
-# Tests de scripts/validate_tei.py -- le garde-fou de sortie, jusqu'ici
+# Tests de teille_douce/validation/ -- le garde-fou de sortie, jusqu'ici
 # a 0 % de couverture (audit 2.6).
 #
 # Run: venv/bin/python -m pytest tests/test_validate_tei.py -q
@@ -6,7 +6,27 @@ import pytest
 
 from pathlib import Path
 
-from scripts.validate_tei import main, validate
+from teille_douce.cli import app as _app
+from teille_douce.cli import validate as _validate
+from teille_douce.validation import validate
+
+
+def main(argv):
+    """The old surface, as these tests exercised it.
+
+    `--odd` was optional then and is the default now, so a call that did
+    not ask for it is given `--no-odd` — these tests go on saying what
+    they were written to say.
+
+    (The French names below pre-date this file's move into the package
+    and are left alone on purpose; the design note keeps translating
+    them out of a CLI PR. Everything written here is in English, as
+    CLAUDE.md requires.)
+    """
+    if "--odd" not in argv:
+        argv = ["--no-odd", *argv]
+    parsed = _app.build_parser().parse_args(["validate", *argv])
+    raise SystemExit(_validate.execute(parsed))
 
 RACINE = Path(__file__).resolve().parent.parent
 
@@ -40,7 +60,8 @@ def violations_odd(chemin):
     qui les epinglaient interrogent donc la regle publiee, pas une seconde
     implementation."""
     pytest.importorskip("saxonche")
-    from scripts.validate_tei import erreurs_svrl, schematron_du_projet
+    from teille_douce.validation import (svrl_violations as erreurs_svrl,
+                                     project_schematron as schematron_du_projet)
     _, feuille = schematron_du_projet()
     return [m for m, _ in erreurs_svrl(feuille.transform_to_string(source_file=chemin))]
 
@@ -68,7 +89,7 @@ def test_facs_pendant_est_une_erreur(tmp_path):
 def test_xml_id_duplique_est_une_erreur(tmp_path):
     contenu = TEI_OK.replace('xml:id="zone_1"', 'xml:id="f1"', 1)
     errors, _ = validate(_ecrire(tmp_path, contenu))
-    assert any("dupliqu" in e for e in errors), errors
+    assert any("duplicate xml:id" in e for e in errors), errors
 
 
 def test_xml_id_non_ncname_est_une_erreur(tmp_path):
@@ -150,14 +171,14 @@ def test_points_mal_formes_et_suspects(tmp_path):
         '<zone xml:id="zone_1" corresp="#MainZone"><path points="12,34 pasunepaire"/></zone>',
     )
     errors, _ = validate(_ecrire(tmp_path, mal_forme, nom="pts.xml"))
-    assert any("points mal form" in e for e in errors), errors
+    assert any("malformed points" in e for e in errors), errors
 
     tous_x_zero = TEI_OK.replace(
         '<zone xml:id="zone_1" corresp="#MainZone"/>',
         '<zone xml:id="zone_1" corresp="#MainZone"><path points="0,10 0,20 0,30"/></zone>',
     )
     errors, _ = validate(_ecrire(tmp_path, tous_x_zero, nom="pts0.xml"))
-    assert any("suspects" in e for e in errors), errors
+    assert any("suspicious points" in e for e in errors), errors
 
 
 
@@ -169,7 +190,7 @@ def test_url_iiif_construite_sur_le_nom_de_fichier_est_une_erreur(tmp_path):
         '<surface xml:id="f1" source="https://gallica.bnf.fr/iiif/LIV0001_reconciled/f1">',
     )
     errors, _ = validate(_ecrire(tmp_path, contenu, nom="teille_douce.xml"))
-    assert any("URL IIIF construite" in e for e in errors), errors
+    assert any("IIIF URL built on the file name" in e for e in errors), errors
 
 
 
@@ -210,7 +231,7 @@ def test_graphiczone_sans_figure_est_une_erreur(tmp_path):
         '<ab corresp="#zone_g"/>',
     )
     errors, _ = validate(_ecrire(tmp_path, contenu))
-    assert any("GraphicZone sans <figure>" in e for e in errors), errors
+    assert any("GraphicZone with no <figure>" in e for e in errors), errors
 
 
 def test_figure_sans_graphic_est_une_erreur_quand_le_crop_existe(tmp_path):
@@ -218,7 +239,7 @@ def test_figure_sans_graphic_est_une_erreur_quand_le_crop_existe(tmp_path):
         '<graphic url="https://iiif/f1/crop.jpg"/>', "<ab/>"
     )
     errors, _ = validate(_ecrire(tmp_path, contenu))
-    assert any("sans <graphic url>" in e for e in errors), errors
+    assert any("with no <graphic url>" in e for e in errors), errors
 
 
 def test_figure_sans_graphic_est_normale_quand_la_zone_n_a_pas_de_crop(tmp_path):
@@ -246,7 +267,7 @@ def _rapport_svrl(corps):
 
 
 def test_un_rapport_svrl_sans_echec_ne_donne_aucune_erreur():
-    from scripts.validate_tei import erreurs_svrl
+    from teille_douce.validation import svrl_violations as erreurs_svrl
     assert erreurs_svrl(_rapport_svrl(
         '<svrl:fired-rule context="tei:zone"/>')) == []
 
@@ -254,7 +275,7 @@ def test_un_rapport_svrl_sans_echec_ne_donne_aucune_erreur():
 def test_un_echec_svrl_devient_une_erreur_situee():
     """Schematron distingue l'assertion non tenue du rapport declenche ;
     les deux sont des violations pour nous, et le message doit dire ou."""
-    from scripts.validate_tei import erreurs_svrl
+    from teille_douce.validation import svrl_violations as erreurs_svrl
     corps = (
         '<svrl:failed-assert location="/tei:TEI/tei:text[1]">'
         "<svrl:text>A figure must carry @corresp.</svrl:text>"
@@ -275,7 +296,7 @@ def test_un_echec_svrl_devient_une_erreur_situee():
 def test_le_texte_svrl_est_ramene_sur_une_ligne():
     """Les messages ecrits dans l'ODD sont indentes sur plusieurs lignes ;
     tels quels ils casseraient l'affichage en une erreur par ligne."""
-    from scripts.validate_tei import erreurs_svrl
+    from teille_douce.validation import svrl_violations as erreurs_svrl
     corps = ('<svrl:failed-assert location="/tei:TEI">'
              "<svrl:text>\n     un message\n     coupe en trois\n   </svrl:text>"
              "</svrl:failed-assert>")
@@ -289,7 +310,7 @@ def test_les_violations_sortent_dans_l_ordre_du_document():
     les rapports. Sur un document annote, les 63 echecs d'inventaire
     passaient devant et le plafond d'affichage rendait les quatre regles
     ecrites en <sch:report> litteralement inatteignables."""
-    from scripts.validate_tei import erreurs_svrl
+    from teille_douce.validation import svrl_violations as erreurs_svrl
     corps = (
         '<svrl:successful-report location="/a"><svrl:text>premier</svrl:text></svrl:successful-report>'
         '<svrl:failed-assert location="/b"><svrl:text>deuxieme</svrl:text></svrl:failed-assert>'
@@ -304,7 +325,7 @@ def test_une_regle_nonfatale_de_la_tei_est_un_avertissement():
     """La TEI marque trois de ses propres regles role="nonfatal" ; les
     traiter comme fatales ferait echouer un document sur un avertissement
     qui n'est pas le notre."""
-    from scripts.validate_tei import erreurs_svrl
+    from teille_douce.validation import svrl_violations as erreurs_svrl
     corps = ('<svrl:report location="/a"/>'
              '<svrl:failed-assert location="/b" role="nonfatal">'
              "<svrl:text>usage of deprecated attribute</svrl:text></svrl:failed-assert>")
@@ -312,38 +333,49 @@ def test_une_regle_nonfatale_de_la_tei_est_un_avertissement():
     assert role == "nonfatal"
 
 
-def test_odd_sans_schema_compile_le_dit_au_lieu_de_planter(tmp_path, monkeypatch):
-    """--odd sur un depot ou build_odd.py n'a jamais tourne doit nommer la
-    commande a lancer, pas echouer sur un fichier introuvable."""
-    import scripts.validate_tei as vt
+def test_odd_sans_schema_compile_le_dit_au_lieu_de_planter(tmp_path, monkeypatch,
+                                                           capsys):
+    """--odd on a checkout where the ODD was never compiled must name
+    the command to run, not fail on a file it cannot find.
+
+    Exit 3: nothing ran. 1 means "some files failed validation", which
+    the message itself contradicted.
+
+    (The name stays French: this file's names are, and renaming them is
+    a `chore/` of its own, out of scope by the design note. What is new
+    here is written in English, as CLAUDE.md requires.)"""
+    import teille_douce.validation.schemas as vt
     monkeypatch.setattr(vt, "ODD_RNG", tmp_path / "absent.rng")
     with pytest.raises(SystemExit) as leve:
-        vt.main(["--odd", _ecrire(tmp_path, TEI_OK)])
-    assert "build_odd.py" in str(leve.value)
+        main(["--odd", _ecrire(tmp_path, TEI_OK)])
+    assert leve.value.code == 3
+    assert "odd build" in capsys.readouterr().err
 
 
 def test_schematron_du_projet_signale_une_feuille_absente(tmp_path, monkeypatch):
-    import scripts.validate_tei as vt
+    import teille_douce.validation.schemas as vt
     pytest.importorskip("saxonche")
     monkeypatch.setattr(vt, "ODD_SVRL", tmp_path / "absent.xsl")
-    with pytest.raises(SystemExit) as leve:
-        vt.schematron_du_projet()
-    assert "build_odd.py" in str(leve.value)
+    from teille_douce.validation import Missing
+
+    with pytest.raises(Missing) as leve:
+        vt.project_schematron()
+    assert "odd build" in str(leve.value)
 
 
 def test_odd_valide_une_sortie_du_pipeline(tmp_path, capsys):
     """Le chemin nominal de --odd, de bout en bout : le golden, sa date de
     generation remise, doit passer RelaxNG et Schematron."""
     pytest.importorskip("saxonche")
-    import scripts.validate_tei as vt
+    import teille_douce.validation.schemas as vt
     if not vt.ODD_RNG.exists():
-        pytest.skip("schema/teille-douce.rng absent — lancer scripts/build_odd.py")
+        pytest.skip("schema/teille-douce.rng absent — lancer teille-douce odd build")
     golden = (RACINE / "tests" / "fixtures" / "golden" / "LIV9001_court.tei.xml")
     doc = tmp_path / "doc.tei.xml"
     doc.write_text(golden.read_text(encoding="utf-8").replace(
         'when="DATE-GENERATION"', 'when="2026-09-03"'), encoding="utf-8")
     with pytest.raises(SystemExit) as leve:
-        vt.main(["--odd", str(doc)])
+        main(["--odd", str(doc)])
     assert leve.value.code == 0, capsys.readouterr().out
 
 
@@ -429,23 +461,35 @@ def test_sans_odd_le_script_dit_ce_qu_il_n_a_pas_verifie(tmp_path, capsys):
     with pytest.raises(SystemExit):
         main([_ecrire(tmp_path, TEI_OK)])
     sortie = capsys.readouterr().out
-    assert "--odd" in sortie
-    assert "non verifi" in sortie.lower()
+    # The note names the invariants, not the flag: it is printed too
+    # when the schema is not installed at all, where pointing at --odd
+    # would recommend the one thing that would fail.
+    assert "langUsage" in sortie and "ORCID" in sortie
+    assert "not checked" in sortie.lower()
 
 
 def test_odd_sans_saxonche_valide_quand_meme_le_relaxng(tmp_path, capsys, monkeypatch):
     """saxonche absent ne doit pas emporter la validation RelaxNG, qui ne
     depend que de lxml et d'un schema versionne."""
-    import scripts.validate_tei as vt
+    import teille_douce.validation.schemas as vt
     if not vt.ODD_RNG.exists():
-        pytest.skip("schema/teille-douce.rng absent — lancer scripts/build_odd.py")
+        pytest.skip("schema/teille-douce.rng absent — lancer teille-douce odd build")
 
-    def pas_de_saxon():
-        raise SystemExit("saxonche absent")
-    monkeypatch.setattr(vt, "schematron_du_projet", pas_de_saxon)
+    from teille_douce.validation import Missing
+
+    def pas_de_saxon(*_):
+        raise Missing("saxonche is not installed")
+
+    # Ce que la disponibilite decide desormais dans le parent, et ce que
+    # le worker tente : le premier imprime la note, le second se passe du
+    # Schematron sans emporter le RelaxNG.
+    monkeypatch.setattr(vt, "project_schematron", pas_de_saxon)
+    monkeypatch.setattr(_validate, "available", lambda odd: (
+        False, "note: Schematron not applied (saxonche is not installed) — "
+               "only teille-douce.rng was used"))
 
     with pytest.raises(SystemExit):
-        vt.main(["--odd", _ecrire(tmp_path, TEI_OK)])
+        main(["--odd", _ecrire(tmp_path, TEI_OK)])
     sortie = capsys.readouterr().out
     assert "Schematron" in sortie and "saxonche" in sortie
     assert "teille-douce.rng" in sortie, "le RelaxNG doit avoir ete applique"
@@ -512,3 +556,28 @@ def test_les_fichiers_se_controlent_en_parallele(tmp_path, capsys):
     sequentiel = capsys.readouterr().out
     assert parallele == sequentiel
     assert "NCName" in parallele
+
+
+def test_a_saxonche_that_is_broken_reads_as_one_that_is_absent(monkeypatch):
+    """A SaxonC wheel whose native library will not load raises
+    `OSError`, not `ImportError`. `project_schematron` runs in the
+    worker, where `except Exception` covers it; the widening had reached
+    one site of three."""
+    import builtins
+
+    import teille_douce.validation.schemas as vt
+    from teille_douce.validation import Missing
+
+    real = builtins.__import__
+
+    def refuse_saxon(name, *rest):
+        if name == "saxonche":
+            raise OSError("libsaxonc.so: cannot open shared object file")
+        return real(name, *rest)
+
+    monkeypatch.setattr(builtins, "__import__", refuse_saxon)
+
+    with pytest.raises(Missing) as raised:
+        vt.project_schematron()
+
+    assert "cannot be used" in str(raised.value)

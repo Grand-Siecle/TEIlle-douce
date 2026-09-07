@@ -42,11 +42,14 @@ from teille_douce import config
 # =============================================================================
 
 def _as_path(raw):
+    """A path the pipeline will WRITE. Nothing is required to exist."""
     # A TOML file supplies integers and booleans too, and Path(42) raises
     # TypeError, which is not what the layers promise to do with a value
     # they cannot use.
     if not isinstance(raw, (str, Path)):
         raise ValueError("is not a path")
+    if isinstance(raw, str) and not raw.strip():
+        raise ValueError("is empty")
     try:
         # A shell expands ~ before the variable is ever read, but a config
         # file and a quoted flag do not: without this, "~/tei" is a
@@ -54,6 +57,9 @@ def _as_path(raw):
         return Path(raw).expanduser()
     except RuntimeError:
         raise ValueError("names a home directory that cannot be resolved")
+
+
+
 
 
 _DEVICE = re.compile(r"^(auto|cpu|mps|cuda(:\d+)?)$")
@@ -465,6 +471,99 @@ class Settings:
         }
         return manifest
 
+    # What each path is FOR, and whether the run needs it.
+    #
+    # Resolution stays pure — `info` and `check` must be able to read a
+    # configuration on a machine with no corpus — so the check lives
+    # here, and the callers decide what to do with the answer: `run`
+    # refuses, `check` lists it.
+    #
+    # `required` is the input without which there is nothing to do. The
+    # two catalogues are NOT that: the guide says in as many words that
+    # both are optional and that the pipeline "fills the header with
+    # explicit placeholders rather than inventing values", and their
+    # defaults are relative, so making them mandatory refused every run
+    # started from anywhere but the repository root.
+    #
+    # An absent catalogue is only worth refusing when the operator NAMED
+    # it — a mistyped `--metadata` is a usage error, a missing default is
+    # the documented behaviour — so the caller weighs `origin` too.
+    # `tei_rng` is NOT in here. It is read by one thing —
+    # tests/test_e2e_pipeline.py, to point the schema tests at a
+    # tei_all.rng — and CLAUDE.md tells contributors to set it, so a
+    # stale value left in a shell profile refused every conversion with
+    # "an input this run must read is not readable", over a file no run
+    # has ever opened.
+    READS = (("ocr_dir", "dir", "-i / TDOUCE_OCR_DIR / paths.input", True),
+             ("metadata_csv", "file",
+              "--metadata / TDOUCE_METADATA_CSV / paths.metadata", False),
+             ("persons_csv", "file",
+              "--persons / TDOUCE_PERSONS_CSV / paths.persons", False))
+
+    def unreadable_inputs(self):
+        """Every path this run will READ that it cannot.
+
+        The documentation says the converters "reject empty, unusable,
+        non-finite and out-of-range values"; for a path they rejected
+        nothing. A mistyped `TDOUCE_METADATA_CSV` converted a whole
+        corpus with placeholder headers and exited 0 — forty minutes to
+        produce files nobody wants, reported as a success.
+
+        Only what is read. An output directory does not have to exist:
+        it is created. The role is the difference, and it is declared in
+        `READS` rather than guessed from the name.
+
+        Returns:
+            tuple: one `(setting, path, reason, where)` per path that
+            cannot be read, in declaration order — the corpus always, and
+            a catalogue only where the operator named one.
+        """
+        answers = []
+        for name, kind, where, required in self.READS:
+            path = getattr(self, name)
+            if path is None:
+                continue
+            # A default that is not there is the documented behaviour for
+            # everything but the corpus itself. Named and not there is a
+            # mistake worth stopping for, whichever layer named it.
+            if not required and self.origin(name) == "default":
+                continue
+            if not path.exists():
+                reason = ("does not exist" if kind == "file"
+                          else "is not there")
+            elif kind == "dir" and not path.is_dir():
+                reason = "is not a directory"
+            elif kind == "file" and not path.is_file():
+                # Not `is_dir()` alone: a FIFO passed that check, and
+                # pandas then waited for a writer that never came — the
+                # whole command hung with nothing on screen. `is_file`
+                # follows the symlink and answers no to a directory, a
+                # FIFO and a socket alike.
+                reason = ("is a directory, not a file" if path.is_dir()
+                          else "is not a regular file")
+            elif not os.access(path, os.R_OK):
+                reason = "cannot be read"
+            else:
+                continue
+            # The layer that actually supplied it, not the first of the
+            # three names in `where`: the message always said `-i:` even
+            # when the value came from TDOUCE_OCR_DIR or the config file,
+            # so it named a flag the operator had not typed.
+            answers.append((name, path, reason, self._named_by(name, where)))
+        return tuple(answers)
+
+    def _named_by(self, name, where):
+        """How the operator set this path, as they would recognise it."""
+        origin = self.origin(name)
+        if origin.startswith("env:"):
+            return origin[4:]
+        if origin.startswith("config:"):
+            key = next((row.key for row in _SETTINGS if row.name == name), name)
+            return f"{key} in {origin[7:]}"
+        # A flag, or a default nobody overrode: the flag is what a
+        # reader would type to change it either way.
+        return where.split(" / ")[0].strip()
+
     @staticmethod
     def config_keys():
         """Every "section.key" a config file may set.
@@ -518,6 +617,31 @@ class Settings:
             flags, env, from_file, config_file, rejected
         )
         return cls(**values, origins=origins, rejected=tuple(rejected))
+
+
+def declarations():
+    """Every runtime setting, as the rows the four layers are read from.
+
+    `info` renders the layers from these rows rather than from a list of
+    its own: a second list diverges at the first setting added, and the
+    whole point of this table is that declaring a setting once is what
+    keeps the layers, the guide and the CLI from drifting apart.
+
+    `modernize_url` is in here and not in `Settings`: it is the base URL
+    every language with no override of its own falls back to, so it is a
+    layer like any other and `info` has to be able to answer for it.
+    """
+    return _SETTINGS + (_MODERNIZE_URL,)
+
+
+def config_values(path):
+    """A config file flattened into {"section.key": value}, or {}.
+
+    The same reading `Settings.load` does, anchoring included, so that
+    `info` shows what the file actually offered rather than what it
+    literally contains.
+    """
+    return _read_config_file(path)
 
 
 def _read_config_file(path):

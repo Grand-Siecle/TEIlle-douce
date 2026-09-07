@@ -34,6 +34,11 @@ def build_parser():
         prog="teille-douce",
         description="Convert ALTO XML documents to TEI P5 with the SegmOnto "
                     "taxonomy.",
+        epilog="With no COMMAND, `run` is assumed: `teille-douce`, "
+               "`teille-douce LIV0044` and `teille-douce --fast` all "
+               "convert. `teille-douce run --help` lists what run takes; "
+               "every other command has its own --help. Five of them write "
+               "nothing at all: check, validate, info, report, completion.",
     )
     parser.add_argument(
         "-V", "--version",
@@ -51,10 +56,57 @@ def build_parser():
     options.add_run_arguments(run_parser)
     parser.set_defaults(command="run")
 
+    # The commands that write nothing, and the two that rebuild what the
+    # repository versions. Their arguments are declared by the modules
+    # that implement them, so a flag cannot exist in one place and be
+    # parsed in another.
+    from teille_douce.cli import (check, completion, fixture, info, odd,
+                                  report, validate)
+
+    check.add_arguments(subparsers.add_parser(
+        "check",
+        help="is this installation usable, and what would a run cost",
+        description="Diagnose the input, the output, the catalogues and the "
+                    "services, without converting anything."))
+    validate.add_arguments(subparsers.add_parser(
+        "validate",
+        help="check produced TEI against the project schema and the known "
+             "failure modes",
+        description="Validate TEI output: the project content model, the "
+                    "ODD's Schematron constraints, and the failure modes "
+                    "this pipeline is known to have."))
+    info.add_arguments(subparsers.add_parser(
+        "info",
+        help="which value is in force for a setting, and which layer set it",
+        description="Print the settings of this installation with the layer "
+                    "each value came from: flag, TDOUCE_* variable, config "
+                    "file, default."))
+    report.add_arguments(subparsers.add_parser(
+        "report",
+        help="go back to a run that is over: what it lost, and where",
+        description="Read the record a past run left under "
+                    ".teille-douce/runs/. Touches no corpus."))
+    odd.add_arguments(subparsers.add_parser(
+        "odd",
+        help="compile the project schema from its ODD, or check it",
+        description="Compile schema/teille-douce.odd into the RelaxNG, "
+                    "Schematron and SVRL artefacts versioned beside it."))
+    completion.add_arguments(subparsers.add_parser(
+        "completion",
+        help="print a shell completion, generated from this parser",
+        description="Generate a completion script for bash, zsh or fish. "
+                    "Read off the parser, so it cannot offer a flag this "
+                    "program does not have."))
+    fixture.add_arguments(subparsers.add_parser(
+        "fixture",
+        help="rebuild the versioned test fixture (needs the private corpus)",
+        description="Rebuild the minimal ALTO fixture, or the golden file "
+                    "the strict end-to-end diff compares against."))
+
     return parser
 
 
-def _config_file(args, parser):
+def config_file(args, parser):
     """The config file this run reads, or None.
 
     A file named explicitly and missing is a misconfiguration (exit 3), not
@@ -90,7 +142,7 @@ def settings_from(args, env=None, parser=None):
     # Resolved once: computing it twice made every rejected TDOUCE_* value
     # warn twice, and the second resolution below used to omit it entirely,
     # so a level set in the config file was invisible to the -q floor.
-    config_file = _config_file(args, parser)
+    config_path = config_file(args, parser)
     flags = {}
     for name in options.PASSED_THROUGH:
         value = getattr(args, name, None)
@@ -104,10 +156,12 @@ def settings_from(args, env=None, parser=None):
 
     flags.update(options.resolve_phases(parser, getattr(args, "phase_ops", None)))
 
-    if getattr(args, "strict", False):
+    if getattr(args, "strict", False) and getattr(args, "command", "run") == "run":
         # An alias, resolved here so that only one name reaches the
         # settings: two spellings of one level is two things to keep in
-        # step.
+        # step. `run`'s alone: `check --strict` and `validate` mean
+        # something else by the word, and folding theirs in here set a
+        # quality gate for a command that writes nothing.
         flags.setdefault("fail_on", "incident")
 
     if getattr(args, "force", False):
@@ -116,7 +170,7 @@ def settings_from(args, env=None, parser=None):
         flags["skip_existing"] = True
 
     try:
-        return _resolve_settings(args, env, parser, config_file, flags)
+        return _resolve_settings(args, env, parser, config_path, flags)
     except (ValueError, tomllib.TOMLDecodeError, OSError) as reason:
         # Exit 3, not a traceback and not 1: nothing ran, and 1 is
         # reserved for "some volumes failed".
@@ -213,9 +267,15 @@ def normalise(argv, commands=None):
     if argv and argv[0] in ("-V", "--version"):
         return argv
     if argv and argv[0] in ("-h", "--help"):
-        # The bare invocation IS `run`, so its help is `run`'s: the bare
-        # parser alone would list a command and nothing you can pass it.
-        return ["run", *argv]
+        # The top-level help, which lists the commands. It used to be
+        # rewritten to `run --help`, on the ground that the bare parser
+        # listed one command and nothing you could pass it — true when
+        # `run` was the only command, and the reason it stopped being
+        # true is this instalment: `teille-douce --help` was the one
+        # place someone would look for `check`, `info` and `report`, and
+        # it named none of them. The epilog says `run` is the default
+        # and where its options are.
+        return argv
 
     takes_a_value = _value_taking_options()
     index = None
@@ -334,7 +394,14 @@ def main(argv=None):
     # `--version` must do neither.
     from teille_douce.cli import run as run_command
 
-    commands = {"run": run_command.execute}
+    from teille_douce.cli import (check, completion, fixture, info, odd,
+                                  report, validate)
+
+    commands = {"run": run_command.execute, "check": check.execute,
+                "info": info.execute, "report": report.execute,
+                "completion": completion.execute,
+                "fixture": fixture.execute, "odd": odd.execute,
+                "validate": validate.execute}
     try:
         return commands[args.command](args)
     except KeyboardInterrupt:

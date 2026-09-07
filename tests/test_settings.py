@@ -473,3 +473,48 @@ def test_the_manifest_covers_every_declared_setting():
     manifest = S.load(flags={}, env={}).as_manifest()
 
     assert set(manifest) >= S.config_keys()
+
+
+def test_the_test_schema_does_not_block_a_conversion():
+    """TDOUCE_TEI_RNG is read by tests/test_e2e_pipeline.py and by
+    nothing else, and CLAUDE.md tells contributors to set it. Declared
+    in READS, a stale value left in a shell profile refused EVERY
+    conversion — exit 3, "an input this run must read" — over a file no
+    run opens."""
+    from pathlib import Path
+
+    from teille_douce.settings import Settings
+
+    reglages = Settings.load(flags={}, env={"TDOUCE_TEI_RNG": "/nulle/part.rng"},
+                             config_file=None)
+
+    assert reglages.tei_rng == Path("/nulle/part.rng")
+    assert "tei_rng" not in {nom for nom, _, _, _ in Settings.READS}
+    # On the entries NAMED, not on the whole tuple: CI has no OCR/, so
+    # `ocr_dir` is legitimately in it there, and asserting emptiness made
+    # this test true on this machine and false on that one.
+    assert "tei_rng" not in {nom for nom, _, _, _
+                             in reglages.unreadable_inputs()}
+
+
+def test_an_unreadable_path_names_the_layer_that_supplied_it(tmp_path):
+    """The message always said `-i:`, even when the value came from
+    TDOUCE_OCR_DIR or from the config file: it named a flag the
+    operator had not typed."""
+    from teille_douce.settings import Settings
+
+    from_env = Settings.load(flags={}, env={"TDOUCE_OCR_DIR": "/nowhere"},
+                             config_file=None)
+    (_, _, _, said_env), = from_env.unreadable_inputs()
+    assert said_env == "TDOUCE_OCR_DIR"
+
+    written = tmp_path / "teille-douce.toml"
+    written.write_text('[paths]\ninput = "/nowhere"\n', encoding="utf-8")
+    from_file = Settings.load(flags={}, env={}, config_file=written)
+    (_, _, _, said_file), = from_file.unreadable_inputs()
+    assert said_file.startswith("paths.input in ") and str(written) in said_file
+
+    from_flag = Settings.load(flags={"ocr_dir": "/nowhere"}, env={},
+                              config_file=None)
+    (_, _, _, said_flag), = from_flag.unreadable_inputs()
+    assert said_flag == "-i"

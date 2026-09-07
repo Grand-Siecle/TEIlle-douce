@@ -105,7 +105,7 @@ input produce identical files. It also means any intended change to the output
 requires regenerating the reference:
 
 ```bash
-venv/bin/python scripts/build_test_fixture.py --golden
+teille-douce fixture golden
 ```
 
 ## The fixture
@@ -129,9 +129,17 @@ labels actually present in the 27-volume corpus.
 Regenerating it needs the private `OCR/` corpus:
 
 ```bash
-venv/bin/python scripts/build_test_fixture.py            # the fixture
-venv/bin/python scripts/build_test_fixture.py --golden   # the reference output
+teille-douce fixture build     # the fixture
+teille-douce fixture golden    # the reference output
 ```
+
+The two are different jobs and asking for both at once is refused rather than
+silently resolved: `fixture build --golden` used to regenerate the reference
+output, never build the fixture, and say nothing about the action it had
+dropped. `--golden` remains as an alias of the `golden` action, and this is
+the one command whose parser takes no abbreviations — argparse resolving
+`--gold` to `--golden` is a typo that rewrites the file the strict end-to-end
+diff compares against.
 
 `tests/fixtures/metadata_livre.csv` and `metadata_personne.csv` are minimal
 versioned metadata — without them the header would stay full of placeholders and
@@ -221,7 +229,14 @@ they can be recognised:
 - an **environment the suite makes untrue** — pytest's log-capture
   handler is a `StreamHandler` with no filename, so a "is there a console
   at INFO?" predicate was always true under the suite and the branch
-  behind it was executed by none of thirteen hundred tests;
+  behind it was executed by none of thirteen hundred tests. **The machine
+  is part of that environment**, and CI is not this laptop: it has no
+  `OCR/` and two cores, so `_workers("64", 3) == 3` and
+  `unreadable_inputs() == ()` were both true here and false there. Stub
+  `cpu_count` on both sides of a bound, assert on the entry you mean
+  rather than on an empty collection, and run the suite once with the
+  corpus moved aside — `mv OCR /tmp/OCR-parked`, run, move it back —
+  before pushing;
 - a test that reaches the fix's **mechanism but not its own case** — three
   tests injected `TypeError`, `ValueError` and `RuntimeError` at a guard
   that had just been widened from `except Exception` to
@@ -315,12 +330,12 @@ The order below is the one the conventions above imply.
 3. **Declare any new element or attribute in the ODD**, recompile, and commit
    source and derivatives together:
    ```bash
-   venv/bin/python scripts/build_odd.py
+   teille-douce odd build
    venv/bin/python -m pytest tests/test_odd.py tests/test_e2e_pipeline.py
    ```
 4. **Regenerate the golden** if the output changed on purpose:
    ```bash
-   venv/bin/python scripts/build_test_fixture.py --golden
+   teille-douce fixture golden
    ```
    and read the diff before committing it.
 5. **Raise the ratchet** if you added meaningful coverage:
@@ -331,7 +346,7 @@ The order below is the one the conventions above imply.
 6. **Validate real output**, not just the fixture:
    ```bash
    teille-douce run --fast -i OCR_test -o tei_test
-   venv/bin/python scripts/validate_tei.py --odd tei_test/*.xml
+   teille-douce validate tei_test
    ```
 
 `CONTRIBUTING.md` has the pre-PR checklist in short form.
@@ -359,7 +374,7 @@ missing or mislabelled zone upstream.
 looks wrong and search for it in the same file — you land on the coordinates and
 the IIIF crop URL of the region, which you can open in a browser.
 
-**Validate before hypothesizing.** `scripts/validate_tei.py --odd` on the
+**Validate before hypothesizing.** `teille-douce validate` on the
 suspect file often names the problem directly, with an XPath.
 
 **Expect multiprocessing to hide things.** Exceptions inside page workers are

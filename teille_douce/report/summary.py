@@ -8,8 +8,11 @@ one to believe.
 No markup, no colour: this same string goes to a terminal and to a log.
 """
 
+import shlex
 from dataclasses import dataclass, field, replace
 from pathlib import Path
+
+from teille_douce import config
 
 from .counts import _grouped, render_count
 from .gate import gate_verdict
@@ -74,6 +77,11 @@ class RunOutcome:
     failed_documents: tuple = ()
     failed_archives: tuple = ()
     report_path: Path = None
+    # The two catalogues, for the commands the `next` block offers: a
+    # command pasted without them reports "no catalogue row" for every
+    # volume, which is a different run from the one being reported.
+    metadata_csv: Path = None
+    persons_csv: Path = None
     # The accounting sentence, composed by the run itself. Taken rather
     # than recomputed: two places deriving the same fraction is two
     # accounts of one run, and the reader has no way to tell which to
@@ -334,6 +342,41 @@ def _tripping_lines(outcome, width):
     return lines
 
 
+def _where(outcome, flags=("-i", "-o", "--metadata", "--persons")):
+    """The paths a command needs to mean this run, quoted.
+
+    Quoted because `-o tei out` pasted into a shell reads `out` as the
+    DOC positional; and left off when the value is the default, which is
+    the one thing every command resolves on its own.
+
+    *flags* because the commands offered do not take the same ones:
+    `run` and `check` take all four, `report` takes `-o` alone, and
+    adding `-i` to that one made it an `unrecognized arguments` usage
+    error — the very class this function was written to close, broken by
+    the function itself. Twice: the first version carried `-i` and `-o`
+    and dropped the two catalogues, so a command pasted with a named
+    `--metadata` reported "no catalogue row" for every volume.
+
+    `Path(...)` on both sides of the comparison: the default is declared
+    as a string in config.py and arrives here as a Path, and
+    `Path("tei_output") == "tei_output"` is False, which put `-o
+    tei_output` on every ordinary run.
+    """
+    said = ""
+    for flag, value, default in (
+            ("-i", outcome.input_dir, config.DEFAULT_OCR_DIR),
+            ("-o", outcome.output_dir, config.DEFAULT_OUTPUT_DIR),
+            ("--metadata", getattr(outcome, "metadata_csv", None),
+             config.DEFAULT_METADATA_CSV),
+            ("--persons", getattr(outcome, "persons_csv", None),
+             config.DEFAULT_PERSONS_CSV)):
+        if flag not in flags or value is None:
+            continue
+        if Path(value) != Path(default):
+            said += f" {flag} {shlex.quote(str(value))}"
+    return said
+
+
 def _next_steps(outcome):
     """What to type next, chosen by what actually broke.
 
@@ -342,21 +385,37 @@ def _next_steps(outcome):
     a problem that did not happen teaches the reader to skip the block.
     """
     steps = []
+    # Every command offered carries the directories this run used, and
+    # quotes them. `--retry-failed` without `-o` resolves the output
+    # directory through the four layers, so a run written with `-o
+    # exports/` sent the reader to a command that read a different
+    # run.json and answered "nothing failed last time" — exit 3, over a
+    # volume that had just failed. The `-o` on the report line below
+    # exists to prevent exactly that, and the two lines above it did not
+    # have it.
+    where = _where(outcome)
+    # `report` takes `-o` and nothing else of the four.
+    reporting = _where(outcome, flags=("-o",))
     failed = len(outcome.failed_documents) + len(outcome.failed_archives)
     if failed:
-        steps.append(("teille-douce run --retry-failed",
+        steps.append((f"teille-douce run --retry-failed{where}",
                       f"convert the {_plural(failed, 'volume')} that failed"))
         if outcome.failed_documents:
-            first = outcome.failed_documents[0][0]
-            steps.append((f"teille-douce run {first} -vv",
+            first = shlex.quote(outcome.failed_documents[0][0])
+            steps.append((f"teille-douce run {first} -vv{where}",
                           "reproduce with full logging"))
     if outcome.record.losses(Block.INCIDENT) and outcome.report_path:
-        # The file, not a subcommand. `teille-douce report` does not
-        # exist yet, and a run that ends by telling the reader to type
-        # something that exits 2 with "unrecognized arguments" has spent
-        # its last line making itself less trustworthy.
-        steps.append((f"cat {outcome.report_path / 'incidents.jsonl'}",
-                      "every incident above, one JSON line each"))
+        # `teille-douce report` now exists, so this stopped being a
+        # `cat` of the JSONL. The run is named rather than left to
+        # "the last one": by the time anyone types this, a nightly may
+        # have finished after it. `-o` is carried whenever the output
+        # directory is not the default one, because `report` resolves
+        # it through the same four layers and would otherwise answer
+        # about a directory nobody in this run mentioned — a last line
+        # that exits 3 is a last line that teaches distrust.
+        steps.append((f"teille-douce report --run {outcome.report_path.name}"
+                      f"{reporting}",
+                      "every incident above, and the log around any of them"))
     return steps
 
 
@@ -536,10 +595,11 @@ def render_summary(outcome, width=92):
         lines.append("  next")
         for command, why in steps:
             # The command is never clipped, on the same reasoning as the
-            # headline and the verdict: `cat …/incidents.jsonl…` is not a
-            # shorter command, it is one that does not run. A terminal
-            # wraps it and it is still copy-pasteable. The reason beside
-            # it may be shortened, or move under it.
+            # headline and the verdict: `teille-douce report --run
+            # 20260903-1808…` is not a shorter command, it is one that
+            # does not run. A terminal wraps it and it is still
+            # copy-pasteable. The reason beside it may be shortened, or
+            # move under it.
             if cells(f"    {command}") + cells(why) + 2 <= room - _MARGIN:
                 lines.append(_columns(f"    {command}", why, room))
             else:

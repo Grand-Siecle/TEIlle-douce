@@ -160,7 +160,9 @@ def _valider_odd(chemin):
         import saxonche  # noqa: F401
     except ImportError:
         pytest.skip("saxonche absent — contraintes Schematron non verifiees")
-    from scripts.validate_tei import erreurs_svrl, schematron_du_projet
+    from teille_douce.validation import (
+        project_schematron as schematron_du_projet,
+        svrl_violations as erreurs_svrl)
     _, feuille = schematron_du_projet()
     violations = erreurs_svrl(feuille.transform_to_string(source_file=str(chemin)))
     assert not violations, "Schematron :\n" + "\n".join(violations[:10])

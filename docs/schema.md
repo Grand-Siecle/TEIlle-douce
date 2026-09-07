@@ -55,7 +55,7 @@ conformance stated independently.
 Every one of these is **local**: it evaluates on an element and its immediate
 neighbourhood. Invariants needing a full document traversal — resolving every
 `@corresp`, checking that each `GraphicZone` has a `<figure>` — stay implemented
-in Python in `scripts/validate_tei.py`, which does them in a single pass. In
+in Python in `teille_douce/validation/checks.py`, in a single pass. In
 Schematron they would be quadratic over documents of a hundred thousand
 elements.
 
@@ -70,13 +70,13 @@ letting you believe the check was complete.
 
 ```bash
 # The project schema: RELAX NG, then Schematron, then the Python invariants
-venv/bin/python scripts/validate_tei.py --odd tei_output/*.xml
+teille-douce validate tei_output
 
 # TEI conformance as well
-venv/bin/python scripts/validate_tei.py --odd --schema tei_all.rng tei_output/*.xml
+teille-douce validate --schema tei_all.rng tei_output
 
 # A corpus, over 8 cores — documents are independent
-venv/bin/python scripts/validate_tei.py --odd -j 8 tei_output/*.xml
+teille-douce validate -j 8 tei_output      # -j is auto by default
 ```
 
 Exit code 1 on any error. Rules the TEI itself marks `role="nonfatal"` are
@@ -110,15 +110,15 @@ requirement, forty times cheaper.
 derivatives by hand.**
 
 ```bash
-venv/bin/python scripts/build_odd.py            # after any change to the ODD
-venv/bin/python scripts/build_odd.py --check    # do the derivatives match the source?
-venv/bin/python scripts/build_odd.py --refresh  # re-download the toolchain
+teille-douce odd build                     # after any change to the ODD
+teille-douce odd check                     # do the derivatives match the source?
+teille-douce odd build --refresh           # re-download the toolchain
 ```
 
 The procedure:
 
 1. Edit `schema/teille-douce.odd`.
-2. Recompile: `venv/bin/python scripts/build_odd.py`.
+2. Recompile: `teille-douce odd build`.
 3. Verify: `venv/bin/python -m pytest tests/test_odd.py tests/test_e2e_pipeline.py`.
 4. Commit the source **and the three derivatives in the same commit**.
 
@@ -131,10 +131,17 @@ derivative directly.
 inventory is closed, so `tests/test_odd.py` fails until you do — which is the
 point: the schema cannot silently fall behind the code.
 
-`build_odd.py` materializes TEI P5, the TEI Stylesheets and SchXslt into
-`.odd-toolchain/` (gitignored) at versions pinned at the top of the script, and
-drives them with SaxonC-HE. Raising those versions is a deliberate change:
-recompile and read the diff of the generated schemas.
+`teille-douce odd build` materializes TEI P5, the TEI Stylesheets and SchXslt
+into `.odd-toolchain/` (gitignored) at versions pinned at the top of
+`teille_douce/odd/build.py`, and drives them with SaxonC-HE. Raising those
+versions is a deliberate change: recompile and read the diff of the generated
+schemas. `--toolchain-dir` points at an unpacking that already exists, and
+`--refresh` discards the pinned toolchain and fetches it again — the three
+things it put there, and nothing else that shares the directory.
+
+It is a maintainer's command and needs the source checkout: the ODD it
+compiles is versioned beside the sources. An installed distribution carries
+neither, and says so rather than naming a path under `site-packages/`.
 
 ## What lives where
 
@@ -144,9 +151,9 @@ recompile and read the diff of the generated schemas.
 | `schema/teille-douce.rng` | Content model (RELAX NG). | `lxml` |
 | `schema/teille-douce.sch` | Schematron constraints, readable form. | — |
 | `schema/teille-douce.svrl.xsl` | Schematron constraints, executable form. | `saxonche` |
-| `scripts/build_odd.py` | Compiles the ODD into the three derivatives. | — |
-| `scripts/rng_simplify.py` | RELAX NG §4.19/§4.20 reductions, needed before lxml reads the schema. | — |
-| `scripts/validate_tei.py` | Runs everything, plus the document-wide Python invariants. | — |
+| `teille-douce odd build` | Compiles the ODD into the three derivatives. | — |
+| `teille_douce/odd/simplify.py` | RELAX NG §4.19/§4.20 reductions, needed before lxml reads the schema. | — |
+| `teille-douce validate` | Runs everything, plus the document-wide Python invariants. | — |
 
 Two implementation constraints shape all of this and are documented at length in
 [`schema/README.md`](../schema/README.md), because each cost a full debugging
@@ -157,7 +164,7 @@ session:
   NG spec requires reducing those inside sequences, and libxml2 does not. The
   observed effects were a schema that would not compile after ten minutes, and —
   on a variant that did compile — a `<zone>` that no longer accepted a nested
-  `<zone>`, rejecting conformant documents. `rng_simplify.py` performs the
+  `<zone>`, rejecting conformant documents. `odd/simplify.py` performs the
   reductions first: 279 patterns eliminated, compilation down to 0.1 s. The
   `core` module remains incompilable after simplification and is imported whole;
   `inventaire-ferme` restores for it the inventory the content model no longer

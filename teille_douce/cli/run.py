@@ -1429,8 +1429,20 @@ def execute(args):
     # is_dir(), not exists(): -i now makes it easy to point the input at a
     # file, and iterdir() would then raise NotADirectoryError instead of
     # the exit 3 the contract promises.
-    if not settings.ocr_dir.is_dir():
-        console.print(f"[red]Directory not found: {escape(str(settings.ocr_dir))}[/red]")
+    # Every path this run will READ, before it reads any of them. The
+    # input directory was checked here and the two catalogues were not,
+    # so a mistyped `TDOUCE_METADATA_CSV` warned once, converted
+    # twenty-seven volumes with placeholder headers and exited 0 —
+    # forty minutes to produce files nobody wants, reported as a
+    # success. `teille-douce check` asks the same question in two
+    # seconds; this is what happens when nobody asked.
+    unreadable = settings.unreadable_inputs()
+    if unreadable:
+        for name, path, reason, where in unreadable:
+            # `where` is now the layer that supplied the value, not the
+            # first of the three names a setting answers to.
+            console.print(f"[red]{escape(where)}: "
+                          f"{escape(str(path))} {reason}.[/red]")
         _refuse(settings=settings)
 
     # Checked here rather than at mkdir time: -o naming an existing file
@@ -1697,7 +1709,13 @@ def execute(args):
     # Collect documents to process
     docs, without_alto, unreadable, unreadable_skips = [], [], [], []
     for d in ready_dirs:
-        xmls = sorted(d.rglob("*.xml"))
+        # Regular files only. A FIFO named `f1.xml` in a volume blocked
+        # `etree.parse` in the main process, so the run never returned
+        # and nothing reached the screen — the worst way for a command
+        # to fail, and the same shape as a mapping CSV that is a FIFO.
+        # `is_file` follows the symlink and answers no to a FIFO, a
+        # directory and a broken link alike.
+        xmls = sorted(page for page in d.rglob("*.xml") if page.is_file())
         if xmls:
             docs.append((d.name, xmls, d))
         elif not _selected(d.name):
@@ -2046,6 +2064,11 @@ def execute(args):
             panel_holder = {}
             reporter_run = ReportRun(
                 input_dir=settings.ocr_dir, output_dir=settings.output_dir,
+                # For the `next` block alone: a command it offers must
+                # name the catalogues this run was given, or it reports
+                # "no catalogue row" for every volume.
+                metadata_csv=settings.metadata_csv,
+                persons_csv=settings.persons_csv,
                 # `broken` and not `failed_archives`: an unreadable directory
                 # is counted in the denominator everywhere else, and freezing
                 # a different total here let the headline say "1/2 converted"

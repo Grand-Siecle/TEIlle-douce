@@ -37,7 +37,7 @@ if "forkserver" in multiprocessing.get_all_start_methods():
 else:  # pragma: no cover - non-POSIX platforms
     _MP_CONTEXT = multiprocessing.get_context("spawn")
 from ..constants import NS_ALTO, NS_ALTO_URI, XML_ID
-from ..utils.files import Files, NO_PAGE_NUMBER
+from ..utils.files import Files, NO_PAGE_NUMBER, pages_sharing_a_number
 from ..metadata.iiif import IIIFMapping
 from .attributes import Attributes
 from .elements import SurfaceTree, build_alto_id_index
@@ -412,12 +412,8 @@ def build_sourcedoc(
     # — but the number they share is the IIIF view their zones' @source is
     # built from, and surface/@n derives from the same filename numbers, so
     # the operator is told which files made this numbering ambiguous.
-    files_by_num = {}
-    for f in ordered_files:
-        files_by_num.setdefault(f.num, []).append(f.filepath)
-    for num, paths in sorted(files_by_num.items()):
-        if len(paths) < 2:
-            continue
+    for num, paths in pages_sharing_a_number(
+            document_name, filepath_list, ordered=ordered_files).items():
         listed = ", ".join(str(p) for p in paths[:10]) + (
             f" (+{len(paths) - 10} more)" if len(paths) > 10 else ""
         )

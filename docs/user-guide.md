@@ -6,11 +6,15 @@ out. For how the pipeline works internally, see
 
 - [Installation](#installation)
 - [Preparing your input](#preparing-your-input)
+- [The commands](#the-commands)
+- [Before you run: `teille-douce check`](#before-you-run-teille-douce-check)
 - [Running the pipeline](#running-the-pipeline)
 - [Configuration](#configuration)
 - [The annotation services](#the-annotation-services)
 - [Reading the output](#reading-the-output)
 - [Validating the output](#validating-the-output)
+- [Going back to a run: `teille-douce report`](#going-back-to-a-run-teille-douce-report)
+- [Shell completion](#shell-completion)
 - [Troubleshooting](#troubleshooting)
 
 ---
@@ -157,6 +161,84 @@ Page images are referenced, never copied. Two ways to supply them:
 For a non-Gallica server whose Image API base cannot be guessed from its
 manifest URL, set `IIIF_URI["image_base"]` in `teille_douce/config.py`.
 
+## The commands
+
+```
+teille-douce run         convert ALTO volumes to TEI                (the default)
+             check       is this installation usable, and what will it cost
+             validate    check produced TEI against the project schema
+             info        which layer set this value
+             report      go back to a run that is over
+             completion  a shell completion for bash, zsh or fish
+             odd         compile the project schema from its ODD    (maintainers)
+             fixture     rebuild the versioned test fixture         (maintainers)
+```
+
+With no command, `run` is assumed: `teille-douce`, `teille-douce LIV0044` and
+`teille-douce --fast` all convert. Five of the commands write nothing at all —
+everything but `run`, `odd` and `fixture` — so they are safe to type on a
+machine mid-run. `teille-douce --help` lists them; each has its own `--help`.
+
+## Before you run: `teille-douce check`
+
+A full conversion takes tens of minutes. `check` answers, in about two
+seconds and without writing anything, the questions that used to need one:
+
+```bash
+teille-douce check              # is this installation usable, and what will it cost?
+teille-douce check -i OCR_test  # ask about the input a run would be given
+teille-douce check --strict     # the same, and exit 1 if there is anything to look at
+teille-douce check --no-probe   # do not ask the two services anything
+```
+
+`-i/--input`, `-o/--output`, `--metadata` and `--persons` mean what they mean
+on `run`, so a preflight can be asked about exactly what the run will be
+given. Everything else comes from the same four configuration layers.
+
+It reports what it found — volumes, pages, archives waiting to be unpacked,
+how much of the corpus the catalogue covers, whether the persons table
+loaded, what each service answered — and then, under **needs attention**,
+each thing worth looking at *and what a run would do about it*:
+
+```
+  input      OCR_test                                        2 volumes · 18 pages
+  output     tei_test                                                    writable
+  catalogue  metadata_livre.csv           1 rows · 1 matched · 1 unmatched
+             metadata_personne.csv                                     2 persons
+  services   VieuxParler modernization                                not probed
+             PyHellen    enrichment                                   not probed
+             NER models  entity recognition                                   up
+
+  needs attention
+    LIV0326_v1_reconciled  no catalogue row for 'LIV0326_v1_reconciled'
+                           — its header would keep every placeholder
+    LIV0326_v1_reconciled  2 files claim page 2 (f2-np.xml, f2.xml)
+                           — the page numbering is ambiguous
+    LIV0326_v1_reconciled  the IIIF mapping would be refused — matches 0% of …
+                           — the zones would carry no @source
+    LIV9001_reconciled     1 file with no page number in the name (plate.xml)
+                           — it is placed last and takes the sentinel IIIF view
+    LIV0099_vide           the directory holds no ALTO
+                           — nothing would be converted from it
+
+  usable, with 5 things to look at
+  teille-douce check -i OCR_test -o tei_test --strict
+      fails on these
+```
+
+Four of the ten [troubleshooting](#troubleshooting) entries below are
+diagnoses this poses before the run rather than after it. The analyses are
+the run's own — the same page ordering, the same catalogue lookup, the same
+IIIF detection — because a preflight that disagreed with the run it precedes
+would be worse than none.
+
+**Exit codes.** `0` nothing to say · `1` usable, and `--strict` was asked
+for · `3` unusable: no input directory, no volume in it, an output that
+cannot be written, or a path that is configured and unreadable. Degraded is
+not unusable: seventeenth-century OCR is imperfect by nature, and a run that
+stopped on that would never start. `--strict` is for a CI that wants the
+distinction to be fatal.
+
 ## Running the pipeline
 
 ```bash
@@ -266,8 +348,12 @@ teille-douce run --fast
 ```
 
 You get a complete base TEI: header, `sourceDoc`, text structure, notes,
-figures, language detection. This is also the mode to use when checking that
-your input is shaped correctly, before committing to a long run.
+figures, language detection.
+
+It used to be the way to find out whether the input was shaped correctly, at
+the cost of converting the corpus to learn it.
+[`teille-douce check`](#before-you-run-teille-douce-check) answers that
+without writing anything.
 
 ## Configuration
 
@@ -371,6 +457,36 @@ but empty counts as unusable: a wrapper doing
 `export TDOUCE_MODERNIZE_URL="${MODERNIZE_URL}"` with the outer variable unset
 would otherwise silently disable the service. If a value of yours was ignored,
 there is a `RuntimeWarning` naming it and giving the reason.
+
+### Where a value came from: `teille-douce info`
+
+Four layers per setting is a trap rather than a feature without a way to ask
+the chain where a value came from — and the config file is the sharpest edge
+of it, because it is found by walking *up* from the working directory, so one
+you have forgotten is the least debuggable thing in the design.
+
+```bash
+teille-douce info                    # every setting, and which layer set it
+teille-douce info pyhellen_url       # one setting, layer by layer
+teille-douce info TDOUCE_JOBS        # named by its variable, or by its TOML key
+teille-douce info --json             # the same, for a wrapper
+```
+
+```
+  pyhellen_url = http://pyhellen.labo:9000            (env TDOUCE_PYHELLEN_URL)
+
+  flag     --pyhellen           (not given)
+  env      TDOUCE_PYHELLEN_URL  http://pyhellen.labo:9000              <- used
+  config   services.pyhellen    ./teille-douce.toml: http://localhost:8000
+  default  config.py            http://localhost:8000
+```
+
+A layer that offered a value the converters refused says so on its own line —
+which is the answer to "why is my variable ignored", printed where you are
+looking rather than in a `RuntimeWarning` scrolled past four hours ago. With
+no argument, every setting is listed, the ones nobody set marked apart from
+the ones somebody did, the config file named whether or not anything in it
+won, and the versions that land in `<appInfo>` at the end.
 
 ## The annotation services
 
@@ -606,14 +722,26 @@ Two different questions, two validations.
 
 ```bash
 # Is it a conformant output of THIS pipeline? (RELAX NG + Schematron + Python)
-python3 scripts/validate_tei.py --odd tei_output/*.xml
+teille-douce validate                 # no argument: the output directory
+
+# One file, or a directory somewhere else
+teille-douce validate tei_test/LIV0044_reconciled.tei.xml
 
 # Is it conformant TEI at all? (needs a tei_all.rng, ~1 MB, not versioned)
-python3 scripts/validate_tei.py --schema tei_all.rng tei_output/*.xml
+teille-douce validate --schema tei_all.rng tei_output
 
-# Both, on many files, spread over 8 cores
-python3 scripts/validate_tei.py --odd --schema tei_all.rng -j 8 tei_output/*.xml
+# One JSON object instead of a report, for a wrapper to read
+teille-douce validate --json tei_output
 ```
+
+| Option | Effect |
+|---|---|
+| `FILE\|DIR ...` | What to check. A directory becomes the `.xml` directly inside it; nothing at all means the configured output directory, which is what the end-of-run report offers as the next thing to type. |
+| `--no-odd` | Do not validate against the project schema. Five invariants live only there and will go unchecked, which the command says rather than letting a partial check look like a complete one. |
+| `--schema RNG` | A `tei_all.rng`, adding full TEI RELAX NG validation. |
+| `-j, --jobs auto\|N` | Files are independent; `auto` is as many as there are, capped by the machine. |
+| `--max-errors N` | How many errors to print per file, `0` for all. A display decision: nothing is dropped at collection. |
+| `--json` | The same verdicts as one JSON object, under `files`, with `applied` naming the schemas this invocation actually used — the notes below are prose and `--json` suppresses them, so without it a wrapper could not tell a complete check from a narrowed one. |
 
 `tei_all` establishes TEI conformance but detects neither a non-existent zone
 type, nor a `<figure>` without an anchor, nor an automatic entity with no
@@ -621,10 +749,28 @@ certainty indication. `--odd` answers that complementary question, using the
 project's own customization: a closed element inventory, closed value lists for
 `zone/@type` and `rs/@type`, and eleven Schematron rules.
 
-The script exits **1** on any error, so it drops straight into CI. Rules the TEI
-marks `role="nonfatal"` are reported as warnings, not errors. Without `--odd`,
-five local invariants go unchecked and the script says so rather than letting
-you believe the check was complete.
+The command exits **1** when a file fails, so it drops straight into CI. Rules
+the TEI marks `role="nonfatal"` are reported as warnings, not errors. Under
+`--no-odd` five local invariants go unchecked, and it says so rather than
+letting you believe the check was complete.
+
+A refusal is not a failed file: **2** for a `--schema` or a `-j` this program
+cannot use, **3** for nothing to check, a directory it may not list, a
+demanded `--odd` with no schema installed, and a schema that parses and will
+not compile. One broken argument must not be reported as a corpus that does
+not conform.
+
+A `saxonche` that is installed and will not load narrows the check with a
+note, like one that is absent. A `teille-douce.svrl.xsl` that is *there* and
+that Saxon refuses stops the run instead: absent is a state this guide
+describes, corrupt is a versioned artefact that has been damaged, and
+`teille-douce odd build` rebuilds it.
+
+The project schema is applied without being asked for. It is versioned, so
+applying it needs only `lxml` and `saxonche` — not the toolchain that
+*compiles* it. An installation that does not carry it at all (a wheel
+installed outside a checkout) narrows the check and says so; a `--odd` you
+typed yourself is a demand, and fails.
 
 Get `tei_all.rng` with:
 
@@ -635,10 +781,81 @@ curl -sSL -o tei_all.rng https://tei-c.org/release/xml/tei/custom/schema/relaxng
 Validation costs roughly 0.7 s per MB; see [schema.md](schema.md) for the
 breakdown and for what the eleven rules check.
 
+## Going back to a run: `teille-douce report`
+
+Every run leaves a directory under `tei_output/.teille-douce/runs/`: the
+manifest, the incident index, and its own log. `report` reads it. It touches
+no corpus, so it is instant and cannot damage anything.
+
+```bash
+teille-douce report                          # the last run
+teille-douce report --runs                   # the runs kept here, newest first
+teille-douce report --run 20260903-180824    # a precise one; the pid is optional
+teille-douce report LIV0044_reconciled       # one volume
+teille-douce report --code phase             # by loss code; a prefix is enough
+teille-douce report --why I2 --context       # one incident, and the log around it
+teille-douce report --limits                 # what could not be measured, and why
+teille-douce report --json                   # the same, for a wrapper
+```
+
+The selectors compose: `report LIV0044_reconciled --code container` means what
+it looks like it means.
+
+```
+  run 20260903-180824-0031415   2026-09-03 18:08      1 of 2 converted · exit 1
+
+  2 incidents
+
+  I1  LIV0044_reconciled     phase_lost                            148 of 148
+  I2  LIV0326_v1_reconciled  document_failed                             1 of 1
+
+  teille-douce report --run 20260903-180824-0031415 --why I1
+      one of them in full; --limits for what is not here
+```
+
+Exit codes: **0** the third block is empty, **1** it is not — whatever the
+selectors left on screen, because the question a wrapper asks this command is
+"did that run need a human" — **2** for a command line that cannot be
+answered (`--why I9`, or a `--why` whose incident another selector has just
+removed; it says which one), and **3** when there is no record here at all.
+
+**`--limits` is the one that matters in the long run.** It separates what this
+pipeline *cannot* measure from what it *does not measure yet*, and gives the
+second kind its price so that someone can decide to pay it. Entities dropped
+below the NER threshold are the first kind: the threshold is applied inside
+GLiNER's own inference, so what it cost has no denominator to be a fraction
+of. Blocks 1 and 2 over a past run are the second: `incidents.jsonl` indexes
+block 3 alone — an index of everything is an index of nothing — so the defects
+of the source and what the guards withheld are in the end-of-run summary and
+in the log, and `report --block source` says so rather than answering
+"nothing", which would be read as "the run lost nothing that way".
+
+## Shell completion
+
+```bash
+teille-douce completion bash > ~/.local/share/bash-completion/completions/teille-douce
+teille-douce completion zsh  > ~/.zfunc/_teille-douce
+teille-douce completion fish > ~/.config/fish/completions/teille-douce.fish
+```
+
+`teille-douce run --fail-on <TAB>` then offers `never incident loss`, because
+the parser declares those three — not because a list of them was copied into a
+shell script. Regenerate the file after an upgrade; a completion offering a
+flag the program no longer has is worse than none.
+
 ## Troubleshooting
 
-**`Directory not found: OCR`** — `OCR/` does not exist. Create it, or point
-`TDOUCE_OCR_DIR` elsewhere.
+**`-i: OCR is not there.`** — the input directory does not exist. Create it,
+or point `-i` / `TDOUCE_OCR_DIR` / `paths.input` elsewhere. The prefix names
+the layer the value actually came from, so `TDOUCE_OCR_DIR: /srv/ocr is not
+there.` means the variable, not the flag; `teille-douce info ocr_dir` prints
+all four layers.
+
+Every path this run will read is checked before anything is opened — the two
+catalogues included, since a mistyped `--metadata` used to convert
+twenty-seven volumes with placeholder headers and exit 0. A catalogue that is
+simply absent at its default location is not an error: the guide says both are
+optional, and the header says so with explicit placeholders.
 
 ### Exit codes
 
@@ -682,16 +899,19 @@ already there is skipped without being opened, mode and all, so a nightly
 wrapper does not go red over one there is nothing left to convert.
 
 **The header is full of `Information not available.`** — no catalogue row
-matched. Check that the `BDD` column of `metadata_livre.csv` contains exactly
+matched. `teille-douce check` names every volume this applies to before the
+run. Check that the `BDD` column of `metadata_livre.csv` contains exactly
 the internal id parsed from the directory name (`LIV0002a_reconciled` →
 `LIV0002`), and that the file really is semicolon-delimited.
 
 **Persons appear as placeholders** — `metadata_personne.csv` was not loaded, or
 the `PERSxxxx` keys in the book CSV have no matching row. The run prints how
-many persons it loaded.
+many persons it loaded, and `teille-douce check` says whether the table loads
+at all.
 
 **No `<w>` or no `<choice>` in the output** — the corresponding service did not
-answer its probe. There is one warning line at the start of the run saying which
+answer its probe; `teille-douce check` asks them the same question in two
+seconds. There is one warning line at the start of the run saying which
 one. Check the URL, and raise `TDOUCE_HEALTH_TIMEOUT` if the server is remote
 and still loading its model.
 

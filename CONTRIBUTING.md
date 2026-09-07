@@ -30,7 +30,7 @@ that means:
 - the relevant part of the run's `pipeline_*.log`;
 - what the output contains versus what it should contain.
 
-If the output is well-formed but wrong, `scripts/validate_tei.py --odd` on it
+If the output is well-formed but wrong, `teille-douce validate` on it
 often names the problem with an XPath. Include that.
 
 ## Working on the code
@@ -81,7 +81,7 @@ output, the end-to-end golden diff is part of the test, and you regenerate the
 reference deliberately:
 
 ```bash
-venv/bin/python scripts/build_test_fixture.py --golden
+teille-douce fixture golden
 ```
 
 Read that diff before committing it. It is the most direct statement of what
@@ -94,12 +94,12 @@ emits. Emit a new element without declaring it and `tests/test_odd.py` fails, on
 purpose. Recompile and commit source plus derivatives together:
 
 ```bash
-venv/bin/python scripts/build_odd.py
+teille-douce odd build
 git add schema/teille-douce.odd schema/teille-douce.rng schema/teille-douce.sch schema/teille-douce.svrl.xsl
 ```
 
 Never edit `teille-douce.rng`, `teille-douce.sch` or `teille-douce.svrl.xsl` by hand;
-`build_odd.py --check` catches it if you do. See [docs/schema.md](docs/schema.md).
+`teille-douce odd check` catches it if you do. See [docs/schema.md](docs/schema.md).
 
 ### Coverage only goes up
 
@@ -136,7 +136,7 @@ venv/bin/python -m pytest                                   # all green
 venv/bin/python -m coverage run -m pytest \
   && venv/bin/python -m coverage combine \
   && venv/bin/python -m coverage report                     # ratchet holds
-venv/bin/python scripts/build_odd.py --check                # derivatives match the ODD
+teille-douce odd check                                     # derivatives match the ODD
 ```
 
 And, if you touched anything that reaches the output, validate on real
@@ -144,7 +144,7 @@ documents rather than only on the fixture:
 
 ```bash
 teille-douce run --fast -i OCR_test -o tei_test
-venv/bin/python scripts/validate_tei.py --odd tei_test/*.xml
+teille-douce validate tei_test
 ```
 
 The pull request description should say what changed and why, and name anything

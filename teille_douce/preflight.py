@@ -1,0 +1,405 @@
+"""Is this installation usable, and what will it cost?
+
+The question the pipeline could not answer without being run. The user
+guide says so itself — "it is also the mode to use to check that your
+input is well formed, before committing to a long run" — of a mode that
+converts the whole corpus. Forty minutes to learn that a `BDD` column
+matches nothing.
+
+Four of the ten troubleshooting entries in that guide are diagnoses this
+poses in two seconds: an unmatched catalogue row, a persons CSV that did
+not load, file names with no sortable number, an IIIF mapping under the
+threshold and therefore refused.
+
+Nothing here writes anything: it answers, and
+`cli/check.py` renders the answer. The analyses are the run's own —
+`pages_sharing_a_number`, `find_metadata_row`, `IIIFMapping.detect_csv`,
+the same service probes — because a preflight that disagreed with the run
+it precedes would be worse than none.
+"""
+
+from dataclasses import dataclass, field
+from pathlib import Path
+
+from teille_douce.config import IIIF_CSV_MIN_MATCH_RATE
+from teille_douce.utils.files import (Files, NO_PAGE_NUMBER,
+                                      pages_sharing_a_number)
+
+
+@dataclass(frozen=True, slots=True)
+class Attention:
+    """One thing worth looking at before a run, and what it would cost.
+
+    `subject` is what to go and look at — a volume, a person key, a
+    service. `consequence` is what a run would do about it, because a
+    line that says something is wrong without saying what it costs is a
+    line an operator learns to skip.
+    """
+
+    subject: str
+    detail: str
+    consequence: str
+
+
+@dataclass(frozen=True, slots=True)
+class Service:
+    name: str
+    endpoint: str
+    state: str          # "up", "refused", "not asked for", "missing"
+    detail: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class Preflight:
+    """Everything `check` is allowed to know, all of it measured."""
+
+    input_dir: Path
+    output_dir: Path
+    volumes: tuple = ()          # (name, page count)
+    archives: int = 0
+    already_converted: int = 0
+    output_writable: bool = True
+    catalogue: dict = field(default_factory=dict)
+    persons: dict = field(default_factory=dict)
+    services: tuple = ()
+    attention: tuple = ()
+    unusable: tuple = ()         # (setting, path, reason, where)
+
+    @property
+    def pages(self):
+        return sum(pages for _, pages in self.volumes)
+
+    @property
+    def verdict(self):
+        """0 nothing to say, 1 usable but degraded, 3 unusable.
+
+        Unusable is not a matter of degree: no input directory, no
+        volume in it, or an output that cannot be written. Everything
+        else is a corpus of seventeenth-century OCR, where imperfection
+        is the normal state and stopping on it would stop every run.
+        """
+        if self.unusable or not self.volumes or not self.output_writable:
+            return 3
+        return 1 if self.attention else 0
+
+
+def _writable(path):
+    """Whether the output directory can be written, without writing.
+
+    The first existing ancestor is what decides: `-o runs/2026-09/tei`
+    names three directories that do not exist yet, and the run creates
+    them.
+    """
+    import os
+
+    ancestor = Path(path)
+    while not ancestor.exists():
+        parent = ancestor.parent
+        if parent == ancestor:
+            return False
+        ancestor = parent
+    return ancestor.is_dir() and os.access(ancestor, os.W_OK)
+
+
+def _volumes(ocr_dir):
+    """Directories holding ALTO, and archives waiting to be unpacked.
+
+    Deliberately simpler than the run's own discovery, which has
+    selectors, `--limit` and `--skip-existing` to honour. `check` is
+    asked about the installation, not about one invocation.
+
+    It borrows the run's `_is_readable` for the one thing simplicity
+    must not cost: `rglob` swallows a permission error and yields
+    nothing, so an unreadable volume is indistinguishable from an empty
+    one by its contents alone, and calling it empty sends the operator
+    to repack a volume whose only problem is its mode. A preflight that
+    disagreed with the run it precedes would be worse than none, and
+    `run` has said this since PR #33.
+    """
+    from teille_douce.cli.run import _is_readable
+
+    volumes, archives, without_alto, unreadable = [], [], [], []
+    if not ocr_dir.is_dir():
+        return volumes, archives, without_alto, unreadable
+    try:
+        inside = sorted(ocr_dir.iterdir())
+    except OSError:
+        # The input directory itself, and `unreadable_inputs()` already
+        # reports it by name and by layer — this only has to not raise.
+        # `run` asks that question before it touches the corpus; the
+        # ordering had been applied to one of the two callers.
+        return volumes, archives, without_alto, unreadable
+    for entry in inside:
+        if entry.is_dir():
+            if not _is_readable(entry):
+                unreadable.append((entry.name, "cannot be listed"))
+                continue
+            # Regular files only. A FIFO named `f1.xml` blocks
+            # `etree.parse` in the main process, so `run` never returns
+            # and nothing reaches the screen; counting it here as a page
+            # made `check` answer "usable · N pages" about a corpus the
+            # run cannot finish — a preflight disagreeing with its run,
+            # which is the one thing this module says it must not do.
+            pages = sorted(page for page in entry.rglob("*.xml")
+                           if page.is_file())
+            if pages:
+                volumes.append((entry.name, pages))
+            else:
+                without_alto.append(entry.name)
+        elif entry.suffix == ".zip":
+            archives.append(entry.name)
+    return volumes, archives, without_alto, unreadable
+
+
+def _catalogue(settings, names):
+    """How much of the corpus the book catalogue actually covers."""
+    from teille_douce.metadata.csv_book import find_metadata_row, load_metadata
+
+    table = load_metadata(settings.metadata_csv)
+    if table is None:
+        return {"path": settings.metadata_csv, "rows": None,
+                "matched": 0, "unmatched": list(names)}
+    unmatched = []
+    for name in names:
+        # `find_metadata_row` logs when it finds nothing, which is right
+        # during a run and noise during a preflight; the caller silences
+        # the module for the duration.
+        if find_metadata_row(table, name) is None:
+            unmatched.append(name)
+    return {"path": settings.metadata_csv, "rows": len(table),
+            "matched": len(names) - len(unmatched), "unmatched": unmatched}
+
+
+def _persons(settings):
+    """Whether the persons table loaded, and how many it holds."""
+    from teille_douce.metadata.csv_person import PersonDatabase
+
+    database = PersonDatabase()
+    loaded = False
+    try:
+        loaded = bool(database.load(settings.persons_csv))
+    except Exception:                       # pragma: no cover - defensive
+        loaded = False
+    return {"path": settings.persons_csv, "loaded": loaded,
+            "count": len(database) if hasattr(database, "__len__") else 0}
+
+
+def _services(settings, probe):
+    """What each phase's service says, or that nobody asked it."""
+    from teille_douce.cli.run import missing_ner_dependencies
+
+    services = []
+
+    if not settings.modernize:
+        services.append(Service("VieuxParler", "modernization",
+                                "not asked for"))
+    elif not probe:
+        services.append(Service("VieuxParler", "modernization", "not probed"))
+    else:
+        from teille_douce.modernize import check_api
+
+        services.append(Service("VieuxParler", "modernization",
+                                "up" if check_api() else "refused"))
+
+    if not settings.enrich:
+        services.append(Service("PyHellen", "enrichment", "not asked for"))
+    elif not probe:
+        services.append(Service("PyHellen", "enrichment", "not probed"))
+    else:
+        from teille_douce.enrichment.client import check_server
+
+        services.append(Service("PyHellen", "enrichment",
+                                "up" if check_server() else "refused"))
+
+    if not settings.ner:
+        services.append(Service("NER models", "entity recognition",
+                                "not asked for"))
+    else:
+        missing = missing_ner_dependencies()
+        services.append(Service(
+            "NER models", "entity recognition",
+            "missing" if missing else "up",
+            ", ".join(missing) if missing else ""))
+    return tuple(services)
+
+
+def _iiif_refused(directory, pages):
+    """Why a volume's IIIF mapping would be refused, or None.
+
+    `detect_csv` is the run's own decision and is asked first: if it
+    accepts a file there is nothing to say. Only when it refuses does
+    this look for why, and it reads the candidates the same way —
+    the size cap, the sampled rows, the third column — because a
+    preflight that computed its own rate could print "matches 100 % of
+    the file names (under 30 %)", which is both self-contradictory and
+    the wrong cause.
+    """
+    import pandas as pd
+
+    from teille_douce.config import (IIIF_CSV_MAX_SIZE, IIIF_CSV_PATTERNS,
+                                     IIIF_CSV_SAMPLE_ROWS)
+    from teille_douce.metadata.iiif import IIIFMapping
+
+    if IIIFMapping.detect_csv(directory, pages) is not None:
+        return None                    # accepted, nothing to say
+
+    names = {page.name for page in pages} | {page.stem for page in pages}
+    candidates = []
+    for pattern in IIIF_CSV_PATTERNS:
+        candidates.extend(directory.glob(pattern))
+    if not candidates:
+        return None                    # none offered, so none refused
+
+    best_rate, too_big = None, []
+    for candidate in candidates:
+        # The same guard as `detect_csv`, and for the same reason: this
+        # loop reads the candidates the run's own detection has just
+        # refused, so a FIFO among them blocked here too.
+        if not candidate.is_file():
+            continue
+        try:
+            oversized = candidate.stat().st_size > IIIF_CSV_MAX_SIZE
+        except OSError:
+            continue
+        if oversized:
+            too_big.append(candidate.name)
+            continue
+        try:
+            table = pd.read_csv(candidate, header=None, dtype=str,
+                                keep_default_na=False,
+                                nrows=IIIF_CSV_SAMPLE_ROWS)
+        except Exception:
+            continue
+        if table.shape[1] < 3 or not len(table):
+            continue
+        column = table.iloc[:, 2].astype(str).str.strip()
+        matched = sum(1 for value in column
+                      if value in names or value.replace(".xml", "") in names)
+        rate = matched / len(column)
+        best_rate = rate if best_rate is None else max(best_rate, rate)
+
+    if too_big and best_rate is None:
+        return (f"{too_big[0]} is larger than the "
+                f"{IIIF_CSV_MAX_SIZE // (1024 * 1024)} MB cap")
+    if best_rate is None:
+        return "no candidate has three columns"
+    return (f"the mapping matches {best_rate:.0%} of the file names "
+            f"(the floor is over {IIIF_CSV_MIN_MATCH_RATE:.0%})")
+
+
+def inspect(settings, probe=True):
+    """Everything `check` reports, measured once."""
+    import logging
+
+    # FIRST, before anything is opened, as `run` does: a path this run
+    # would read and cannot is answered by asking, not by discovering it
+    # inside pandas. A `--metadata` that is a FIFO otherwise blocked the
+    # read for ever and the command never returned — the ordering was
+    # right for the corpus and wrong for the two catalogues, which is
+    # the same call-site-at-a-time mistake one line down.
+    unusable = settings.unreadable_inputs()
+    refused = {name for name, _, _, _ in unusable}
+
+    volumes, archives, without_alto, unreadable = _volumes(settings.ocr_dir)
+    names = [name for name, _ in volumes]
+
+    # The modules that log while ANSWERING. `find_metadata_row` says so
+    # when it finds nothing, and `order_files` warns once per digit-less
+    # file: both are right during a run and are noise above a report that
+    # is about to say the same thing in its own words.
+    quiet = [logging.getLogger(name) for name in
+             ("teille_douce.metadata", "teille_douce.utils.files")]
+    was = [logger.level for logger in quiet]
+    for logger in quiet:
+        logger.setLevel(logging.CRITICAL)
+    try:
+        catalogue = (_catalogue(settings, names) if "metadata_csv" not in refused
+                     else {"path": settings.metadata_csv, "rows": None,
+                           "matched": 0, "unmatched": list(names)})
+        persons = (_persons(settings) if "persons_csv" not in refused
+                   else {"path": settings.persons_csv, "loaded": False,
+                         "count": 0})
+        orderings = {name: Files(name, pages).order_files()
+                     for name, pages in volumes}
+    finally:
+        for logger, level in zip(quiet, was):
+            logger.setLevel(level)
+
+    attention = []
+    for name in catalogue["unmatched"]:
+        attention.append(Attention(
+            name, f"no catalogue row for {name!r}",
+            "its header would keep every placeholder"))
+    if not persons["loaded"]:
+        attention.append(Attention(
+            Path(persons["path"]).name, "the persons table did not load",
+            "no curated person would reach <particDesc>"))
+
+    for name, pages in volumes:
+        directory = settings.ocr_dir / name
+        # A file whose name carries no sortable number, even alone: it
+        # is placed last and takes the sentinel IIIF view, and it is one
+        # of the four diagnoses the guide sends people through a full
+        # conversion for.
+        unnumbered = [page.filepath.name for page in orderings[name]
+                      if page.num == NO_PAGE_NUMBER]
+        if unnumbered:
+            attention.append(Attention(
+                name,
+                f"{len(unnumbered)} file{'s' if len(unnumbered) > 1 else ''} "
+                f"with no page number in the name "
+                f"({', '.join(sorted(unnumbered)[:3])})",
+                ("they are placed last and share one IIIF view"
+                 if len(unnumbered) > 1
+                 else "it is placed last and takes the sentinel IIIF view")))
+        for number, paths in pages_sharing_a_number(
+                name, pages, ordered=orderings[name]).items():
+            if number == NO_PAGE_NUMBER:
+                continue        # said above, once, with its own wording
+            shown = ", ".join(path.name for path in paths[:3])
+            attention.append(Attention(
+                name, f"{len(paths)} files claim page {number} ({shown})",
+                "the page numbering is ambiguous"))
+        refused = _iiif_refused(directory, pages)
+        if refused is not None:
+            attention.append(Attention(
+                name, f"the IIIF mapping would be refused — {refused}",
+                "the zones would carry no @source"))
+
+    for name in without_alto:
+        attention.append(Attention(
+            name, "the directory holds no ALTO",
+            "nothing would be converted from it"))
+
+    for name, reason in unreadable:
+        # Told apart from "holds no ALTO", which is what it looked like:
+        # the volume may well be full, this process is simply not
+        # allowed to open it. `run` reports it as a failure and counts
+        # it in the denominator; here it is a thing to look at, and the
+        # remedy is `chmod`, not repacking.
+        attention.append(Attention(
+            name, f"the directory {reason}",
+            "the run would count it as a failure, not skip it"))
+
+    services = _services(settings, probe)
+    for service in services:
+        if service.state == "refused":
+            attention.append(Attention(
+                service.name, f"refused the {service.endpoint} probe",
+                "a run would produce none of that phase's output"))
+        elif service.state == "missing":
+            attention.append(Attention(
+                service.name, f"dependencies not installed ({service.detail})",
+                "a run would produce no <standOff>"))
+
+    return Preflight(
+        input_dir=settings.ocr_dir, output_dir=settings.output_dir,
+        volumes=tuple((name, len(pages)) for name, pages in volumes),
+        archives=len(archives),
+        already_converted=sum(
+            1 for name, _ in volumes
+            if (settings.output_dir / f"{name}.tei.xml").exists()),
+        output_writable=_writable(settings.output_dir),
+        catalogue=catalogue, persons=persons, services=services,
+        attention=tuple(attention),
+        unusable=unusable)

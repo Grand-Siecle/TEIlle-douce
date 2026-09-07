@@ -39,3 +39,40 @@ if __name__ == "__main__":
     test_volume_numbered()
     test_out_of_range_or_unknown()
     print("OK test_manifests")
+
+
+def test_a_candidate_that_is_not_a_regular_file_is_skipped(tmp_path):
+    """A FIFO named like a mapping reports zero bytes, so it passed the
+    size cap and `read_csv` then waited for a writer that never came:
+    `run` and `check` both hung with nothing on screen, which is the
+    worst way for a command to fail. A directory or a broken symlink
+    raised instead.
+
+    Run in a subprocess with a timeout: a regression here HANGS, and a
+    suite that hangs says nothing at all.
+    """
+    import os
+    import subprocess
+    import sys
+
+    volume = tmp_path / "vol"
+    volume.mkdir()
+    (volume / "f1.xml").write_text("<alto/>", encoding="utf-8")
+    os.mkfifo(volume / "gallica-iiif-manifest.csv")
+    (volume / "mapping-iiif.csv").symlink_to(tmp_path / "gone.csv")
+    (volume / "manifest-iiif.csv").mkdir()
+
+    finished = subprocess.run(
+        [sys.executable, "-c",
+         "import pathlib, sys;"
+         "from teille_douce.metadata.iiif import IIIFMapping;"
+         "from teille_douce.preflight import _iiif_refused;"
+         f"d = pathlib.Path({str(volume)!r});"
+         "pages = [d / 'f1.xml'];"
+         "print(IIIFMapping.detect_csv(d, pages));"
+         "print(_iiif_refused(d, pages))"],
+        capture_output=True, text=True, timeout=60,
+        cwd=str(Path(__file__).resolve().parent.parent))
+
+    assert finished.returncode == 0, finished.stderr
+    assert finished.stdout.splitlines()[0] == "None"

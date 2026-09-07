@@ -18,7 +18,8 @@ import zipfile
 
 import pytest
 
-from test_e2e_pipeline import ALTO_MIN, DOCUMENT, MODE_COURT, _executer_main
+from test_e2e_pipeline import (ALTO_MIN, DOCUMENT, FIXTURES, MODE_COURT,
+                               _executer_main)
 
 pytestmark = pytest.mark.e2e
 
@@ -1854,3 +1855,61 @@ def test_the_headline_names_which_kind_of_run_this_was(tmp_path):
                                args=("--force",), **MODE_COURT)
     assert "Completed with errors: 1/2" in broken.stdout, broken.stdout[-1500:]
     assert "Done. " not in broken.stdout
+
+
+def test_the_next_block_names_the_catalogue_this_run_was_given(tmp_path):
+    """The end-to-end half of the rule the summary states: a command it
+    offers must name the paths this run was given, or `--retry-failed`
+    reads a different directory's manifest and `run` reports "no
+    catalogue row" for every volume.
+
+    `_where` is guarded by unit tests that build the outcome by hand, so
+    they condemn the formatting and nothing that FEEDS it: deleting the
+    two lines that carry the catalogues from `run.py` into the collector
+    and from the collector into `RunOutcome` left the whole suite green.
+    This one goes through the binary, which is the only place the wiring
+    exists.
+    """
+    ocr = tmp_path / "ocr"
+    shutil.copytree(ALTO_MIN, ocr)
+    _volume_of_unusable_alto(ocr, "LIV9002_reconciled")
+    # `_executer_main` copies the fixture catalogues into tmp_path; this
+    # one is named somewhere else, and with a space, so the quoting is
+    # exercised too.
+    elsewhere = tmp_path / "cat alogue.csv"
+    shutil.copy(FIXTURES / "metadata_livre.csv", elsewhere)
+
+    res, _ = _executer_main(tmp_path, ocr, args=("--metadata", str(elsewhere)),
+                            COLUMNS="240", **MODE_COURT)
+
+    assert res.returncode == 1, res.stdout
+    # Whitespace collapsed: a command is printed whole and the terminal
+    # wraps it, which is the rule the summary states — so the quoted
+    # path lands on the next line and only the flattened text has it.
+    flat = " ".join(res.stdout.split())
+
+    assert "teille-douce run --retry-failed" in flat, res.stdout
+    assert f"--metadata '{elsewhere}'" in flat, res.stdout
+    assert f"-o {tmp_path / 'out'}" in flat, res.stdout
+
+
+def test_a_page_that_is_a_fifo_does_not_hang_the_run(tmp_path):
+    """`rglob("*.xml")` yields a FIFO, and `etree.parse` then waits for
+    a writer that never comes — in the main process, so the run never
+    returns and nothing reaches the screen. The worst way for a command
+    to fail, and the same shape as a mapping CSV that is a FIFO.
+
+    The harness already runs the binary with a timeout, which is what
+    makes this assertable at all: a regression hangs for 900 s and the
+    test reports it as such.
+    """
+    import os
+
+    ocr = tmp_path / "ocr"
+    shutil.copytree(ALTO_MIN, ocr)
+    os.mkfifo(ocr / DOCUMENT / "content" / "data" / "doc_1" / "zzz.xml")
+
+    res, out = _executer_main(tmp_path, ocr, COLUMNS="200", **MODE_COURT)
+
+    assert res.returncode == 0, res.stdout
+    assert (out / f"{DOCUMENT}.tei.xml").exists()

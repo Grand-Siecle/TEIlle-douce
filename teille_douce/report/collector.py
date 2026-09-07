@@ -36,9 +36,16 @@ class Run:
     """Everything one run knows about itself, as it goes."""
 
     def __init__(self, input_dir, output_dir, volumes, pages, log_path=None,
-                 services=(), started_at=None, on_change=None):
+                 services=(), started_at=None, on_change=None,
+                 metadata_csv=None, persons_csv=None):
         self.input_dir = Path(input_dir)
         self.output_dir = Path(output_dir)
+        # Carried for the `next` block alone: a command it offers must
+        # name the catalogues this run was given, or it reports "no
+        # catalogue row" for every volume — a different run from the one
+        # being reported.
+        self.metadata_csv = Path(metadata_csv) if metadata_csv else None
+        self.persons_csv = Path(persons_csv) if persons_csv else None
         self.volumes_total = volumes
         self.pages_total = pages
         # `--no-log-file` is a supported way to run: the panel then says
@@ -397,4 +404,5 @@ class Run:
             headline=headline,
             page_loss_failures=tuple(page_loss_failures),
             max_page_loss=max_page_loss,
-            report_path=report_path)
+            report_path=report_path,
+            metadata_csv=self.metadata_csv, persons_csv=self.persons_csv)

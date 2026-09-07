@@ -20,6 +20,7 @@ interleave — so nothing here is called from a child.
 import json
 import os
 import shutil
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
@@ -156,6 +157,13 @@ class RunStore:
 
     @staticmethod
     def _runs(output_dir):
+        """Every run directory, oldest first. Swallows OSError.
+
+        Which is right for `prune`, whose caller is a run that must not
+        die over its own housekeeping, and wrong for anyone ASKING —
+        `failed_last_time` says so in as many words and asks the
+        question itself. `kept` is the version for askers.
+        """
         root = Path(output_dir) / RUNS
         try:
             if not root.is_dir():
@@ -164,6 +172,30 @@ class RunStore:
                           key=lambda p: p.name)
         except OSError:
             return []
+
+    @classmethod
+    def kept(cls, output_dir):
+        """Every run still on disk, oldest first — what `report --runs`
+        lists. `prune` keeps the last ten, whole directory by whole
+        directory.
+
+        Raises `ValueError` when the directory is there and cannot be
+        read. `_runs` swallows that and answers "no runs", which the
+        caller then prints as "no run has been recorded here yet" — a
+        counter left at zero because a permission died, over records
+        that are sitting right there. `failed_last_time` guards this
+        already and its comment names the defect; the guard had reached
+        one of the three callers.
+        """
+        root = Path(output_dir) / RUNS
+        for step in (root.parent, root):
+            try:
+                if step.exists() and not (step.is_dir()
+                                          and os.access(step, os.R_OK)):
+                    raise ValueError(f"{step} cannot be read")
+            except OSError as reason:
+                raise ValueError(f"{step} could not be read: {reason}")
+        return tuple(cls._runs(output_dir))
 
     @classmethod
     def latest(cls, output_dir):
@@ -210,7 +242,11 @@ class RunStore:
             raise ValueError(
                 f"{latest.name} kept no manifest, so its failures could not "
                 f"be read")
-        except (OSError, ValueError) as reason:
+        except (OSError, ValueError, RecursionError) as reason:
+            # `RecursionError` beside the other two: `json.loads` past
+            # about twenty thousand levels of nesting is neither. The
+            # widening reached `read_run`, twelve lines away, reading
+            # the same file.
             raise ValueError(
                 f"the record of {latest.name} could not be read: {reason}")
         # Shape-checked, not assumed. `json.loads` is happy with `null`,
@@ -244,3 +280,184 @@ class RunStore:
             if spare is not None and old.resolve() == spare:
                 continue
             shutil.rmtree(old, ignore_errors=True)
+
+
+# =============================================================================
+# Coming back to a run that is over
+# =============================================================================
+#
+# The other half of the class above. `report` reads what `RunStore` wrote,
+# so the two live in one file: a reader kept somewhere else drifts from
+# the writer at the first field either of them adds.
+
+
+@dataclass(frozen=True, slots=True)
+class Incident:
+    """One line of `incidents.jsonl`, with the number `report` gives it.
+
+    The number is positional and assigned at read time — `I1` is the
+    first line of the file — so `report --why I3` names something stable
+    for as long as the run directory exists, which is what the JSONL's
+    append-only shape already guarantees.
+    """
+
+    index: str
+    code: str
+    document: str
+    step: str
+    locator: str
+    kind: str
+    count: int
+    total: object
+    detail: str
+
+
+@dataclass(frozen=True, slots=True)
+class PastRun:
+    """What one finished run left behind, read back."""
+
+    path: Path
+    argv: tuple = ()
+    settings: dict = field(default_factory=dict)
+    documents: dict = field(default_factory=dict)
+    exit_code: object = None
+    incidents: tuple = ()
+    log: Path | None = None
+    unreadable: tuple = ()          # (file, reason)
+
+    @property
+    def name(self):
+        return self.path.name
+
+    @property
+    def started(self):
+        """When the run started, from the directory name.
+
+        The name is `<stamp>-<pid>`, and the stamp is what it is for:
+        `report --run 20260903-180824` names a run without its pid.
+        """
+        stamp = self.name.rsplit("-", 1)[0]
+        try:
+            return datetime.strptime(stamp, "%Y%m%d-%H%M%S")
+        except ValueError:
+            return None
+
+    @property
+    def failed(self):
+        return tuple(name for name, status in self.documents.items()
+                     if status != "ok")
+
+
+def read_run(path):
+    """One run directory, read back. Never raises on a damaged record.
+
+    A report of a run that went wrong is exactly the case where the
+    record may be half written — a Ctrl-C in the fourth hour, a disk
+    that filled — and refusing to say anything about the rest of it
+    would fail the reader precisely when they need it. What could not be
+    read is listed as such and the rest is reported.
+    """
+    path = Path(path)
+    manifest, unreadable, incidents = {}, [], []
+    try:
+        record = path / "run.json"
+        if record.exists() and not record.is_file():
+            # A FIFO here blocks the read for ever, and `--runs` reads
+            # every run kept: one such directory took the listing with
+            # it. The index below is guarded with `is_file`; the
+            # manifest was not.
+            raise ValueError("is not a regular file")
+        manifest = json.loads(record.read_text(encoding="utf-8"))
+        if not isinstance(manifest, dict):
+            raise ValueError("not a run manifest")
+    except (OSError, ValueError, RecursionError) as reason:
+        # RecursionError: `json.loads` past about twenty thousand levels
+        # of nesting, which is neither an OSError nor a ValueError.
+        manifest = {}
+        unreadable.append(("run.json", str(reason)))
+
+    index = path / "incidents.jsonl"
+    if index.is_file():
+        try:
+            # `errors="replace"`, and `ValueError` caught beside
+            # `OSError`: a line cut through a multibyte character — by
+            # the Ctrl-C in the fourth hour this format exists for —
+            # raises `UnicodeDecodeError`, which IS a `ValueError`, and
+            # the read of `run.json` eleven lines up already catches it.
+            # `--runs` reads every run kept here, so one damaged old run
+            # took down the whole listing, out of a function whose
+            # docstring promises it never raises.
+            for number, line in enumerate(
+                    index.read_text(encoding="utf-8",
+                                    errors="replace").splitlines(), 1):
+                if not line.strip():
+                    continue
+                try:
+                    entry = json.loads(line)
+                except (ValueError, RecursionError) as reason:
+                    # One malformed line, not the file: it is appended to
+                    # as the run goes, so a run killed mid-write leaves a
+                    # truncated last line above everything that happened
+                    # before it.
+                    unreadable.append((f"incidents.jsonl:{number}",
+                                       str(reason)))
+                    continue
+                if not isinstance(entry, dict):
+                    # `null`, `3`, `[]` and `"x"` are all valid JSON and
+                    # none of them has `.get`. One such line took down
+                    # `report --runs`, which reads every run kept here,
+                    # with a traceback out of a function whose docstring
+                    # promises it never raises.
+                    unreadable.append((f"incidents.jsonl:{number}",
+                                       f"is a {type(entry).__name__}, "
+                                       f"not an incident"))
+                    continue
+                # `str()` on the fields that are read as text: the
+                # guard above covers the container, and a `document`
+                # that is a dict passed it and crashed one frame later
+                # inside a regular expression. `run.json`'s half of this
+                # reader already checks per field.
+                def _said(name, empty=""):
+                    value = entry.get(name, empty)
+                    return empty if value is None else str(value)
+
+                incidents.append(Incident(
+                    index=f"I{len(incidents) + 1}",
+                    code=_said("code", "?"),
+                    document=_said("document", "?"),
+                    step=_said("step"),
+                    locator=_said("locator"),
+                    kind=_said("kind"),
+                    count=entry.get("count", 0),
+                    total=entry.get("total"),
+                    detail=_said("detail")))
+        except (OSError, ValueError, RecursionError) as reason:
+            unreadable.append(("incidents.jsonl", str(reason)))
+
+    # Shape-checked, field by field. `failed_last_time` says why in as
+    # many words — json.loads is happy with `null`, `[]` or a bare
+    # string — and the reader half did not inherit the check, so
+    # `{"argv": null}` came out of a function whose docstring promises
+    # never to raise as a TypeError, and `{"documents": []}` as an
+    # AttributeError two frames further on, inside the renderer.
+    def _of(name, kind, empty):
+        value = manifest.get(name)
+        if value is None:
+            return empty
+        if not isinstance(value, kind):
+            unreadable.append((f"run.json:{name}",
+                               f"is a {type(value).__name__}, not a "
+                               f"{kind.__name__}"))
+            return empty
+        return value
+
+    log = path / "pipeline.log"
+    return PastRun(
+        path=path,
+        argv=tuple(_of("argv", list, ())),
+        settings=_of("settings", dict, {}),
+        documents=_of("documents", dict, {}),
+        exit_code=manifest.get("exit_code"),
+        incidents=tuple(incidents),
+        log=log if log.is_file() else None,
+        unreadable=tuple(unreadable))

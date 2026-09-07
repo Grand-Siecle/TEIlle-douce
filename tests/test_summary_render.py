@@ -184,20 +184,43 @@ def test_a_clean_run_is_not_told_to_retry_anything():
     assert "--retry-failed" not in rendered(outcome())
 
 
-def test_an_incident_points_at_the_index_that_holds_it():
-    """At the file, not at `teille-douce report --block incident`: that
-    subcommand does not exist, and the run spent its last line telling
-    the reader to type something that exits 2 with "unrecognized
-    arguments"."""
+def test_an_incident_points_at_the_command_that_reads_the_index():
+    """It used to point at the file itself, because `teille-douce
+    report` did not exist and a run whose last line exits 2 with
+    "unrecognized arguments" has spent it making itself less
+    trustworthy. It exists now — and it names the run rather than
+    trusting "the last one", since a nightly may finish between this
+    line being printed and somebody typing it."""
     record = RunRecord()
     record.add(Loss(Code.PHASE_LOST, "D1", "enrich", Locator.document("D1"),
                     count=0, total=1402, detail="PyHellen down"))
 
     shown = rendered(outcome(record=record,
-                             report_path=Path("out/.teille-douce/runs/r1")))
+                             report_path=Path("tei_output/.teille-douce/runs/r1")))
 
-    assert "report --block" not in shown
-    assert "out/.teille-douce/runs/r1/incidents.jsonl" in shown
+    assert "teille-douce report --run r1" in shown
+    assert "incidents.jsonl" not in shown
+
+
+def test_the_command_offered_carries_the_output_directory_it_needs():
+    """`report` resolves the output directory through the same four
+    layers, so a run written with `-o tei_test` must not end by offering
+    a command that answers about `tei_output` — exit 3, and a last line
+    that teaches distrust. The default is left off: it is the one value
+    `report` will reach on its own."""
+    record = RunRecord()
+    record.add(Loss(Code.PHASE_LOST, "D1", "enrich", Locator.document("D1"),
+                    count=0, total=1402, detail="PyHellen down"))
+
+    elsewhere = rendered(outcome(
+        record=record, output_dir=Path("tei_test"),
+        report_path=Path("tei_test/.teille-douce/runs/r1")))
+    at_home = rendered(outcome(
+        record=record, output_dir=Path("tei_output"),
+        report_path=Path("tei_output/.teille-douce/runs/r1")))
+
+    assert "--run r1 -o tei_test" in elsewhere
+    assert " -o " not in at_home.split("next")[1]
 
 
 def test_no_index_is_offered_when_no_record_was_kept():
@@ -842,3 +865,109 @@ def test_the_summary_prints_the_headline_it_was_given_and_not_its_own():
                                        "documents converted"))
 
     assert "Completed with errors: 25/27 documents converted" in spoken
+
+
+def test_the_command_offered_survives_a_space_in_the_path():
+    """`-o tei out` pasted into a shell reads `out` as the DOC
+    positional: exit 3, "no run recorded in tei" — the last line that
+    teaches distrust, which is the thing the `-o` is there to prevent."""
+    record = RunRecord()
+    record.add(Loss(Code.PHASE_LOST, "D1", "enrich", Locator.document("D1"),
+                    count=0, total=1402, detail="PyHellen down"))
+
+    shown = rendered(outcome(
+        record=record, output_dir=Path("/srv/tei out"),
+        report_path=Path("/srv/tei out/.teille-douce/runs/r1")))
+
+    assert "-o '/srv/tei out'" in shown
+
+
+def test_every_command_offered_carries_the_paths_this_run_used():
+    """`--retry-failed` without `-o` resolves the output directory
+    through the four layers and reads a different run's manifest: pasted
+    after a run written to `exports/`, it answers "nothing failed last
+    time" and exits 3 over a volume that had just failed — the last line
+    that teaches distrust, which is what the `-o` on the report line was
+    added to prevent. It was added to one line of three.
+
+    Each command gets the flags IT takes, and all of them: `-i` on
+    `report`, which has none, made that line an `unrecognized
+    arguments` usage error, and leaving the two catalogues off made a
+    pasted `run` report "no catalogue row" for every volume. Both were
+    this same rule, half applied.
+    """
+    record = RunRecord()
+    record.add(Loss(Code.PHASE_LOST, "D1", "enrich", Locator.document("D1"),
+                    count=0, total=1402, detail="PyHellen down"))
+
+    shown = rendered(outcome(
+        record=record, exit_code=1, volumes_written=26,
+        input_dir=Path("/srv/ocr in"), output_dir=Path("/srv/tei out"),
+        metadata_csv=Path("/srv/cat alogue.csv"),
+        persons_csv=Path("/srv/per sons.csv"),
+        failed_documents=(("LIV 0326", "KeyError"),),
+        report_path=Path("/srv/tei out/.teille-douce/runs/r1")))
+
+    offered = [said for said in shown.splitlines()
+               if said.strip().startswith("teille-douce")]
+    assert len(offered) == 3
+    for line in offered:
+        assert "-o '/srv/tei out'" in line, line
+        if " report " in line:
+            # `report` takes `-o` and nothing else of the four.
+            assert " -i " not in line and "--metadata" not in line, line
+        else:
+            assert "-i '/srv/ocr in'" in line, line
+            assert "--metadata '/srv/cat alogue.csv'" in line, line
+            assert "--persons '/srv/per sons.csv'" in line, line
+    # And the volume name is quoted too, or it becomes two selectors.
+    assert "run 'LIV 0326' -vv" in shown
+
+
+def test_every_command_offered_actually_parses():
+    """Put through the real parser rather than eyeballed: `-i` on
+    `report`, which has none, was an `unrecognized arguments` usage
+    error in the last line of a run. Asserting the flags by name cannot
+    catch it — `-vv` is two `-v` and is in no `option_strings` — and
+    asserting from memory is how it got there. argparse is the
+    authority, so argparse is asked.
+    """
+    import shlex
+
+    from teille_douce.cli.app import build_parser, normalise
+
+    record = RunRecord()
+    record.add(Loss(Code.PHASE_LOST, "D1", "enrich", Locator.document("D1"),
+                    count=0, total=1402, detail="PyHellen down"))
+    shown = rendered(outcome(
+        record=record, exit_code=1,
+        input_dir=Path("/srv/ocr in"), output_dir=Path("/srv/tei out"),
+        metadata_csv=Path("/srv/cat alogue.csv"),
+        persons_csv=Path("/srv/per sons.csv"),
+        failed_documents=(("LIV 0326", "KeyError"),),
+        report_path=Path("/srv/tei out/.teille-douce/runs/r1")))
+
+    offered = [shlex.split(line) for line in shown.splitlines()
+               if line.strip().startswith("teille-douce ")]
+    assert len(offered) == 3, offered
+    for words in offered:
+        assert words[0] == "teille-douce"
+        # `shlex.split` undoes the quoting, so a path with a space
+        # arrives as one word — which is the whole point of quoting it.
+        parsed = build_parser().parse_args(normalise(words[1:]))
+        assert parsed.command in ("run", "report")
+
+
+def test_the_default_directories_are_not_repeated_back():
+    """They are the one thing every command resolves on its own."""
+    record = RunRecord()
+    record.add(Loss(Code.PHASE_LOST, "D1", "enrich", Locator.document("D1"),
+                    count=0, total=1402, detail="PyHellen down"))
+
+    shown = rendered(outcome(
+        record=record, exit_code=1,
+        failed_documents=(("LIV0326", "KeyError"),),
+        report_path=Path("tei_output/.teille-douce/runs/r1")))
+
+    assert " -o " not in shown.split("next")[1]
+    assert " -i " not in shown.split("next")[1]

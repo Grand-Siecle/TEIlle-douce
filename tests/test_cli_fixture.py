@@ -1,0 +1,321 @@
+# -----------------------------------------------------------
+# Asking for the help must not destroy the fixture.
+#
+# `scripts/build_test_fixture.py` tested `if "--golden" in sys.argv` and
+# let everything else fall through to `main()`, whose first act is
+# `rmtree` of the versioned fixture. `--help` included. Every typo
+# included. The file the strict golden diff compares against was one
+# mistyped flag away from being rebuilt from a corpus most machines do
+# not have — and on a machine that does, silently rebuilt with today's
+# thinning rules rather than the ones the golden was written under.
+#
+# It has an ArgumentParser now, which is all it ever needed.
+#
+# Run: venv/bin/python -m pytest tests/test_cli_fixture.py -q
+# -----------------------------------------------------------
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+
+from teille_douce.cli import app, fixture
+
+RACINE = Path(__file__).resolve().parent.parent
+VERSIONED = RACINE / "tests" / "fixtures" / "alto_min" / "LIV9001_reconciled"
+# The OTHER versioned file this command can rewrite, and the one the
+# strict end-to-end diff compares against. The first version of this test
+# fingerprinted only the fixture, so `--gold` — which argparse
+# prefix-matched to `--golden` — regenerated the golden on every run of
+# the suite while every assertion passed.
+GOLDEN = RACINE / "tests" / "fixtures" / "golden"
+
+
+def _fingerprint(directory):
+    """Every file under *directory*, with its size. Enough to see a
+    rebuild, cheap enough to take twice in a test."""
+    return sorted((str(path.relative_to(directory)), path.stat().st_size)
+                  for path in directory.rglob("*") if path.is_file())
+
+
+# =============================================================================
+# The command that writes nothing unless it is told to
+# =============================================================================
+
+@pytest.mark.parametrize("asked", [
+    ["main.py", "fixture", "--help"],
+    ["main.py", "fixture", "-h"],
+    ["main.py", "fixture", "--goldne"],         # the typo that rebuilt it
+    # An ABBREVIATION of the destructive flag. argparse prefix-matches by
+    # default, so this used to mean `--golden` and rewrite the golden.
+    ["main.py", "fixture", "--gold"],
+    ["main.py", "fixture", "build", "--gold"],
+    # Two ways of asking for different things: a usage error, not a
+    # precedence rule that silently discards one of them.
+    ["main.py", "fixture", "build", "--golden"],
+    # And by the name two years of wrapper scripts use, which is where
+    # the bug lived: this file had no parser at all.
+    ["scripts/build_test_fixture.py", "--help"],
+    ["scripts/build_test_fixture.py", "--goldne"],
+])
+def test_the_help_and_a_typo_leave_both_versioned_files_alone(asked):
+    before = _fingerprint(VERSIONED), _fingerprint(GOLDEN)
+
+    finished = subprocess.run(
+        [sys.executable, str(RACINE / asked[0]), *asked[1:]],
+        capture_output=True)
+
+    assert (_fingerprint(VERSIONED), _fingerprint(GOLDEN)) == before, (
+        f"`{' '.join(asked)}` rewrote a versioned file")
+    # And it said something rather than doing something.
+    assert finished.returncode in (0, 1, 2), finished.stderr.decode()[-800:]
+
+
+def test_the_script_is_a_launcher_and_carries_no_logic_of_its_own():
+    """It stays because CONTRIBUTING.md, the CI and two years of wrapper
+    scripts invoke it by name. It carries nothing, so it cannot drift
+    from the command it launches."""
+    import ast
+
+    launcher = (RACINE / "scripts" / "build_test_fixture.py").read_text(
+        encoding="utf-8")
+    # The code, not the prose: the docstring explains what used to be
+    # here, and grepping the file would find its own explanation.
+    tree = ast.parse(launcher)
+    code = ast.unparse(ast.Module(
+        body=[node for node in tree.body
+              if not (isinstance(node, ast.Expr)
+                      and isinstance(node.value, ast.Constant))],
+        type_ignores=[]))
+
+    assert "rmtree" not in code and "shutil" not in code
+    assert "fixture" in code, "it does not launch the command it stands for"
+    assert len(code.splitlines()) < 15, "a launcher, not a second copy"
+
+
+# =============================================================================
+# What it does when it IS told to
+# =============================================================================
+
+def test_build_writes_where_it_is_told_and_nowhere_else(tmp_path):
+    """`--target` exists so a test can watch it work without touching
+    the versioned copy."""
+    source = tmp_path / "corpus"
+    for relative, _, _ in fixture.PAGES:
+        page = source / relative
+        page.parent.mkdir(parents=True, exist_ok=True)
+        page.write_text(
+            "<alto xmlns='http://www.loc.gov/standards/alto/ns-v4#'>"
+            "<Description><sourceImageInformation><fileName>x.jpg</fileName>"
+            "</sourceImageInformation></Description>"
+            "<Layout><Page PHYSICAL_IMG_NR='0'><PrintSpace><TextBlock>"
+            "<TextLine><String CONTENT='une ligne'/></TextLine>"
+            "</TextBlock></PrintSpace></Page></Layout></alto>",
+            encoding="utf-8")
+    before = _fingerprint(VERSIONED)
+
+    fixture.build(source=source, target=tmp_path / "out", say=lambda *_: None)
+
+    assert (tmp_path / "out" / "content" / "data" / "doc_1" / "f1.xml").exists()
+    assert _fingerprint(VERSIONED) == before
+
+
+def test_a_missing_corpus_is_said_before_anything_is_removed(tmp_path, capsys):
+    """The refusal has to come first: the old order was `rmtree` and then
+    the check, on the one path where the check was the point."""
+    target = tmp_path / "out"
+    target.mkdir()
+    (target / "keep.xml").write_text("<alto/>", encoding="utf-8")
+
+    with pytest.raises(SystemExit) as raised:
+        fixture.build(source=tmp_path / "absent", target=target,
+                      say=lambda *_: None)
+
+    assert raised.value.code == 3
+    assert "source corpus not found" in capsys.readouterr().err
+
+    assert (target / "keep.xml").exists()
+
+
+def test_the_subcommand_is_reachable_and_defaults_to_build():
+    args = app.build_parser().parse_args(["fixture"])
+
+    assert args.command == "fixture"
+    # `None`, not `"build"`: the default has to be distinguishable from
+    # the action typed out, or `fixture build --golden` cannot be told
+    # from `fixture --golden` and one of the two is silently discarded.
+    assert args.action is None
+    assert args.golden is False
+
+
+def test_the_fixture_is_not_removed_when_a_source_page_has_moved(tmp_path, capsys):
+    """The whole-corpus guard was first and the per-page one was inside
+    the loop, so one renamed page in the private corpus rmtree'd the
+    versioned fixture, wrote the pages before it, and then raised — the
+    file the strict golden diff compares against, deleted and half
+    rebuilt, with no IIIF mapping."""
+    source = tmp_path / "corpus"
+    for relative, _, _ in fixture.PAGES[:-1]:        # one page short
+        page = source / relative
+        page.parent.mkdir(parents=True, exist_ok=True)
+        page.write_text("<alto/>", encoding="utf-8")
+    target = tmp_path / "out"
+    target.mkdir()
+    (target / "keep.xml").write_text("<alto/>", encoding="utf-8")
+
+    with pytest.raises(SystemExit) as raised:
+        fixture.build(source=source, target=target, say=lambda *_: None)
+
+    assert raised.value.code == 3
+    assert "nothing was removed" in capsys.readouterr().err
+
+    assert (target / "keep.xml").exists()
+
+
+def test_asking_for_the_fixture_and_the_golden_at_once_is_refused(capsys):
+    from teille_douce.cli import app
+
+    args = app.build_parser().parse_args(["fixture", "build", "--golden"])
+
+    with pytest.raises(SystemExit) as raised:
+        fixture.execute(args)
+
+    # 2: the exit-code table calls two flags that contradict each other a
+    # usage error, and `raise SystemExit(str)` exits 1.
+    assert raised.value.code == 2
+    assert "different things" in capsys.readouterr().err
+
+
+def test_a_target_that_is_not_a_fixture_is_not_removed(tmp_path, capsys):
+    """`--target` is new in this instalment: the old script's target was
+    a constant, and the `rmtree` inherited that constant's safety. It no
+    longer has it — `fixture build --target ~/notes` removed the
+    directory whole, with nothing to undo it. This module exists because
+    asking for the help destroyed a versioned file, and the remedy had
+    reached the parser and stopped one line short of the removal."""
+    home = tmp_path / "notes"
+    (home / "subdir").mkdir(parents=True)
+    (home / "IMPORTANT.txt").write_text("keep", encoding="utf-8")
+
+    # Through `build`, not `_removable` alone: the guard existing and
+    # the guard being CALLED are two things, and a test of the first
+    # left deleting the call green.
+    source = tmp_path / "corpus"
+    for relative, _, _ in fixture.PAGES:
+        page = source / relative
+        page.parent.mkdir(parents=True, exist_ok=True)
+        page.write_text("<alto/>", encoding="utf-8")
+
+    with pytest.raises(SystemExit) as raised:
+        fixture.build(source=source, target=home, say=lambda *_: None)
+
+    assert raised.value.code == 3
+    assert "does not look like a fixture" in capsys.readouterr().err
+    assert (home / "IMPORTANT.txt").read_text(encoding="utf-8") == "keep"
+    assert (home / "subdir").exists()
+
+
+def test_the_guard_that_refuses_a_removal_refuses_it_cleanly(tmp_path,
+                                                             capsys):
+    """The readability rule, inside the guard written for the removal
+    rule. A `--target` that is a file raised `NotADirectoryError` and
+    one that cannot be listed raised `PermissionError`, both straight
+    out of the function whose entire job is to refuse — exit 1, which in
+    this CLI means "some volumes failed"."""
+    import os
+    import stat
+
+    a_file = tmp_path / "target.txt"
+    a_file.write_text("x", encoding="utf-8")
+    with pytest.raises(SystemExit) as raised:
+        fixture._removable(a_file)
+    assert raised.value.code == 3
+    assert "must be a directory" in capsys.readouterr().err
+
+    shut = tmp_path / "shut"
+    shut.mkdir()
+    os.chmod(shut, 0o000)
+    if os.access(shut, os.R_OK):
+        os.chmod(shut, stat.S_IRWXU)
+        pytest.skip("this user can read a directory with mode 000")
+    try:
+        with pytest.raises(SystemExit) as raised:
+            fixture._removable(shut)
+    finally:
+        os.chmod(shut, stat.S_IRWXU)
+    assert raised.value.code == 3
+    assert "cannot be listed" in capsys.readouterr().err
+
+
+def test_a_symlink_to_a_full_directory_is_refused(tmp_path):
+    """`--target ~/link` where the link points at real work: `rmtree`
+    follows it and empties the target, so what the guard looks at has to
+    be what the removal would touch."""
+    real = tmp_path / "precious"
+    (real / "sub").mkdir(parents=True)
+    (real / "keep.txt").write_text("x", encoding="utf-8")
+    link = tmp_path / "link"
+    link.symlink_to(real)
+
+    with pytest.raises(SystemExit):
+        fixture._removable(link)
+
+    assert (real / "keep.txt").exists()
+
+
+def test_what_a_previous_build_left_is_removable(tmp_path):
+    """Three things are: the versioned fixture, a directory that is not
+    there yet, and one holding exactly what a build leaves."""
+    fixture._removable(tmp_path / "not-there-yet")
+    fixture._removable(fixture.DEFAULT_TARGET)
+
+    # And an empty one: `mkdir /tmp/fx && fixture build --target /tmp/fx`
+    # is the obvious way to try the command out, and refusing it bought
+    # no safety at all — there is nothing in there to lose.
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    fixture._removable(empty)
+
+    built = tmp_path / "again"
+    (built / "content" / "data" / "doc_1").mkdir(parents=True)
+    (built / "gallica-bnf-fr-iiif-manifest-json.csv").write_text(
+        "x", encoding="utf-8")
+
+    fixture._removable(built)             # must not raise
+
+
+def test_the_golden_needs_the_dev_extra_and_says_so(tmp_path, monkeypatch,
+                                                    capsys):
+    """The harness imports pytest. A checkout installed without the dev
+    extra came out as a traceback with exit 1; the sibling refusal, for
+    a checkout that is not there at all, already exits 3."""
+    import builtins
+
+    real = builtins.__import__
+
+    def without_pytest(name, *rest):
+        if name == "test_e2e_pipeline":
+            raise ImportError("No module named 'pytest'")
+        return real(name, *rest)
+
+    monkeypatch.setattr(builtins, "__import__", without_pytest)
+
+    with pytest.raises(SystemExit) as raised:
+        fixture.rebuild_golden(say=lambda *_: None)
+
+    assert raised.value.code == 3
+    assert "pip install -e" in capsys.readouterr().err
+
+
+def test_a_target_that_is_a_broken_symlink_is_refused(tmp_path, capsys):
+    """`exists()` is False for a broken symlink, so the guard returned
+    early and `mkdir(exist_ok=True)` then raised `FileExistsError` —
+    exit 1, the third hole in this guard, found after two were closed."""
+    link = tmp_path / "link"
+    link.symlink_to(tmp_path / "nowhere")
+
+    with pytest.raises(SystemExit) as raised:
+        fixture._removable(link)
+
+    assert raised.value.code == 3
+    assert "broken symlink" in capsys.readouterr().err

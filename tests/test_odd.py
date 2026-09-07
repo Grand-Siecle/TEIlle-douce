@@ -160,12 +160,12 @@ def test_les_types_de_rs_suivent_la_table_des_entites():
 def test_les_schemas_derives_sont_versionnes():
     for produit in (RNG, SCH, SVRL):
         assert produit.exists(), (
-            f"{produit.name} manque : venv/bin/python scripts/build_odd.py")
+            f"{produit.name} manque : teille-douce odd build")
 
 
 def test_le_relaxng_ne_contient_aucun_motif_impossible():
     """Un <notAllowed/> survivant rendrait le schema incompilable par
-    libxml2 (scripts/rng_simplify.py explique pourquoi)."""
+    libxml2 (teille_douce/odd/simplify.py explique pourquoi)."""
     grammaire = etree.parse(str(RNG))
     restants = list(grammaire.iter(
         "{http://relaxng.org/ns/structure/1.0}notAllowed"))
@@ -202,12 +202,12 @@ def test_la_verification_de_derive_ignore_l_horodatage_de_generation():
     compilations du meme ODD different d'une ligne. --check doit voir la
     derive reelle sans crier sur cette ligne-la -- meme convention que la
     normalisation du golden E2E."""
-    from scripts.build_odd import sans_horodatage
+    from teille_douce.odd import without_the_date
 
     a = "<!-- This file generated 2026-09-03T09:05:15Z by 'extract-isosch.xsl'. -->"
     b = "<!-- This file generated 2026-09-03T09:05:25Z by 'extract-isosch.xsl'. -->"
-    assert sans_horodatage(a) == sans_horodatage(b)
-    assert sans_horodatage(a) != sans_horodatage(a.replace("extract", "autre"))
+    assert without_the_date(a) == without_the_date(b)
+    assert without_the_date(a) != without_the_date(a.replace("extract", "autre"))
 
 
 # -----------------------------------------------------------
@@ -302,3 +302,38 @@ def test_le_schema_accepte_ce_que_chaque_phase_produit(cas):
     doc = etree.fromstring(texte.encode())
     assert relaxng.validate(doc), "\n".join(
         f"L{e.line}: {e.message}" for e in list(relaxng.error_log)[:6])
+
+
+def test_a_derivative_that_cannot_be_read_is_drift_and_not_a_traceback():
+    """A `teille-douce.rng` re-saved in latin-1 — the case the saxonche
+    widening's own comment names — raises `UnicodeDecodeError` inside
+    `verify`, which came out as a traceback with exit 1. But 1 is what
+    this function returns for real drift, so a CI could not tell a
+    damaged derivative from an edited one."""
+    import tempfile
+    from pathlib import Path
+
+    from teille_douce.odd import build
+
+    with tempfile.TemporaryDirectory() as tmp:
+        schema = Path(tmp) / "schema"
+        schema.mkdir()
+        (schema / "teille-douce.rng").write_bytes("préface".encode("latin-1"))
+        produced = Path(tmp) / "produced"
+        produced.mkdir()
+        (produced / "teille-douce.rng").write_text("x", encoding="utf-8")
+
+        def compile_nothing(destination, **_):
+            return [produced / "teille-douce.rng"]
+
+        # `compile_odd` downloads a hundred megabytes of toolchain; only
+        # the READING of the derivatives is under test here.
+        real = build.compile_odd
+        build.compile_odd = compile_nothing
+        try:
+            code = build.verify(toolchain=object(), schema=schema,
+                                say=lambda *_: None)
+        finally:
+            build.compile_odd = real
+
+    assert code == 1

@@ -81,19 +81,57 @@ service is unreachable. Everything else always runs.
 
 ```
 main.py                      Compatibility launcher over teille_douce.cli
-scripts/
-  validate_tei.py            Output validation (known failure modes + ODD)
-  build_odd.py               Compiles schema/teille-douce.odd → rng, sch, svrl.xsl
-  rng_simplify.py            RELAX NG §4.19/§4.20 reductions (see schema/README.md)
-  build_test_fixture.py      Regenerates tests/fixtures/ from the private corpus
+scripts/                     One-line launchers, kept because the CI, the
+  validate_tei.py            documentation and two years of wrapper scripts
+  build_odd.py               invoke them by name. They carry nothing:
+  build_test_fixture.py      `scripts/` is not importable from an installed
+                             distribution, so the subcommands could not have
+                             shared their logic, only duplicated it.
 teille_douce/
   config.py                  What describes the project: versions, taxonomies,
                              thresholds, responsibility — plus the defaults
   settings.py                The four layers, resolved after parse_args
+  paths.py                   Checkout or installed distribution. `schema/`,
+                             `tests/` and `OCR/` sit beside the package and
+                             only a checkout has them; three modules read
+                             them through `__file__.parent.parent.parent`,
+                             which is `site-packages/` in the other case
+  launcher.py                The console script. It imports `sys` and nothing
+                             else, so setuptools' generated wrapper cannot
+                             pull pandas and lxml in outside the Ctrl-C guard
   cli/
+    exits.py                 The exit codes, and `refuse`. `raise
+                             SystemExit("a message")` exits 1, which here
+                             means "some volumes failed" — so every
+                             refusal written that way blamed the corpus
     app.py                   Argument parser, subcommand dispatch, flags → Settings
     options.py               Every option of `run`, and the phase fold
     run.py                   Run orchestration, per-document isolation
+    validate.py              `validate`: which schemas, how many workers
+    odd.py                   `odd`: build the schema from the ODD, or check it
+    fixture.py               `fixture`: rebuild the versioned fixture
+    check.py                 `check`: the preflight, rendered — a pure
+                             function of the answer, a width and `--strict`
+    info.py                  `info`: the four layers of one setting, and
+                             which of them took effect. Reads the table in
+                             settings.py, never a list of its own
+    report.py                `report`: what a past run left behind, and
+                             `--limits` — what cannot be measured, told
+                             apart from what is not measured yet
+    completion.py            `completion`: bash/zsh/fish, read off the
+                             parser. A copied list of flags diverges at the
+                             first PR that adds one
+  preflight.py               What `check` answers: usable, degraded, or not
+                             runnable. Writes nothing, and poses four of the
+                             ten troubleshooting diagnoses of the user guide
+                             with the run's own analyses, so the two cannot
+                             disagree
+  validation/
+    checks.py                The known failure modes, in one pass over the tree
+    schemas.py               What can be applied — asked without compiling it
+  odd/
+    build.py                 The ODD → rng/sch/svrl chain, and its pinned toolchain
+    simplify.py              RELAX NG §4.19/§4.20 reductions (see schema/README.md)
   report/                    What a run did, and what it lost
     counts.py                A loss is never a bare integer: a count carries
                              its denominator or it raises
@@ -117,7 +155,10 @@ teille_douce/
                              events, and a frozen panel reads as a hung run
     select.py                Which reporter a run gets
     store.py                 What a run leaves on disk: the manifest, the
-                             index of its incidents, and its log
+                             index of its incidents, and its log — and
+                             `read_run`, which reads them back for
+                             `report`, in the same file as the writer so
+                             the two cannot drift
     logging_bridge.py        WARNING+ records to the digest, never to the
                              screen
     gate.py                  --fail-on: the third block is the definition of

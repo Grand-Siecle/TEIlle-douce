@@ -43,12 +43,23 @@ def test_an_option_given_before_the_subcommand_survives_it():
     assert parse(["--skip-existing", "run"]).skip_existing is True
 
 
-def test_bare_help_is_the_help_of_run():
-    """`teille-douce -h` with no subcommand must document what a bare
-    invocation actually does. The top-level parser alone lists a command
-    and none of the options you can pass it."""
-    assert app.normalise(["-h"]) == ["run", "-h"]
-    assert app.normalise(["--help"]) == ["run", "--help"]
+def test_bare_help_lists_the_commands_and_says_which_one_is_the_default():
+    """It used to be rewritten to `run --help`, because the top-level
+    parser listed one command and none of the options you could pass it.
+    With eight commands, `teille-douce --help` is the one place someone
+    looks for `check`, `info` and `report`, and naming none of them made
+    them undiscoverable. The epilog carries what the rewrite protected:
+    that a bare invocation converts."""
+    assert app.normalise(["-h"]) == ["-h"]
+    assert app.normalise(["--help"]) == ["--help"]
+
+    parser = app.build_parser()
+    printed = parser.format_help()
+    for command in ("check", "validate", "info", "report", "odd", "fixture",
+                    "completion"):
+        assert command in printed, f"{command} is not in the bare help"
+    assert "run` is assumed" in printed
+    assert "run --help" in printed
 
 
 def test_a_short_cluster_ending_in_a_value_taking_letter_keeps_its_value():
@@ -172,3 +183,50 @@ def test_module_entry_point_runs(tmp_path):
 
     assert res.returncode == 0, res.stderr[-2000:]
     assert teille_douce.__version__ in res.stdout
+
+
+# =============================================================================
+# The console script
+# =============================================================================
+
+def test_the_console_script_imports_nothing_expensive_at_module_level():
+    """setuptools' generated wrapper does `from <module> import main` at
+    module level. `teille_douce.cli` there meant pandas and lxml — a
+    quarter of a second — were imported outside anything that could catch
+    a Ctrl-C, so an interrupt in that window came out as a traceback from
+    inside pandas, over a run that had not started."""
+    import ast
+    import inspect as introspect
+
+    from teille_douce import launcher
+
+    tree = ast.parse(introspect.getsource(launcher))
+    imported = [node for node in tree.body
+                if isinstance(node, (ast.Import, ast.ImportFrom))]
+    names = [alias.name for node in imported
+             for alias in getattr(node, "names", [])]
+    assert names == ["sys"], f"the wrapper's import is no longer free: {names}"
+
+
+def test_the_entry_point_declared_in_the_metadata_is_the_guarded_one():
+    """A `[project.scripts]` naming `teille_douce.cli:main` would put the
+    heavy imports back outside the guard, and nothing else would change."""
+    entry, = [point for point in
+              importlib.metadata.distribution("teille-douce").entry_points
+              if point.name == "teille-douce"]
+    assert entry.value == "teille_douce.launcher:main"
+
+
+def test_an_interrupt_before_the_run_starts_is_not_a_traceback(monkeypatch,
+                                                               capsys):
+    """130 is what a shell reports for SIGINT, and nothing has run yet:
+    there is nothing to report but the interruption itself."""
+    from teille_douce import cli, launcher
+
+    def interrupt(_argv):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(cli, "main", interrupt)
+
+    assert launcher.main([]) == 130
+    assert "Interrupted" in capsys.readouterr().err
