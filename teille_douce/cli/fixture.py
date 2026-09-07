@@ -24,10 +24,11 @@ from pathlib import Path
 
 from lxml import etree
 
+from teille_douce.paths import CHECKOUT, ROOT
+
 NS_ALTO = "http://www.loc.gov/standards/alto/ns-v4#"
 NS = {"a": NS_ALTO}
 
-ROOT = Path(__file__).resolve().parent.parent.parent
 DEFAULT_SOURCE = ROOT / "OCR"
 DEFAULT_TARGET = ROOT / "tests" / "fixtures" / "alto_min" / "LIV9001_reconciled"
 
@@ -139,6 +140,17 @@ def build(source=DEFAULT_SOURCE, target=DEFAULT_TARGET, say=print):
     source, target = Path(source), Path(target)
     if not source.exists():
         raise SystemExit(f"source corpus not found: {source}")
+    # EVERY page, before anything is removed. The whole-corpus guard was
+    # first and the per-page one was inside the loop, so a single page
+    # renamed in the private corpus rmtree'd the versioned fixture, wrote
+    # the pages before it, and then raised — leaving the file the strict
+    # golden diff compares against deleted and half rebuilt, with no IIIF
+    # mapping. The ordering is the point of this function.
+    missing = [relative for relative, _, _ in PAGES
+               if not (source / relative).exists()]
+    if missing:
+        raise SystemExit("source pages missing, nothing was removed:\n  "
+                         + "\n  ".join(missing))
     if target.exists():
         shutil.rmtree(target)
     target.mkdir(parents=True, exist_ok=True)
@@ -147,8 +159,6 @@ def build(source=DEFAULT_SOURCE, target=DEFAULT_TARGET, say=print):
     say("Building the minimal ALTO fixture\n")
     for number, (relative, name, contributes) in enumerate(PAGES, 1):
         page = source / relative
-        if not page.exists():
-            raise SystemExit(f"source page missing: {page}")
         before = page.stat().st_size
         after = thin_page(page, name, number, target)
         total += after
@@ -172,6 +182,12 @@ def rebuild_golden(say=print):
     import sys
     import tempfile
 
+    if CHECKOUT is None:
+        raise SystemExit(
+            "teille-douce fixture needs the source checkout: the fixture, "
+            "the golden file and the end-to-end harness that produces it "
+            "are versioned beside the sources and an installed "
+            "distribution does not carry them.")
     sys.path.insert(0, str(ROOT / "tests"))
     from test_e2e_pipeline import GOLDEN, MODE_COURT, lancer_pipeline, normaliser
 
@@ -184,13 +200,19 @@ def rebuild_golden(say=print):
 
 def add_arguments(parser):
     """The surface of `teille-douce fixture`."""
+    # No abbreviations on THIS command. Every other subcommand can afford
+    # them; this one rebuilds versioned files, and argparse resolving
+    # `--gold` to `--golden` is a typo that silently rewrites the file the
+    # strict end-to-end diff compares against.
+    parser.allow_abbrev = False
     parser.add_argument(
-        "action", nargs="?", default="build", choices=("build",),
-        help="rebuild the versioned fixture from the private corpus")
+        "action", nargs="?", default=None, choices=("build", "golden"),
+        help="build: rebuild the versioned fixture from the private corpus. "
+             "golden: regenerate the reference output instead, by running "
+             "the short pipeline over the fixture")
     parser.add_argument(
         "--golden", action="store_true",
-        help="regenerate the golden file instead, by running the short "
-             "pipeline over the fixture")
+        help="the same as the `golden` action")
     parser.add_argument(
         "--source", type=Path, default=DEFAULT_SOURCE, metavar="DIR",
         help=f"the private corpus to thin (default: {DEFAULT_SOURCE.name}/)")
@@ -201,7 +223,16 @@ def add_arguments(parser):
 
 
 def execute(args):
-    if args.golden:
+    # Two ways of asking for different things is a usage error, not a
+    # precedence rule: `fixture build --golden` used to regenerate the
+    # golden and never build the fixture, saying nothing about the action
+    # it had discarded.
+    if args.golden and args.action == "build":
+        raise SystemExit(
+            "fixture build and --golden ask for different things: "
+            "`fixture build` rebuilds the fixture, `fixture golden` "
+            "rebuilds the reference output")
+    if args.golden or args.action == "golden":
         rebuild_golden()
         return 0
     build(source=args.source, target=args.target)

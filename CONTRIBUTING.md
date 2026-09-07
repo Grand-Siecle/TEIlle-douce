@@ -81,7 +81,7 @@ output, the end-to-end golden diff is part of the test, and you regenerate the
 reference deliberately:
 
 ```bash
-teille-douce fixture --golden
+teille-douce fixture golden
 ```
 
 Read that diff before committing it. It is the most direct statement of what

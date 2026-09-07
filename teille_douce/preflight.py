@@ -22,7 +22,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from teille_douce.config import IIIF_CSV_MIN_MATCH_RATE
-from teille_douce.utils.files import NO_PAGE_NUMBER, pages_sharing_a_number
+from teille_douce.utils.files import (Files, NO_PAGE_NUMBER,
+                                      pages_sharing_a_number)
 
 
 @dataclass(frozen=True, slots=True)
@@ -194,40 +195,59 @@ def _services(settings, probe):
     return tuple(services)
 
 
-def _iiif_rate(directory, pages):
-    """How much of a volume's IIIF mapping would be accepted, or None.
+def _iiif_refused(directory, pages):
+    """Why a volume's IIIF mapping would be refused, or None.
 
-    The detection refuses a CSV matching less than thirty per cent of the
-    file names, and says nothing: the volume then converts with no
-    @source at all, and an operator who provided a mapping has no way to
-    learn it was thrown away.
+    `detect_csv` is the run's own decision and is asked first: if it
+    accepts a file there is nothing to say. Only when it refuses does
+    this look for why, and it reads the candidates the same way —
+    the size cap, the sampled rows, the third column — because a
+    preflight that computed its own rate could print "matches 100 % of
+    the file names (under 30 %)", which is both self-contradictory and
+    the wrong cause.
     """
+    import pandas as pd
+
+    from teille_douce.config import (IIIF_CSV_MAX_SIZE, IIIF_CSV_PATTERNS,
+                                     IIIF_CSV_SAMPLE_ROWS)
     from teille_douce.metadata.iiif import IIIFMapping
 
     if IIIFMapping.detect_csv(directory, pages) is not None:
         return None                    # accepted, nothing to say
-    import pandas as pd
-
-    from teille_douce.config import IIIF_CSV_PATTERNS
 
     names = {page.name for page in pages} | {page.stem for page in pages}
-    best = None
+    candidates = []
     for pattern in IIIF_CSV_PATTERNS:
-        for candidate in directory.glob(pattern):
-            try:
-                table = pd.read_csv(candidate, header=None, dtype=str,
-                                    keep_default_na=False)
-            except Exception:
-                continue
-            if table.shape[1] < 3 or not len(table):
-                continue
-            column = table.iloc[:, 2].astype(str).str.strip()
-            matched = sum(1 for value in column
-                          if value in names
-                          or value.replace(".xml", "") in names)
-            rate = matched / len(column)
-            best = rate if best is None else max(best, rate)
-    return best
+        candidates.extend(directory.glob(pattern))
+    if not candidates:
+        return None                    # none offered, so none refused
+
+    best_rate, too_big = None, []
+    for candidate in candidates:
+        if candidate.stat().st_size > IIIF_CSV_MAX_SIZE:
+            too_big.append(candidate.name)
+            continue
+        try:
+            table = pd.read_csv(candidate, header=None, dtype=str,
+                                keep_default_na=False,
+                                nrows=IIIF_CSV_SAMPLE_ROWS)
+        except Exception:
+            continue
+        if table.shape[1] < 3 or not len(table):
+            continue
+        column = table.iloc[:, 2].astype(str).str.strip()
+        matched = sum(1 for value in column
+                      if value in names or value.replace(".xml", "") in names)
+        rate = matched / len(column)
+        best_rate = rate if best_rate is None else max(best_rate, rate)
+
+    if too_big and best_rate is None:
+        return (f"{too_big[0]} is larger than the "
+                f"{IIIF_CSV_MAX_SIZE // (1024 * 1024)} MB cap")
+    if best_rate is None:
+        return "no candidate has three columns"
+    return (f"the mapping matches {best_rate:.0%} of the file names "
+            f"(the floor is over {IIIF_CSV_MIN_MATCH_RATE:.0%})")
 
 
 def inspect(settings, probe=True):
@@ -237,14 +257,23 @@ def inspect(settings, probe=True):
     volumes, archives, without_alto = _volumes(settings.ocr_dir)
     names = [name for name, _ in volumes]
 
-    quiet = logging.getLogger("teille_douce.metadata")
-    was = quiet.level
-    quiet.setLevel(logging.CRITICAL)
+    # The modules that log while ANSWERING. `find_metadata_row` says so
+    # when it finds nothing, and `order_files` warns once per digit-less
+    # file: both are right during a run and are noise above a report that
+    # is about to say the same thing in its own words.
+    quiet = [logging.getLogger(name) for name in
+             ("teille_douce.metadata", "teille_douce.utils.files")]
+    was = [logger.level for logger in quiet]
+    for logger in quiet:
+        logger.setLevel(logging.CRITICAL)
     try:
         catalogue = _catalogue(settings, names)
         persons = _persons(settings)
+        orderings = {name: Files(name, pages).order_files()
+                     for name, pages in volumes}
     finally:
-        quiet.setLevel(was)
+        for logger, level in zip(quiet, was):
+            logger.setLevel(level)
 
     attention = []
     for name in catalogue["unmatched"]:
@@ -258,24 +287,34 @@ def inspect(settings, probe=True):
 
     for name, pages in volumes:
         directory = settings.ocr_dir / name
-        for number, paths in pages_sharing_a_number(name, pages).items():
-            shown = ", ".join(path.name for path in paths[:3])
-            if number == NO_PAGE_NUMBER:
-                attention.append(Attention(
-                    name, f"{len(paths)} files carry no page number ({shown})",
-                    "they share one IIIF view and are placed last"))
-            else:
-                attention.append(Attention(
-                    name,
-                    f"{len(paths)} files claim page {number} ({shown})",
-                    "the page numbering is ambiguous"))
-        rate = _iiif_rate(directory, pages)
-        if rate is not None:
+        # A file whose name carries no sortable number, even alone: it
+        # is placed last and takes the sentinel IIIF view, and it is one
+        # of the four diagnoses the guide sends people through a full
+        # conversion for.
+        unnumbered = [page.filepath.name for page in orderings[name]
+                      if page.num == NO_PAGE_NUMBER]
+        if unnumbered:
             attention.append(Attention(
                 name,
-                f"IIIF mapping matches {rate:.0%} of the file names "
-                f"(under {IIIF_CSV_MIN_MATCH_RATE:.0%})",
-                "it would be refused and the zones carry no @source"))
+                f"{len(unnumbered)} file{'s' if len(unnumbered) > 1 else ''} "
+                f"with no page number in the name "
+                f"({', '.join(sorted(unnumbered)[:3])})",
+                ("they are placed last and share one IIIF view"
+                 if len(unnumbered) > 1
+                 else "it is placed last and takes the sentinel IIIF view")))
+        for number, paths in pages_sharing_a_number(
+                name, pages, ordered=orderings[name]).items():
+            if number == NO_PAGE_NUMBER:
+                continue        # said above, once, with its own wording
+            shown = ", ".join(path.name for path in paths[:3])
+            attention.append(Attention(
+                name, f"{len(paths)} files claim page {number} ({shown})",
+                "the page numbering is ambiguous"))
+        refused = _iiif_refused(directory, pages)
+        if refused is not None:
+            attention.append(Attention(
+                name, f"the IIIF mapping would be refused — {refused}",
+                "the zones would carry no @source"))
 
     for name in without_alto:
         attention.append(Attention(

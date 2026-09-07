@@ -32,8 +32,16 @@ def test_the_project_schema_is_applied_without_being_asked():
     """It was opt-in, and its absence forced the program to print a note
     saying five invariants had not been checked. A default that has to
     apologise is the wrong default."""
-    assert parse([]).odd is True
-    assert parse(["--no-odd"]).odd is False
+    assert command._odd(parse([]).odd)[1] is True
+    assert command._odd(parse(["--no-odd"]).odd)[1] is False
+
+
+def test_a_demanded_schema_and_an_inherited_one_are_told_apart():
+    """What a missing schema does depends on which of the two it was: a
+    flag the user typed is a demand, the default is a preference."""
+    assert command._odd(parse(["--odd"]).odd) == (True, True)
+    assert command._odd(parse([]).odd) == (False, True)
+    assert command._odd(parse(["--no-odd"]).odd) == (False, False)
 
 
 def test_the_number_of_workers_is_not_one():
@@ -80,12 +88,12 @@ def test_the_caps_are_a_display_decision_and_can_be_lifted(tmp_path, capsys):
 
     verdicts = [("f.xml", [f"error {n}" for n in range(30)], [])]
 
-    _print(verdicts, max_errors=10, with_schematron=True)
+    _print(verdicts, max_errors=10)
     ten = capsys.readouterr().out
     assert ten.count("ERROR") == 10
     assert "20 more" in ten
 
-    _print(verdicts, max_errors=0, with_schematron=True)
+    _print(verdicts, max_errors=0)
     assert capsys.readouterr().out.count("ERROR") == 30
 
 
@@ -137,3 +145,122 @@ def test_a_missing_project_schema_names_the_command_that_builds_it(
 def test_nothing_to_check_is_said_rather_than_reported_as_success(tmp_path):
     with pytest.raises(SystemExit, match="nothing to check"):
         command.execute(parse([str(tmp_path)]))
+
+
+# =============================================================================
+# What a typed value does, and what an inherited one does
+# =============================================================================
+
+def test_a_job_count_that_is_not_a_number_is_a_usage_error(capsys):
+    """It lost its `type=int` in the move, so `-j eight` reached `int()`
+    inside the worker count and came out as a traceback with exit 1 —
+    which in this CLI means "some files failed validation", so a typo in a
+    command line was read by a wrapper as a corpus problem. CLAUDE.md: a
+    value typed as a flag is a usage error rather than a fallback."""
+    with pytest.raises(SystemExit) as raised:
+        parse(["-j", "eight"])
+    assert raised.value.code == 2
+    assert "not auto or a number" in capsys.readouterr().err
+
+    with pytest.raises(SystemExit) as raised:
+        parse(["-j", "0"])
+    assert raised.value.code == 2
+
+
+def test_the_workers_are_started_with_forkserver_not_fork(tmp_path, monkeypatch):
+    """`available()` has just imported saxonche, so the parent carries
+    SaxonC's native runtime and its threads; forking a multi-threaded
+    process is a DeprecationWarning today and an error in 3.14.
+    `sourcedoc/builder.py` says so and does the same."""
+    import multiprocessing
+
+    asked, real = [], multiprocessing.get_context
+
+    def record(method=None):
+        asked.append(method)
+        return real(method)
+
+    monkeypatch.setattr(multiprocessing, "get_context", record)
+    written = tmp_path / "out"
+    written.mkdir()
+    for name in ("a.xml", "b.xml"):
+        (written / name).write_text(TEI, encoding="utf-8")
+
+    command.execute(parse(["--no-odd", "-j", "2", str(written)]))
+
+    assert asked and asked[0] in ("forkserver", "spawn")
+    assert "fork" not in [method for method in asked if method != "forkserver"]
+
+
+def test_a_schema_that_is_not_installed_narrows_the_check_and_stops_a_demand(
+        tmp_path, monkeypatch, capsys):
+    """`--odd` became the default, and a default that cannot be satisfied
+    must not fail a run that asked for nothing: a wheel install carries no
+    `schema/`, so every `teille-douce validate` exited on a missing file.
+    A typed `--odd` is a demand and still fails."""
+    from teille_douce.validation import schemas
+
+    monkeypatch.setattr(schemas, "ODD_RNG", tmp_path / "absent.rng")
+    written = tmp_path / "doc.xml"
+    written.write_text(TEI, encoding="utf-8")
+
+    assert command.execute(parse([str(written)])) == 0
+    printed = capsys.readouterr().out
+    assert "not applied" in printed and "[ok]" in printed
+
+    with pytest.raises(SystemExit):
+        command.execute(parse(["--odd", str(written)]))
+
+
+def test_an_installed_distribution_is_not_told_to_run_odd_build(
+        monkeypatch, tmp_path):
+    """`teille-douce odd build` compiles the ODD into the schemas. An
+    installed distribution has no ODD either, so naming that command as
+    the remedy sends someone in a circle."""
+    from teille_douce.validation import Missing, schemas
+
+    monkeypatch.setattr(schemas, "CHECKOUT", None)
+    monkeypatch.setattr(schemas, "ODD_RNG", tmp_path / "absent.rng")
+
+    with pytest.raises(Missing) as raised:
+        schemas.available(with_odd=True)
+
+    assert "odd build" not in str(raised.value)
+    assert "pip install -e" in str(raised.value)
+
+
+def test_nothing_to_check_names_the_directory_that_was_asked_about(tmp_path):
+    """It always named the configured output directory, so
+    `validate /srv/exports/batch-12` answered about `tei_output` — a path
+    the user never mentioned, and one that may well hold files."""
+    elsewhere = tmp_path / "batch-12"
+    elsewhere.mkdir()
+
+    with pytest.raises(SystemExit) as raised:
+        command.execute(parse([str(elsewhere)]))
+
+    assert "batch-12" in str(raised.value)
+
+
+def test_the_json_verdicts_say_which_schemas_were_applied(tmp_path, capsys,
+                                                          monkeypatch):
+    """The notes are prose and `--json` suppresses them, so a wrapper
+    reading the verdicts could not tell a complete check from one narrowed
+    by an absent Schematron — the same "a partial check looks complete"
+    the notes exist to prevent."""
+    import json
+
+    from teille_douce.validation import schemas
+
+    written = tmp_path / "doc.xml"
+    written.write_text(TEI, encoding="utf-8")
+
+    command.execute(parse(["--no-odd", "--json", str(written)]))
+    narrowed = json.loads(capsys.readouterr().out)
+    assert narrowed["applied"] == ["python invariants"]
+
+    monkeypatch.setattr(schemas, "ODD_SVRL", tmp_path / "absent.xsl")
+    command.execute(parse(["--json", str(written)]))
+    without_schematron = json.loads(capsys.readouterr().out)
+    assert "teille-douce.rng" in without_schematron["applied"]
+    assert "teille-douce.svrl.xsl" not in without_schematron["applied"]

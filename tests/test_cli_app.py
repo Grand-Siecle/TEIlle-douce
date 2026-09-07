@@ -172,3 +172,50 @@ def test_module_entry_point_runs(tmp_path):
 
     assert res.returncode == 0, res.stderr[-2000:]
     assert teille_douce.__version__ in res.stdout
+
+
+# =============================================================================
+# The console script
+# =============================================================================
+
+def test_the_console_script_imports_nothing_expensive_at_module_level():
+    """setuptools' generated wrapper does `from <module> import main` at
+    module level. `teille_douce.cli` there meant pandas and lxml — a
+    quarter of a second — were imported outside anything that could catch
+    a Ctrl-C, so an interrupt in that window came out as a traceback from
+    inside pandas, over a run that had not started."""
+    import ast
+    import inspect as introspect
+
+    from teille_douce import launcher
+
+    tree = ast.parse(introspect.getsource(launcher))
+    imported = [node for node in tree.body
+                if isinstance(node, (ast.Import, ast.ImportFrom))]
+    names = [alias.name for node in imported
+             for alias in getattr(node, "names", [])]
+    assert names == ["sys"], f"the wrapper's import is no longer free: {names}"
+
+
+def test_the_entry_point_declared_in_the_metadata_is_the_guarded_one():
+    """A `[project.scripts]` naming `teille_douce.cli:main` would put the
+    heavy imports back outside the guard, and nothing else would change."""
+    entry, = [point for point in
+              importlib.metadata.distribution("teille-douce").entry_points
+              if point.name == "teille-douce"]
+    assert entry.value == "teille_douce.launcher:main"
+
+
+def test_an_interrupt_before_the_run_starts_is_not_a_traceback(monkeypatch,
+                                                               capsys):
+    """130 is what a shell reports for SIGINT, and nothing has run yet:
+    there is nothing to report but the interruption itself."""
+    from teille_douce import cli, launcher
+
+    def interrupt(_argv):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(cli, "main", interrupt)
+
+    assert launcher.main([]) == 130
+    assert "Interrupted" in capsys.readouterr().err

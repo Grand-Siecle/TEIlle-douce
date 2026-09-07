@@ -91,6 +91,14 @@ teille_douce/
   config.py                  What describes the project: versions, taxonomies,
                              thresholds, responsibility — plus the defaults
   settings.py                The four layers, resolved after parse_args
+  paths.py                   Checkout or installed distribution. `schema/`,
+                             `tests/` and `OCR/` sit beside the package and
+                             only a checkout has them; three modules read
+                             them through `__file__.parent.parent.parent`,
+                             which is `site-packages/` in the other case
+  launcher.py                The console script. It imports `sys` and nothing
+                             else, so setuptools' generated wrapper cannot
+                             pull pandas and lxml in outside the Ctrl-C guard
   cli/
     app.py                   Argument parser, subcommand dispatch, flags → Settings
     options.py               Every option of `run`, and the phase fold
@@ -98,6 +106,13 @@ teille_douce/
     validate.py              `validate`: which schemas, how many workers
     odd.py                   `odd`: build the schema from the ODD, or check it
     fixture.py               `fixture`: rebuild the versioned fixture
+    check.py                 `check`: the preflight, rendered — a pure
+                             function of the answer, a width and `--strict`
+  preflight.py               What `check` answers: usable, degraded, or not
+                             runnable. Writes nothing, and poses four of the
+                             ten troubleshooting diagnoses of the user guide
+                             with the run's own analyses, so the two cannot
+                             disagree
   validation/
     checks.py                The known failure modes, in one pass over the tree
     schemas.py               What can be applied — asked without compiling it

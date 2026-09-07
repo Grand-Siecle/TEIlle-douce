@@ -446,8 +446,11 @@ def test_sans_odd_le_script_dit_ce_qu_il_n_a_pas_verifie(tmp_path, capsys):
     with pytest.raises(SystemExit):
         main([_ecrire(tmp_path, TEI_OK)])
     sortie = capsys.readouterr().out
-    assert "--odd" in sortie
-    assert "unchecked" in sortie.lower()
+    # La note nomme les invariants, pas le drapeau : elle est aussi
+    # imprimee quand le schema n'est pas installe du tout, ou renvoyer
+    # vers --odd conseillerait la seule chose qui echouerait.
+    assert "langUsage" in sortie and "ORCID" in sortie
+    assert "not checked" in sortie.lower()
 
 
 def test_odd_sans_saxonche_valide_quand_meme_le_relaxng(tmp_path, capsys, monkeypatch):

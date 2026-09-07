@@ -67,3 +67,36 @@ def test_a_missing_odd_is_named_rather_than_traced(monkeypatch, tmp_path):
 
     with pytest.raises(SystemExit, match="ODD not found"):
         odd.execute(app.build_parser().parse_args(["odd", "check"]))
+
+
+def test_refresh_removes_the_toolchain_and_not_what_shares_its_directory(tmp_path):
+    """`--refresh` used to `rmtree` `--toolchain-dir` itself. That is fine
+    for the default `.odd-toolchain/`, which the class owns, and is data
+    loss for the directory the flag exists to point at: nothing stops it
+    being `~/tei`, or a place holding a p5subset.xml among other work."""
+    toolchain = Toolchain(tmp_path)
+    (tmp_path / "notes.md").write_text("not ours", encoding="utf-8")
+    toolchain.p5.write_text("stale", encoding="utf-8")
+    toolchain.stylesheets.mkdir()
+    (toolchain.stylesheets / "odd2odd.xsl").write_text("stale", encoding="utf-8")
+
+    toolchain._invalidate()
+
+    assert not toolchain.p5.exists()
+    assert not toolchain.stylesheets.exists()
+    assert (tmp_path / "notes.md").read_text(encoding="utf-8") == "not ours"
+
+
+def test_an_installed_distribution_is_not_told_to_build_an_odd_it_has_not_got(
+        monkeypatch, tmp_path):
+    """The wheel carries `teille_douce/` and nothing else. `ODD not found:
+    /…/site-packages/schema/teille-douce.odd` sends someone looking for a
+    file that was never installed, and `odd build` cannot produce it."""
+    monkeypatch.setattr(odd, "CHECKOUT", None)
+    monkeypatch.setattr(odd, "ODD", tmp_path / "absent.odd")
+
+    with pytest.raises(SystemExit) as raised:
+        odd.execute(app.build_parser().parse_args(["odd", "build"]))
+
+    assert "checkout" in str(raised.value)
+    assert "ODD not found" not in str(raised.value)

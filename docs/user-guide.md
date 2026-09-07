@@ -157,6 +157,64 @@ Page images are referenced, never copied. Two ways to supply them:
 For a non-Gallica server whose Image API base cannot be guessed from its
 manifest URL, set `IIIF_URI["image_base"]` in `teille_douce/config.py`.
 
+## Before you run: `teille-douce check`
+
+A full conversion takes tens of minutes. `check` answers, in about two
+seconds and without writing anything, the questions that used to need one:
+
+```bash
+teille-douce check              # is this installation usable, and what will it cost?
+teille-douce check -i OCR_test  # ask about the input a run would be given
+teille-douce check --strict     # the same, and exit 1 if there is anything to look at
+teille-douce check --no-probe   # do not ask the two services anything
+```
+
+`-i/--input`, `-o/--output`, `--metadata` and `--persons` mean what they mean
+on `run`, so a preflight can be asked about exactly what the run will be
+given. Everything else comes from the same four configuration layers.
+
+It reports what it found — volumes, pages, archives waiting to be unpacked,
+how much of the corpus the catalogue covers, whether the persons table
+loaded, what each service answered — and then, under **needs attention**,
+each thing worth looking at *and what a run would do about it*:
+
+```
+  input      OCR_test                                        2 volumes · 18 pages
+  output     tei_test                                                    writable
+  catalogue  metadata_livre.csv           1 rows · 1 matched · 1 unmatched
+             metadata_personne.csv                                     2 persons
+  services   VieuxParler modernization                                not probed
+             PyHellen    enrichment                                   not probed
+             NER models  entity recognition                                   up
+
+  needs attention
+    LIV0326_v1_reconciled  no catalogue row for 'LIV0326_v1_reconciled'
+                           — its header would keep every placeholder
+    LIV0326_v1_reconciled  2 files claim page 2 (f2-np.xml, f2.xml)
+                           — the page numbering is ambiguous
+    LIV0326_v1_reconciled  the IIIF mapping would be refused — matches 0% of …
+                           — the zones would carry no @source
+    LIV9001_reconciled     1 file with no page number in the name (plate.xml)
+                           — it is placed last and takes the sentinel IIIF view
+    LIV0099_vide           the directory holds no ALTO
+                           — nothing would be converted from it
+
+  usable, with 5 things to look at      teille-douce check --strict fails on these
+```
+
+Four of the ten [troubleshooting](#troubleshooting) entries below are
+diagnoses this poses before the run rather than after it. The analyses are
+the run's own — the same page ordering, the same catalogue lookup, the same
+IIIF detection — because a preflight that disagreed with the run it precedes
+would be worse than none.
+
+**Exit codes.** `0` nothing to say · `1` usable, and `--strict` was asked
+for · `3` unusable: no input directory, no volume in it, an output that
+cannot be written, or a path that is configured and unreadable. Degraded is
+not unusable: seventeenth-century OCR is imperfect by nature, and a run that
+stopped on that would never start. `--strict` is for a CI that wants the
+distinction to be fatal.
+
 ## Running the pipeline
 
 ```bash
@@ -266,8 +324,12 @@ teille-douce run --fast
 ```
 
 You get a complete base TEI: header, `sourceDoc`, text structure, notes,
-figures, language detection. This is also the mode to use when checking that
-your input is shaped correctly, before committing to a long run.
+figures, language detection.
+
+It used to be the way to find out whether the input was shaped correctly, at
+the cost of converting the corpus to learn it.
+[`teille-douce check`](#before-you-run-teille-douce-check) answers that
+without writing anything.
 
 ## Configuration
 
@@ -606,14 +668,26 @@ Two different questions, two validations.
 
 ```bash
 # Is it a conformant output of THIS pipeline? (RELAX NG + Schematron + Python)
-teille-douce validate tei_output
+teille-douce validate                 # no argument: the output directory
+
+# One file, or a directory somewhere else
+teille-douce validate tei_test/LIV0044_reconciled.tei.xml
 
 # Is it conformant TEI at all? (needs a tei_all.rng, ~1 MB, not versioned)
 teille-douce validate --schema tei_all.rng tei_output
 
-# Both, on many files, spread over 8 cores
-teille-douce validate --schema tei_all.rng tei_output
+# One JSON object instead of a report, for a wrapper to read
+teille-douce validate --json tei_output
 ```
+
+| Option | Effect |
+|---|---|
+| `FILE\|DIR ...` | What to check. A directory becomes the `.xml` directly inside it; nothing at all means the configured output directory, which is what the end-of-run report offers as the next thing to type. |
+| `--no-odd` | Do not validate against the project schema. Five invariants live only there and will go unchecked, which the command says rather than letting a partial check look like a complete one. |
+| `--schema RNG` | A `tei_all.rng`, adding full TEI RELAX NG validation. |
+| `-j, --jobs auto\|N` | Files are independent; `auto` is as many as there are, capped by the machine. |
+| `--max-errors N` | How many errors to print per file, `0` for all. A display decision: nothing is dropped at collection. |
+| `--json` | The same verdicts as one JSON object, under `files`, with `applied` naming the schemas this invocation actually used — the notes below are prose and `--json` suppresses them, so without it a wrapper could not tell a complete check from a narrowed one. |
 
 `tei_all` establishes TEI conformance but detects neither a non-existent zone
 type, nor a `<figure>` without an anchor, nor an automatic entity with no
@@ -621,10 +695,16 @@ certainty indication. `--odd` answers that complementary question, using the
 project's own customization: a closed element inventory, closed value lists for
 `zone/@type` and `rs/@type`, and eleven Schematron rules.
 
-The script exits **1** on any error, so it drops straight into CI. Rules the TEI
-marks `role="nonfatal"` are reported as warnings, not errors. Without `--odd`,
-five local invariants go unchecked and the script says so rather than letting
-you believe the check was complete.
+The command exits **1** on any error, so it drops straight into CI. Rules the
+TEI marks `role="nonfatal"` are reported as warnings, not errors. Under
+`--no-odd` five local invariants go unchecked, and it says so rather than
+letting you believe the check was complete.
+
+The project schema is applied without being asked for. It is versioned, so
+applying it needs only `lxml` and `saxonche` — not the toolchain that
+*compiles* it. An installation that does not carry it at all (a wheel
+installed outside a checkout) narrows the check and says so; a `--odd` you
+typed yourself is a demand, and fails.
 
 Get `tei_all.rng` with:
 
@@ -682,16 +762,19 @@ already there is skipped without being opened, mode and all, so a nightly
 wrapper does not go red over one there is nothing left to convert.
 
 **The header is full of `Information not available.`** — no catalogue row
-matched. Check that the `BDD` column of `metadata_livre.csv` contains exactly
+matched. `teille-douce check` names every volume this applies to before the
+run. Check that the `BDD` column of `metadata_livre.csv` contains exactly
 the internal id parsed from the directory name (`LIV0002a_reconciled` →
 `LIV0002`), and that the file really is semicolon-delimited.
 
 **Persons appear as placeholders** — `metadata_personne.csv` was not loaded, or
 the `PERSxxxx` keys in the book CSV have no matching row. The run prints how
-many persons it loaded.
+many persons it loaded, and `teille-douce check` says whether the table loads
+at all.
 
 **No `<w>` or no `<choice>` in the output** — the corresponding service did not
-answer its probe. There is one warning line at the start of the run saying which
+answer its probe; `teille-douce check` asks them the same question in two
+seconds. There is one warning line at the start of the run saying which
 one. Check the URL, and raise `TDOUCE_HEALTH_TIMEOUT` if the server is remote
 and still loading its model.
 

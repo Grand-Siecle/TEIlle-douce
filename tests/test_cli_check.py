@@ -100,6 +100,60 @@ def test_a_iiif_mapping_under_the_threshold_is_named(tmp_path):
     assert "no @source" in named[0].consequence
 
 
+def test_a_file_with_no_page_number_is_named_even_when_it_is_alone(tmp_path):
+    """The guide's third troubleshooting entry. `order_files` places such
+    a file last and gives it the sentinel page number, so it takes the
+    sentinel IIIF view — and one is enough for that, which is why this
+    family is not folded into the duplicate-number one, whose smallest
+    case is two."""
+    ocr = a_corpus(tmp_path)
+    pages = ocr / "LIV9001_reconciled" / "content" / "data" / "doc_1"
+    (pages / "plate.xml").write_text(
+        (pages / "f1.xml").read_text(encoding="utf-8"), encoding="utf-8")
+
+    answer = inspect(settings_for(tmp_path, ocr), probe=False)
+
+    named = [item for item in answer.attention if "no page number" in item.detail]
+    assert [item.subject for item in named] == ["LIV9001_reconciled"]
+    assert "plate.xml" in named[0].detail
+    assert "sentinel" in named[0].consequence
+
+
+def test_the_analyses_do_not_log_over_the_report_they_answer(tmp_path, caplog):
+    """`find_metadata_row` says so when it finds nothing and `order_files`
+    warns once per digit-less file: both are right during a run, and
+    during a preflight they are the same diagnosis, said twice, above the
+    report that is about to say it in its own words — and on stderr,
+    where it lands in the middle of the rendering."""
+    import logging
+
+    ocr = a_corpus(tmp_path, ("LIV0326_v1_reconciled",))
+    pages = ocr / "LIV0326_v1_reconciled" / "content" / "data" / "doc_1"
+    (pages / "plate.xml").write_text(
+        (pages / "f1.xml").read_text(encoding="utf-8"), encoding="utf-8")
+
+    with caplog.at_level(logging.WARNING):
+        answer = inspect(settings_for(tmp_path, ocr), probe=False)
+
+    assert answer.attention, "the fixture no longer poses the diagnoses"
+    assert not [record for record in caplog.records
+                if record.name.startswith(("teille_douce.metadata",
+                                           "teille_douce.utils.files"))]
+
+
+def test_the_level_the_analyses_silenced_is_put_back(tmp_path):
+    """It is set on the module's logger, not on a handler: leaving it at
+    CRITICAL would silence the run that follows in the same process."""
+    import logging
+
+    ocr = a_corpus(tmp_path)
+    before = logging.getLogger("teille_douce.utils.files").level
+
+    inspect(settings_for(tmp_path, ocr), probe=False)
+
+    assert logging.getLogger("teille_douce.utils.files").level == before
+
+
 def test_a_directory_with_no_alto_is_named(tmp_path):
     ocr = a_corpus(tmp_path)
     (ocr / "LIV0099_empty").mkdir()
@@ -224,3 +278,23 @@ def test_an_output_that_cannot_be_written_is_unusable_not_degraded():
     assert an_answer(output_writable=False).verdict == 3
     assert an_answer(volumes=()).verdict == 3
     assert an_answer(attention=()).verdict == 0
+
+
+def test_the_preflight_can_be_asked_about_the_input_a_run_would_be_given(
+        tmp_path, capsys):
+    """`teille-douce run -i OCR_test` is the shape the guide teaches, and
+    `check -i OCR_test` used to answer `unrecognized arguments` — so the
+    only way to point the preflight anywhere was the environment, which
+    is not how anyone asks the question."""
+    from teille_douce.cli.app import build_parser, settings_from
+
+    ocr = a_corpus(tmp_path)
+    parsed = build_parser().parse_args(
+        ["check", "-i", str(ocr), "-o", str(tmp_path / "out"),
+         "--metadata", str(tmp_path / "metadata_livre.csv"),
+         "--persons", str(tmp_path / "metadata_personne.csv"), "--no-probe"])
+    settings = settings_from(parsed, env={}, parser=build_parser())
+
+    assert settings.ocr_dir == ocr
+    assert settings.origin("ocr_dir") == "flag"
+    assert inspect(settings, probe=False).volumes

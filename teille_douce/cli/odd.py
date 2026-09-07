@@ -4,6 +4,7 @@ from pathlib import Path
 
 from teille_douce.odd import Toolchain, compile_odd, verify
 from teille_douce.odd.build import ODD, SCHEMA
+from teille_douce.paths import CHECKOUT
 
 
 def add_arguments(parser):
@@ -25,6 +26,16 @@ def add_arguments(parser):
 
 def execute(args):
     if not ODD.exists():
+        if CHECKOUT is None:
+            # The wheel carries `teille_douce/` and nothing else. Naming
+            # a path under site-packages and stopping there would send
+            # someone looking for a file that was never installed.
+            raise SystemExit(
+                "teille-douce odd needs the source checkout: the ODD it "
+                "compiles is versioned beside the sources, in schema/, "
+                "and an installed distribution does not carry it. This is "
+                "a maintainer's command — clone the repository, or run it "
+                "from one.")
         raise SystemExit(f"ODD not found: {ODD}")
 
     toolchain = (Toolchain(args.toolchain_dir) if args.toolchain_dir

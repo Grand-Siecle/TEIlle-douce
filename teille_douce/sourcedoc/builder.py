@@ -412,8 +412,8 @@ def build_sourcedoc(
     # — but the number they share is the IIIF view their zones' @source is
     # built from, and surface/@n derives from the same filename numbers, so
     # the operator is told which files made this numbering ambiguous.
-    for num, paths in pages_sharing_a_number(document_name,
-                                             filepath_list).items():
+    for num, paths in pages_sharing_a_number(
+            document_name, filepath_list, ordered=ordered_files).items():
         listed = ", ".join(str(p) for p in paths[:10]) + (
             f" (+{len(paths) - 10} more)" if len(paths) > 10 else ""
         )

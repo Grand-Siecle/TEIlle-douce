@@ -90,12 +90,16 @@ markers = [
 source = ["teille_douce", "main", "scripts"]
 # teille_douce/odd/build.py pilote une chaine externe -- telechargements,
 # XSLT Saxon, boite a outils TEI -- et ne peut pas s'executer dans la
-# suite. Seul son helper pur `without_the_date` est exerce, par un import
-# explicite de tests/test_odd.py. simplify.py, lui, est de la logique pure
-# et reste mesure. Les trois fichiers de scripts/ ne sont plus que des
-# lanceurs d'une ligne, hors mesure comme le reste de scripts/.
-omit = ["tests/*", "venv/*", "scripts/*", "*/teille_douce/odd/build.py",
-        "*/teille_douce/cli/fixture.py"]
+# suite. Seuls ses helpers purs `without_the_date` et `Toolchain` sont
+# exerces, par tests/test_odd.py et tests/test_cli_odd.py. simplify.py,
+# lui, est de la logique pure et reste mesure. Les trois fichiers de
+# scripts/ ne sont plus que des lanceurs d'une ligne, hors mesure comme
+# le reste de scripts/.
+#
+# cli/fixture.py a ete retire de cette liste : il y etait entre avec le
+# script dont il vient, et tests/test_cli_fixture.py l'exerce -- l'omettre
+# soustrayait au cliquet du code effectivement teste, et surtout mesure.
+omit = ["tests/*", "venv/*", "scripts/*", "*/teille_douce/odd/build.py"]
 # sourcedoc/builder.py execute du code dans des workers multiprocessing :
 # sans ces deux options, coverage ne voit pas les lignes exercees dans les forks.
 # Consequence : lancer `coverage combine` avant `coverage report`.

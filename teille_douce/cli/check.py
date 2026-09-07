@@ -128,6 +128,27 @@ def _verdict(preflight, strict, room):
 
 def add_arguments(parser):
     """The surface of `teille-douce check`."""
+    # The four paths this command reads, named the way `run` names them.
+    # They were left to the environment and the config file, on the
+    # ground that check is asked about the installation rather than about
+    # one invocation — but `teille-douce run -i OCR_test` is the shape
+    # the guide teaches, and `teille-douce check -i OCR_test` answering
+    # `unrecognized arguments` teaches that the preflight cannot be asked
+    # about what the run is about to do. `settings_from` folds any dest
+    # in `PASSED_THROUGH` into the flag layer, so declaring them is all
+    # it takes.
+    parser.add_argument("-i", "--input", dest="ocr_dir", metavar="DIR",
+                        default=None,
+                        help="directory of volumes / ZIP archives  [OCR]")
+    parser.add_argument("-o", "--output", dest="output_dir", metavar="DIR",
+                        default=None,
+                        help="directory for the TEI files  [tei_output]")
+    parser.add_argument("--metadata", dest="metadata_csv", metavar="CSV",
+                        default=None,
+                        help="catalogue of volumes  [metadata_livre.csv]")
+    parser.add_argument("--persons", dest="persons_csv", metavar="CSV",
+                        default=None,
+                        help="catalogue of persons  [metadata_personne.csv]")
     parser.add_argument(
         "--strict", action="store_true",
         help="treat anything worth looking at as a failure, for CI")

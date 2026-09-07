@@ -23,6 +23,12 @@ from teille_douce.cli import app, fixture
 
 RACINE = Path(__file__).resolve().parent.parent
 VERSIONED = RACINE / "tests" / "fixtures" / "alto_min" / "LIV9001_reconciled"
+# The OTHER versioned file this command can rewrite, and the one the
+# strict end-to-end diff compares against. The first version of this test
+# fingerprinted only the fixture, so `--gold` — which argparse
+# prefix-matched to `--golden` — regenerated the golden on every run of
+# the suite while every assertion passed.
+GOLDEN = RACINE / "tests" / "fixtures" / "golden"
 
 
 def _fingerprint(directory):
@@ -40,23 +46,29 @@ def _fingerprint(directory):
     ["main.py", "fixture", "--help"],
     ["main.py", "fixture", "-h"],
     ["main.py", "fixture", "--goldne"],         # the typo that rebuilt it
-    ["main.py", "fixture", "build", "--gold"],  # argparse refuses this
+    # An ABBREVIATION of the destructive flag. argparse prefix-matches by
+    # default, so this used to mean `--golden` and rewrite the golden.
+    ["main.py", "fixture", "--gold"],
+    ["main.py", "fixture", "build", "--gold"],
+    # Two ways of asking for different things: a usage error, not a
+    # precedence rule that silently discards one of them.
+    ["main.py", "fixture", "build", "--golden"],
     # And by the name two years of wrapper scripts use, which is where
     # the bug lived: this file had no parser at all.
     ["scripts/build_test_fixture.py", "--help"],
     ["scripts/build_test_fixture.py", "--goldne"],
 ])
-def test_the_help_and_a_typo_leave_the_fixture_alone(asked):
-    before = _fingerprint(VERSIONED)
+def test_the_help_and_a_typo_leave_both_versioned_files_alone(asked):
+    before = _fingerprint(VERSIONED), _fingerprint(GOLDEN)
 
     finished = subprocess.run(
         [sys.executable, str(RACINE / asked[0]), *asked[1:]],
         capture_output=True)
 
-    assert _fingerprint(VERSIONED) == before, (
-        f"`{' '.join(asked)}` rebuilt the versioned fixture")
+    assert (_fingerprint(VERSIONED), _fingerprint(GOLDEN)) == before, (
+        f"`{' '.join(asked)}` rewrote a versioned file")
     # And it said something rather than doing something.
-    assert finished.returncode in (0, 2), finished.stderr.decode()[-800:]
+    assert finished.returncode in (0, 1, 2), finished.stderr.decode()[-800:]
 
 
 def test_the_script_is_a_launcher_and_carries_no_logic_of_its_own():
@@ -126,5 +138,38 @@ def test_the_subcommand_is_reachable_and_defaults_to_build():
     args = app.build_parser().parse_args(["fixture"])
 
     assert args.command == "fixture"
-    assert args.action == "build"
+    # `None`, not `"build"`: the default has to be distinguishable from
+    # the action typed out, or `fixture build --golden` cannot be told
+    # from `fixture --golden` and one of the two is silently discarded.
+    assert args.action is None
     assert args.golden is False
+
+
+def test_the_fixture_is_not_removed_when_a_source_page_has_moved(tmp_path):
+    """The whole-corpus guard was first and the per-page one was inside
+    the loop, so one renamed page in the private corpus rmtree'd the
+    versioned fixture, wrote the pages before it, and then raised — the
+    file the strict golden diff compares against, deleted and half
+    rebuilt, with no IIIF mapping."""
+    source = tmp_path / "corpus"
+    for relative, _, _ in fixture.PAGES[:-1]:        # one page short
+        page = source / relative
+        page.parent.mkdir(parents=True, exist_ok=True)
+        page.write_text("<alto/>", encoding="utf-8")
+    target = tmp_path / "out"
+    target.mkdir()
+    (target / "keep.xml").write_text("<alto/>", encoding="utf-8")
+
+    with pytest.raises(SystemExit, match="nothing was removed"):
+        fixture.build(source=source, target=target, say=lambda *_: None)
+
+    assert (target / "keep.xml").exists()
+
+
+def test_asking_for_the_fixture_and_the_golden_at_once_is_refused():
+    from teille_douce.cli import app
+
+    args = app.build_parser().parse_args(["fixture", "build", "--golden"])
+
+    with pytest.raises(SystemExit, match="different things"):
+        fixture.execute(args)

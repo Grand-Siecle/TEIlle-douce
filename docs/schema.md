@@ -131,10 +131,17 @@ derivative directly.
 inventory is closed, so `tests/test_odd.py` fails until you do — which is the
 point: the schema cannot silently fall behind the code.
 
-`build_odd.py` materializes TEI P5, the TEI Stylesheets and SchXslt into
-`.odd-toolchain/` (gitignored) at versions pinned at the top of the script, and
-drives them with SaxonC-HE. Raising those versions is a deliberate change:
-recompile and read the diff of the generated schemas.
+`teille-douce odd build` materializes TEI P5, the TEI Stylesheets and SchXslt
+into `.odd-toolchain/` (gitignored) at versions pinned at the top of
+`teille_douce/odd/build.py`, and drives them with SaxonC-HE. Raising those
+versions is a deliberate change: recompile and read the diff of the generated
+schemas. `--toolchain-dir` points at an unpacking that already exists, and
+`--refresh` discards the pinned toolchain and fetches it again — the three
+things it put there, and nothing else that shares the directory.
+
+It is a maintainer's command and needs the source checkout: the ODD it
+compiles is versioned beside the sources. An installed distribution carries
+neither, and says so rather than naming a path under `site-packages/`.
 
 ## What lives where
 

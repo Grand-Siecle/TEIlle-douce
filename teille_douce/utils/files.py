@@ -89,7 +89,7 @@ class Files:
         return sorted(numbered + others, key=lambda x: x.num)
 
 
-def pages_sharing_a_number(document_name, filepaths):
+def pages_sharing_a_number(document_name, filepaths, ordered=None):
     """Files whose names give one page number, grouped by that number.
 
     `order_files` reads the first digit run of the stem, so `f12.xml` and
@@ -104,13 +104,25 @@ def pages_sharing_a_number(document_name, filepaths):
     question without converting anything: forty minutes to learn that two
     files claim page 12 is the cost this exists to remove.
 
+    Args:
+        document_name (str): for the warning `order_files` may emit.
+        filepaths (list): the ALTO files, if `ordered` is not given.
+        ordered (list): the result of `Files.order_files()`, where the
+            caller already has it.
+
     Returns:
         dict: {page number: [Path, …]}, only where there is more than one,
             in page order. `NO_PAGE_NUMBER` is one of the keys.
     """
+    # `ordered` where the caller has it already. `order_files` warns once
+    # per digit-less file, so calling it a second time said the same
+    # thing twice per document in a run — and, in the preflight, printed
+    # it above the report block.
+    if ordered is None:
+        ordered = Files(document_name, filepaths).order_files()
     by_number = {}
-    for ordered in Files(document_name, filepaths).order_files():
-        by_number.setdefault(ordered.num, []).append(ordered.filepath)
+    for page in ordered:
+        by_number.setdefault(page.num, []).append(page.filepath)
     return {number: paths for number, paths in sorted(by_number.items())
             if len(paths) > 1}
 

@@ -14,9 +14,11 @@ directory. The question asked is almost always "check what I have just
 written", and the answer used to be a shell glob.
 """
 
+import argparse
 import json
+import multiprocessing
 import sys
-from multiprocessing import Pool, cpu_count
+from multiprocessing import cpu_count
 from pathlib import Path
 
 from lxml import etree
@@ -93,6 +95,41 @@ def expand(given, output_dir):
     return files
 
 
+def _jobs(raw):
+    """`auto`, or a positive integer, refused by argparse if neither.
+
+    It lost its `type=int` in the move, so `-j eight` reached `int()`
+    inside the worker count and came out as a traceback with exit 1 —
+    which in this CLI's own contract means "some files failed
+    validation", so a wrapper read a typo in its command line as a
+    corpus problem. CLAUDE.md: a value typed as a flag is a usage error.
+    """
+    if raw == "auto":
+        return raw
+    try:
+        asked = int(raw)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"{raw!r} is not auto or a number")
+    if asked < 1:
+        raise argparse.ArgumentTypeError("must be at least 1")
+    return asked
+
+
+def _odd(flag):
+    """(the user demanded the project schema, the run applies it).
+
+    An explicit `--odd` is a demand, and a schema that is not there
+    fails the run; the inherited default is a preference, and a schema
+    that is not there narrows the check instead. CLAUDE.md holds that a
+    value typed as a flag is a usage error rather than a fallback — and
+    this is its converse: a value nobody typed must not stop a
+    pipx-installed `teille-douce validate` from running every other
+    check it has. `store_true` with `default=True` cannot tell the two
+    apart, which is why the default is `None`.
+    """
+    return flag is True, True if flag is None else flag
+
+
 def _workers(asked, count):
     """`auto` is as many as there are files, capped by the machine."""
     if asked == "auto":
@@ -107,10 +144,14 @@ def add_arguments(parser):
         help="TEI files, or directories to take the .xml of "
              "[the output directory]")
     parser.add_argument(
-        "--jobs", "-j", default="auto", metavar="auto|N",
+        "--jobs", "-j", default="auto", metavar="auto|N", type=_jobs,
         help="check N files at once; they are independent [auto]")
+    # `default=None`, not `True`: what the program does when the
+    # schemas are not installed depends on whether the user asked for
+    # them or inherited them from the default, and `store_true` with
+    # `default=True` cannot tell those apart.
     parser.add_argument(
-        "--odd", action="store_true", default=True,
+        "--odd", action="store_true", default=None,
         help="validate against the project schema [on]")
     parser.add_argument(
         "--no-odd", dest="odd", action="store_false",
@@ -129,49 +170,82 @@ def add_arguments(parser):
 
 
 def execute(args):
-    files = expand(args.files, get_settings().output_dir)
+    asked = args.files or [get_settings().output_dir]
+    files = expand(asked, get_settings().output_dir)
     if not files:
+        # The directory the user actually named. It always said the
+        # configured output directory, so `validate /srv/exports/batch-12`
+        # answered about `tei_output` — a path they never mentioned and
+        # that may well hold files.
         raise SystemExit("nothing to check: no .xml file in "
-                         f"{get_settings().output_dir}")
+                         + ", ".join(str(path) for path in asked))
 
+    demanded, with_odd = _odd(args.odd)
     try:
-        with_schematron, note = available(args.odd)
+        schematron, note = available(with_odd)
     except Missing as absent:
-        raise SystemExit(str(absent))
+        if demanded:
+            raise SystemExit(str(absent))
+        schematron, with_odd = False, False
+        note = f"note: the project schema was not applied — {absent}"
     if note and not args.json:
         print(note)
-    if not args.odd and not args.json:
+    if not with_odd and not args.json:
         # Five local invariants live only in the ODD; saying nothing here
         # would let a partial check look like a complete one.
         print("note: prose in <langUsage>, an undivided IIIF idno, a residual "
               "¬ in a <reg>,\n      a GraphicZone with no xml:id and a "
-              "template ORCID are stated by the\n      ODD: unchecked without "
-              "--odd.")
+              "template ORCID are stated by the\n      ODD, and were not "
+              "checked.")
 
     workers = _workers(args.jobs, len(files))
     paths = [str(path) for path in files]
     if workers > 1:
-        with Pool(workers, initializer=_prepare_worker,
-                  initargs=(args.schema, args.odd)) as pool:
+        # forkserver, like `sourcedoc/builder.py`, and for the reason it
+        # gives: `available()` has just imported saxonche, so the parent
+        # carries SaxonC's native runtime and its threads, and forking a
+        # multi-threaded process is a deprecation warning today and an
+        # error in 3.14. It never came up before because `--odd` was off
+        # and `-j` was 1; both are now the default.
+        context = multiprocessing.get_context(
+            "forkserver" if "forkserver" in multiprocessing.get_all_start_methods()
+            else "spawn")
+        with context.Pool(workers, initializer=_prepare_worker,
+                          initargs=(args.schema, with_odd)) as pool:
             verdicts = pool.map(_check, paths)
     else:
-        _prepare_worker(args.schema, args.odd)
+        _prepare_worker(args.schema, with_odd)
         verdicts = [_check(path) for path in paths]
 
     if args.json:
-        json.dump({"files": [{"path": path, "errors": errors,
+        # What was applied, named. The notes above are suppressed under
+        # `--json` — they are prose — so without this a CI reading the
+        # verdicts could not tell a complete check from one narrowed by
+        # an absent Schematron, which is the same "a partial check looks
+        # complete" the notes exist to prevent.
+        json.dump({"applied": _applied(with_odd, schematron, args.schema),
+                   "files": [{"path": path, "errors": errors,
                               "warnings": warnings}
                              for path, errors, warnings in verdicts],
                    "errors": sum(len(e) for _, e, _ in verdicts)},
                   sys.stdout, ensure_ascii=False, indent=2)
         print()
     else:
-        _print(verdicts, args.max_errors, with_schematron)
+        _print(verdicts, args.max_errors)
 
     return 1 if any(errors for _, errors, _ in verdicts) else 0
 
 
-def _print(verdicts, max_errors, with_schematron):
+def _applied(with_odd, schematron, schema):
+    """The schemas this invocation actually used, in order of cost."""
+    return [name for name, used in (
+        ("python invariants", True),
+        ("teille-douce.rng", with_odd),
+        ("teille-douce.svrl.xsl", with_odd and schematron),
+        (schema, bool(schema))) if used]
+
+
+def _print(verdicts, max_errors):
     for path, errors, warnings in verdicts:
         status = "FAIL" if errors else "ok"
         print(f"[{status}] {path}: {len(errors)} errors, "

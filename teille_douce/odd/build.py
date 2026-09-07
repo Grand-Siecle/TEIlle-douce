@@ -38,9 +38,10 @@ from pathlib import Path
 
 from lxml import etree
 
+from teille_douce.paths import CHECKOUT, ROOT
+
 from .simplify import simplify
 
-ROOT = Path(__file__).resolve().parent.parent.parent
 SCHEMA = ROOT / "schema"
 ODD = SCHEMA / "teille-douce.odd"
 DEFAULT_TOOLCHAIN = ROOT / ".odd-toolchain"
@@ -90,8 +91,8 @@ class Toolchain:
 
         Downloads only what is missing, unless *refresh*.
         """
-        if refresh and self.directory.exists():
-            shutil.rmtree(self.directory)
+        if refresh:
+            self._invalidate()
         self.directory.mkdir(parents=True, exist_ok=True)
 
         if not self.p5.exists():
@@ -115,6 +116,21 @@ class Toolchain:
         if missing:
             raise SystemExit("incomplete toolchain: "
                              + ", ".join(str(path) for path in missing))
+
+    def _invalidate(self):
+        """Remove the three things this class put there, and nothing else.
+
+        `--refresh` used to `rmtree` the directory itself, which is fine
+        for the default `.odd-toolchain/` and is data loss the moment
+        `--toolchain-dir` names somewhere shared — nothing stops it
+        being `~/tei`, or a directory that holds a p5subset.xml among
+        other work. A cache invalidates its own entries.
+        """
+        for owned in (self.p5, self.stylesheets, self.schxslt):
+            if owned.is_dir():
+                shutil.rmtree(owned)
+            elif owned.exists():
+                owned.unlink()
 
     def _stylesheets_archive(self, say):
         """The Stylesheets archive, anonymously and then, if that is

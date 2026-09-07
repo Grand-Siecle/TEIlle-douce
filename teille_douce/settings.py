@@ -471,16 +471,29 @@ class Settings:
         }
         return manifest
 
-    # What each path is FOR. Resolution stays pure — `info` and `check`
-    # must be able to read a configuration on a machine with no corpus —
-    # so the check lives here, and the callers decide what to do with the
-    # answer: `run` refuses, `check` lists it.
-    READS = (("ocr_dir", "dir", "-i / TDOUCE_OCR_DIR / paths.input"),
+    # What each path is FOR, and whether the run needs it.
+    #
+    # Resolution stays pure — `info` and `check` must be able to read a
+    # configuration on a machine with no corpus — so the check lives
+    # here, and the callers decide what to do with the answer: `run`
+    # refuses, `check` lists it.
+    #
+    # `required` is the input without which there is nothing to do. The
+    # two catalogues are NOT that: the guide says in as many words that
+    # both are optional and that the pipeline "fills the header with
+    # explicit placeholders rather than inventing values", and their
+    # defaults are relative, so making them mandatory refused every run
+    # started from anywhere but the repository root.
+    #
+    # An absent catalogue is only worth refusing when the operator NAMED
+    # it — a mistyped `--metadata` is a usage error, a missing default is
+    # the documented behaviour — so the caller weighs `origin` too.
+    READS = (("ocr_dir", "dir", "-i / TDOUCE_OCR_DIR / paths.input", True),
              ("metadata_csv", "file",
-              "--metadata / TDOUCE_METADATA_CSV / paths.metadata"),
+              "--metadata / TDOUCE_METADATA_CSV / paths.metadata", False),
              ("persons_csv", "file",
-              "--persons / TDOUCE_PERSONS_CSV / paths.persons"),
-             ("tei_rng", "file", "TDOUCE_TEI_RNG"))
+              "--persons / TDOUCE_PERSONS_CSV / paths.persons", False),
+             ("tei_rng", "file", "TDOUCE_TEI_RNG", False))
 
     def unreadable_inputs(self):
         """Every path this run will READ that it cannot.
@@ -497,12 +510,18 @@ class Settings:
 
         Returns:
             tuple: one `(setting, path, reason, where)` per path that
-            cannot be read, in declaration order.
+            cannot be read, in declaration order — the corpus always, and
+            a catalogue only where the operator named one.
         """
         answers = []
-        for name, kind, where in self.READS:
+        for name, kind, where, required in self.READS:
             path = getattr(self, name)
             if path is None:
+                continue
+            # A default that is not there is the documented behaviour for
+            # everything but the corpus itself. Named and not there is a
+            # mistake worth stopping for, whichever layer named it.
+            if not required and self.origin(name) == "default":
                 continue
             if not path.exists():
                 reason = ("does not exist" if kind == "file"

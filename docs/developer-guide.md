@@ -105,7 +105,7 @@ input produce identical files. It also means any intended change to the output
 requires regenerating the reference:
 
 ```bash
-teille-douce fixture --golden
+teille-douce fixture golden
 ```
 
 ## The fixture
@@ -129,9 +129,17 @@ labels actually present in the 27-volume corpus.
 Regenerating it needs the private `OCR/` corpus:
 
 ```bash
-teille-douce fixture build            # the fixture
-teille-douce fixture --golden   # the reference output
+teille-douce fixture build     # the fixture
+teille-douce fixture golden    # the reference output
 ```
+
+The two are different jobs and asking for both at once is refused rather than
+silently resolved: `fixture build --golden` used to regenerate the reference
+output, never build the fixture, and say nothing about the action it had
+dropped. `--golden` remains as an alias of the `golden` action, and this is
+the one command whose parser takes no abbreviations — argparse resolving
+`--gold` to `--golden` is a typo that rewrites the file the strict end-to-end
+diff compares against.
 
 `tests/fixtures/metadata_livre.csv` and `metadata_personne.csv` are minimal
 versioned metadata — without them the header would stay full of placeholders and
@@ -320,7 +328,7 @@ The order below is the one the conventions above imply.
    ```
 4. **Regenerate the golden** if the output changed on purpose:
    ```bash
-   teille-douce fixture --golden
+   teille-douce fixture golden
    ```
    and read the diff before committing it.
 5. **Raise the ratchet** if you added meaningful coverage:
