@@ -31,6 +31,11 @@ dependencies = [
     "rich>=14.0,<15",
     "lingua-language-detector==2.2.0",
     "httpx>=0.28,<0.29",
+    # `--help` is the front door of a program whose premise is a visible
+    # UX, and rich is already here: rich-argparse is one formatter class
+    # over the console the dashboard uses, and honours NO_COLOR and a
+    # pipe on its own.
+    "rich-argparse>=1.8,<2",
 ]
 
 [project.optional-dependencies]
@@ -45,6 +50,13 @@ dev = [
     "pytest>=9.0,<10",
     "coverage>=7.15,<8",
     "saxonche>=13,<14",
+    # Hypothesis pour `tests/test_text_properties.py`. Le defaut qui
+    # revient le plus dans ce depot est un balayage de largeurs qui
+    # commence AU-DESSUS de la largeur ou le bug vit ; `report/text.py`
+    # est de l'arithmetique pure avec des invariants enonces dans ses
+    # propres docstrings, donc c'est la machine qui choisit les largeurs
+    # et les chaines. Deux defauts de `pad` trouves au premier passage.
+    "hypothesis>=6.167,<7",
 ]
 # Plusieurs Go de roues et de modeles, tenus a l'ecart du socle : la suite
 # par defaut tourne sans eux (imports paresseux dans ner_models.py, import

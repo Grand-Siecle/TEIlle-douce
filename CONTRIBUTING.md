@@ -137,7 +137,16 @@ venv/bin/python -m coverage run -m pytest \
   && venv/bin/python -m coverage combine \
   && venv/bin/python -m coverage report                     # ratchet holds
 teille-douce odd check                                     # derivatives match the ODD
+venv/bin/python scripts/mutate.py --changed                 # the guards hold
+mv OCR /tmp/OCR-parked && venv/bin/python -m pytest ; mv /tmp/OCR-parked OCR
 ```
+
+The last two are the ones that catch what a green suite does not.
+`mutate.py --changed` reverts each line this branch added and checks the
+tests notice — six review rounds on the CLI instalment found guards that
+passed against the very code they were written for. And the CI has no
+`OCR/` and two cores, so a test that leans on either is true here and
+false there; parking the corpus once is the cheapest way to find out.
 
 And, if you touched anything that reaches the output, validate on real
 documents rather than only on the fixture:
