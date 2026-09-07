@@ -215,11 +215,66 @@ def test_a_target_that_is_not_a_fixture_is_not_removed(tmp_path, capsys):
     assert (home / "subdir").exists()
 
 
+def test_the_guard_that_refuses_a_removal_refuses_it_cleanly(tmp_path,
+                                                             capsys):
+    """The readability rule, inside the guard written for the removal
+    rule. A `--target` that is a file raised `NotADirectoryError` and
+    one that cannot be listed raised `PermissionError`, both straight
+    out of the function whose entire job is to refuse — exit 1, which in
+    this CLI means "some volumes failed"."""
+    import os
+    import stat
+
+    a_file = tmp_path / "target.txt"
+    a_file.write_text("x", encoding="utf-8")
+    with pytest.raises(SystemExit) as raised:
+        fixture._removable(a_file)
+    assert raised.value.code == 3
+    assert "must be a directory" in capsys.readouterr().err
+
+    shut = tmp_path / "shut"
+    shut.mkdir()
+    os.chmod(shut, 0o000)
+    if os.access(shut, os.R_OK):
+        os.chmod(shut, stat.S_IRWXU)
+        pytest.skip("this user can read a directory with mode 000")
+    try:
+        with pytest.raises(SystemExit) as raised:
+            fixture._removable(shut)
+    finally:
+        os.chmod(shut, stat.S_IRWXU)
+    assert raised.value.code == 3
+    assert "cannot be listed" in capsys.readouterr().err
+
+
+def test_a_symlink_to_a_full_directory_is_refused(tmp_path):
+    """`--target ~/link` where the link points at real work: `rmtree`
+    follows it and empties the target, so what the guard looks at has to
+    be what the removal would touch."""
+    real = tmp_path / "precious"
+    (real / "sub").mkdir(parents=True)
+    (real / "keep.txt").write_text("x", encoding="utf-8")
+    link = tmp_path / "link"
+    link.symlink_to(real)
+
+    with pytest.raises(SystemExit):
+        fixture._removable(link)
+
+    assert (real / "keep.txt").exists()
+
+
 def test_what_a_previous_build_left_is_removable(tmp_path):
     """Three things are: the versioned fixture, a directory that is not
     there yet, and one holding exactly what a build leaves."""
     fixture._removable(tmp_path / "not-there-yet")
     fixture._removable(fixture.DEFAULT_TARGET)
+
+    # And an empty one: `mkdir /tmp/fx && fixture build --target /tmp/fx`
+    # is the obvious way to try the command out, and refusing it bought
+    # no safety at all — there is nothing in there to lose.
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    fixture._removable(empty)
 
     built = tmp_path / "again"
     (built / "content" / "data" / "doc_1").mkdir(parents=True)

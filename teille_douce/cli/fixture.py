@@ -156,8 +156,27 @@ def _removable(target):
     target = Path(target)
     if not target.exists() or target.resolve() == DEFAULT_TARGET.resolve():
         return
+    if not target.is_dir():
+        # A file, or a socket: `rmtree` refuses it too, with a traceback
+        # and exit 1 rather than the misconfiguration it is.
+        refuse(f"--target must be a directory: {target} is not one",
+               MISCONFIGURED, "teille-douce fixture")
+    try:
+        inside = list(target.iterdir())
+    except OSError as reason:
+        # The readability rule, in the guard written for the removal
+        # rule: a directory this process cannot list is not one it may
+        # assume is safe to delete, and `iterdir` raised straight out of
+        # here — exit 1, from the function whose whole job is refusing.
+        refuse(f"{target} cannot be listed, so it will not be removed: "
+               f"{reason}", MISCONFIGURED, "teille-douce fixture")
+    # Empty is removable: `mkdir /tmp/fx && fixture build --target /tmp/fx`
+    # is the obvious way to try this command out, and there is nothing
+    # in there to lose.
+    if not inside:
+        return
     pages = target / "content" / "data" / "doc_1"
-    strangers = [entry.name for entry in target.iterdir()
+    strangers = [entry.name for entry in inside
                  if entry.name not in ("content",
                                        "gallica-bnf-fr-iiif-manifest-json.csv")]
     if pages.is_dir() and not strangers:

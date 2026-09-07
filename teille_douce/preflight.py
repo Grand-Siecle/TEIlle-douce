@@ -245,7 +245,16 @@ def _iiif_refused(directory, pages):
 
     best_rate, too_big = None, []
     for candidate in candidates:
-        if candidate.stat().st_size > IIIF_CSV_MAX_SIZE:
+        # The same guard as `detect_csv`, and for the same reason: this
+        # loop reads the candidates the run's own detection has just
+        # refused, so a FIFO among them blocked here too.
+        if not candidate.is_file():
+            continue
+        try:
+            oversized = candidate.stat().st_size > IIIF_CSV_MAX_SIZE
+        except OSError:
+            continue
+        if oversized:
             too_big.append(candidate.name)
             continue
         try:
