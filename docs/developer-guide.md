@@ -244,7 +244,29 @@ they can be recognised:
   them.
 
 The remedy is mechanical and takes a minute: revert the file the test
-guards, run the test alone, and confirm it fails. Do it for every fix.
+guards, run the test alone, and confirm it fails. Do it for every fix —
+`scripts/mutate.py FILE:LINE TEST` does exactly that, and
+`scripts/mutate.py --changed` does it for every line a branch added.
+
+It works on the syntax tree rather than the text, because a line is not
+a unit of Python: `column = min(max(…),\n  …)` is one statement over two
+lines, and replacing the first with `pass` leaves the second dangling —
+a tool failure that reads as a result. Four mutations, the ones that
+turn a guard into no guard: a condition to `False`, a condition to
+`True`, a returned value to `None`, a statement to `pass`. A mutation
+that makes the tests HANG counts as caught: the guard it removed was
+there to stop a block.
+
+**The first shape has a second cure.** A width sweep that starts above
+the defect is a choice of examples, and
+`tests/test_text_properties.py` stops choosing: `report/text.py` is pure
+arithmetic whose docstrings state their own invariants — "never wider",
+"the leaf is kept whole", "the half that survives whole" — so Hypothesis
+picks the widths and the strings, including a CJK glyph two cells wide
+and a newline out of an httpx message. It found two defects in `pad` on
+its first two runs: a right half that is empty, and one made only of
+spaces, each padded to the full width and left a line ending in
+whitespace that goes into every log and every pasted issue.
 
 ### A loss belongs to one of three blocks
 

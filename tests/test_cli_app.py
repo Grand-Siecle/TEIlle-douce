@@ -13,6 +13,7 @@ import importlib.metadata
 import os
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -230,3 +231,48 @@ def test_an_interrupt_before_the_run_starts_is_not_a_traceback(monkeypatch,
 
     assert launcher.main([]) == 130
     assert "Interrupted" in capsys.readouterr().err
+
+
+# =============================================================================
+# The help, on the front door
+# =============================================================================
+
+def test_every_parser_carries_the_rich_formatter():
+    """argparse propagates the parser CLASS to subparsers and not the
+    formatter, so setting it on the top parser alone styles one help out
+    of nine — and setting it at each of the eight `add_parser` calls is
+    eight chances to forget the ninth, which is this project's signature
+    mistake. `parser_class` is the one place that can be right for all
+    of them at once."""
+    from rich_argparse import RichHelpFormatter
+
+    parser = app.build_parser()
+    assert parser.formatter_class is RichHelpFormatter
+
+    subcommands, = [action for action in parser._actions
+                    if getattr(action, "choices", None)
+                    and not action.option_strings]
+    assert len(subcommands.choices) >= 8
+    for name, subparser in subcommands.choices.items():
+        assert subparser.formatter_class is RichHelpFormatter, name
+
+
+def test_the_help_is_plain_text_where_nobody_can_see_colour(tmp_path):
+    """It goes through the same Rich console the panel does, so a pipe
+    and `NO_COLOR` are honoured — `teille-douce --help | less` must not
+    be a screenful of escape sequences."""
+    import os
+    import subprocess
+    import sys
+
+    finished = subprocess.run(
+        [sys.executable, "-m", "teille_douce", "--help"],
+        capture_output=True, text=True, timeout=60,
+        cwd=str(Path(__file__).resolve().parent.parent),
+        env={**os.environ, "NO_COLOR": "1", "COLUMNS": "92"})
+
+    assert finished.returncode == 0, finished.stderr
+    assert "\x1b[" not in finished.stdout, "escape sequences in a pipe"
+    for command in ("run", "check", "validate", "info", "report",
+                    "completion", "odd", "fixture"):
+        assert command in finished.stdout

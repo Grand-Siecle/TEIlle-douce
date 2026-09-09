@@ -117,6 +117,17 @@ def pad(left, right, room, keep="right"):
     `11 of 1…` is not a short number, it is a wrong one.
     """
     left, right = _CONTROL.sub(" ", left), _CONTROL.sub(" ", right)
+    if not right.strip():
+        # Nothing to push to the far side, so nothing to push it with:
+        # `pad("label", "", 20)` returned the label and fifteen spaces,
+        # which is noise in a log file and noise someone has to strip out
+        # of an issue. The docstring already said "no separator without
+        # something after it" — about one of the three branches.
+        #
+        # `.strip()` and not just `if not right`: a right half of spaces
+        # carries nothing either, and produced a line that was entirely
+        # spaces. Both were found by the property, one after the other.
+        return clip(left, room)
     gap = room - cells(left) - cells(right)
     if gap >= 1:
         return left + " " * gap + right

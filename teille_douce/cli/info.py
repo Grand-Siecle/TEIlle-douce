@@ -222,11 +222,13 @@ def _one(item, report, room):
         if offer.layer == "config" and offer.value is not None:
             said = f"{shorten_path(report.config_path, 28)}: {said}"
         left = f"  {offer.layer:<9}{offer.where}{gap}{said}"
-        # `pad` to the full width would leave trailing spaces on every
-        # line but one, which show up the moment anyone pastes this into
-        # an issue.
-        lines.append(pad(left, "<- used", room, keep="right") if offer.used
-                     else clip(left, room))
+        # The branch this used to be — `pad` when used, `clip` when not —
+        # existed because `pad` padded to the full width whatever the
+        # right half was, so every line but one ended in trailing
+        # spaces. `pad` treats a half that carries nothing as no half at
+        # all now, which the property test found and fixed at the root.
+        lines.append(pad(left, "<- used" if offer.used else "", room,
+                         keep="right"))
         if offer.refused:
             # Refused, so a lower layer took effect. The run says this
             # once in a warning, four hours before anyone reads the log.

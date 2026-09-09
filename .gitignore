@@ -36,3 +36,8 @@ htmlcov/
 # Boite a outils de compilation de l'ODD (TEI P5, Stylesheets, SchXslt),
 # retelechargeable a versions epinglees par scripts/build_odd.py
 .odd-toolchain/
+
+# A mutation run that was killed leaves the original here; the next run
+# puts it back. Committing one would commit an unparsed, comment-less
+# copy of a source file.
+*.mutate-backup

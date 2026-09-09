@@ -1,10 +1,11 @@
 """
 Command-line entry point of TEIlle-douce.
 
-One parser, one subcommand for now. `run` is the pipeline; the read-only
-commands (`check`, `validate`, `info`, `report`) and the toolchain ones
-(`odd`, `fixture`) join it later — declaring them empty would be a promise
-this package does not keep yet.
+One parser, eight subcommands. `run` is the pipeline; `check`,
+`validate`, `info`, `report` and `completion` write nothing at all, and
+`odd` and `fixture` are the maintainer's. Each declares its own
+arguments, in its own module, so a flag cannot exist in one place and be
+parsed in another.
 
 Invoking with no subcommand runs the pipeline, so `python3 main.py`,
 `python3 main.py --skip-existing`, `teille-douce` and `teille-douce run`
@@ -18,9 +19,33 @@ import warnings
 from dataclasses import replace
 from pathlib import Path
 
+from rich_argparse import RichHelpFormatter
+
 import teille_douce
 from teille_douce.cli import options
 from teille_douce.settings import Settings, find_config_file, set_settings
+
+
+class _Parser(argparse.ArgumentParser):
+    """An `ArgumentParser` that carries the formatter to its children.
+
+    `rich-argparse` gives the help the finish the dashboard has — the
+    front door of a program whose whole premise is a visible UX. It
+    honours `NO_COLOR` and a pipe on its own, through the same Rich
+    console the panel uses, so `--help | less` is plain text.
+
+    The formatter is set here and nowhere else. argparse propagates the
+    parser CLASS to its subparsers — `add_subparsers` defaults
+    `parser_class` to `type(self)` — and does NOT propagate
+    `formatter_class`, so a plain parser with the formatter passed in
+    styles one help out of nine, and passing it at each of the eight
+    `add_parser` calls is eight chances to forget the ninth. Subclassing
+    is the one lever that reaches all of them.
+    """
+
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault("formatter_class", RichHelpFormatter)
+        super().__init__(*args, **kwargs)
 
 
 def build_parser():
@@ -30,7 +55,7 @@ def build_parser():
         argparse.ArgumentParser: the parser, whose namespace always carries
         a ``command`` attribute — ``"run"`` when none was given.
     """
-    parser = argparse.ArgumentParser(
+    parser = _Parser(
         prog="teille-douce",
         description="Convert ALTO XML documents to TEI P5 with the SegmOnto "
                     "taxonomy.",

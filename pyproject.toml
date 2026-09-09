@@ -31,6 +31,11 @@ dependencies = [
     "rich>=14.0,<15",
     "lingua-language-detector==2.2.0",
     "httpx>=0.28,<0.29",
+    # `--help` is the front door of a program whose premise is a visible
+    # UX, and rich is already here: rich-argparse is one formatter class
+    # over the console the dashboard uses, and honours NO_COLOR and a
+    # pipe on its own.
+    "rich-argparse>=1.8,<2",
 ]
 
 [project.optional-dependencies]
@@ -45,6 +50,13 @@ dev = [
     "pytest>=9.0,<10",
     "coverage>=7.15,<8",
     "saxonche>=13,<14",
+    # Hypothesis pour `tests/test_text_properties.py`. Le defaut qui
+    # revient le plus dans ce depot est un balayage de largeurs qui
+    # commence AU-DESSUS de la largeur ou le bug vit ; `report/text.py`
+    # est de l'arithmetique pure avec des invariants enonces dans ses
+    # propres docstrings, donc c'est la machine qui choisit les largeurs
+    # et les chaines. Deux defauts de `pad` trouves au premier passage.
+    "hypothesis>=6.167,<7",
 ]
 # Plusieurs Go de roues et de modeles, tenus a l'ecart du socle : la suite
 # par defaut tourne sans eux (imports paresseux dans ner_models.py, import
@@ -92,14 +104,19 @@ source = ["teille_douce", "main", "scripts"]
 # XSLT Saxon, boite a outils TEI -- et ne peut pas s'executer dans la
 # suite. Seuls ses helpers purs `without_the_date` et `Toolchain` sont
 # exerces, par tests/test_odd.py et tests/test_cli_odd.py. simplify.py,
-# lui, est de la logique pure et reste mesure. Les trois fichiers de
-# scripts/ ne sont plus que des lanceurs d'une ligne, hors mesure comme
-# le reste de scripts/.
+# lui, est de la logique pure et reste mesure. Les trois LANCEURS de
+# scripts/ ne font qu'une ligne chacun et restent hors mesure ;
+# scripts/mutate.py, lui, est un vrai outil — il ecrit dans des fichiers
+# suivis par git — et il est mesure, pour la meme raison que
+# cli/fixture.py est revenu dans la liste : omettre du code teste
+# soustrait au cliquet ce qu'il est cense compter.
 #
 # cli/fixture.py a ete retire de cette liste : il y etait entre avec le
 # script dont il vient, et tests/test_cli_fixture.py l'exerce -- l'omettre
 # soustrayait au cliquet du code effectivement teste, et surtout mesure.
-omit = ["tests/*", "venv/*", "scripts/*", "*/teille_douce/odd/build.py"]
+omit = ["tests/*", "venv/*", "scripts/validate_tei.py",
+        "scripts/build_odd.py", "scripts/build_test_fixture.py",
+        "*/teille_douce/odd/build.py"]
 # sourcedoc/builder.py execute du code dans des workers multiprocessing :
 # sans ces deux options, coverage ne voit pas les lignes exercees dans les forks.
 # Consequence : lancer `coverage combine` avant `coverage report`.
