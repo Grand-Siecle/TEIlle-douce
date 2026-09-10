@@ -18,8 +18,8 @@ layout kept in `<sourceDoc>` under the
 and named entities.
 
 It exists for a specific corpus: 27 volumes — 19 distinct works — of French
-art theory and art literature printed between 1548 and 1669, all but one from
-the seventeenth century, totalling 16,999 pages digitized by Gallica and
+art theory and art literature printed and manuscript from
+the seventeenth century, digitized by Gallica and others providers, and
 segmented with Kraken and YALTAi. Nothing in the pipeline is specific to those
 books, but every design decision was made against them.
 
