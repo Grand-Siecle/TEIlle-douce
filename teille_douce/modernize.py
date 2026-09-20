@@ -8,10 +8,12 @@ Translates historical French text to modern French using the
 VieuxParler API (LSTM Fairseq/FreEM model). Uses httpx with
 asyncio for concurrent batch requests.
 
-Includes a validation step: lines where the API output diverges
-too much from the original (word count mismatch) are retried
-individually (batch_size=1). If the retry also diverges, the
-original text is kept.
+Includes a validation step: a line whose API output diverges too
+much from the original (word count, character similarity) keeps its
+original text. It is not sent back on its own: the service is
+deterministic, so a line retried alone comes back identical, and the
+`batch_size=1` such a retry used selects the service's slow
+line-by-line path.
 """
 
 import asyncio
@@ -118,9 +120,8 @@ def modernize_texts(texts, lang="fra", progress_callback=None, losses=None):
     Modernize a list of text lines via the VieuxParler API.
 
     Splits *texts* into batches and sends them concurrently.
-    Lines whose batch fails keep their original text.
-    Lines where the API output diverges (word count mismatch)
-    are retried individually.
+    Lines whose batch fails keep their original text, and so do
+    lines whose answer the divergence guard refuses.
 
     Args:
         texts: List of original text strings.
@@ -167,7 +168,7 @@ def modernize_texts(texts, lang="fra", progress_callback=None, losses=None):
 
 
 async def _modernize_all(texts, base_url, progress_callback=None, losses=None):
-    """Send all batches with limited concurrency, validate, retry divergent lines.
+    """Send all batches with limited concurrency and validate the answers.
 
     `losses`, when given, is filled with what never reached the service.
     A failed batch used to be swallowed by a `continue` and a DEBUG line,
@@ -185,17 +186,9 @@ async def _modernize_all(texts, base_url, progress_callback=None, losses=None):
         # "withheld on purpose … nothing" over a run that had withheld
         # hundreds.
         losses.setdefault("readings_rejected", 0)
-        # Block 3: a retry the service never answered. `lines_lost`
-        # carries them too, because a line whose retry never arrived is a
-        # line that never reached VieuxParler.
-        losses.setdefault("retries_unreachable", 0)
-        # What each count is measured against. `lines_offered` is every
-        # sendable line of the first pass, which is the denominator for a
-        # reading the guard refused — but not for a retry: a retry phase
-        # that lost every one of its six lines read `6 of 40`, fifteen
-        # per cent, when it had lost all of them.
+        # What each count is measured against: `lines_offered` is every
+        # sendable line, the denominator for a reading the guard refused.
         losses.setdefault("lines_offered", 0)
-        losses.setdefault("lines_retried", 0)
         losses.setdefault("batches_total", 0)
         losses["lines_offered"] += len(texts)
     results = list(texts)  # pre-fill with originals as fallback
@@ -225,9 +218,8 @@ async def _modernize_all(texts, base_url, progress_callback=None, losses=None):
         ]
         responses = await asyncio.gather(*tasks, return_exceptions=True)
 
-    # Phase 1: collect results and find divergent lines
     any_success = False
-    divergent = []  # list of (global_index, original_text)
+    rejected = 0  # answers the guard refused: the original stays
 
     for (start, _batch_texts), response in zip(batches, responses):
         if isinstance(response, Exception) or response is None:
@@ -244,80 +236,23 @@ async def _modernize_all(texts, base_url, progress_callback=None, losses=None):
             idx = start + j
             orig = texts[idx]
             if _is_divergent(orig, mod):
+                # The service answered and the guard refused the answer:
+                # the pipeline working, counted in block 2. Not sent back
+                # on its own — the model is deterministic, a line retried
+                # alone comes back identical, and the `batch_size=1` that
+                # retry used selects the service's slow line-by-line path.
                 if get_settings().debug:
                     logger.debug(
                         "Divergent line %d: orig(%d words)=%r → mod(%d words)=%r",
                         idx, len(orig.split()), orig[:80],
                         len(mod.split()), mod[:80],
                     )
-                divergent.append((idx, orig))
+                rejected += 1
             else:
                 results[idx] = mod
 
-    # Phase 2: retry divergent lines individually (batch_size=1)
-    if divergent:
-        if get_settings().debug:
-            logger.debug(
-                "Retrying %d divergent lines individually", len(divergent)
-            )
-        retry_sem = asyncio.Semaphore(get_settings().modernize_concurrency)
-
-        async def _retry_one(client, orig):
-            async with retry_sem:
-                return await _send_batch(client, base_url, [orig], batch_size=1)
-
-        async with httpx.AsyncClient(timeout=get_settings().modernize_timeout) as client:
-            retry_tasks = [
-                _retry_one(client, orig)
-                for _, orig in divergent
-            ]
-            retry_responses = await asyncio.gather(
-                *retry_tasks, return_exceptions=True
-            )
-
-        retried = 0
-        still_bad = 0
-        unreachable = 0
-        for (idx, orig), resp in zip(divergent, retry_responses):
-            if isinstance(resp, Exception) or resp is None or not resp:
-                if get_settings().debug:
-                    logger.debug("Retry failed for line %d: %s", idx, resp)
-                # The REQUEST failed. Counted apart from a reading the
-                # guard refused: one is the service dying, the other is
-                # the pipeline working. Both went into `still_bad`, so a
-                # VieuxParler that died during the retry phase produced
-                # zero incidents and `--fail-on incident` passed — block
-                # 2 never counts at any level, by design.
-                unreachable += 1
-                continue
-            mod = resp[0]
-            if _is_divergent(orig, mod):
-                if get_settings().debug:
-                    logger.debug(
-                        "Retry still divergent line %d: orig=%r → mod=%r",
-                        idx, orig[:80], mod[:80],
-                    )
-                still_bad += 1
-                # Keep original text (already in results)
-            else:
-                results[idx] = mod
-                retried += 1
-
-        if losses is not None:
-            losses["readings_rejected"] += still_bad
-            losses["retries_unreachable"] += unreachable
-            losses["lines_retried"] += len(divergent)
-            # NOT added to `lines_lost`: that counter is the failed
-            # BATCHES' own detail, and folding the retry lines into it
-            # made block 3's two lines claim twenty-two lines for sixteen
-            # distinct ones, six of them attributed to a batch that never
-            # contained them.
-        if get_settings().debug:
-            logger.debug(
-                "Retry results: %d fixed, %d still divergent (kept "
-                "original), %d never answered",
-                retried, still_bad, unreachable,
-            )
+    if losses is not None:
+        losses["readings_rejected"] += rejected
 
     return results if any_success else None
 
@@ -520,14 +455,18 @@ def _cert_for(score):
     return "unknown"
 
 
-async def _send_batch(client, base_url, batch_texts, batch_size=None):
-    """POST a single batch to /translate/batch."""
-    if batch_size is None:
-        batch_size = get_settings().modernize_batch_size
+async def _send_batch(client, base_url, batch_texts):
+    """POST one batch of lines to /translate/batch.
+
+    The lines only. VieuxParler sizes its model batches from its own
+    token budget; its `batch_size` field is compatibility ballast, and
+    the one value that still does something — `1` — selects the
+    line-by-line reference path, a tenth of the batched throughput.
+    """
     try:
         r = await client.post(
             f"{base_url}/translate/batch",
-            json={"texts": batch_texts, "batch_size": batch_size},
+            json={"texts": batch_texts},
         )
         r.raise_for_status()
         data = r.json()

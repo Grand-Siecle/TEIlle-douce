@@ -42,7 +42,6 @@ _LABELS = {
     Code.ALTO_IDS_REPAIRED: ("ALTO ids repaired", "ids"),
     Code.ARCHIVE_CORRUPT: ("archives corrupt", "archives"),
     Code.VOLUME_UNREADABLE: ("volumes unreadable", "volumes"),
-    Code.RETRY_UNANSWERED: ("retries unanswered", "lines"),
     Code.READING_REJECTED: ("readings rejected", "readings"),
     Code.ENTITY_FILTERED: ("entities filtered", "entities"),
     Code.CONTAINER_UNANCHORED: ("containers unanchored", "containers"),

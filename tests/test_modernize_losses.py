@@ -36,8 +36,7 @@ def test_a_batch_that_succeeds_costs_nothing(monkeypatch):
     modernize.modernize_texts(["une ligne"], losses=losses)
 
     assert losses == {"batches_failed": 0, "lines_lost": 0,
-                      "readings_rejected": 0, "retries_unreachable": 0,
-                      "lines_offered": 1, "lines_retried": 0,
+                      "readings_rejected": 0, "lines_offered": 1,
                       "batches_total": 1}
 
 
@@ -72,39 +71,29 @@ def test_a_reading_the_guard_refused_is_counted_and_not_only_debugged(
     assert losses["batches_failed"] == 0
 
 
-def test_a_retry_the_service_never_answered_is_an_incident_not_a_guard(
-        monkeypatch):
-    """`still_bad` counted two unrelated things: a reading the divergence
-    guard refused, and a retry REQUEST that failed. Both went to block 2
-    — "the guards did their job" — so a VieuxParler that died during the
-    retry phase produced zero incidents and `--fail-on incident` passed,
-    because block 2 never counts at any level by design."""
-    import httpx
-
+def test_a_divergent_reading_is_rejected_in_one_pass_not_retried(monkeypatch):
+    """A reading the guard refused used to be sent back on its own with
+    `batch_size=1`. On the batched VieuxParler that value no longer sizes
+    anything: it selects the line-by-line reference path, a tenth of the
+    batched throughput on a GPU. And the model is deterministic — a line
+    retried alone came back byte-identical to the one the guard had just
+    refused (measured on 128 lines: identical, and twice as slow). The
+    retry could never change a verdict; it only cost time proportional
+    to the rejections. One request, one verdict."""
     calls = []
 
-    async def answers_then_dies(client, base_url, batch_texts,
-                                batch_size=None):
-        calls.append(batch_texts)
-        if len(batch_texts) == 1:
-            # The per-line retry: the service has gone.
-            raise httpx.ConnectError("connection refused")
+    async def diverging(client, base_url, batch_texts, **_ignored):
+        calls.append(list(batch_texts))
         return [f"{text} et encore" for text in batch_texts]
 
-    monkeypatch.setattr(modernize, "_send_batch", answers_then_dies)
+    monkeypatch.setattr(modernize, "_send_batch", diverging)
     losses = {}
 
-    modernize.modernize_texts(["une", "deux"], losses=losses)
+    result = modernize.modernize_texts(["une", "deux"], losses=losses)
 
-    assert losses["retries_unreachable"] == 2
-    assert losses["readings_rejected"] == 0
-    # Measured against the lines that were RETRIED, not against every
-    # line of the first pass: a retry phase that lost all of its lines
-    # read fifteen per cent.
-    assert losses["lines_retried"] == 2
-    # And not folded into `lines_lost`, which is the failed BATCHES'
-    # own detail: no batch failed here.
-    assert losses["lines_lost"] == 0
+    assert calls == [["une", "deux"]]
+    assert result == ["une", "deux"]
+    assert losses["readings_rejected"] == 2
 
 
 def test_a_failed_batch_is_measured_against_every_batch(monkeypatch):
@@ -122,8 +111,8 @@ def test_a_failed_batch_is_measured_against_every_batch(monkeypatch):
     monkeypatch.setattr(modernize, "_send_batch", one_in_four)
     losses = {}
 
-    # Four batches at the default size of sixty-four.
-    modernize.modernize_texts([f"ligne {n}" for n in range(200)],
+    # Four batches at the default size of 256.
+    modernize.modernize_texts([f"ligne {n}" for n in range(1000)],
                               losses=losses)
 
     assert losses["batches_failed"] == 1

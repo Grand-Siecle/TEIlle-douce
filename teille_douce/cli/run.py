@@ -1271,21 +1271,6 @@ def _process_document(doc_name, filepaths, doc_dir, df_meta, config,
                                         mod_stats["batches_failed"]),
                     detail=f"{mod_stats.get('lines_lost', 0)} lines never "
                            f"reached VieuxParler"))
-            if mod_stats.get("retries_unreachable"):
-                # Block 3, beside the failed batches: a retry the service
-                # never answered is the service dying, not a guard doing
-                # its job, and filing it in block 2 hid it from every
-                # `--fail-on` level there is.
-                reporter.lost(Loss(
-                    Code.RETRY_UNANSWERED, doc_name, "modernize.retry",
-                    Locator.document(doc_name),
-                    count=mod_stats["retries_unreachable"],
-                    # Against the lines that were RETRIED. Measured
-                    # against every line of the first pass, a retry phase
-                    # that lost all six of its lines read `6 of 40`.
-                    total=mod_stats.get("lines_retried",
-                                        mod_stats["retries_unreachable"]),
-                    detail="VieuxParler did not answer the retry"))
             if mod_stats.get("readings_rejected"):
                 # Block 2. The service answered and the guard refused
                 # what it answered — a divergent reading kept as its
