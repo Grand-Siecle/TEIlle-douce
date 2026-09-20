@@ -253,8 +253,6 @@ async def _modernize_all(texts, base_url, progress_callback=None, losses=None):
 
     if losses is not None:
         losses["readings_rejected"] += rejected
-    if rejected and get_settings().debug:
-        logger.debug("%d divergent readings kept their original text", rejected)
 
     return results if any_success else None
 
