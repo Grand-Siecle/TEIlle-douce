@@ -234,7 +234,7 @@ _SETTINGS = (
     _Declaration("max_workers", "TDOUCE_JOBS", "limits.jobs",
                  _as_int(minimum=1), 8),
     _Declaration("modernize_batch_size", "TDOUCE_MODERNIZE_BATCH_SIZE",
-                 "limits.batch_size", _as_int(minimum=1), 64),
+                 "limits.batch_size", _as_int(minimum=1), 256),
     # Both answer to one config key on purpose, matching --concurrency,
     # which sets both services at once. The consequence is deliberate: from
     # a config file the two cannot be set apart, only through their own

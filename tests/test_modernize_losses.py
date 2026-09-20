@@ -111,8 +111,8 @@ def test_a_failed_batch_is_measured_against_every_batch(monkeypatch):
     monkeypatch.setattr(modernize, "_send_batch", one_in_four)
     losses = {}
 
-    # Four batches at the default size of sixty-four.
-    modernize.modernize_texts([f"ligne {n}" for n in range(200)],
+    # Four batches at the default size of 256.
+    modernize.modernize_texts([f"ligne {n}" for n in range(1000)],
                               losses=losses)
 
     assert losses["batches_failed"] == 1

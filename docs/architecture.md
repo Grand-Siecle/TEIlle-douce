@@ -348,7 +348,8 @@ Three guards:
 
 ### Modernization
 
-`modernize.py` sends lines to VieuxParler in batches of 64, then
+`modernize.py` sends lines to VieuxParler in requests of 256, eight in flight,
+and the service packs what is in flight into its own model batches; then
 `body/builder.py` splices the result into the tree as `<choice>`. The grade is
 computed **between what was sent and what came back**, at the client, not
 re-derived later from the tree — recomputing it downstream scored dehyphenation

@@ -277,7 +277,7 @@ def add_run_arguments(parser):
     limits.add_argument("-j", "--jobs", dest="max_workers", metavar="N",
                         default=none, help="page-parsing workers  [min(cpu_count, 8)]")
     limits.add_argument("--batch-size", dest="modernize_batch_size", metavar="N",
-                        default=none, help="lines per modernization request  [64]")
+                        default=none, help="lines per modernization request  [256]")
     limits.add_argument("--concurrency", dest="concurrency", metavar="N",
                         default=none, help="in-flight requests per service  [8]")
     limits.add_argument("--device", dest="ner_device", metavar="DEV",

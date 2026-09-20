@@ -430,7 +430,7 @@ wrapper scripts and CI configurations keep working:
 | `TDOUCE_PERSONS_CSV` | `paths.persons` | `metadata_personne.csv` | Person catalogue |
 | `TDOUCE_SKIP_EXISTING` | `output.skip_existing` | `0` | Resume: skip volumes already converted |
 | `TDOUCE_JOBS` | `limits.jobs` | `8` | Page-parsing workers |
-| `TDOUCE_MODERNIZE_BATCH_SIZE` | `limits.batch_size` | `64` | Lines per modernization request |
+| `TDOUCE_MODERNIZE_BATCH_SIZE` | `limits.batch_size` | `256` | Lines per modernization request |
 | `TDOUCE_MODERNIZE_CONCURRENCY` | `limits.concurrency` | `8` | In-flight requests to VieuxParler |
 | `TDOUCE_PYHELLEN_CONCURRENCY` | `limits.concurrency` | `8` | In-flight requests to PyHellen |
 | `TDOUCE_PYHELLEN_MAX_CONSECUTIVE_FAILURES` | `limits.max_consecutive_failures` | `10` | Circuit breaker: stop calling after this many failures in a row |
@@ -507,8 +507,18 @@ must not turn into hours of sequential timeouts.
 
 ### VieuxParler — modernization
 
-An HTTP service rewriting early modern French into modern French, line by line
-in batches of 64. Produces `<choice><orig>…</orig><reg>…</reg></choice>`.
+An HTTP service rewriting early modern French into modern French. The lines of
+a document go out in requests of 256 (`TDOUCE_MODERNIZE_BATCH_SIZE`), eight in
+flight (`TDOUCE_MODERNIZE_CONCURRENCY`); the service packs whatever is in flight
+into its own model batches, so the concurrency is what keeps its GPU busy.
+Produces `<choice><orig>…</orig><reg>…</reg></choice>`.
+
+Run it from its GPU image (`docker compose --profile gpu up -d api-gpu` in the
+[VieuxParler](https://github.com/Grand-Siecle/VieuxParler-API) repository; port
+8011 is the default `TDOUCE_MODERNIZE_URL`). On a 12 GB GPU it answers about
+200 lines per second at these settings, against roughly ten on a CPU — where a
+wave of eight requests takes a few minutes, close to `TDOUCE_MODERNIZE_TIMEOUT`
+(300 s); lower `--concurrency` there rather than the batch size.
 
 Two guards make the result readable as evidence rather than as a claim. A line
 whose modernized form falls below `TDOUCE_MODERNIZE_SIMILARITY_MIN`

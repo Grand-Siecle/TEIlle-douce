@@ -17,6 +17,7 @@ import json
 import httpx
 
 import teille_douce.modernize as modernize
+from teille_douce.settings import Settings
 
 
 def _post_through(handler, texts):
@@ -38,3 +39,13 @@ def test_the_request_carries_the_lines_and_no_batch_size():
     assert _post_through(handler, ["une ligne"]) == ["une ligne"]
     assert seen == [{"texts": ["une ligne"]}]
 
+
+def test_a_request_holds_256_lines_by_default():
+    """256 lines of a printed page fill about one model batch on a 12 GB
+    GPU (the service's token budget lands near 6 500 tokens there), and
+    the request still answers in a couple of seconds. Measured against
+    the batched service, eight requests in flight: 64 lines per request,
+    181 lines/s; 256 lines per request, 207 lines/s; outputs identical."""
+    settings = Settings.load(env={}, flags={}, config_file=None)
+
+    assert settings.modernize_batch_size == 256
