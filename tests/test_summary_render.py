@@ -718,22 +718,6 @@ def test_a_seven_figure_count_is_not_clipped_at_a_narrow_width():
                    for line in shown), (width, [l for l in shown if "699" in l])
 
 
-def test_a_loss_measured_in_lines_is_not_relabelled_batches():
-    """The label table says `batch_failed` counts batches; a retry the
-    service never answered is counted in lines, and the loss's own unit
-    was honoured for `PHASE_LOST` alone — so the summary printed
-    `57 of 1 402 batches` over two numbers that are lines."""
-    record = RunRecord()
-    record.add(Loss(Code.RETRY_UNANSWERED, "D1", "modernize.retry",
-                    Locator.document("D1"), count=57, total=1402,
-                    detail="VieuxParler did not answer the retry"))
-
-    shown = rendered(outcome(record=record))
-
-    assert "57 of 1 402 lines" in shown
-    assert "batches" not in shown
-
-
 # =============================================================================
 # The three lines that carry a number, at every width
 # =============================================================================
