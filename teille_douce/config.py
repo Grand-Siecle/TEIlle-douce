@@ -183,6 +183,38 @@ ENRICHMENT_CONTAINERS = {
 # Minimum text length (chars) to attempt enrichment
 ENRICHMENT_MIN_TEXT_LENGTH = 5
 
+# A lone abbreviation is not a sentence, and PyHellen refuses it.
+#
+# `pie_extended` masks these forms before sentence splitting so their
+# period does not end the sentence (models/fr/excluders.py, ABBREVIATIONS).
+# When the block holds NOTHING BUT the abbreviation, nothing is left to
+# split: zero sentences reach PaPie, whose padding calls `max()` on an
+# empty list and raises `ValueError: max() arg is an empty sequence`.
+# PyHellen turns that into HTTP 400 and the block lands in
+# `containers_refused`.
+#
+# These marginal notes ("Orat.", "Ibid.") are abbreviated references:
+# there is no lemma to find in them, so they are not sent. The guard is
+# deliberately exact -- equality on the block's stripped text -- and not a
+# "one word then a period" heuristic, which would swallow "Bonjour.", a
+# real word with a real lemma.
+#
+# Copied from upstream: resynchronise if `pie_extended` changes its list.
+ENRICHMENT_LONE_ABBREVIATIONS = frozenset((
+    'Acad.', 'Adj.', 'Agricol.', 'Agricul.', 'Apocal.', 'Bot.', 'Botan.',
+    'Botaniq.', 'Cf.', 'Cha.', 'Chap.', 'Col.', 'Dic.', 'Diction.',
+    'Dictionn.', 'Eccl.', 'Fig.', 'Fr.', 'Geog.', 'Gram.', 'Gramm.',
+    'Hist.', 'Ibid.', 'Inst.', 'Jard.', 'Jurisprud.', 'Latit.', 'Li.',
+    'Lib.', 'Libr.', 'Lig.', 'Lit.', 'Littérat.', 'Liv.', 'Long.', 'Mar.',
+    'Mat.', 'Mathém.', 'Mech.', 'Med.', 'Mem.', 'Menuis.', 'Milit.',
+    'Mod.', 'Monsr.', 'Mor.', 'Mr.', 'N.b.', 'Orat.', 'Ornith.',
+    'Ornitholog.', 'Ornythol.', 'P.S.', 'Pag.', 'Part.', 'Pharm.',
+    'Phil.', 'Philos.', 'Phys.', 'Physiq.', 'Pl.', 'Politiq.', 'S.M.',
+    'Sr.', 'St.', 'Subst.', 'Tab.', 'Théât.', 'Tom.', 'Trév.', 'V. a.',
+    'V. act.', 'V. n.', 'Vol.', 'Zoo.', 'Zoolog.', 'anc.', 'ca.', 'cap.',
+    'capi.', 'cf.', 'nat.', 'natur.', 's.f.', 's.m.', 'Écon.', 'Élem.',
+))
+
 # =============================================================================
 # TEXT MODERNIZATION (API)
 # =============================================================================
