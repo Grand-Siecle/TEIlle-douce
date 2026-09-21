@@ -20,6 +20,7 @@ from lxml import etree
 
 from teille_douce.config import (
     ENRICHMENT_CONTAINERS,
+    ENRICHMENT_LONE_ABBREVIATIONS,
     ENRICHMENT_MIN_TEXT_LENGTH,
     ENRICHMENT_MAX_MISALIGNED_RATIO,
 )
@@ -217,6 +218,13 @@ def _prepare_container(container, container_index, stats):
         if not block_text.strip():
             continue
 
+        # A block reduced to a single abbreviation has no sentence for the
+        # tagger to build and no lemma to find: PyHellen answers 400 on it
+        # (see ENRICHMENT_LONE_ABBREVIATIONS). Not sending it turns a
+        # reported incident back into what it is -- nothing to tag.
+        if block_text.strip() in ENRICHMENT_LONE_ABBREVIATIONS:
+            continue
+
         if b_lang == primary_lang:
             model, effective_lang = primary_model, primary_lang
         else:
@@ -263,19 +271,25 @@ def _finish_container(job, stats):
     corresp = container.get("corresp") or "?"
     tokens = []
     misaligned = 0
+    refused = unsent = False
     for (_text, _model, base, effective_lang), outcome in zip(job.requests, job.outcomes):
         if outcome is None or outcome[0] != "ok":
             reason = outcome[1] if outcome else "no outcome"
             logger.warning("Container %s: tagging failed (%s)", corresp, reason)
-            stats["containers_failed"] += 1
             # The breaker refusing to send is not the service refusing to
             # answer: one is this pipeline protecting a server from hours
             # of sequential timeouts, the other is the server saying no.
             if outcome and str(outcome[0]) == "breaker":
-                stats["containers_unsent"] += 1
+                unsent = True
             else:
-                stats["containers_refused"] += 1
-            return None
+                refused = True
+            # One refused block no longer discards the blocks the service
+            # DID answer. Returning here threw away a whole container --
+            # its Latin quotation and both its French paragraphs -- because
+            # a five-character marginal note came back 400. The flags are
+            # counted once, after the loop: the report divides them by
+            # `containers_found`, so they have to stay container counts.
+            continue
         _status, block_tokens, block_misaligned = outcome
 
         # Audit 2.12: a token the aligner could not find is anchored at
@@ -308,8 +322,19 @@ def _finish_container(job, stats):
             tok.origin_lang = effective_lang
         tokens.extend(block_tokens)
 
+    if refused or unsent:
+        stats["containers_failed"] += 1
+        if unsent:
+            stats["containers_unsent"] += 1
+        if refused:
+            stats["containers_refused"] += 1
+
     if not tokens:
-        stats["containers_skipped"] += 1
+        # Nothing survived. Already counted above when a block was refused
+        # or held back -- counting it as skipped too would say the same
+        # container twice, in two different words.
+        if not (refused or unsent):
+            stats["containers_skipped"] += 1
         return None
 
     if misaligned:

@@ -214,3 +214,84 @@ def test_enrich_body_reports_an_unreachable_server(monkeypatch):
 
     assert stats["server_unavailable"] is True
     assert stats["containers_enriched"] == 0
+
+
+def _job_trois_blocs(monkeypatch):
+    """Un conteneur multilingue reel produit une requete par bloc de langue.
+    On force la forme a trois blocs pour observer ce que devient un refus au
+    milieu."""
+    monkeypatch.setattr(pipeline, "get_model", lambda lang: "modele-factice")
+    c = etree.fromstring('<ab corresp="#zone_3"><lb/>Premier bloc Orat. dernier bloc</ab>')
+    job = pipeline._prepare_container(c, 0, _stats())
+    job.requests = [("Premier bloc", "modele-factice", 0, "fra"),
+                    ("Orat.", "modele-factice", 13, "fra"),
+                    ("dernier bloc", "modele-factice", 19, "fra")]
+    job.outcomes = [None, None, None]
+    return job
+
+
+def test_finish_container_keeps_the_blocks_the_service_did_answer(monkeypatch):
+    """Un bloc refuse ne doit plus emporter le conteneur entier. PyHellen
+    repond 400 sur une note marginale reduite a une abreviation (`Orat.`,
+    `Ibid.`) ; jusqu'ici ce seul bloc jetait aussi les blocs voisins que le
+    service avait pourtant annotes."""
+    reconstruits = []
+    monkeypatch.setattr(pipeline, "align_tokens", lambda toks, *a, **k: toks)
+    monkeypatch.setattr(pipeline, "segment_sentences", lambda *a, **k: [])
+    monkeypatch.setattr(pipeline, "rebuild_container",
+                        lambda c, s, **k: reconstruits.append(c))
+
+    job = _job_trois_blocs(monkeypatch)
+    job.outcomes = [("ok", [_tok("premier")], 0),
+                    ("error", "HTTP 400"),
+                    ("ok", [_tok("dernier")], 0)]
+
+    stats = _stats()
+    assert pipeline._finish_container(job, stats) is not None
+    assert reconstruits, "les blocs survivants doivent etre reconstruits"
+    assert stats["containers_enriched"] == 1
+    assert stats["tokens_total"] == 2
+
+
+def test_finish_container_counts_one_refusal_per_container_not_per_block(monkeypatch):
+    """Le denominateur de la ligne de rapport est `containers_found` : le
+    compteur doit rester un compte de CONTENEURS. Deux blocs refuses dans le
+    meme conteneur, c'est un conteneur touche, pas deux."""
+    monkeypatch.setattr(pipeline, "align_tokens", lambda toks, *a, **k: toks)
+    monkeypatch.setattr(pipeline, "segment_sentences", lambda *a, **k: [])
+    monkeypatch.setattr(pipeline, "rebuild_container", lambda *a, **k: None)
+
+    job = _job_trois_blocs(monkeypatch)
+    job.outcomes = [("error", "HTTP 400"),
+                    ("error", "HTTP 400"),
+                    ("ok", [_tok("dernier")], 0)]
+
+    stats = _stats()
+    pipeline._finish_container(job, stats)
+    assert stats["containers_refused"] == 1
+    assert stats["containers_failed"] == 1
+
+
+def test_prepare_container_does_not_send_a_lone_abbreviation(monkeypatch):
+    """`Orat.` / `Ibid.` seuls font repondre 400 a PyHellen : pie_extended
+    les masque comme abreviations avant le decoupage en phrases, il ne reste
+    aucune phrase, et PaPie leve `max() arg is an empty sequence`. Il n'y a
+    rien a lemmatiser dans une reference abregee : on ne l'envoie pas."""
+    monkeypatch.setattr(pipeline, "get_model", lambda lang: "modele-factice")
+    for abreviation in ("Orat.", "Ibid.", "  Ibid.  "):
+        stats = _stats()
+        note = etree.fromstring(f'<note corresp="#z"><lb/>{abreviation}</note>')
+        assert pipeline._prepare_container(note, 0, stats) is None, abreviation
+        assert stats["containers_skipped"] == 1
+
+
+def test_prepare_container_still_sends_an_ordinary_short_sentence(monkeypatch):
+    """Le garde ne doit pas deborder sur un vrai mot suivi d'un point :
+    `Bonjour.` a un lemme, `Orat.` n'en a pas."""
+    monkeypatch.setattr(pipeline, "get_model", lambda lang: "modele-factice")
+    for texte in ("Bonjour.", "Arist.", "Oraison."):
+        stats = _stats()
+        c = etree.fromstring(f'<ab corresp="#z"><lb/>{texte}</ab>')
+        job = pipeline._prepare_container(c, 0, stats)
+        assert job is not None, texte
+        assert job.requests[0][0] == texte
